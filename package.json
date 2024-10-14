@@ -1,0 +1,82 @@
+{
+  "name": "dts-generation",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "A modern, fast .d.ts generation tool, powered by Bun.",
+  "author": "Chris Breuer <chris@stacksjs.org>",
+  "license": "MIT",
+  "homepage": "https://github.com/stacksjs/dts-generation#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stacksjs/dts-generation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stacksjs/dts-generation/issues"
+  },
+  "keywords": [
+    "dts",
+    "generation",
+    "development",
+    "environment",
+    "bun",
+    "stacks",
+    "typescript",
+    "javascript"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "import": "./dist/*"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "dts": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build.ts && bun run compile",
+    "compile": "bun build ./bin/cli.ts --compile --minify --outfile dist/dts",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
+    "commit": "git cz",
+    "changelog": "bunx changelogen --output CHANGELOG.md",
+    "prepublishOnly": "bun --bun run build",
+    "release": "bun run changelog && bunx bumpp package.json --all",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "dependencies": {
+    "@stacksjs/eslint-config": "^3.7.3-stacks-1.12"
+  },
+  "devDependencies": {
+    "@stacksjs/cli": "^0.65.0",
+    "@stacksjs/development": "^0.65.0",
+    "@stacksjs/storage": "^0.65.0",
+    "@types/bun": "^1.1.10",
+    "c12": "^2.0.1",
+    "eslint": "^9.12.0",
+    "vitepress": "^1.4.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bunx lint-staged",
+    "commit-msg": "bunx --no -- commitlint --edit $1"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,vue}": "bunx eslint . --fix"
+  },
+  "config": {
+    "commitizen": {
+      "path": "node_modules/cz-git"
+    }
+  }
+}
