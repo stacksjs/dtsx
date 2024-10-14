@@ -1,0 +1,107 @@
+{
+  "name": "dts-generation",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "A modern, fast .d.ts generation tool, powered by Bun.",
+  "author": "Chris Breuer <chris@stacksjs.org>",
+  "license": "MIT",
+  "homepage": "https://github.com/stacksjs/dts-generation#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stacksjs/dts-generation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stacksjs/dts-generation/issues"
+  },
+  "keywords": [
+    "dts",
+    "generation",
+    "development",
+    "environment",
+    "bun",
+    "stacks",
+    "typescript",
+    "javascript"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "import": "./dist/*"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "dts": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build.ts && bun run compile",
+    "compile": "bun build ./bin/cli.ts --compile --minify --outfile dist/dts",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
+    "commit": "git cz",
+    "changelog": "bunx changelogen --output CHANGELOG.md",
+    "prepublishOnly": "bun --bun run build",
+    "release": "bun run changelog && bunx bumpp package.json --all",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.4.0",
+    "@eslint/markdown": "^6.1.0",
+    "@prettier/plugin-xml": "^3.4.1",
+    "@stacksjs/cli": "^0.65.0",
+    "@stacksjs/development": "^0.65.0",
+    "@stacksjs/eslint-config": "^3.7.3-stacks-1.12",
+    "@stacksjs/eslint-plugin": ">=0.1.1",
+    "@stacksjs/storage": "^0.65.0",
+    "@stylistic/eslint-plugin": "^2.8.0",
+    "@types/bun": "^1.1.10",
+    "@typescript-eslint/eslint-plugin": "^8.7.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vitest/eslint-plugin": "^1.1.4",
+    "c12": "^2.0.1",
+    "eslint": "^9.10.0",
+    "eslint-config-flat-gitignore": "^0.3.0",
+    "eslint-flat-config-utils": "^0.4.0",
+    "eslint-merge-processors": "^0.1.0",
+    "eslint-plugin-antfu": "^2.7.0",
+    "eslint-plugin-command": "^0.2.6",
+    "eslint-plugin-format": ">=0.1.0",
+    "eslint-plugin-import-x": "^4.3.0",
+    "eslint-plugin-jsdoc": "^50.3.0",
+    "eslint-plugin-jsonc": "^2.16.0",
+    "eslint-plugin-n": "^17.10.3",
+    "eslint-plugin-no-only-tests": "^3.3.0",
+    "eslint-plugin-perfectionist": "^3.7.0",
+    "eslint-plugin-regexp": "^2.6.0",
+    "eslint-plugin-toml": "^0.11.1",
+    "eslint-plugin-unicorn": "^55.0.0",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "eslint-plugin-yml": "^1.14.0",
+    "local-pkg": "^0.5.0",
+    "neverthrow": "^8.0.0",
+    "vitepress": "^1.4.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bunx lint-staged",
+    "commit-msg": "bunx --no -- commitlint --edit $1"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,vue}": "bunx eslint . --fix"
+  },
+  "config": {
+    "commitizen": {
+      "path": "node_modules/cz-git"
+    }
+  }
+}
