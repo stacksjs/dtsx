@@ -4,6 +4,7 @@ export interface DtsGenerationConfig {
   outdir: string
   keepComments: boolean
   clean: boolean
+  tsconfigPath?: string
 }
 
 export type DtsGenerationOption = Partial<DtsGenerationConfig>

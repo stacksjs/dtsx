@@ -12,5 +12,6 @@ export const config: DtsGenerationConfig = (await loadConfig({
     outdir: './dist',
     keepComments: true,
     clean: true,
+    tsconfigPath: './tsconfig.json',
   },
 })).config

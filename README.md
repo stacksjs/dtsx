@@ -9,8 +9,8 @@
 ## Features
 
 - Fast .d.ts generation via isolatedDeclaration
-- Configurability
 - Cross-platform binary
+- Configurability
 - Bun-powered
 
 ## Install
@@ -59,6 +59,7 @@ export default {
   root: './src',
   outdir: './dist',
   keepComments: true,
+  clean: true,
 }
 ```
 

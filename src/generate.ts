@@ -130,6 +130,13 @@ function formatDeclarations(declarations: string, isConfigFile: boolean): string
 }
 
 export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
+  // Check for isolatedModules setting
+  const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
+  if (!isIsolatedDeclarations) {
+    console.error('Error: isolatedModules must be set to true in your tsconfig.json. Ensure `tsc --noEmit` does not output any errors.')
+    return
+  }
+
   if (options.clean) {
     console.log('Cleaning output directory...')
     await rm(options.outdir, { recursive: true, force: true })
@@ -191,4 +198,15 @@ async function getAllTypeScriptFiles(directory?: string): Promise<string[]> {
 
 async function writeToFile(filePath: string, content: string): Promise<void> {
   await Bun.write(filePath, content)
+}
+
+async function checkIsolatedDeclarations(options: DtsGenerationConfig): Promise<boolean> {
+  try {
+    const tsconfigPath = options.tsconfigPath || join(options.root, 'tsconfig.json')
+    const tsconfigContent = await readFile(tsconfigPath, 'utf-8')
+    const tsconfig = JSON.parse(tsconfigContent)
+    return tsconfig.compilerOptions?.isolatedModules === true
+  } catch (error) {
+    return false
+  }
 }
