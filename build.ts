@@ -1,6 +1,5 @@
 import { log } from '@stacksjs/cli'
-
-// import { $ } from 'bun'
+import { generateDeclarationsFromFiles } from './src/generate'
 
 log.info('Building...')
 
@@ -11,13 +10,11 @@ await Bun.build({
   target: 'bun',
 })
 
-// tigger dts generation here
-
-// await $`cp ./dist/src/index.js ./dist/index.js`
-// await $`rm -rf ./dist/src`
-// await $`cp ./dist/bin/cli.js ./dist/cli.js`
-// await $`rm -rf ./dist/bin`
-// await $`cp ./bin/cli.d.ts ./dist/cli.d.ts`
-// await $`rm ./bin/cli.d.ts`
+try {
+  await generateDeclarationsFromFiles()
+  console.log('Generated declarations')
+} catch (error) {
+  console.error('Error generating declarations:', error)
+}
 
 log.success('Built')
