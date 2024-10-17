@@ -3,7 +3,7 @@ import { version } from '../package.json'
 
 // import { generate } from '../src/generate'
 
-const cli = new CAC('dts')
+const cli = new CAC('dtsx')
 
 cli
   .command('generate', 'Start the Reverse Proxy Server')

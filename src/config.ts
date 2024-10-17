@@ -9,7 +9,7 @@ export const config: DtsGenerationConfig = (await loadConfig({
   defaultConfig: {
     cwd: process.cwd(),
     root: './src',
-    file: '**/*.ts',
+    entrypoints: ['**/*.ts'],
     outdir: './dist',
     keepComments: true,
     clean: true,

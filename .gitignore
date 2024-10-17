@@ -12,3 +12,4 @@ node_modules
 temp
 docs/.vitepress/cache
 storage
+fixtures/generated

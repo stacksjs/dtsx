@@ -6,7 +6,7 @@
 export interface DtsGenerationConfig {
   cwd: string
   root: string
-  file: string
+  entrypoints: string[]
   outdir: string
   keepComments: boolean
   clean: boolean

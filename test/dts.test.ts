@@ -14,9 +14,9 @@ describe('dts-generation', () => {
     const example = 'example-1'
 
     const config: DtsGenerationOption = {
-      file: join(inputDir, `${example}.ts`),
+      entrypoints: [join(inputDir, `${example}.ts`)],
       outdir: generatedDir,
-      clean: true,
+      clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
     }
 
@@ -35,9 +35,9 @@ describe('dts-generation', () => {
     const example = 'example-2'
 
     const config: DtsGenerationOption = {
-      file: join(inputDir, `${example}.ts`),
+      entrypoints: [join(inputDir, `${example}.ts`)],
       outdir: generatedDir,
-      clean: true,
+      clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
     }
 
@@ -56,9 +56,9 @@ describe('dts-generation', () => {
     const example = 'example-3'
 
     const config: DtsGenerationOption = {
-      file: join(inputDir, `${example}.ts`),
+      entrypoints: [join(inputDir, `${example}.ts`)],
       outdir: generatedDir,
-      clean: true,
+      clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
     }
 
@@ -77,9 +77,9 @@ describe('dts-generation', () => {
     const example = 'example-4'
 
     const config: DtsGenerationOption = {
-      file: join(inputDir, `${example}.ts`),
+      entrypoints: [join(inputDir, `${example}.ts`)],
       outdir: generatedDir,
-      clean: true,
+      clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
     }
 
@@ -98,9 +98,9 @@ describe('dts-generation', () => {
     const example = 'example-5'
 
     const config: DtsGenerationOption = {
-      file: join(inputDir, `${example}.ts`),
+      entrypoints: [join(inputDir, `${example}.ts`)],
       outdir: generatedDir,
-      clean: true,
+      clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
     }
 
@@ -119,7 +119,6 @@ describe('dts-generation', () => {
     // Clean up generated files
     try {
       await rm(generatedDir, { recursive: true, force: true })
-      console.log('Cleaned up generated files')
     } catch (error) {
       console.error('Error cleaning up generated files:', error)
     }
