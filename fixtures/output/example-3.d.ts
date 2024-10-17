@@ -1,12 +1,12 @@
 export declare const endpoints
 
-export interface Order  {
+export interface Order {
   orderId: number
   userId: number
   productIds: number[]
 }
 
-export interface OrderResponse  {
+export interface OrderResponse {
   success: boolean
   order: Order
 }

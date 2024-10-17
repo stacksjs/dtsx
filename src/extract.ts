@@ -87,5 +87,5 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   }
 
   // Apply final formatting
-  return formatDeclarations(declarations, false)
+  return formatDeclarations(declarations)
 }

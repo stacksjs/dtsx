@@ -6,7 +6,7 @@ export declare const config: { [key: string]: string }
 /**
  * Example of interface declaration
  */
-export interface User  {
+export interface User {
   id: number
   name: string
   email: string
@@ -15,7 +15,7 @@ export interface User  {
 /**
  * Example of type declaration
  */
-export interface ResponseData  {
+export interface ResponseData {
   success: boolean
   data: User[]
 }

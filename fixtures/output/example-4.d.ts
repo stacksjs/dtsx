@@ -1,6 +1,6 @@
 export declare const apiKeys
 
-export interface AuthResponse  {
+export interface AuthResponse {
   token: string
   expiresIn: number
 }

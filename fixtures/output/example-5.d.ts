@@ -1,12 +1,12 @@
 export declare const defaultHeaders
 
-export interface Comment  {
+export interface Comment {
   id: number
   postId: number
   body: string
 }
 
-export interface CommentsResponse  {
+export interface CommentsResponse {
   comments: Comment[]
 }
 
