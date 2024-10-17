@@ -1,12 +1,12 @@
 import { CAC } from '@stacksjs/cli'
 import { version } from '../package.json'
 import { generate } from '../src/generate'
-import type { DtsGenerationOption } from '../src/types'
+import type { DtsGenerationOption, DtsGenerationConfig } from '../src/types'
 import { resolve } from 'node:path'
 
 const cli = new CAC('dtsx')
 
-const defaultOptions: DtsGenerationOption = {
+const defaultOptions: DtsGenerationConfig = {
   cwd: process.cwd(),
   root: './src',
   entrypoints: ['**/*.ts'],
@@ -33,21 +33,21 @@ cli
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .action(async (options: DtsGenerationOption) => {
     try {
-      const mergedOptions: DtsGenerationOption = {
-        ...defaultOptions,
-        ...options,
-        entrypoints: options.entrypoints ? options.entrypoints.split(',') : defaultOptions.entrypoints,
+      const config: DtsGenerationConfig = {
+        entrypoints: options.entrypoints ? options.entrypoints : defaultOptions.entrypoints,
         cwd: resolve(options.cwd || defaultOptions.cwd),
         root: resolve(options.root || defaultOptions.root),
         outdir: resolve(options.outdir || defaultOptions.outdir),
         tsconfigPath: resolve(options.tsconfigPath || defaultOptions.tsconfigPath),
+        keepComments: options.keepComments || defaultOptions.keepComments,
+        clean: options.clean || defaultOptions.clean,
       }
 
       // if (options.verbose) {
       //   console.log('Using options:', mergedOptions)
       // }
 
-      await generate(mergedOptions)
+      await generate(config)
     } catch (error) {
       console.error('Error generating .d.ts files:', error)
       process.exit(1)
