@@ -19,9 +19,9 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
   return Array.prototype.concat(...files).filter(file => extname(file) === '.ts')
 }
 
-export async function checkIsolatedDeclarations(options: DtsGenerationConfig): Promise<boolean> {
+export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): Promise<boolean> {
   try {
-    const tsconfigPath = options.tsconfigPath || join(options.root, 'tsconfig.json')
+    const tsconfigPath = options?.tsconfigPath || join(options?.root ?? process.cwd(), 'tsconfig.json')
     const tsconfigContent = await readFile(tsconfigPath, 'utf-8')
     const tsconfig = JSON.parse(tsconfigContent)
 

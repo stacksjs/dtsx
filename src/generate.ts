@@ -6,7 +6,7 @@ import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from '.
 import { extractTypeFromSource } from './extract'
 import { glob } from 'tinyglobby'
 
-export async function generateDeclarationsFromFiles(options: DtsGenerationConfig): Promise<void> {
+export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
   // console.log('Generating declaration files...', options)
   try {
     // Check for isolatedModules setting
@@ -16,16 +16,16 @@ export async function generateDeclarationsFromFiles(options: DtsGenerationConfig
       return
     }
 
-    if (options.clean) {
+    if (options?.clean) {
       // console.log('Cleaning output directory...')
       await rm(options.outdir, { recursive: true, force: true })
     }
 
     let files: string[]
-    if (options.entrypoints) {
+    if (options?.entrypoints) {
       files = await glob(options.entrypoints, { cwd: options.root ?? options.cwd, absolute: true })
     } else {
-      files = await getAllTypeScriptFiles(options.root)
+      files = await getAllTypeScriptFiles(options?.root)
     }
 
     // console.log('Found the following TypeScript files:', files)
@@ -35,9 +35,9 @@ export async function generateDeclarationsFromFiles(options: DtsGenerationConfig
       const fileDeclarations = await extractTypeFromSource(file)
 
       if (fileDeclarations) {
-        const relativePath = relative(options.root, file)
+        const relativePath = relative(options?.root ?? './src', file)
         const parsedPath = parse(relativePath)
-        const outputPath = join(options.outdir, `${parsedPath.name}.d.ts`)
+        const outputPath = join(options?.outdir ?? './dist', `${parsedPath.name}.d.ts`)
 
         // Ensure the directory exists
         await mkdir(dirname(outputPath), { recursive: true })
