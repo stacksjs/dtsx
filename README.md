@@ -57,6 +57,7 @@ The Reverse Proxy can be configured using a `dts.config.ts` _(or `dts.config.js`
 export default {
   cwd: './',
   root: './src',
+  entrypoints: ['**/*.ts'],
   outdir: './dist',
   keepComments: true,
   clean: true,
