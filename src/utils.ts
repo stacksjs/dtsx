@@ -43,7 +43,7 @@ export function formatDeclarations(declarations: string, isConfigFile: boolean):
     .replace(/export (interface|type) ([^\{]+)\s*\{\s*\n/g, 'export $1 $2 {\n')
     .replace(/\n\s*\}/g, '\n}')
     .replace(/\/\*\*\n([^*]*)(\n \*\/)/g, (match, content) => {
-      const formattedContent = content.split('\n').map(line => ` *${line.trim() ? ' ' + line.trim() : ''}`).join('\n')
+      const formattedContent = content.split('\n').map((line: string) => ` *${line.trim() ? ' ' + line.trim() : ''}`).join('\n')
       return `/**\n${formattedContent}\n */`
     })
     .trim() + '\n'

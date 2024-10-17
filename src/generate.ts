@@ -2,8 +2,8 @@ import type { DtsGenerationConfig, DtsGenerationOption } from './types'
 import { rm, mkdir } from 'node:fs/promises'
 import { join, relative, dirname } from 'node:path'
 import { config } from './config'
-import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations, formatDeclarations } from './utils'
-import { extractTypeFromSource, extractConfigTypeFromSource, extractIndexTypeFromSource } from './extract'
+import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from './utils'
+import { extractTypeFromSource } from './extract'
 
 export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
   try {
