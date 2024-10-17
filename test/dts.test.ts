@@ -1,29 +1,40 @@
-import { afterEach, beforeAll, describe, expect, it } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { join } from 'node:path'
-import { generateDeclarationsFromFiles } from '../src/generate'
+import { readdir } from 'node:fs/promises'
+import { generate } from '../src/generate'
+import type { DtsGenerationConfig } from '../src/types'
 
 describe('dts-generation', () => {
-  beforeAll(() => {
-    process.env.APP_ENV = 'test'
-  })
+  const cwdDir = join(__dirname, '..')
+  const inputDir = join(cwdDir, 'fixtures/input')
+  const outputDir = join(cwdDir, 'fixtures/output')
 
-  const testDir = join(__dirname, '../fixtures/input/')
-  const expectedOutputPath = join(__dirname, '../fixtures/output/examples-1-5.d.ts')
+  const config: DtsGenerationConfig = {
+    cwd: cwdDir,
+    root: inputDir,
+    outdir: outputDir,
+    keepComments: true,
+    clean: false,
+    tsconfigPath: join(cwdDir, 'tsconfig.json'),
+  }
 
-  it('should generate correct type declarations', async () => {
-    const output = await generateDeclarationsFromFiles(testDir)
+  it('should generate correct type declarations for all input files', async () => {
+    // Generate the declaration files
+    await generate(config)
 
-    // Write the output to a file for comparison (optional)
-    // await fs.writeFile(expectedOutputPath, output);
+    // Get all input files
+    const inputFiles = await readdir(inputDir)
 
-    // Expected output (you can adjust this based on your actual expected output)
-    const expectedOutput = Bun.file(expectedOutputPath).text()
+    for (const file of inputFiles) {
+      const outputPath = join(outputDir, file.replace('.ts', '.d.ts'))
+      const generatedPath = join(outputDir, file.replace('.ts', '.d.ts'))
 
-    // Compare the generated output with the expected output
-    expect((output)).toBe(await expectedOutput)
-  })
+      // Read expected and generated content
+      const expectedContent = await Bun.file(outputPath).text()
+      const generatedContent = await Bun.file(generatedPath).text()
 
-  afterEach(() => {
-    // Clean up any files or state if necessary
+      // Compare the contents
+      expect(generatedContent.trim()).toBe(expectedContent.trim())
+    }
   })
 })
