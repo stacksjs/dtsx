@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
-async function extractTypeFromSource(filePath: string): Promise<string> {
+export async function extractTypeFromSource(filePath: string): Promise<string> {
   const fileContent = await readFile(filePath, 'utf-8')
   let declarations = ''
   let usedTypes = new Set<string>()
