@@ -34,7 +34,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
     declarations += `${declaration}\n\n`
 
     // Check for types used in parameters
-    const paramTypes = params.match(/:\s*([^,)]+)/g) || []
+    const paramTypes = params.match(/:\s*([^,)=]+)/g) || []
     paramTypes.forEach(type => addUsedType(type.slice(1).trim()))
 
     // Check for return type
