@@ -8,9 +8,10 @@
 
 ## Features
 
-- Fast .d.ts generation via isolatedDeclaration
+- Fast .d.ts generation _(via isolatedDeclaration)_
+- Highly configurable
 - Cross-platform binary
-- Configurability
+- Dependency-free
 - Bun-powered
 
 ## Install
