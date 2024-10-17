@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
+import { formatComment } from './utils'
 import { config } from './config'
 import { type DtsGenerationConfig } from './types'
 
@@ -33,36 +34,29 @@ export async function checkIsolatedDeclarations(options: DtsGenerationConfig): P
 
 export function formatDeclarations(declarations: string, isConfigFile: boolean): string {
   if (isConfigFile) {
-    return declarations
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/(\w+):\s+/g, '$1: ')
-      .trim() + '\n'
+    return declarations.trim() + '\n'
   }
 
   return declarations
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/(\w+):\s+/g, '$1: ')
-    .replace(/\s*\n\s*/g, '\n')
-    .replace(/\{\s*\n\s*\n/g, '{\n')
+    .replace(/;\n/g, '\n')
+    .replace(/export (interface|type) ([^\{]+)\s*\{\s*\n/g, 'export $1 $2 {\n')
     .replace(/\n\s*\}/g, '\n}')
-    .replace(/;\s*\n/g, '\n')
-    .replace(/export interface ([^\{]+)\{/g, 'export interface $1{ ')
-    .replace(/^(\s*\w+:.*(?:\n|$))/gm, '  $1')
-    .replace(/}\n\n(?=\/\*\*|export (interface|type))/g, '}\n\n')
-    .replace(/^(import .*\n)+/m, match => match.trim() + '\n\n')
-    .replace(/(\/\*\*[\s\S]*?\*\/\s*)(export\s+(?:interface|type|const))/g, '$1\n$2')
-    .replace(/\*\/\n\n/g, '*/\n') // Remove extra newline after comment
-    .replace(/\* \//g, '*/') // Ensure proper closing of comments
+    .replace(/\/\*\*\n([^*]*)(\n \*\/)/g, (match, content) => {
+      const formattedContent = content.split('\n').map(line => ` *${line.trim() ? ' ' + line.trim() : ''}`).join('\n')
+      return `/**\n${formattedContent}\n */`
+    })
     .trim() + '\n'
 }
 
 export function formatComment(comment: string): string {
-  return comment
-    .replace(/^\/\*\*\s*\n?/, '/**\n * ')
-    .replace(/^[\t ]*\*[\t ]?/gm, ' * ')
-    .replace(/\s*\*\/\s*$/, '\n */')
-    .replace(/^\s*\* $/gm, ' *')
-    .replace(/\* \//g, '*/')
-    .replace(/\n \* \n/g, '\n *\n')
-    .trim();
+  const lines = comment.split('\n')
+  return lines
+    .map((line, index) => {
+      if (index === 0) return '/**'
+      if (index === lines.length - 1) return ' */'
+      const trimmedLine = line.replace(/^\s*\*?\s?/, '').trim()
+      return ` * ${trimmedLine}`
+    })
+    .join('\n')
 }

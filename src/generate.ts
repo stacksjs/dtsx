@@ -8,57 +8,46 @@ import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations, formatDe
 import { extractTypeFromSource, extractConfigTypeFromSource, extractIndexTypeFromSource } from './extract'
 
 export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
-  // Check for isolatedModules setting
-  const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
-  if (!isIsolatedDeclarations) {
-    console.error('Error: isolatedModules must be set to true in your tsconfig.json. Ensure `tsc --noEmit` does not output any errors.')
-    return
-  }
-
-  if (options.clean) {
-    console.log('Cleaning output directory...')
-    await rm(options.outdir, { recursive: true, force: true })
-  }
-
-  const validationResult = validateOptions(options)
-
-  if (validationResult.isErr()) {
-    console.error(validationResult.error.message)
-    return
-  }
-
-  const files = await getAllTypeScriptFiles(options.root)
-  console.log('Found the following TypeScript files:', files)
-
-  for (const file of files) {
-    console.log(`Processing file: ${file}`)
-    let fileDeclarations
-    const isConfigFile = file.endsWith('config.ts')
-    const isIndexFile = file.endsWith('index.ts')
-    if (isConfigFile) {
-      fileDeclarations = await extractConfigTypeFromSource(file)
-    } else if (isIndexFile) {
-      fileDeclarations = await extractIndexTypeFromSource(file)
-    } else {
-      fileDeclarations = await extractTypeFromSource(file)
+  try {
+    // Check for isolatedModules setting
+    const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
+    if (!isIsolatedDeclarations) {
+      console.error('Error: isolatedModules must be set to true in your tsconfig.json. Ensure `tsc --noEmit` does not output any errors.')
+      return
     }
 
-    if (fileDeclarations) {
-      const relativePath = relative(options.root, file)
-      const outputPath = join(options.outdir, relativePath.replace(/\.ts$/, '.d.ts'))
-
-      // Ensure the directory exists
-      await mkdir(dirname(outputPath), { recursive: true })
-
-      // Format and write the declarations
-      const formattedDeclarations = formatDeclarations(fileDeclarations, isConfigFile)
-      await writeToFile(outputPath, formattedDeclarations)
-
-      console.log(`Generated ${outputPath}`)
+    if (options.clean) {
+      console.log('Cleaning output directory...')
+      await rm(options.outdir, { recursive: true, force: true })
     }
-  }
 
-  console.log('Declaration file generation complete')
+    const files = await getAllTypeScriptFiles(options.root)
+    console.log('Found the following TypeScript files:', files)
+
+    for (const file of files) {
+      console.log(`Processing file: ${file}`)
+      const fileDeclarations = await extractTypeFromSource(file)
+
+      if (fileDeclarations) {
+        const relativePath = relative(options.root, file)
+        const outputPath = join(options.outdir, relativePath.replace(/\.ts$/, '.d.ts'))
+
+        // Ensure the directory exists
+        await mkdir(dirname(outputPath), { recursive: true })
+
+        // Write the declarations without additional formatting
+        await writeToFile(outputPath, fileDeclarations)
+
+        console.log(`Generated ${outputPath}`)
+      } else {
+        console.warn(`No declarations extracted for ${file}`)
+      }
+    }
+
+    console.log('Declaration file generation complete')
+  } catch (error) {
+    console.error('Error generating declarations:', error)
+  }
 }
 
 export async function generate(options?: DtsGenerationOption): Promise<void> {
