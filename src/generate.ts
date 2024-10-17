@@ -4,7 +4,7 @@ import { rm, mkdir } from 'node:fs/promises'
 import { join, relative, dirname } from 'node:path'
 import { err, ok } from 'neverthrow'
 import { config } from './config'
-import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from './utils'
+import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations, formatDeclarations } from './utils'
 import { extractTypeFromSource, extractConfigTypeFromSource, extractIndexTypeFromSource } from './extract'
 
 export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
@@ -58,34 +58,11 @@ export async function generateDeclarationsFromFiles(options: DtsGenerationConfig
     }
   }
 
-
   console.log('Declaration file generation complete')
 }
 
 export async function generate(options?: DtsGenerationOption): Promise<void> {
   await generateDeclarationsFromFiles({ ...config, ...options })
-}
-
-function formatDeclarations(declarations: string, isConfigFile: boolean): string {
-  if (isConfigFile) {
-    return declarations
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/(\w+):\s+/g, '$1: ')
-      .trim() + '\n'
-  }
-
-  return declarations
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/(\w+):\s+/g, '$1: ')
-    .replace(/\s*\n\s*/g, '\n')
-    .replace(/\{\s*\n\s*\n/g, '{\n')
-    .replace(/\n\s*\}/g, '\n}')
-    .replace(/;\s*\n/g, '\n')
-    .replace(/export interface ([^\{]+)\{/g, 'export interface $1{ ')
-    .replace(/^(\s*\w+:.*(?:\n|$))/gm, '  $1')
-    .replace(/}\n\n(?=\/\*\*|export (interface|type))/g, '}\n')
-    .replace(/^(import .*\n)+/m, match => match.trim() + '\n')
-    .trim() + '\n'
 }
 
 function validateOptions(options: unknown): Result<DtsGenerationOption, Error> {

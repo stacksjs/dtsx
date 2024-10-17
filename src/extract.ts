@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { formatComment } from './utils'
 
 export async function extractTypeFromSource(filePath: string): Promise<string> {
   const fileContent = await readFile(filePath, 'utf-8')
@@ -30,34 +31,44 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
     if (defaultImport2) importMap.get(from)!.add(defaultImport2)
   }
 
-  // Handle exported functions with comments
-  const exportedFunctionRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+)(async\s+)?(function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+))/g
+  // Handle exports with comments
+  const exportRegex = /(\/\*\*[\s\S]*?\*\/)?\s*(export\s+(?:async\s+)?(?:function|const|let|var|class|interface|type)\s+\w+[\s\S]*?)(?=\n\s*(?:\/\*\*|export|$))/g;
   let match
-  while ((match = exportedFunctionRegex.exec(fileContent)) !== null) {
-    const [, comment, exportKeyword, isAsync, , name, params, returnType] = match
-    const cleanParams = params.replace(/\s*=\s*[^,)]+/g, '')
-    let cleanReturnType = returnType.trim()
+  while ((match = exportRegex.exec(fileContent)) !== null) {
+    const [, comment, exportStatement] = match
+    const formattedComment = comment ? formatComment(comment) : ''
+    let formattedExport = exportStatement.trim()
 
-    if (isAsync && !cleanReturnType.startsWith('Promise')) {
-      cleanReturnType = `Promise<${cleanReturnType}>`
+    if (formattedExport.startsWith('export function') || formattedExport.startsWith('export async function')) {
+      formattedExport = formattedExport.replace(/^export\s+(async\s+)?function/, 'export declare function')
+      const functionSignature = formattedExport.match(/^.*?\)/)
+      if (functionSignature) {
+        let params = functionSignature[0].slice(functionSignature[0].indexOf('(') + 1, -1)
+        params = params.replace(/\s*=\s*[^,)]+/g, '') // Remove default values
+        const returnType = formattedExport.match(/\):\s*([^{]+)/)
+        formattedExport = `export declare function ${formattedExport.split('function')[1].split('(')[0].trim()}(${params})${returnType ? `: ${returnType[1].trim()}` : ''};`
+      }
+    } else if (formattedExport.startsWith('export const') || formattedExport.startsWith('export let') || formattedExport.startsWith('export var')) {
+      formattedExport = formattedExport.replace(/^export\s+(const|let|var)/, 'export declare $1')
+      formattedExport = formattedExport.split('=')[0].trim() + ';'
+    } else if (formattedExport.startsWith('export interface')) {
+      // Keep interface declarations as they are, including their content
+      formattedExport = formattedExport.replace(/\s*\{\s*$/m, ' {')
+        .replace(/^\s*}/m, '}')
+        .replace(/;\s*$/g, '')
+    } else if (formattedExport.startsWith('export type')) {
+      // Keep type declarations as they are
+      formattedExport = formattedExport.replace(/;\s*$/, '')
     }
 
-    const declaration = `${comment || ''}${exportKeyword}declare function ${name}(${cleanParams}): ${cleanReturnType}`
-    declarations += `${declaration}\n\n`
-
-    // Add parameter types and return type to usedTypes
-    params.match(/:\s*(\w+)/g)?.forEach(type => usedTypes.add(type.slice(1).trim()))
-    cleanReturnType.match(/\b([A-Z]\w+)\b/g)?.forEach(type => usedTypes.add(type))
-  }
-
-  // Handle other exports (interface, type, const)
-  const otherExportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+((?:interface|type|const)\s+\w+(?:\s*=\s*[^;]+|\s*\{[^}]*\})));?/gs
-  while ((match = otherExportRegex.exec(fileContent)) !== null) {
-    const [, comment, exportStatement] = match
-    declarations += `${comment || ''}${exportStatement}\n\n`
+    declarations += `${formattedComment}${formattedExport}\n\n`
 
     // Add types used in the export to usedTypes
-    exportStatement.match(/\b([A-Z]\w+)\b/g)?.forEach(type => usedTypes.add(type))
+    const typeRegex = /\b([A-Z]\w+)(?:<[^>]*>)?/g
+    let typeMatch
+    while ((typeMatch = typeRegex.exec(formattedExport)) !== null) {
+      usedTypes.add(typeMatch[1])
+    }
   }
 
   // Generate import statements for used types
@@ -65,7 +76,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   importMap.forEach((types, path) => {
     const usedTypesFromPath = [...types].filter(type => usedTypes.has(type))
     if (usedTypesFromPath.length > 0) {
-      importDeclarations += `import type { ${usedTypesFromPath.join(', ')} } from '${path}'\n`
+      importDeclarations += `import type { ${usedTypesFromPath.join(', ')} } from '${path}';\n`
     }
   })
 
