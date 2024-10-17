@@ -1,10 +1,11 @@
 import type { Result } from 'neverthrow'
 import type { DtsGenerationConfig, DtsGenerationOption } from './types'
-import { readFile, rm, mkdir } from 'node:fs/promises'
+import { rm, mkdir } from 'node:fs/promises'
 import { join, relative, dirname } from 'node:path'
 import { err, ok } from 'neverthrow'
 import { config } from './config'
 import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from './utils'
+import { extractTypeFromSource, extractConfigTypeFromSource, extractIndexTypeFromSource } from './extract'
 
 export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
   // Check for isolatedModules setting
@@ -63,113 +64,6 @@ export async function generateDeclarationsFromFiles(options: DtsGenerationConfig
 
 export async function generate(options?: DtsGenerationOption): Promise<void> {
   await generateDeclarationsFromFiles({ ...config, ...options })
-}
-
-async function extractTypeFromSource(filePath: string): Promise<string> {
-  const fileContent = await readFile(filePath, 'utf-8')
-  let declarations = ''
-  let imports = new Set<string>()
-
-  // Handle imported types
-  const importRegex = /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g
-  let importMatch
-  while ((importMatch = importRegex.exec(fileContent)) !== null) {
-    const types = importMatch[1].split(',').map(t => t.trim())
-    const from = importMatch[2]
-    types.forEach(type => imports.add(`${type}:${from}`))
-  }
-
-  // Handle exported functions with comments
-  const exportedFunctionRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+))/g
-  let match
-  while ((match = exportedFunctionRegex.exec(fileContent)) !== null) {
-    const [, comment, , isAsync, name, params, returnType] = match
-    const cleanParams = params.replace(/\s*=\s*[^,)]+/g, '')
-    const declaration = `${comment || ''}export declare ${isAsync || ''}function ${name}(${cleanParams}): ${returnType.trim()}`
-    declarations += `${declaration}\n\n`
-
-    // Check for types used in the declaration and add them to imports
-    const usedTypes = [...params.matchAll(/(\w+):\s*([A-Z]\w+)/g), ...returnType.matchAll(/\b([A-Z]\w+)\b/g)]
-    usedTypes.forEach(([, , type]) => {
-      if (type) imports.add(type)
-    })
-  }
-
-  // Handle other exports (interface, type, const)
-  const otherExportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+((?:interface|type|const)\s+\w+(?:\s*=\s*[^;]+|\s*\{[^}]*\})));?/gs
-  while ((match = otherExportRegex.exec(fileContent)) !== null) {
-    const [, comment, exportStatement, declaration] = match
-    if (declaration.startsWith('interface') || declaration.startsWith('type')) {
-      declarations += `${comment || ''}${exportStatement}\n\n`
-    } else if (declaration.startsWith('const')) {
-      const [, name, type] = declaration.match(/const\s+(\w+):\s*([^=]+)/) || []
-      if (name && type) {
-        declarations += `${comment || ''}export declare const ${name}: ${type.trim()}\n\n`
-      }
-    }
-
-    // Check for types used in the declaration and add them to imports
-    const usedTypes = declaration.match(/\b([A-Z]\w+)\b/g) || []
-    usedTypes.forEach(type => imports.add(type))
-  }
-
-  // Generate import statements for used types
-  let importDeclarations = ''
-  const importMap = new Map()
-  imports.forEach(typeWithPath => {
-    const [type, path] = typeWithPath.split(':')
-    if (path) {
-      if (!importMap.has(path)) importMap.set(path, new Set())
-      importMap.get(path).add(type)
-    }
-  })
-  importMap.forEach((types, path) => {
-    importDeclarations += `import type { ${Array.from(types).join(', ')} } from '${path}'\n`
-  })
-
-  if (importDeclarations) {
-    declarations = importDeclarations + '\n' + declarations
-  }
-
-  return declarations.trim() + '\n'
-}
-
-async function extractConfigTypeFromSource(filePath: string): Promise<string> {
-  const fileContent = await readFile(filePath, 'utf-8')
-  let declarations = ''
-
-  // Handle type imports
-  const importRegex = /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g
-  let importMatch
-  while ((importMatch = importRegex.exec(fileContent)) !== null) {
-    const types = importMatch[1].split(',').map(t => t.trim())
-    const from = importMatch[2]
-    declarations += `import type { ${types.join(', ')} } from '${from}'\n\n`  // Add two newlines here
-  }
-
-  // Handle exports
-  const exportRegex = /export\s+const\s+(\w+)\s*:\s*([^=]+)\s*=/g
-  let exportMatch
-  while ((exportMatch = exportRegex.exec(fileContent)) !== null) {
-    const [, name, type] = exportMatch
-    declarations += `export declare const ${name}: ${type.trim()}\n`
-  }
-
-  return declarations.trim() + '\n'
-}
-
-async function extractIndexTypeFromSource(filePath: string): Promise<string> {
-  const fileContent = await readFile(filePath, 'utf-8')
-  let declarations = ''
-
-  // Handle re-exports
-  const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/g
-  let match
-  while ((match = reExportRegex.exec(fileContent)) !== null) {
-    declarations += `${match[0]}\n`
-  }
-
-  return declarations.trim() + '\n'
 }
 
 function formatDeclarations(declarations: string, isConfigFile: boolean): string {
