@@ -6,53 +6,58 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   let usedTypes = new Set<string>()
   let importMap = new Map<string, Set<string>>()
 
-  // Capture all imported types
-  const importRegex = /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g
+  // Capture all imports
+  const importRegex = /import\s+(?:(type)\s+)?(?:(\{[^}]+\})|(\w+))(?:\s*,\s*(?:(\{[^}]+\})|(\w+)))?\s+from\s+['"]([^'"]+)['"]/g
   let importMatch
   while ((importMatch = importRegex.exec(fileContent)) !== null) {
-    const types = importMatch[1].split(',').map(t => t.trim())
-    const from = importMatch[2]
-    if (!importMap.has(from)) importMap.set(from, new Set())
-    types.forEach(type => importMap.get(from)!.add(type))
-  }
-
-  // Function to add used types
-  const addUsedType = (type: string) => {
-    const cleanType = type.replace(/[\[\]?]/g, '').trim() // Remove brackets and question marks
-    if (/^[A-Z]/.test(cleanType)) { // Only add if it starts with a capital letter (likely a type)
-      usedTypes.add(cleanType)
+    const [, isTypeImport, namedImports1, defaultImport1, namedImports2, defaultImport2, from] = importMatch
+    const processImports = (imports: string | undefined, isType: boolean) => {
+      if (imports) {
+        const types = imports.replace(/[{}]/g, '').split(',').map(t => {
+          const [name, alias] = t.split(' as ').map(s => s.trim())
+          return { name: name.replace(/^type\s+/, ''), alias: alias || name.replace(/^type\s+/, '') }
+        })
+        if (!importMap.has(from)) importMap.set(from, new Set())
+        types.forEach(({ name, alias }) => {
+          importMap.get(from)!.add(name)
+        })
+      }
     }
+
+    processImports(namedImports1, !!isTypeImport)
+    processImports(namedImports2, !!isTypeImport)
+    if (defaultImport1) importMap.get(from)!.add(defaultImport1)
+    if (defaultImport2) importMap.get(from)!.add(defaultImport2)
   }
 
   // Handle exported functions with comments
-  const exportedFunctionRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+))/g
+  const exportedFunctionRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+)(async\s+)?(function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+))/g
   let match
   while ((match = exportedFunctionRegex.exec(fileContent)) !== null) {
-    const [, comment, , isAsync, name, params, returnType] = match
+    const [, comment, exportKeyword, isAsync, , name, params, returnType] = match
     const cleanParams = params.replace(/\s*=\s*[^,)]+/g, '')
-    const declaration = `${comment || ''}export declare ${isAsync || ''}function ${name}(${cleanParams}): ${returnType.trim()}`
+    let cleanReturnType = returnType.trim()
+
+    if (isAsync && !cleanReturnType.startsWith('Promise')) {
+      cleanReturnType = `Promise<${cleanReturnType}>`
+    }
+
+    const declaration = `${comment || ''}${exportKeyword}declare function ${name}(${cleanParams}): ${cleanReturnType}`
     declarations += `${declaration}\n\n`
 
-    // Check for types used in parameters
-    const paramTypes = params.match(/:\s*([^,)=]+)/g) || []
-    paramTypes.forEach(type => addUsedType(type.slice(1).trim()))
-
-    // Check for return type
-    addUsedType(returnType.trim())
+    // Add parameter types and return type to usedTypes
+    params.match(/:\s*(\w+)/g)?.forEach(type => usedTypes.add(type.slice(1).trim()))
+    cleanReturnType.match(/\b([A-Z]\w+)\b/g)?.forEach(type => usedTypes.add(type))
   }
 
   // Handle other exports (interface, type, const)
   const otherExportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+((?:interface|type|const)\s+\w+(?:\s*=\s*[^;]+|\s*\{[^}]*\})));?/gs
   while ((match = otherExportRegex.exec(fileContent)) !== null) {
-    const [, comment, exportStatement, declaration] = match
+    const [, comment, exportStatement] = match
     declarations += `${comment || ''}${exportStatement}\n\n`
 
-    // Check for types used in the declaration
-    const typeRegex = /\b([A-Z]\w+)\b/g
-    let typeMatch
-    while ((typeMatch = typeRegex.exec(declaration)) !== null) {
-      addUsedType(typeMatch[1])
-    }
+    // Add types used in the export to usedTypes
+    exportStatement.match(/\b([A-Z]\w+)\b/g)?.forEach(type => usedTypes.add(type))
   }
 
   // Generate import statements for used types
