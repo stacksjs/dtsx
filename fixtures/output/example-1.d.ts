@@ -1,15 +1,12 @@
 /**
  * Example of const declaration
  */
-export const config: { [key: string]: string } = {
-  apiUrl: 'https://api.example.com',
-  timeout: '5000',
-}
+export declare const config: { [key: string]: string }
 
 /**
  * Example of interface declaration
  */
-export interface User {
+export interface User  {
   id: number
   name: string
   email: string
@@ -18,7 +15,7 @@ export interface User {
 /**
  * Example of type declaration
  */
-export interface ResponseData {
+export interface ResponseData  {
   success: boolean
   data: User[]
 }
@@ -26,7 +23,4 @@ export interface ResponseData {
 /**
  * Example of function declaration
  */
-export function fetchUsers(): Promise<ResponseData> {
-  return fetch(config.apiUrl)
-    .then(response => response.json()) as Promise<ResponseData>
-}
+export declare function fetchUsers(): Promise<ResponseData>

@@ -6,18 +6,12 @@ export const settings: { [key: string]: any } = {
   language: 'en',
 }
 
-/**
- * Example of interface declaration
- */
 export interface Product {
   id: number
   name: string
   price: number
 }
 
-/**
- * Example of type declaration
- */
 export interface ApiResponse<T> {
   status: number
   message: string
