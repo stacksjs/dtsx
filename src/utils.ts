@@ -1,6 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { formatComment } from './utils'
 import { config } from './config'
 import { type DtsGenerationConfig } from './types'
 
@@ -62,7 +61,7 @@ export function formatDeclarations(declarations: string): string {
   result = result.replace(/\/\*\*\n([^*]*)(\n \*\/)/g, (match, content) => {
     const formattedContent = content
       .split('\n')
-      .map(line => ` *${line.trim() ? ' ' + line.trim() : ''}`)
+      .map((line: string) => ` *${line.trim() ? ' ' + line.trim() : ''}`)
       .join('\n')
     return `/**\n${formattedContent}\n */`
   })
