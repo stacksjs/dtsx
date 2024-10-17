@@ -7,6 +7,13 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   let usedTypes = new Set<string>()
   let importMap = new Map<string, Set<string>>()
 
+  // Handle re-exports
+  const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/g
+  let reExportMatch
+  while ((reExportMatch = reExportRegex.exec(fileContent)) !== null) {
+    declarations += `${reExportMatch[0]}\n`
+  }
+
   // Capture all imports
   const importRegex = /import\s+(?:(type)\s+)?(?:(\{[^}]+\})|(\w+))(?:\s*,\s*(?:(\{[^}]+\})|(\w+)))?\s+from\s+['"]([^'"]+)['"]/g
   let importMatch
@@ -22,7 +29,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
           const [name, alias] = t.split(' as ').map(s => s.trim())
           return { name: name.replace(/^type\s+/, ''), alias: alias || name.replace(/^type\s+/, '') }
         })
-        types.forEach(({ name, alias }) => {
+        types.forEach(({ name }) => {
           importMap.get(from)!.add(name)
         })
       }
@@ -80,12 +87,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   }
 
   // Apply final formatting
-  const formattedDeclarations = formatDeclarations(declarations, false)
-
-  console.log(`Unformatted declarations for ${filePath}:`, declarations)
-  console.log(`Extracted declarations for ${filePath}:`, formattedDeclarations)
-
-  return formattedDeclarations
+  return formatDeclarations(declarations, false)
 }
 
 export async function extractConfigTypeFromSource(filePath: string): Promise<string> {
@@ -114,7 +116,7 @@ export async function extractConfigTypeFromSource(filePath: string): Promise<str
       declarations += `export declare const ${name}: ${type.trim()}\n`
     }
 
-    console.log(`Extracted config declarations for ${filePath}:`, declarations)
+    // console.log(`Extracted config declarations for ${filePath}:`, declarations)
     return declarations.trim() + '\n'
   } catch (error) {
     console.error(`Error extracting config declarations from ${filePath}:`, error)
@@ -133,6 +135,7 @@ export async function extractIndexTypeFromSource(filePath: string): Promise<stri
     declarations += `${match[0]}\n`
   }
 
-  console.log(`Extracted index declarations for ${filePath}:`, declarations)
+  // console.log(`Extracted index declarations for ${filePath}:`, declarations)
+
   return declarations.trim() + '\n'
 }
