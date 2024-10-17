@@ -1,40 +1,59 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, afterEach } from 'bun:test'
 import { join } from 'node:path'
-import { readdir } from 'node:fs/promises'
 import { generate } from '../src/generate'
-import type { DtsGenerationConfig } from '../src/types'
+import type { DtsGenerationOption } from '../src/types'
+import { rm } from 'node:fs/promises'
 
 describe('dts-generation', () => {
-  const cwdDir = join(__dirname, '..')
-  const inputDir = join(cwdDir, 'fixtures/input')
-  const outputDir = join(cwdDir, 'fixtures/output')
+  const testDir = join(__dirname, '../fixtures')
+  const inputDir = join(testDir, 'input')
+  const outputDir = join(testDir, 'output')
+  const generatedDir = join(testDir, 'generated')
 
-  const config: DtsGenerationConfig = {
-    cwd: cwdDir,
-    root: inputDir,
-    outdir: outputDir,
-    keepComments: true,
-    clean: false,
-    tsconfigPath: join(cwdDir, 'tsconfig.json'),
-  }
+  it('should properly generate types for example-1', async () => {
+    const config: DtsGenerationOption = {
+      file: join(__dirname, '..', 'tsconfig.json'),
+      outdir: generatedDir,
+      clean: true,
+      tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+    }
 
-  it('should generate correct type declarations for all input files', async () => {
-    // Generate the declaration files
     await generate(config)
 
-    // Get all input files
-    const inputFiles = await readdir(inputDir)
+    const example = 'example-1'
+    const outputPath = join(outputDir, `${example}.d.ts`)
+    const generatedPath = join(generatedDir, `${example}.d.ts`)
 
-    for (const file of inputFiles) {
-      const outputPath = join(outputDir, file.replace('.ts', '.d.ts'))
-      const generatedPath = join(outputDir, file.replace('.ts', '.d.ts'))
+    const expectedContent = await Bun.file(outputPath).text()
+    const generatedContent = await Bun.file(generatedPath).text()
 
-      // Read expected and generated content
-      const expectedContent = await Bun.file(outputPath).text()
-      const generatedContent = await Bun.file(generatedPath).text()
+    expect(generatedContent).toBe(expectedContent)
 
-      // Compare the contents
-      expect(generatedContent.trim()).toBe(expectedContent.trim())
+  })
+
+  it('should properly generate types for example-2', async () => {
+    await testExample('example-2')
+  })
+
+  it('should properly generate types for example-3', async () => {
+    await testExample('example-3')
+  })
+
+  it('should properly generate types for example-4', async () => {
+    await testExample('example-4')
+  })
+
+  it('should properly generate types for example-5', async () => {
+    await testExample('example-5')
+  })
+
+  afterEach(async () => {
+    // Clean up generated files
+    try {
+      await rm(generatedDir, { recursive: true, force: true })
+      console.log('Cleaned up generated files')
+    } catch (error) {
+      console.error('Error cleaning up generated files:', error)
     }
   })
 })

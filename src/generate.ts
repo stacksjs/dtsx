@@ -4,8 +4,9 @@ import { join, relative, dirname } from 'node:path'
 import { config } from './config'
 import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from './utils'
 import { extractTypeFromSource } from './extract'
+import { glob } from 'tinyglobby'
 
-export async function generateDeclarationsFromFiles(options: DtsGenerationConfig = config): Promise<void> {
+export async function generateDeclarationsFromFiles(options: DtsGenerationConfig): Promise<void> {
   try {
     // Check for isolatedModules setting
     const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
@@ -19,7 +20,13 @@ export async function generateDeclarationsFromFiles(options: DtsGenerationConfig
       await rm(options.outdir, { recursive: true, force: true })
     }
 
-    const files = await getAllTypeScriptFiles(options.root)
+    let files: string[]
+    if (options.file) {
+      files = await glob(options.file, { cwd: options.root ?? options.cwd, absolute: true })
+    } else {
+      files = await getAllTypeScriptFiles(options.root)
+    }
+
     // console.log('Found the following TypeScript files:', files)
 
     for (const file of files) {
