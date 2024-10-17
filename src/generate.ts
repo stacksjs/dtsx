@@ -196,6 +196,10 @@ async function getAllTypeScriptFiles(directory?: string): Promise<string[]> {
   return Array.prototype.concat(...files).filter(file => extname(file) === '.ts')
 }
 
+export async function generate(options?: DtsGenerationOption): Promise<void> {
+  await generateDeclarationsFromFiles({ ...config, ...options })
+}
+
 async function writeToFile(filePath: string, content: string): Promise<void> {
   await Bun.write(filePath, content)
 }
@@ -205,7 +209,8 @@ async function checkIsolatedDeclarations(options: DtsGenerationConfig): Promise<
     const tsconfigPath = options.tsconfigPath || join(options.root, 'tsconfig.json')
     const tsconfigContent = await readFile(tsconfigPath, 'utf-8')
     const tsconfig = JSON.parse(tsconfigContent)
-    return tsconfig.compilerOptions?.isolatedModules === true
+
+    return tsconfig.compilerOptions?.isolatedDeclarations === true
   } catch (error) {
     return false
   }
