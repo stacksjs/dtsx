@@ -10,6 +10,6 @@ export default stacks({
   jsonc: true,
   yaml: true,
   ignores: [
-    'fixtures/**'
-  ]
+    'fixtures/**',
+  ],
 })

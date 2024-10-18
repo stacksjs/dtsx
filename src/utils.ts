@@ -1,7 +1,7 @@
+import type { DtsGenerationConfig } from './types'
 import { readdir, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { config } from './config'
-import { type DtsGenerationConfig } from './types'
 
 export async function writeToFile(filePath: string, content: string): Promise<void> {
   await Bun.write(filePath, content)
@@ -26,14 +26,15 @@ export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): 
     const tsconfig = JSON.parse(tsconfigContent)
 
     return tsconfig.compilerOptions?.isolatedDeclarations === true
-  } catch (error) {
+  }
+  catch (error) {
     return false
   }
 }
 
 export function formatDeclarations(declarations: string): string {
   const lines = declarations.split('\n')
-  const formattedLines = lines.map(line => {
+  const formattedLines = lines.map((line) => {
     // Trim trailing spaces
     line = line.trimEnd()
 
@@ -61,20 +62,22 @@ export function formatDeclarations(declarations: string): string {
   result = result.replace(/\/\*\*\n([^*]*)(\n \*\/)/g, (match, content) => {
     const formattedContent = content
       .split('\n')
-      .map((line: string) => ` *${line.trim() ? ' ' + line.trim() : ''}`)
+      .map((line: string) => ` *${line.trim() ? ` ${line.trim()}` : ''}`)
       .join('\n')
     return `/**\n${formattedContent}\n */`
   })
 
-  return result.trim() + '\n'
+  return `${result.trim()}\n`
 }
 
 export function formatComment(comment: string): string {
   const lines = comment.split('\n')
   return lines
     .map((line, index) => {
-      if (index === 0) return '/**'
-      if (index === lines.length - 1) return ' */'
+      if (index === 0)
+        return '/**'
+      if (index === lines.length - 1)
+        return ' */'
       const trimmedLine = line.replace(/^\s*\*?\s?/, '').trim()
       return ` * ${trimmedLine}`
     })

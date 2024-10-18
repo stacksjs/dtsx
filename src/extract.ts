@@ -4,8 +4,8 @@ import { formatComment, formatDeclarations } from './utils'
 export async function extractTypeFromSource(filePath: string): Promise<string> {
   const fileContent = await readFile(filePath, 'utf-8')
   let declarations = ''
-  let usedTypes = new Set<string>()
-  let importMap = new Map<string, Set<string>>()
+  const usedTypes = new Set<string>()
+  const importMap = new Map<string, Set<string>>()
 
   // Handle re-exports
   const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/g
@@ -25,7 +25,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
 
     const processImports = (imports: string | undefined, isType: boolean) => {
       if (imports) {
-        const types = imports.replace(/[{}]/g, '').split(',').map(t => {
+        const types = imports.replace(/[{}]/g, '').split(',').map((t) => {
           const [name, alias] = t.split(' as ').map(s => s.trim())
           return { name: name.replace(/^type\s+/, ''), alias: alias || name.replace(/^type\s+/, '') }
         })
@@ -37,12 +37,14 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
 
     processImports(namedImports1, !!isTypeImport)
     processImports(namedImports2, !!isTypeImport)
-    if (defaultImport1) importMap.get(from)!.add(defaultImport1)
-    if (defaultImport2) importMap.get(from)!.add(defaultImport2)
+    if (defaultImport1)
+      importMap.get(from)!.add(defaultImport1)
+    if (defaultImport2)
+      importMap.get(from)!.add(defaultImport2)
   }
 
   // Handle exports with comments
-  const exportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(?:async\s+)?(?:function|const|let|var|class|interface|type)\s+\w+[\s\S]*?)(?=\n\s*(?:\/\*\*|export|$))/g;
+  const exportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(?:async\s+)?(?:function|const|let|var|class|interface|type)\s+\w[\s\S]*?)(?=\n\s*(?:\/\*\*|export|$))/g
   let match
   while ((match = exportRegex.exec(fileContent)) !== null) {
     const [, comment, exportStatement] = match
@@ -54,13 +56,14 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
       const functionSignature = formattedExport.match(/^.*?\)/)
       if (functionSignature) {
         let params = functionSignature[0].slice(functionSignature[0].indexOf('(') + 1, -1)
-        params = params.replace(/\s*=\s*[^,)]+/g, '') // Remove default values
+        params = params.replace(/\s*=[^,)]+/g, '') // Remove default values
         const returnType = formattedExport.match(/\):\s*([^{]+)/)
         formattedExport = `export declare function ${formattedExport.split('function')[1].split('(')[0].trim()}(${params})${returnType ? `: ${returnType[1].trim()}` : ''};`
       }
-    } else if (formattedExport.startsWith('export const') || formattedExport.startsWith('export let') || formattedExport.startsWith('export var')) {
+    }
+    else if (formattedExport.startsWith('export const') || formattedExport.startsWith('export let') || formattedExport.startsWith('export var')) {
       formattedExport = formattedExport.replace(/^export\s+(const|let|var)/, 'export declare $1')
-      formattedExport = formattedExport.split('=')[0].trim() + ';'
+      formattedExport = `${formattedExport.split('=')[0].trim()};`
     }
 
     declarations += `${formattedComment}\n${formattedExport}\n\n`
@@ -83,7 +86,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   })
 
   if (importDeclarations) {
-    declarations = importDeclarations + '\n' + declarations
+    declarations = `${importDeclarations}\n${declarations}`
   }
 
   // Apply final formatting

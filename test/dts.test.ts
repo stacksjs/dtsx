@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from 'bun:test'
+import type { DtsGenerationOption } from '../src/types'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { generate } from '../src/generate'
-import type { DtsGenerationOption } from '../src/types'
-import { rm } from 'node:fs/promises'
 
 describe('dts-generation', () => {
   const testDir = join(__dirname, '../fixtures')
@@ -119,7 +119,8 @@ describe('dts-generation', () => {
     // Clean up generated files
     try {
       await rm(generatedDir, { recursive: true, force: true })
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Error cleaning up generated files:', error)
     }
   })

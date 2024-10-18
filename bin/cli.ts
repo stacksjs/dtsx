@@ -1,8 +1,8 @@
+import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
+import { resolve } from 'node:path'
 import { CAC } from '@stacksjs/cli'
 import { version } from '../package.json'
 import { generate } from '../src/generate'
-import type { DtsGenerationOption, DtsGenerationConfig } from '../src/types'
-import { resolve } from 'node:path'
 
 const cli = new CAC('dtsx')
 
@@ -22,7 +22,7 @@ cli
   .option('--root <path>', 'Root directory of the project', { default: defaultOptions.root })
   .option('--entrypoints <files>', 'Entry point files (comma-separated)', {
     default: defaultOptions.entrypoints?.join(','),
-    type: [String]
+    type: [String],
   })
   .option('--outdir <path>', 'Output directory for generated .d.ts files', { default: defaultOptions.outdir })
   .option('--keep-comments', 'Keep comments in generated .d.ts files', { default: defaultOptions.keepComments })
@@ -48,7 +48,8 @@ cli
       // }
 
       await generate(config)
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Error generating .d.ts files:', error)
       process.exit(1)
     }

@@ -13,7 +13,8 @@ await Bun.build({
 try {
   await generateDeclarationsFromFiles()
   console.log('Generated declarations')
-} catch (error) {
+}
+catch (error) {
   console.error('Error generating declarations:', error)
 }
 

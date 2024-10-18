@@ -1,10 +1,10 @@
 import type { DtsGenerationConfig, DtsGenerationOption } from './types'
-import { rm, mkdir } from 'node:fs/promises'
-import { join, relative, dirname, parse } from 'node:path'
-import { config } from './config'
-import { writeToFile, getAllTypeScriptFiles, checkIsolatedDeclarations } from './utils'
-import { extractTypeFromSource } from './extract'
+import { mkdir, rm } from 'node:fs/promises'
+import { dirname, join, parse, relative } from 'node:path'
 import { glob } from 'tinyglobby'
+import { config } from './config'
+import { extractTypeFromSource } from './extract'
+import { checkIsolatedDeclarations, getAllTypeScriptFiles, writeToFile } from './utils'
 
 export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
   // console.log('Generating declaration files...', options)
@@ -24,7 +24,8 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
     let files: string[]
     if (options?.entrypoints) {
       files = await glob(options.entrypoints, { cwd: options.root ?? options.cwd, absolute: true })
-    } else {
+    }
+    else {
       files = await getAllTypeScriptFiles(options?.root)
     }
 
@@ -46,13 +47,15 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
         await writeToFile(outputPath, fileDeclarations)
 
         // console.log(`Generated ${outputPath}`)
-      } else {
+      }
+      else {
         console.warn(`No declarations extracted for ${file}`)
       }
     }
 
     // console.log('Declaration file generation complete')
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Error generating declarations:', error)
   }
 }

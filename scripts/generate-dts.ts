@@ -1,4 +1,4 @@
-import path from 'path'
+import path from 'node:path'
 import { generate } from '../src'
 
 console.log('Generating output...', path.join(__dirname, '..'))
