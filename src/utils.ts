@@ -1,6 +1,7 @@
 import type { DtsGenerationConfig } from './types'
 import { readdir, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
+import process from 'node:process'
 import { config } from './config'
 
 export async function writeToFile(filePath: string, content: string): Promise<void> {

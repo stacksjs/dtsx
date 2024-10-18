@@ -1,5 +1,6 @@
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import { resolve } from 'node:path'
+import process from 'node:process'
 import { CAC } from '@stacksjs/cli'
 import { version } from '../package.json'
 import { generate } from '../src/generate'
