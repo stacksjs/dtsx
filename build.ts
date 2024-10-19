@@ -4,6 +4,8 @@ import { generateDeclarationsFromFiles } from './src/generate'
 
 log.info('Building...')
 
+await fs.rm('./dist', { recursive: true, force: true })
+
 await Bun.build({
   entrypoints: ['./src/index.ts', './bin/cli.ts'],
   outdir: './dist',
