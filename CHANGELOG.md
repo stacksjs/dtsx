@@ -1,6 +1,19 @@
 # Changelog
 
 
+## v0.1.0...main
+
+[compare changes](https://github.com/stacksjs/dts-generation/compare/v0.1.0...main)
+
+### 🏡 Chore
+
+- Add `dtsx` bin to gitignore ([abc38dc](https://github.com/stacksjs/dts-generation/commit/abc38dc))
+- Rely on `prepublishOnly` ([143d499](https://github.com/stacksjs/dts-generation/commit/143d499))
+
+### ❤️ Contributors
+
+- Chris <chrisbreuer93@gmail.com>
+
 ## ...main
 
 
