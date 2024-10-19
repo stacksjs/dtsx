@@ -41,7 +41,7 @@
   ],
   "scripts": {
     "build": "bun build.ts && bun run compile",
-    "compile": "bun build ./bin/cli.ts --compile --minify --outfile dist/dts",
+    "compile": "bun build ./bin/cli.ts --compile --minify --outfile bin/dtsx",
     "lint": "bunx eslint .",
     "lint:fix": "bunx eslint . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
