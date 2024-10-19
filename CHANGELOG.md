@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.2.1...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.2.1...main)
+
+### 🏡 Chore
+
+- Remove `c12` dep ([e9d6a1b](https://github.com/stacksjs/dtsx/commit/e9d6a1b))
+
+### ❤️ Contributors
+
+- Chris <chrisbreuer93@gmail.com>
+
 ## v0.2.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.2.0...main)
