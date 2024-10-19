@@ -34,7 +34,23 @@ jobs:
         env:
           BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
+      - name: Compile Binaries
+        run: bun run compile:all
+
       - name: Create GitHub release
         run: bunx changelogithub
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Attach Binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          files: |
+            bin/dtsx-linux-x64
+            bin/dtsx-linux-arm64
+            bin/dtsx-windows-x64.exe
+            bin/dtsx-darwin-x64
+            bin/dtsx-darwin-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
