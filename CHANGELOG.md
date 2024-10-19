@@ -1,6 +1,24 @@
 # Changelog
 
 
+## v0.2.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.2.0...main)
+
+### 🏡 Chore
+
+- Improve the readme ([aa6c02a](https://github.com/stacksjs/dtsx/commit/aa6c02a))
+- Remove unused dep ([03d57bb](https://github.com/stacksjs/dtsx/commit/03d57bb))
+- Improve readme ([b156264](https://github.com/stacksjs/dtsx/commit/b156264))
+- Adjust readme ([31c72bb](https://github.com/stacksjs/dtsx/commit/31c72bb))
+- Ensure dist is deleted ([a61e051](https://github.com/stacksjs/dtsx/commit/a61e051))
+- Wip ([9e54629](https://github.com/stacksjs/dtsx/commit/9e54629))
+- Minify build ([c4c5d56](https://github.com/stacksjs/dtsx/commit/c4c5d56))
+
+### ❤️ Contributors
+
+- Chris <chrisbreuer93@gmail.com>
+
 ## v0.1.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.1.1...main)
