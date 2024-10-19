@@ -19,7 +19,7 @@
 bun install -d @stacksjs/dtsx
 ```
 
-_@npm.js, please allow us to use the `dtsx` package name 🙏_,
+_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
 <!-- _Alternatively, you can install:_
 
@@ -32,11 +32,11 @@ pkgx install dtsx # wip
 
 There are two ways of using this ".d.ts generation" tool: _as a library or as a CLI._
 
-### Library
+## Library
 
 Given the npm package is installed, you can use the `generate` function to generate TypeScript declaration files from your project.
 
-#### Usage
+### Usage
 
 ```ts
 import { generate } from '@stacksjs/dtsx'
@@ -56,10 +56,11 @@ await generate(options?: Options)
 
 _Available options:_
 
-The library can configured using a `dts.config.ts` _(or `dts.config.js`)_ file and it will be automatically loaded when running the `./dtsx` _(or `bunx dtsx`)_ command.
+Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js`)_ file which is automatically loaded when running the `./dtsx` _(or `bunx dtsx`)_ command. It is also loaded when the `generate` function is called, unless custom options are provided.
 
 ```ts
 // dts.config.ts (or dts.config.js)
+
 export default {
   cwd: './',
   root: './src',
@@ -70,20 +71,20 @@ export default {
 }
 ```
 
-_Then run:_
+_You may also run:_
 
 ```bash
 ./dtsx generate
 
-# or, you may use
+# if the package is installed, you can also run:
 # bunx dtsx generate
 ```
 
-### CLI
+## CLI
 
 The `dtsx` CLI provides a simple way to generate TypeScript declaration files from your project. Here's how to use it:
 
-#### Usage
+### Usage
 
 Generate declaration files using the default options:
 
