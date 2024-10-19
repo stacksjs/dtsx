@@ -1,6 +1,22 @@
 # Changelog
 
 
+## v0.1.1...main
+
+[compare changes](https://github.com/stacksjs/dts-generation/compare/v0.1.1...main)
+
+### 🚀 Enhancements
+
+- Add binaries ([1e3eec3](https://github.com/stacksjs/dts-generation/commit/1e3eec3))
+
+### 🏡 Chore
+
+- Rename package ([05948f1](https://github.com/stacksjs/dts-generation/commit/05948f1))
+
+### ❤️ Contributors
+
+- Chris <chrisbreuer93@gmail.com>
+
 ## v0.1.0...main
 
 [compare changes](https://github.com/stacksjs/dts-generation/compare/v0.1.0...main)
