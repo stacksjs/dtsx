@@ -67,7 +67,6 @@
     "@stacksjs/eslint-config": "^3.8.1-beta.2",
     "@types/bun": "^1.1.11",
     "c12": "^2.0.1",
-    "neverthrow": "^8.0.0",
     "tinyglobby": "^0.2.9",
     "vitepress": "^1.4.1"
   },
