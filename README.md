@@ -17,8 +17,10 @@
 ## Install
 
 ```bash
-bun install -d dts-generation
+bun install -d @stacksjs/dtsx
 ```
+
+_@npm.js, please allow us to use the `dtsx` package name 🙏_,
 
 <!-- _Alternatively, you can install:_
 
