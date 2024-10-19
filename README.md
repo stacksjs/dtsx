@@ -10,8 +10,8 @@
 
 - Fast .d.ts generation _(via isolatedDeclaration)_
 - Highly configurable
+- Lightweight library
 - Cross-platform binary
-- Lightweight & dependency-free library
 
 ## Install
 
@@ -39,19 +39,19 @@ Given the npm package is installed, you can use the `generate` function to gener
 ### Usage
 
 ```ts
+import type { DtsGenerationOptions } from '@stacksjs/dtsx'
 import { generate } from '@stacksjs/dtsx'
 
-interface Options {
-  cwd?: string            // default: process.cwd()
-  root?: string           // default: './src'
-  entrypoints?: string[]  // default: ['**/*.ts']
-  outdir?: string         // default: './dist'
-  keepComments?: boolean  // default: true
-  clean?: boolean         // default: false
-  tsconfigPath?: string   // default: './tsconfig.json'
+const options: DtsGenerationOptions = {
+  cwd: './', // default: process.cwd()
+  root: './src', // default: './src'
+  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
+  outdir: './dist', // default: './dist'
+  keepComments: true, // default: true
+  clean: true, // default: false
 }
 
-await generate(options?: Options)
+await generate(options)
 ```
 
 _Available options:_
