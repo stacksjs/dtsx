@@ -56,8 +56,8 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@stacksjs/cli": "^0.65.0",
-    "@stacksjs/development": "^0.65.0",
+    "@stacksjs/cli": "^0.67.0",
+    "@stacksjs/development": "^0.67.0",
     "@stacksjs/eslint-config": "^3.8.1-beta.2",
     "@types/bun": "^1.1.11",
     "c12": "^2.0.1",

@@ -29,6 +29,8 @@ export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): 
     return tsconfig.compilerOptions?.isolatedDeclarations === true
   }
   catch (error) {
+    // eslint-disable-next-line no-console
+    console.log('Error reading tsconfig.json:', error)
     return false
   }
 }
