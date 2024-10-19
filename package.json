@@ -5,13 +5,13 @@
   "description": "A modern, fast .d.ts generation tool, powered by Bun.",
   "author": "Chris Breuer <chris@stacksjs.org>",
   "license": "MIT",
-  "homepage": "https://github.com/stacksjs/dts-generation#readme",
+  "homepage": "https://github.com/stacksjs/dtsx#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stacksjs/dts-generation.git"
+    "url": "git+https://github.com/stacksjs/dtsx.git"
   },
   "bugs": {
-    "url": "https://github.com/stacksjs/dts-generation/issues"
+    "url": "https://github.com/stacksjs/dtsx/issues"
   },
   "keywords": [
     "dts",

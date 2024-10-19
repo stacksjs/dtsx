@@ -3,15 +3,15 @@
 
 ## v0.1.1...main
 
-[compare changes](https://github.com/stacksjs/dts-generation/compare/v0.1.1...main)
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.1.1...main)
 
 ### 🚀 Enhancements
 
-- Add binaries ([1e3eec3](https://github.com/stacksjs/dts-generation/commit/1e3eec3))
+- Add binaries ([1e3eec3](https://github.com/stacksjs/dtsx/commit/1e3eec3))
 
 ### 🏡 Chore
 
-- Rename package ([05948f1](https://github.com/stacksjs/dts-generation/commit/05948f1))
+- Rename package ([05948f1](https://github.com/stacksjs/dtsx/commit/05948f1))
 
 ### ❤️ Contributors
 
@@ -19,12 +19,12 @@
 
 ## v0.1.0...main
 
-[compare changes](https://github.com/stacksjs/dts-generation/compare/v0.1.0...main)
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.1.0...main)
 
 ### 🏡 Chore
 
-- Add `dtsx` bin to gitignore ([abc38dc](https://github.com/stacksjs/dts-generation/commit/abc38dc))
-- Rely on `prepublishOnly` ([143d499](https://github.com/stacksjs/dts-generation/commit/143d499))
+- Add `dtsx` bin to gitignore ([abc38dc](https://github.com/stacksjs/dtsx/commit/abc38dc))
+- Rely on `prepublishOnly` ([143d499](https://github.com/stacksjs/dtsx/commit/143d499))
 
 ### ❤️ Contributors
 
@@ -35,37 +35,37 @@
 
 ### 🏡 Chore
 
-- Wip ([b81e275](https://github.com/stacksjs/dts-generation/commit/b81e275))
-- Wip ([083d9bc](https://github.com/stacksjs/dts-generation/commit/083d9bc))
-- Wip ([f3fec05](https://github.com/stacksjs/dts-generation/commit/f3fec05))
-- Wip ([5bbae44](https://github.com/stacksjs/dts-generation/commit/5bbae44))
-- Wip ([a92e32b](https://github.com/stacksjs/dts-generation/commit/a92e32b))
-- Wip ([caedf34](https://github.com/stacksjs/dts-generation/commit/caedf34))
-- Wip ([78f51b3](https://github.com/stacksjs/dts-generation/commit/78f51b3))
-- Wip ([5d17c51](https://github.com/stacksjs/dts-generation/commit/5d17c51))
-- Wip ([ea4cba6](https://github.com/stacksjs/dts-generation/commit/ea4cba6))
-- Wip ([6bd1502](https://github.com/stacksjs/dts-generation/commit/6bd1502))
-- Wip ([d3a42cf](https://github.com/stacksjs/dts-generation/commit/d3a42cf))
-- Wip ([8598729](https://github.com/stacksjs/dts-generation/commit/8598729))
-- Wip ([c1dbbde](https://github.com/stacksjs/dts-generation/commit/c1dbbde))
-- Wip ([08f015a](https://github.com/stacksjs/dts-generation/commit/08f015a))
-- Wip ([98f08ef](https://github.com/stacksjs/dts-generation/commit/98f08ef))
-- Wip ([b3f3882](https://github.com/stacksjs/dts-generation/commit/b3f3882))
-- Wip ([35d193f](https://github.com/stacksjs/dts-generation/commit/35d193f))
-- Wip ([7672e85](https://github.com/stacksjs/dts-generation/commit/7672e85))
-- Wip ([7c2ced6](https://github.com/stacksjs/dts-generation/commit/7c2ced6))
-- Wip ([f15f20c](https://github.com/stacksjs/dts-generation/commit/f15f20c))
-- Wip ([75233fa](https://github.com/stacksjs/dts-generation/commit/75233fa))
-- Wip ([f2fc599](https://github.com/stacksjs/dts-generation/commit/f2fc599))
-- Wip ([c81df0a](https://github.com/stacksjs/dts-generation/commit/c81df0a))
-- Wip ([6b8bb5b](https://github.com/stacksjs/dts-generation/commit/6b8bb5b))
-- Wip ([ea6b0a0](https://github.com/stacksjs/dts-generation/commit/ea6b0a0))
-- Wip ([77daa03](https://github.com/stacksjs/dts-generation/commit/77daa03))
-- Wip ([f138e2d](https://github.com/stacksjs/dts-generation/commit/f138e2d))
-- Wip ([fc7283c](https://github.com/stacksjs/dts-generation/commit/fc7283c))
-- Wip ([1aa14fd](https://github.com/stacksjs/dts-generation/commit/1aa14fd))
-- Wip ([8db4670](https://github.com/stacksjs/dts-generation/commit/8db4670))
-- Wip ([a1d0cf4](https://github.com/stacksjs/dts-generation/commit/a1d0cf4))
+- Wip ([b81e275](https://github.com/stacksjs/dtsx/commit/b81e275))
+- Wip ([083d9bc](https://github.com/stacksjs/dtsx/commit/083d9bc))
+- Wip ([f3fec05](https://github.com/stacksjs/dtsx/commit/f3fec05))
+- Wip ([5bbae44](https://github.com/stacksjs/dtsx/commit/5bbae44))
+- Wip ([a92e32b](https://github.com/stacksjs/dtsx/commit/a92e32b))
+- Wip ([caedf34](https://github.com/stacksjs/dtsx/commit/caedf34))
+- Wip ([78f51b3](https://github.com/stacksjs/dtsx/commit/78f51b3))
+- Wip ([5d17c51](https://github.com/stacksjs/dtsx/commit/5d17c51))
+- Wip ([ea4cba6](https://github.com/stacksjs/dtsx/commit/ea4cba6))
+- Wip ([6bd1502](https://github.com/stacksjs/dtsx/commit/6bd1502))
+- Wip ([d3a42cf](https://github.com/stacksjs/dtsx/commit/d3a42cf))
+- Wip ([8598729](https://github.com/stacksjs/dtsx/commit/8598729))
+- Wip ([c1dbbde](https://github.com/stacksjs/dtsx/commit/c1dbbde))
+- Wip ([08f015a](https://github.com/stacksjs/dtsx/commit/08f015a))
+- Wip ([98f08ef](https://github.com/stacksjs/dtsx/commit/98f08ef))
+- Wip ([b3f3882](https://github.com/stacksjs/dtsx/commit/b3f3882))
+- Wip ([35d193f](https://github.com/stacksjs/dtsx/commit/35d193f))
+- Wip ([7672e85](https://github.com/stacksjs/dtsx/commit/7672e85))
+- Wip ([7c2ced6](https://github.com/stacksjs/dtsx/commit/7c2ced6))
+- Wip ([f15f20c](https://github.com/stacksjs/dtsx/commit/f15f20c))
+- Wip ([75233fa](https://github.com/stacksjs/dtsx/commit/75233fa))
+- Wip ([f2fc599](https://github.com/stacksjs/dtsx/commit/f2fc599))
+- Wip ([c81df0a](https://github.com/stacksjs/dtsx/commit/c81df0a))
+- Wip ([6b8bb5b](https://github.com/stacksjs/dtsx/commit/6b8bb5b))
+- Wip ([ea6b0a0](https://github.com/stacksjs/dtsx/commit/ea6b0a0))
+- Wip ([77daa03](https://github.com/stacksjs/dtsx/commit/77daa03))
+- Wip ([f138e2d](https://github.com/stacksjs/dtsx/commit/f138e2d))
+- Wip ([fc7283c](https://github.com/stacksjs/dtsx/commit/fc7283c))
+- Wip ([1aa14fd](https://github.com/stacksjs/dtsx/commit/1aa14fd))
+- Wip ([8db4670](https://github.com/stacksjs/dtsx/commit/8db4670))
+- Wip ([a1d0cf4](https://github.com/stacksjs/dtsx/commit/a1d0cf4))
 
 ### ❤️ Contributors
 
@@ -135,4 +135,3 @@
 ### ❤️ Contributors
 
 - Chris <chrisbreuer93@gmail.com>
-
