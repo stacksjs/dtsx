@@ -83,6 +83,13 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
     }
   }
 
+  // Handle default export
+  const defaultExportRegex = /export\s+default\s+(\w+)/
+  const defaultExportMatch = fileContent.match(defaultExportRegex)
+  if (defaultExportMatch) {
+    declarations += `export default ${defaultExportMatch[1]}\n`
+  }
+
   // Generate import statements for used types
   let importDeclarations = ''
   importMap.forEach((types, path) => {
