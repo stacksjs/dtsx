@@ -20,6 +20,9 @@
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
     "skipDefaultLibCheck": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@stacksjs/dtsx": ["./src/index.ts"]
+    }
   }
 }
