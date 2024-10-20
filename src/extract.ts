@@ -1,8 +1,7 @@
-import { readFile } from 'node:fs/promises'
 import { formatDeclarations } from './utils'
 
 export async function extractTypeFromSource(filePath: string): Promise<string> {
-  const fileContent = await readFile(filePath, 'utf-8')
+  const fileContent = await Bun.file(filePath).text()
   let imports = ''
   let declarations = ''
   let exports = ''
