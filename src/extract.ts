@@ -86,7 +86,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
           declarations += `${pendingComment}\n`
           pendingComment = ''
         }
-        declarations += `export declare const ${constName}: {\n${formattedValue}\n}\n\n`
+        declarations += `export declare const ${constName}: {\n${formattedValue}\n}\n`
       }
       else {
         // Handle constants initialized with function calls
@@ -97,7 +97,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
             declarations += `${pendingComment}\n`
             pendingComment = ''
           }
-          declarations += `export declare const ${constName}: ${constType.trim()}\n\n`
+          declarations += `export declare const ${constName}: ${constType.trim()}\n`
         }
         else {
           // Fallback to the original declaration if parsing fails
@@ -105,7 +105,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
             declarations += `${pendingComment}\n`
             pendingComment = ''
           }
-          declarations += `export declare ${declaration.replace(/export\s+/, '').trim()}\n\n`
+          declarations += `export declare ${declaration.replace(/export\s+/, '').trim()}\n`
         }
       }
     }
@@ -114,7 +114,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
         declarations += `${pendingComment}\n`
         pendingComment = ''
       }
-      declarations += `${declaration.trim()}\n\n`
+      declarations += `${declaration.trim()}\n`
     }
     else if (declType === 'function' || declType === 'async function') {
       if (pendingComment) {
@@ -126,7 +126,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
 
       if (funcSignatureMatch) {
         const [, isAsync, funcName, params, returnType] = funcSignatureMatch
-        declarations += `export declare ${isAsync || ''}function ${funcName}(${params.trim()}): ${returnType.trim()}\n\n`
+        declarations += `export declare ${isAsync || ''}function ${funcName}(${params.trim()}): ${returnType.trim()}\n`
       }
       else {
         // If we can't match the full signature, let's try to extract what we can
@@ -140,12 +140,12 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
           const returnTypeMatch = declaration.match(returnTypeRegex)
           const returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'any'
 
-          declarations += `export declare ${isAsync || ''}function ${funcName}(${params.trim()}): ${returnType}\n\n`
+          declarations += `export declare ${isAsync || ''}function ${funcName}(${params.trim()}): ${returnType}\n`
         }
         else {
           // If all else fails, just add 'declare' to the original export
           const simplifiedDeclaration = declaration.replace(/export\s+/, '').split('{')[0].trim()
-          declarations += `export declare ${simplifiedDeclaration}\n\n`
+          declarations += `export declare ${simplifiedDeclaration}\n`
         }
       }
     }
@@ -172,14 +172,14 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   const typeExportMatches = Array.from(fileContent.matchAll(typeExportRegex))
   for (const [, typeList] of typeExportMatches) {
     const types = typeList.split(',').map(t => t.trim())
-    exports += `\n\nexport type { ${types.join(', ')} }`
+    exports += `\nexport type { ${types.join(', ')} }`
   }
 
   // Handle default export
   const defaultExportRegex = /export\s+default\s+(\w+)/
   const defaultExportMatch = fileContent.match(defaultExportRegex)
   if (defaultExportMatch) {
-    exports += `\n\nexport default ${defaultExportMatch[1]}`
+    exports += `\nexport default ${defaultExportMatch[1]}`
   }
 
   const output = [imports, declarations.trim(), exports.trim()].filter(Boolean).join('\n').trim()
