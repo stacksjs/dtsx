@@ -1,7 +1,11 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { generate } from '../src'
 
 console.log('Generating output for reviewal...', path.join(__dirname, '..'))
+
+// delete the generated directory
+fs.rmdirSync(path.join(__dirname, '..', 'fixtures/generated'), { recursive: true })
 
 generate({
   cwd: path.join(__dirname, '..'),
