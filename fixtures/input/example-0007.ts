@@ -1,8 +1,8 @@
-import type { DtsGenerationConfig } from './types'
+import type { DtsGenerationConfig } from '@stacksjs/dtsx'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { deepMerge } from './utils'
+import { deepMerge } from '@stacksjs/dtsx'
 
 interface Options<T> {
   name: string

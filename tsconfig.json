@@ -23,6 +23,9 @@
     "skipLibCheck": true,
     "paths": {
       "@stacksjs/dtsx": ["./src/index.ts"]
-    }
-  }
+    },
+  },
+  "exclude": [
+    "**/fixtures"
+  ]
 }
