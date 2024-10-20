@@ -8,9 +8,9 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   const importMap = new Map<string, Set<string>>()
 
   // Handle re-exports
-  const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/g
+  const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"][^'"]+['"]/g
   let reExportMatch
-
+  // eslint-disable-next-line no-cond-assign
   while ((reExportMatch = reExportRegex.exec(fileContent)) !== null) {
     declarations += `${reExportMatch[0]}\n`
   }
@@ -48,6 +48,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   }
 
   // Handle exports with comments
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   const exportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(?:async\s+)?(?:function|const|let|var|class|interface|type)\s+\w[\s\S]*?)(?=\n\s*(?:\/\*\*|export|$))/g
   let match
   // eslint-disable-next-line no-cond-assign
