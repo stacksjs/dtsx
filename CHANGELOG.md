@@ -1,6 +1,19 @@
 # Changelog
 
 
+## v0.2.2...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.2.2...main)
+
+### 🏡 Chore
+
+- Extract adjustments ([3cc76b5](https://github.com/stacksjs/dtsx/commit/3cc76b5))
+- Resolve lint errors ([3b1d97c](https://github.com/stacksjs/dtsx/commit/3b1d97c))
+
+### ❤️ Contributors
+
+- Chris <chrisbreuer93@gmail.com>
+
 ## v0.2.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.2.1...main)
