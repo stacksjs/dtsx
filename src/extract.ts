@@ -5,7 +5,6 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   let imports = ''
   let declarations = ''
   let exports = ''
-  const processedDeclarations = new Set()
   let pendingComment = ''
 
   // Function to extract the body of a function
@@ -27,7 +26,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   // Handle imports
   const importRegex = /import\s+(type\s+)?(\{[^}]+\}|\*\s+as\s+\w+|\w+)(?:\s*,\s*(\{[^}]+\}|\w+))?\s+from\s+['"]([^'"]+)['"]/g
   const importMatches = Array.from(fileContent.matchAll(importRegex))
-  for (const [fullImport, isType, import1, import2, from] of importMatches) {
+  for (const [, isType, import1, import2, from] of importMatches) {
     if (from === 'node:process' && !isIdentifierUsed('process', dtsFunctionBody)) {
       continue
     }
@@ -66,17 +65,17 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   }
 
   // Handle all declarations
-  const declarationRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(const|interface|type|function|async function)\s+(\w+)[\s\S]*?(?=export\s|$))/g
+  const declarationRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(const|interface|type|function|async function)\s+\w[\s\S]*?(?=export\s|$))/g
   const declarationMatches = Array.from(fileContent.matchAll(declarationRegex))
-  for (const [, comment, declaration, declType, name] of declarationMatches) {
+  for (const [, comment, declaration, declType] of declarationMatches) {
     if (comment) {
       pendingComment = comment.trim()
     }
 
     if (declType === 'const') {
-      const constMatch = declaration.match(/export\s+const\s+(\w+)(\s*:\s*([^=]+))?\s*=\s*(\{[^}]+\})/)
+      const constMatch = declaration.match(/export\s+const\s+(\w+)(\s*:[^=]+)?\s*=\s*(\{[^}]+\})/)
       if (constMatch) {
-        const [, constName, , , constValue] = constMatch
+        const [, constName, , constValue] = constMatch
         // Parse the object literal
         const parsedValue = parseObjectLiteral(constValue.slice(1, -1))
         const formattedValue = Object.entries(parsedValue)
