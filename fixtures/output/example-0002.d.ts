@@ -1,10 +1,7 @@
 /**
  * Example of another const declaration
  */
-export declare const settings: {
-  theme: 'dark',
-  language: 'en',
-}
+export declare const settings: { [key: string]: any }
 
 export interface Product {
   id: number
