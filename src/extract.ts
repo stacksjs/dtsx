@@ -47,8 +47,25 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
     }
   }
 
+  // Function to parse object literal
+  const parseObjectLiteral = (str: string) => {
+    const obj: Record<string, string> = {}
+    str.split(',').forEach((pair) => {
+      const trimmedPair = pair.trim()
+      if (trimmedPair) {
+        const colonIndex = trimmedPair.indexOf(':')
+        if (colonIndex !== -1) {
+          const key = trimmedPair.slice(0, colonIndex).trim().replace(/['"]/g, '')
+          const value = trimmedPair.slice(colonIndex + 1).trim()
+          obj[key] = value
+        }
+      }
+    })
+    return obj
+  }
+
   // Handle all declarations
-  const declarationRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(const|interface|type|function)\s+(\w+)[\s\S]*?(?:;|\})\s*)/g
+  const declarationRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(const|interface|type|function|async function)\s+(\w+)[\s\S]*?(?:;|\})\s*)/g
   const declarationMatches = Array.from(fileContent.matchAll(declarationRegex))
   for (const [, comment, declaration, declType, name] of declarationMatches) {
     if (!processedDeclarations.has(name)) {
@@ -56,21 +73,29 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
         declarations += `${comment.trim()}\n`
 
       if (declType === 'const') {
-        const constMatch = declaration.match(/export\s+const\s+(\w+)\s*:\s*([^=]+)=/)
+        const constMatch = declaration.match(/export\s+const\s+(\w+)\s*(?::\s*([^=]+)\s*)?=\s*(\{[^}]+\})/)
         if (constMatch) {
-          declarations += `export declare const ${constMatch[1]}: ${constMatch[2].trim()}\n\n`
+          const [, constName, constType, constValue] = constMatch
+          // Parse the object literal
+          const parsedValue = parseObjectLiteral(constValue.slice(1, -1))
+          const formattedValue = Object.entries(parsedValue)
+            .map(([key, value]) => `  ${key}: ${value.includes('/') || value.includes('\'') ? value : `'${value}'`}`)
+            .join('\n')
+          declarations += `export declare const ${constName}: {\n${formattedValue}\n}\n\n`
         }
         else {
-          declarations += `${declaration.trim()}\n\n`
+          // Fallback to the original declaration if parsing fails
+          declarations += `export declare ${declaration.replace(/export\s+/, '').trim()}\n\n`
         }
       }
-      else if (declType === 'function') {
-        const funcMatch = declaration.match(/export\s+function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+)/)
+      else if (declType === 'function' || declType === 'async function') {
+        const funcMatch = declaration.match(/export\s+(async\s+)?function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+)/)
         if (funcMatch) {
-          declarations += `export declare function ${funcMatch[1]}(${funcMatch[2]}): ${funcMatch[3].trim()}\n\n`
+          const [, isAsync, funcName, params, returnType] = funcMatch
+          declarations += `export declare ${isAsync || ''}function ${funcName}(${params}): ${returnType.trim()}\n\n`
         }
         else {
-          declarations += `${declaration.trim()}\n\n`
+          declarations += `export declare ${declaration.replace(/export\s+/, '').trim()}\n\n`
         }
       }
       else {
