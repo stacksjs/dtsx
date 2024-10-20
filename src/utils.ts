@@ -1,5 +1,5 @@
 import type { DtsGenerationConfig } from './types'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import process from 'node:process'
 import { config } from './config'
@@ -23,8 +23,7 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
 export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): Promise<boolean> {
   try {
     const tsconfigPath = options?.tsconfigPath || join(options?.root ?? process.cwd(), 'tsconfig.json')
-    const tsconfigContent = await readFile(tsconfigPath, 'utf-8')
-    const tsconfig = JSON.parse(tsconfigContent)
+    const tsconfig = await import(tsconfigPath)
 
     return tsconfig.compilerOptions?.isolatedDeclarations === true
   }

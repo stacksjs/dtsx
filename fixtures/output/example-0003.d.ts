@@ -1,4 +1,7 @@
-export declare const endpoints
+export declare const endpoints: {
+  getUsers: '/users'
+  getProducts: '/products'
+}
 
 export interface Order {
   orderId: number

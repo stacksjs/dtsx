@@ -1,4 +1,6 @@
-export declare const defaultHeaders
+export declare const defaultHeaders: {
+  'Content-Type': 'application/json',
+}
 
 export interface Comment {
   id: number

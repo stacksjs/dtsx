@@ -1,108 +1,115 @@
 import { readFile } from 'node:fs/promises'
-import { formatComment, formatDeclarations } from './utils'
+import { formatDeclarations } from './utils'
 
 export async function extractTypeFromSource(filePath: string): Promise<string> {
   const fileContent = await readFile(filePath, 'utf-8')
+  let imports = ''
   let declarations = ''
-  const usedTypes = new Set<string>()
-  const importMap = new Map<string, Set<string>>()
+  let exports = ''
+  const processedDeclarations = new Set()
 
-  // Handle re-exports
-  const reExportRegex = /export\s*(?:\*|\{[^}]*\})\s*from\s*['"][^'"]+['"]/g
-  let reExportMatch
-  // eslint-disable-next-line no-cond-assign
-  while ((reExportMatch = reExportRegex.exec(fileContent)) !== null) {
-    declarations += `${reExportMatch[0]}\n`
+  // Function to extract the body of a function
+  const extractFunctionBody = (funcName: string) => {
+    const funcRegex = new RegExp(`function\\s+${funcName}\\s*\\([^)]*\\)\\s*{([\\s\\S]*?)}`, 'g')
+    const match = funcRegex.exec(fileContent)
+    return match ? match[1] : ''
   }
 
-  // Capture all imports
-  const importRegex = /import\s+(?:(type)\s+)?(?:(\{[^}]+\})|(\w+))(?:\s*,\s*(?:(\{[^}]+\})|(\w+)))?\s+from\s+['"]([^'"]+)['"]/g
-  let importMatch
-  // eslint-disable-next-line no-cond-assign
-  while ((importMatch = importRegex.exec(fileContent)) !== null) {
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    const [, isTypeImport, namedImports1, defaultImport1, namedImports2, defaultImport2, from] = importMatch
-    if (!importMap.has(from)) {
-      importMap.set(from, new Set())
-    }
-
-    const processImports = (imports: string | undefined) => {
-      if (imports) {
-        const types = imports.replace(/[{}]/g, '').split(',').map((t) => {
-          const [name, alias] = t.split(' as ').map(s => s.trim())
-          return { name: name.replace(/^type\s+/, ''), alias: alias || name.replace(/^type\s+/, '') }
-        })
-        types.forEach(({ name }) => {
-          importMap.get(from)!.add(name)
-        })
-      }
-    }
-
-    processImports(namedImports1)
-    processImports(namedImports2)
-
-    if (defaultImport1)
-      importMap.get(from)!.add(defaultImport1)
-    if (defaultImport2)
-      importMap.get(from)!.add(defaultImport2)
+  // Function to check if an identifier is used in a given content
+  const isIdentifierUsed = (identifier: string, content: string) => {
+    const regex = new RegExp(`\\b${identifier}\\b`, 'g')
+    return regex.test(content)
   }
 
-  // Handle exports with comments
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
-  const exportRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(?:async\s+)?(?:function|const|let|var|class|interface|type)\s+\w[\s\S]*?)(?=\n\s*(?:\/\*\*|export|$))/g
-  let match
-  // eslint-disable-next-line no-cond-assign
-  while ((match = exportRegex.exec(fileContent)) !== null) {
-    const [, comment, exportStatement] = match
-    const formattedComment = comment ? formatComment(comment.trim()) : ''
-    let formattedExport = exportStatement.trim()
+  // Extract the body of the dts function
+  const dtsFunctionBody = extractFunctionBody('dts')
 
-    if (formattedExport.startsWith('export function') || formattedExport.startsWith('export async function')) {
-      formattedExport = formattedExport.replace(/^export\s+(async\s+)?function/, 'export declare function')
-      const functionSignature = formattedExport.match(/^.*?\)/)
-      if (functionSignature) {
-        let params = functionSignature[0].slice(functionSignature[0].indexOf('(') + 1, -1)
-        params = params.replace(/\s*=[^,)]+/g, '') // Remove default values
-        const returnType = formattedExport.match(/\):\s*([^{]+)/)
-        formattedExport = `export declare function ${formattedExport.split('function')[1].split('(')[0].trim()}(${params})${returnType ? `: ${returnType[1].trim()}` : ''};`
+  // Handle imports
+  const importRegex = /import\s+(type\s+)?(\{[^}]+\}|\*\s+as\s+\w+|\w+)(?:\s*,\s*(\{[^}]+\}|\w+))?\s+from\s+['"]([^'"]+)['"]/g
+  const importMatches = Array.from(fileContent.matchAll(importRegex))
+  for (const [fullImport, isType, import1, import2, from] of importMatches) {
+    if (from === 'node:process' && !isIdentifierUsed('process', dtsFunctionBody)) {
+      continue
+    }
+
+    const importedItems = [...(import1.match(/\b\w+\b/g) || []), ...(import2?.match(/\b\w+\b/g) || [])]
+    const usedImports = importedItems.filter(item =>
+      isIdentifierUsed(item, dtsFunctionBody)
+      || isIdentifierUsed(item, fileContent.replace(/import[^;]+;/g, '')),
+    )
+
+    if (usedImports.length > 0) {
+      if (isType) {
+        imports += `import type { ${usedImports.join(', ')} } from '${from}'\n`
+      }
+      else {
+        imports += `import { ${usedImports.join(', ')} } from '${from}'\n`
       }
     }
-    else if (formattedExport.startsWith('export const') || formattedExport.startsWith('export let') || formattedExport.startsWith('export var')) {
-      formattedExport = formattedExport.replace(/^export\s+(const|let|var)/, 'export declare $1')
-      formattedExport = `${formattedExport.split('=')[0].trim()};`
-    }
+  }
 
-    declarations += `${formattedComment}\n${formattedExport}\n\n`
+  // Handle all declarations
+  const declarationRegex = /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(const|interface|type|function)\s+(\w+)[\s\S]*?(?:;|\})\s*)/g
+  const declarationMatches = Array.from(fileContent.matchAll(declarationRegex))
+  for (const [, comment, declaration, declType, name] of declarationMatches) {
+    if (!processedDeclarations.has(name)) {
+      if (comment)
+        declarations += `${comment.trim()}\n`
 
-    // Add types used in the export to usedTypes
-    const typeRegex = /\b([A-Z]\w+)(?:<[^>]*>)?/g
-    let typeMatch
-    // eslint-disable-next-line no-cond-assign
-    while ((typeMatch = typeRegex.exec(formattedExport)) !== null) {
-      usedTypes.add(typeMatch[1])
+      if (declType === 'const') {
+        const constMatch = declaration.match(/export\s+const\s+(\w+)\s*:\s*([^=]+)=/)
+        if (constMatch) {
+          declarations += `export declare const ${constMatch[1]}: ${constMatch[2].trim()}\n\n`
+        }
+        else {
+          declarations += `${declaration.trim()}\n\n`
+        }
+      }
+      else if (declType === 'function') {
+        const funcMatch = declaration.match(/export\s+function\s+(\w+)\s*\(([^)]*)\)\s*:\s*([^{]+)/)
+        if (funcMatch) {
+          declarations += `export declare function ${funcMatch[1]}(${funcMatch[2]}): ${funcMatch[3].trim()}\n\n`
+        }
+        else {
+          declarations += `${declaration.trim()}\n\n`
+        }
+      }
+      else {
+        declarations += `${declaration.trim()}\n\n`
+      }
+
+      processedDeclarations.add(name)
     }
+  }
+
+  // Handle re-exports and standalone exports
+  const reExportRegex = /export\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?\s*;?/g
+  const reExportMatches = Array.from(fileContent.matchAll(reExportRegex))
+  for (const [, exportList, from] of reExportMatches) {
+    const exportItems = exportList.split(',').map(e => e.trim())
+    if (from) {
+      exports += `\nexport { ${exportItems.join(', ')} } from '${from}'`
+    }
+    else {
+      exports += `\nexport { ${exportItems.join(', ')} }`
+    }
+  }
+
+  // Handle type exports
+  const typeExportRegex = /export\s+type\s*\{([^}]+)\}/g
+  const typeExportMatches = Array.from(fileContent.matchAll(typeExportRegex))
+  for (const [, typeList] of typeExportMatches) {
+    const types = typeList.split(',').map(t => t.trim())
+    exports += `\n\nexport type { ${types.join(', ')} }`
   }
 
   // Handle default export
   const defaultExportRegex = /export\s+default\s+(\w+)/
   const defaultExportMatch = fileContent.match(defaultExportRegex)
   if (defaultExportMatch) {
-    declarations += `export default ${defaultExportMatch[1]}\n`
+    exports += `\n\nexport default ${defaultExportMatch[1]}`
   }
 
-  // Generate import statements for used types
-  let importDeclarations = ''
-  importMap.forEach((types, path) => {
-    const usedTypesFromPath = [...types].filter(type => usedTypes.has(type))
-    if (usedTypesFromPath.length > 0) {
-      importDeclarations += `import type { ${usedTypesFromPath.join(', ')} } from '${path}'\n`
-    }
-  })
-
-  if (importDeclarations) {
-    declarations = `${importDeclarations}\n${declarations}`
-  }
-
-  // Apply final formatting
-  return formatDeclarations(declarations)
+  const output = [imports, declarations, exports].filter(Boolean).join('\n').trim()
+  return formatDeclarations(output)
 }

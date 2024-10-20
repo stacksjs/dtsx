@@ -1,4 +1,7 @@
-export declare const apiKeys
+export declare const apiKeys: {
+  google: 'GOOGLE_API_KEY',
+  facebook: 'FACEBOOK_API_KEY',
+}
 
 export interface AuthResponse {
   token: string
