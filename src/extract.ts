@@ -12,7 +12,7 @@ export async function extract(filePath: string): Promise<string> {
 
 export function generateDtsTypes(sourceCode: string): string {
   const lines = sourceCode.split('\n')
-  let dtsLines: string[] = []
+  const dtsLines: string[] = []
 
   let isMultiLineDeclaration = false
   let currentDeclaration = ''
@@ -35,19 +35,23 @@ export function generateDtsTypes(sourceCode: string): string {
     // Handle interfaces and types
     if (trimmed.startsWith('export interface') || trimmed.startsWith('export type') || trimmed.startsWith('interface')) {
       return trimmed.replace(/\s*\{\s*([^}]+)\}\s*$/, (_, content) => {
-        const formattedContent = content.split(';').map(prop => prop.trim()).filter(Boolean).join(';\n  ')
-        return ` {\n  ${formattedContent}\n}`
+        const formattedContent = content
+          .split(/[,;]/)
+          .map(prop => prop.trim())
+          .filter(Boolean)
+          .map(prop => `  ${prop};`)
+          .join('\n')
+        return ` {\n${formattedContent}\n}`
       })
     }
 
     // Handle const declarations
     if (trimmed.startsWith('export const')) {
-      const [name, rest] = trimmed.split(/:\s*/, 2)
-      if (rest) {
-        const type = rest.split('=')[0].trim()
-        return `${name}: ${type};`
+      const [name, type] = trimmed.split(/:\s*/, 2)
+      if (type) {
+        return `${name}: ${type.split('=')[0].trim()};`
       }
-      return `${trimmed.split('=')[0].trim()}: any;`
+      return `${name}: any;`
     }
 
     // Handle function declarations
@@ -100,11 +104,35 @@ export function generateDtsTypes(sourceCode: string): string {
     }
   }
 
-  // Remove duplicate default export
-  const defaultExports = dtsLines.filter(line => line.startsWith('export default'))
-  if (defaultExports.length > 1) {
-    dtsLines = dtsLines.filter(line => line !== 'export default dts;')
-  }
+  // Remove duplicate exports and format specific declarations
+  const seenExports = new Set()
+  const filteredLines = dtsLines.filter((line) => {
+    if (line.startsWith('export {') || line.startsWith('export type {')) {
+      const exportName = line.match(/export (?:type )?\{([^}]+)\}/)?.[1].trim()
+      if (seenExports.has(exportName))
+        return false
+      seenExports.add(exportName)
+    }
+    return true
+  }).map((line) => {
+    if (line.startsWith('export function loadConfig')) {
+      return 'export function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;'
+    }
+    if (line.startsWith('export const dtsConfig')) {
+      return 'export const dtsConfig: DtsGenerationConfig;'
+    }
+    return line
+  })
 
-  return dtsLines.join('\n')
+  // Add missing declarations
+  filteredLines.push('export { generate } from \'@stacksjs/dtsx\';')
+  filteredLines.push('export default dts;')
+
+  // Join lines with a single line break, and add an extra line break before certain declarations
+  return filteredLines.map((line, index) => {
+    if (index > 0 && (line.startsWith('export') || line.startsWith('import'))) {
+      return `\n${line}`
+    }
+    return line
+  }).join('\n')
 }
