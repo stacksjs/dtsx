@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const DEBUG = true // Set to false to disable debug logs
 
 export async function extract(filePath: string): Promise<string> {
@@ -79,10 +78,12 @@ function generateDtsTypes(sourceCode: string): string {
     }
   }
 
-  const result = cleanOutput([...imports, '', ...dtsLines, '', ...exports, defaultExport].filter(Boolean).join('\n'))
+  const result = cleanOutput([...imports, '', ...dtsLines, '', ...exports].filter(Boolean).join('\n'))
+  const finalResult = defaultExport ? `${result}\n${defaultExport}` : result
+
   if (DEBUG)
-    console.log('Final result:', result)
-  return result
+    console.log('Final result:', finalResult)
+  return finalResult
 }
 
 function processImport(importLine: string): string {
@@ -185,7 +186,7 @@ function processTypeDeclaration(declaration: string): string {
     console.log(`Processing type declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const typeName = lines[0].split('type')[1].split('=')[0].trim()
-  const typeBody = lines.slice(1).map(line => `  ${line.trim()}`).join('\n')
+  const typeBody = lines.slice(1).join('\n').trim()
   const result = `export declare type ${typeName} = ${typeBody}`
   if (DEBUG)
     console.log(`Processed type declaration: ${result}`)
