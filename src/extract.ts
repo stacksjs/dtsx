@@ -75,19 +75,26 @@ export function generateDtsTypes(sourceCode: string): string {
 }
 
 function parseObjectLiteral(objectLiteral: string): string {
+  console.log('Input objectLiteral:', objectLiteral)
+
   // Remove the opening and closing braces
   const content = objectLiteral.slice(1, -1).trim()
+  console.log('Trimmed content:', content)
 
   const pairs = []
   let currentPair = ''
   let inQuotes = false
   let bracketCount = 0
+  let quoteChar = ''
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i]
 
-    if (char === '"' || char === '\'') {
+    if ((char === '"' || char === '\'') && (!inQuotes || char === quoteChar)) {
       inQuotes = !inQuotes
+      if (inQuotes)
+        quoteChar = char
+      else quoteChar = ''
     }
     else if (!inQuotes) {
       if (char === '{')
@@ -109,16 +116,29 @@ function parseObjectLiteral(objectLiteral: string): string {
     pairs.push(currentPair.trim())
   }
 
+  console.log('Parsed pairs:', pairs)
+
   const parsedProperties = pairs.map((pair) => {
     const colonIndex = pair.indexOf(':')
     if (colonIndex === -1)
       return null // Invalid pair
 
     const key = pair.slice(0, colonIndex).trim()
-    const value = pair.slice(colonIndex + 1).trim()
+    let value = pair.slice(colonIndex + 1).trim()
 
-    // If the value is a string literal, keep it as is
+    // Handle string values that might contain colons
     if (value.startsWith('\'') || value.startsWith('"')) {
+      // Find the last quote that's not escaped
+      let lastQuoteIndex = -1
+      for (let i = value.length - 1; i >= 0; i--) {
+        if ((value[i] === '\'' || value[i] === '"') && value[i - 1] !== '\\') {
+          lastQuoteIndex = i
+          break
+        }
+      }
+      if (lastQuoteIndex !== -1 && lastQuoteIndex !== 0) {
+        value = value.slice(0, lastQuoteIndex + 1)
+      }
       return `  ${key}: ${value};`
     }
 
@@ -127,7 +147,9 @@ function parseObjectLiteral(objectLiteral: string): string {
     return `  ${key}: ${preservedValue};`
   }).filter(Boolean)
 
-  return `{\n${parsedProperties.join('\n')}\n}`
+  const result = `{\n${parsedProperties.join('\n')}\n}`
+  console.log('Final result:', result)
+  return result
 }
 
 function processDeclaration(declaration: string): string {
@@ -212,7 +234,10 @@ function preserveValueType(value: string): string {
   else if (value.startsWith('[') && value.endsWith(']')) {
     return 'any[]' // Generic array type
   }
+  else if ((value.startsWith('\'') && value.endsWith('\'')) || (value.startsWith('"') && value.endsWith('"'))) {
+    return value // Keep string literals as is
+  }
   else {
-    return 'string' // Default to string for other cases
+    return `'${value}'` // Wrap other values in quotes
   }
 }
