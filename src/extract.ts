@@ -37,7 +37,7 @@ export function generateDtsTypes(sourceCode: string): string {
       continue
     }
 
-    if (line.trim().startsWith('export') && !line.includes('{')) {
+    if (line.trim().startsWith('export') && (line.includes('{') || line.includes('*'))) {
       exports.push(line)
       continue
     }
@@ -215,7 +215,7 @@ function preserveValueType(value: string): string {
     return value // Keep string literals as is
   }
   else {
-    return 'any' // Default to any for other cases
+    return 'string' // Default to string for other cases
   }
 }
 
@@ -224,5 +224,7 @@ function cleanOutput(output: string): string {
     .replace(/\{\s*\}/g, '{}') // Replace empty objects with {}
     .replace(/\s*;\s*(?=\}|$)/g, ';') // Clean up semicolons before closing braces or end of string
     .replace(/\n+/g, '\n') // Remove multiple consecutive newlines
+    .replace(/;\n\}/g, ';\n  }') // Add indentation to closing brace of object literals
+    .replace(/\{;/g, '{') // Remove unnecessary semicolons after opening braces
     .trim()
 }
