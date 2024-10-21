@@ -49,7 +49,7 @@ export function generateDtsTypes(sourceCode: string): string {
       let value = trimmed.slice(equalIndex + 1).trim()
 
       // Handle multi-line object literals
-      if (value.startsWith('{') && !value.endsWith('}')) {
+      if (value.startsWith('{')) {
         let bracketCount = 1
         let i = 1
         while (bracketCount > 0 && i < value.length) {
@@ -59,9 +59,7 @@ export function generateDtsTypes(sourceCode: string): string {
             bracketCount--
           i++
         }
-        if (i < value.length) {
-          value = value.slice(0, i)
-        }
+        value = value.slice(0, i)
       }
 
       const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
@@ -107,9 +105,10 @@ export function generateDtsTypes(sourceCode: string): string {
     let currentPair = ''
     let inQuotes = false
     let bracketCount = 0
+    let escapeNext = false
 
     for (const char of content) {
-      if (char === '"' || char === '\'') {
+      if (!escapeNext && (char === '"' || char === '\'')) {
         inQuotes = !inQuotes
       }
       else if (!inQuotes) {
@@ -126,6 +125,7 @@ export function generateDtsTypes(sourceCode: string): string {
       else {
         currentPair += char
       }
+      escapeNext = char === '\\' && !escapeNext
     }
 
     if (currentPair.trim()) {
