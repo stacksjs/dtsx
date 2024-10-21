@@ -123,9 +123,18 @@ function processConstDeclaration(declaration: string): string {
   const name = firstLine.split('export const')[1].split('=')[0].trim().split(':')[0].trim()
 
   const properties = lines.slice(1, -1).map((line) => {
-    const [key, ...valueParts] = line.split(':')
-    const value = valueParts.join(':').trim().replace(',', '')
-    return `  ${key.trim()}: ${value};`
+    const commentIndex = line.indexOf('//')
+    const hasComment = commentIndex !== -1
+    const mainPart = hasComment ? line.slice(0, commentIndex) : line
+    const comment = hasComment ? line.slice(commentIndex) : ''
+
+    const [key, ...valueParts] = mainPart.split(':')
+    let value = valueParts.join(':').trim()
+    if (value.endsWith(',')) {
+      value = value.slice(0, -1)
+    }
+
+    return `  ${key.trim()}: ${value}${comment};`
   }).join('\n')
 
   return `export declare const ${name}: {\n${properties}\n};`
@@ -193,6 +202,9 @@ function cleanOutput(output: string): string {
     .replace(/;\n\}/g, ';\n}')
     .replace(/\{;/g, '{')
     .replace(/\};\n/g, '}\n\n') // Add an extra line break after each declaration
+    .replace(/\}\n(?!$)/g, '}\n\n') // Add an extra line break after closing braces, except for the last one
+    .replace(/\n{3,}/g, '\n\n') // Replace three or more consecutive newlines with two newlines
+    .replace(/;\n(\s*)\}/g, ';\n$1\n$1}') // Ensure closing bracket is on its own line
     .trim()
   console.log('Cleaned output:', result)
   return result
