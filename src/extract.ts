@@ -32,6 +32,16 @@ export function generateDtsTypes(sourceCode: string): string {
       continue
     }
 
+    if (line.trim().startsWith('import')) {
+      imports.push(line)
+      continue
+    }
+
+    if (line.trim().startsWith('export') && !line.includes('{')) {
+      exports.push(line)
+      continue
+    }
+
     if (isMultiLineDeclaration || line.trim().startsWith('export')) {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
@@ -50,9 +60,6 @@ export function generateDtsTypes(sourceCode: string): string {
       else {
         isMultiLineDeclaration = true
       }
-    }
-    else if (line.trim().startsWith('import')) {
-      imports.push(line)
     }
   }
 
@@ -145,7 +152,35 @@ function parseObjectLiteral(objectLiteral: string): string {
   // Remove the opening and closing braces and newlines
   const content = objectLiteral.replace(/^\{|\}$/g, '').replace(/\n/g, ' ').trim()
 
-  const pairs = content.split(',').map(pair => pair.trim()).filter(Boolean)
+  const pairs = []
+  let currentPair = ''
+  let inQuotes = false
+  let quoteChar = ''
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    if ((char === '"' || char === '\'') && content[i - 1] !== '\\') {
+      if (!inQuotes) {
+        inQuotes = true
+        quoteChar = char
+      }
+      else if (char === quoteChar) {
+        inQuotes = false
+      }
+    }
+
+    if (char === ',' && !inQuotes) {
+      pairs.push(currentPair.trim())
+      currentPair = ''
+    }
+    else {
+      currentPair += char
+    }
+  }
+
+  if (currentPair.trim()) {
+    pairs.push(currentPair.trim())
+  }
 
   const parsedProperties = pairs.map((pair) => {
     const [key, ...valueParts] = pair.split(':')
