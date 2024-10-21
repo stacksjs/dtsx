@@ -74,6 +74,62 @@ export function generateDtsTypes(sourceCode: string): string {
   return result
 }
 
+function parseObjectLiteral(objectLiteral: string): string {
+  // Remove the opening and closing braces
+  const content = objectLiteral.slice(1, -1).trim()
+
+  const pairs = []
+  let currentPair = ''
+  let inQuotes = false
+  let bracketCount = 0
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+
+    if (char === '"' || char === '\'') {
+      inQuotes = !inQuotes
+    }
+    else if (!inQuotes) {
+      if (char === '{')
+        bracketCount++
+      if (char === '}')
+        bracketCount--
+    }
+
+    if (char === ',' && !inQuotes && bracketCount === 0) {
+      pairs.push(currentPair.trim())
+      currentPair = ''
+    }
+    else {
+      currentPair += char
+    }
+  }
+
+  if (currentPair.trim()) {
+    pairs.push(currentPair.trim())
+  }
+
+  const parsedProperties = pairs.map((pair) => {
+    const colonIndex = pair.indexOf(':')
+    if (colonIndex === -1)
+      return null // Invalid pair
+
+    const key = pair.slice(0, colonIndex).trim()
+    const value = pair.slice(colonIndex + 1).trim()
+
+    // If the value is a string literal, keep it as is
+    if (value.startsWith('\'') || value.startsWith('"')) {
+      return `  ${key}: ${value};`
+    }
+
+    // For other types, use preserveValueType
+    const preservedValue = preserveValueType(value)
+    return `  ${key}: ${preservedValue};`
+  }).filter(Boolean)
+
+  return `{\n${parsedProperties.join('\n')}\n}`
+}
+
 function processDeclaration(declaration: string): string {
   // Remove comments
   const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
@@ -90,16 +146,10 @@ function processDeclaration(declaration: string): string {
 
     // Handle multi-line object literals
     if (value.startsWith('{')) {
-      let bracketCount = 1
-      let i = 1
-      while (bracketCount > 0 && i < value.length) {
-        if (value[i] === '{')
-          bracketCount++
-        if (value[i] === '}')
-          bracketCount--
-        i++
+      const lastBracketIndex = trimmed.lastIndexOf('}')
+      if (lastBracketIndex !== -1) {
+        value = trimmed.slice(equalIndex + 1, lastBracketIndex + 1).trim()
       }
-      value = value.slice(0, i)
     }
 
     const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
@@ -127,7 +177,23 @@ function processDeclaration(declaration: string): string {
     }
   }
 
-  // Handle other declarations (interfaces, types, functions)
+  // Handle interface declarations
+  if (trimmed.startsWith('export interface')) {
+    return `export declare interface ${trimmed.slice('export interface'.length).trim()};`
+  }
+
+  // Handle type declarations
+  if (trimmed.startsWith('export type')) {
+    return `export declare type ${trimmed.slice('export type'.length).trim()};`
+  }
+
+  // Handle function declarations
+  if (trimmed.startsWith('export function')) {
+    const functionSignature = trimmed.split('{')[0].trim()
+    return `export declare ${functionSignature.slice('export'.length).trim()};`
+  }
+
+  // Handle other declarations
   if (trimmed.startsWith('export')) {
     return trimmed.endsWith(';') ? trimmed : `${trimmed};`
   }
@@ -135,66 +201,9 @@ function processDeclaration(declaration: string): string {
   return ''
 }
 
-function parseObjectLiteral(objectLiteral: string): string {
-  // Remove the opening and closing braces
-  const content = objectLiteral.slice(1, -1).trim()
-
-  const pairs = []
-  let currentPair = ''
-  let inQuotes = false
-  let bracketCount = 0
-  let escapeNext = false
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-
-    if (!escapeNext && (char === '"' || char === '\'')) {
-      inQuotes = !inQuotes
-    }
-    else if (!inQuotes) {
-      if (char === '{')
-        bracketCount++
-      if (char === '}')
-        bracketCount--
-    }
-
-    if (char === ',' && !inQuotes && bracketCount === 0) {
-      pairs.push(currentPair.trim())
-      currentPair = ''
-    }
-    else {
-      currentPair += char
-    }
-
-    escapeNext = char === '\\' && !escapeNext
-  }
-
-  if (currentPair.trim()) {
-    pairs.push(currentPair.trim())
-  }
-
-  const parsedProperties = pairs.map((pair) => {
-    const colonIndex = pair.indexOf(':')
-    if (colonIndex === -1)
-      return null // Invalid pair
-
-    const key = pair.slice(0, colonIndex).trim()
-    const value = pair.slice(colonIndex + 1).trim()
-
-    const sanitizedValue = preserveValueType(value)
-    return `  ${key}: ${sanitizedValue};`
-  }).filter(Boolean)
-
-  return `{\n${parsedProperties.join('\n')}\n}`
-}
-
 function preserveValueType(value: string): string {
   value = value.trim()
-  if (value.startsWith('\'') || value.startsWith('"')) {
-    // Handle string literals, including URLs
-    return value // Keep the original string as is, including quotes
-  }
-  else if (value === 'true' || value === 'false') {
+  if (value === 'true' || value === 'false') {
     return value // Keep true and false as literal types
   }
   else if (!Number.isNaN(Number(value))) {
