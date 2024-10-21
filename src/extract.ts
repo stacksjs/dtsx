@@ -177,7 +177,7 @@ function processTypeDeclaration(declaration: string): string {
   logDebug(`Processing type declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const typeName = lines[0].split('type')[1].split('=')[0].trim()
-  const typeBody = lines.slice(1).join('\n').trim()
+  const typeBody = lines.slice(1).join('\n').trim().replace(/;$/, '')
   const result = `export declare type ${typeName} = ${typeBody}`
   logDebug(`Processed type declaration: ${result}`)
   return result
@@ -186,9 +186,17 @@ function processTypeDeclaration(declaration: string): string {
 function processFunctionDeclaration(declaration: string): string {
   logDebug(`Processing function declaration: ${declaration}`)
   const functionSignature = declaration.split('{')[0].trim()
-  const result = `export declare ${functionSignature.replace('export ', '')};`
+  const asyncKeyword = functionSignature.includes('async') ? 'async ' : ''
+  const functionName = functionSignature.replace('export ', '').replace('async ', '').split('(')[0].trim()
+  const params = functionSignature.split('(')[1].split(')')[0].trim()
+  const result = `export declare ${asyncKeyword}function ${functionName}(${params}): ${getReturnType(declaration)};`
   logDebug(`Processed function declaration: ${result}`)
   return result
+}
+
+function getReturnType(declaration: string): string {
+  const returnTypeMatch = declaration.match(/:\s*([^\s{]+)/)
+  return returnTypeMatch ? returnTypeMatch[1] : 'void'
 }
 
 function cleanOutput(output: string): string {
@@ -211,6 +219,7 @@ function cleanOutput(output: string): string {
     .replace(/;\s*\/\/\s*/g, '; // ')
     .replace(/;\s*\}/g, ';\n}')
     .replace(/;\s*\/\/\s*/g, '; // ')
+    .replace(/export declare async function/g, 'export declare function')
     .trim()
 
   logDebug('Cleaned output:', result)
