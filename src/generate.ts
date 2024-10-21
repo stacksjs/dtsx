@@ -3,7 +3,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import { dirname, join, parse, relative } from 'node:path'
 import { glob } from 'tinyglobby'
 import { config } from './config'
-import { extractTypeFromSource } from './extract'
+import { extract } from './extract'
 import { checkIsolatedDeclarations, getAllTypeScriptFiles, writeToFile } from './utils'
 
 export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
@@ -33,7 +33,7 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
 
     for (const file of files) {
       // console.log(`Processing file: ${file}`)
-      const fileDeclarations = await extractTypeFromSource(file)
+      const fileDeclarations = await extract(file)
 
       if (fileDeclarations) {
         const relativePath = relative(options?.root ?? './src', file)
