@@ -75,81 +75,27 @@ export function generateDtsTypes(sourceCode: string): string {
 }
 
 function parseObjectLiteral(objectLiteral: string): string {
-  console.log('Input objectLiteral:', objectLiteral)
+  // Remove the opening and closing braces and any newlines
+  const content = objectLiteral.replace(/^\{|\}$/g, '').replace(/\n/g, ' ').trim()
 
-  // Remove the opening and closing braces
-  const content = objectLiteral.slice(1, -1).trim()
-  console.log('Trimmed content:', content)
-
-  const pairs = []
-  let currentPair = ''
-  let inQuotes = false
-  let bracketCount = 0
-  let quoteChar = ''
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-
-    if ((char === '"' || char === '\'') && (!inQuotes || char === quoteChar)) {
-      inQuotes = !inQuotes
-      if (inQuotes)
-        quoteChar = char
-      else quoteChar = ''
-    }
-    else if (!inQuotes) {
-      if (char === '{')
-        bracketCount++
-      if (char === '}')
-        bracketCount--
-    }
-
-    if (char === ',' && !inQuotes && bracketCount === 0) {
-      pairs.push(currentPair.trim())
-      currentPair = ''
-    }
-    else {
-      currentPair += char
-    }
-  }
-
-  if (currentPair.trim()) {
-    pairs.push(currentPair.trim())
-  }
-
-  console.log('Parsed pairs:', pairs)
+  const pairs = content.split(',').map(pair => pair.trim()).filter(Boolean)
 
   const parsedProperties = pairs.map((pair) => {
-    const colonIndex = pair.indexOf(':')
-    if (colonIndex === -1)
-      return null // Invalid pair
+    const [key, ...valueParts] = pair.split(':')
+    const value = valueParts.join(':').trim()
 
-    const key = pair.slice(0, colonIndex).trim()
-    let value = pair.slice(colonIndex + 1).trim()
-
-    // Handle string values that might contain colons
     if (value.startsWith('\'') || value.startsWith('"')) {
-      // Find the last quote that's not escaped
-      let lastQuoteIndex = -1
-      for (let i = value.length - 1; i >= 0; i--) {
-        if ((value[i] === '\'' || value[i] === '"') && value[i - 1] !== '\\') {
-          lastQuoteIndex = i
-          break
-        }
-      }
-      if (lastQuoteIndex !== -1 && lastQuoteIndex !== 0) {
-        value = value.slice(0, lastQuoteIndex + 1)
-      }
-      return `  ${key}: ${value};`
+      // For string literals, keep as is
+      return `  ${key.trim()}: ${value};`
     }
+    else {
+      // For other types, use preserveValueType
+      const preservedValue = preserveValueType(value)
+      return `  ${key.trim()}: ${preservedValue};`
+    }
+  })
 
-    // For other types, use preserveValueType
-    const preservedValue = preserveValueType(value)
-    return `  ${key}: ${preservedValue};`
-  }).filter(Boolean)
-
-  const result = `{\n${parsedProperties.join('\n')}\n}`
-  console.log('Final result:', result)
-  return result
+  return `{\n${parsedProperties.join('\n')}\n}`
 }
 
 function processDeclaration(declaration: string): string {
@@ -168,16 +114,13 @@ function processDeclaration(declaration: string): string {
 
     // Handle multi-line object literals
     if (value.startsWith('{')) {
-      const lastBracketIndex = trimmed.lastIndexOf('}')
-      if (lastBracketIndex !== -1) {
-        value = trimmed.slice(equalIndex + 1, lastBracketIndex + 1).trim()
+      const matchResult = value.match(/\{([^}]*)\}/)
+      if (matchResult) {
+        value = matchResult[0]
       }
     }
 
-    const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
-
     if (value) {
-      // If we have a value, use it to infer the most specific type
       if (value.startsWith('{')) {
         // For object literals, preserve the exact structure
         const objectType = parseObjectLiteral(value)
@@ -189,24 +132,20 @@ function processDeclaration(declaration: string): string {
         return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${valueType};`
       }
     }
-    else if (declaredType) {
-      // If no value but a declared type, use the declared type
-      return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${declaredType};`
-    }
     else {
-      // If no value and no declared type, default to 'any'
+      // If no value, default to 'any'
       return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: any;`
     }
   }
 
   // Handle interface declarations
   if (trimmed.startsWith('export interface')) {
-    return `export declare interface ${trimmed.slice('export interface'.length).trim()};`
+    return `export declare ${trimmed.slice('export'.length).trim()}`
   }
 
   // Handle type declarations
   if (trimmed.startsWith('export type')) {
-    return `export declare type ${trimmed.slice('export type'.length).trim()};`
+    return `export declare ${trimmed.slice('export'.length).trim()}`
   }
 
   // Handle function declarations
@@ -238,6 +177,6 @@ function preserveValueType(value: string): string {
     return value // Keep string literals as is
   }
   else {
-    return `'${value}'` // Wrap other values in quotes
+    return 'any' // Default to any for other cases
   }
 }
