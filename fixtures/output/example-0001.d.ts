@@ -1,5 +1,6 @@
 import type { DtsGenerationOption, DtsGenerationConfig } from '@stacksjs/dtsx';
 import type { BunPlugin } from 'bun';
+import { generate } from '@stacksjs/dtsx';
 
 /**
  * Example of const declaration
@@ -58,7 +59,7 @@ export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 export declare interface AuthResponse {
   token: string;
   expiresIn: number;
-}
+};
 
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
 
@@ -78,9 +79,11 @@ interface Options<T> {
 
 export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
-export declare const dtsConfig: DtsGenerationConfig;
+declare const dtsConfig: DtsGenerationConfig;
 
-export { generate } from '@stacksjs/dtsx';
+export { generate, dtsConfig };
+
+export type { DtsGenerationOption };
 
 export { config } from './config';
 export * from './extract';

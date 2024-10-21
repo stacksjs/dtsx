@@ -189,7 +189,8 @@ function processFunctionDeclaration(declaration: string): string {
   const asyncKeyword = functionSignature.includes('async') ? 'async ' : ''
   const functionName = functionSignature.replace('export ', '').replace('async ', '').split('(')[0].trim()
   const params = functionSignature.split('(')[1].split(')')[0].trim()
-  const result = `export declare ${asyncKeyword}function ${functionName}(${params}): ${getReturnType(declaration)};`
+  const returnType = getReturnType(declaration)
+  const result = `export declare ${asyncKeyword}function ${functionName}(${params}): ${returnType};`
   logDebug(`Processed function declaration: ${result}`)
   return result
 }
