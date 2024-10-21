@@ -1,11 +1,10 @@
 /* eslint-disable no-console */
 const DEBUG = true // Set to false to disable debug logs
 
-export async function extract(filePath: string, debug: boolean): Promise<string> {
+export async function extract(filePath: string): Promise<string> {
   try {
-    debug = debug || DEBUG
     const sourceCode = await Bun.file(filePath).text()
-    return generateDtsTypes(sourceCode, debug)
+    return generateDtsTypes(sourceCode)
   }
   catch (error) {
     console.error(error)
@@ -13,9 +12,8 @@ export async function extract(filePath: string, debug: boolean): Promise<string>
   }
 }
 
-function generateDtsTypes(sourceCode: string, debug: boolean): string {
-  debug = debug || DEBUG
-  if (debug)
+function generateDtsTypes(sourceCode: string): string {
+  if (DEBUG)
     console.log('Starting generateDtsTypes')
   const lines = sourceCode.split('\n')
   const dtsLines: string[] = []
@@ -45,19 +43,19 @@ function generateDtsTypes(sourceCode: string, debug: boolean): string {
     if (line.trim().startsWith('import')) {
       const processedImport = processImport(line)
       imports.push(processedImport)
-      if (debug)
+      if (DEBUG)
         console.log(`Processed import: ${processedImport}`)
       continue
     }
 
     if (line.trim().startsWith('export default')) {
-      defaultExport = `${line.trim()};`
+      defaultExport = `\n${line.trim()};`
       if (DEBUG)
         console.log(`Default export found: ${defaultExport}`)
       continue
     }
 
-    if (line.trim().startsWith('export const') || isMultiLineDeclaration) {
+    if (line.trim().startsWith('export') || isMultiLineDeclaration) {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
       isMultiLineDeclaration = bracketCount > 0
@@ -69,28 +67,14 @@ function generateDtsTypes(sourceCode: string, debug: boolean): string {
             console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
           lastCommentBlock = ''
         }
-        const processed = processConstDeclaration(currentDeclaration.trim())
+        const processed = processDeclaration(currentDeclaration.trim())
         if (processed) {
           dtsLines.push(processed)
           if (DEBUG)
-            console.log(`Processed const declaration added to dtsLines: ${processed}`)
+            console.log(`Processed declaration added to dtsLines: ${processed}`)
         }
         currentDeclaration = ''
         bracketCount = 0
-      }
-    }
-    else if (line.trim().startsWith('export')) {
-      if (lastCommentBlock) {
-        dtsLines.push(lastCommentBlock.trimEnd())
-        if (DEBUG)
-          console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
-        lastCommentBlock = ''
-      }
-      const processed = processDeclaration(line)
-      if (processed) {
-        dtsLines.push(processed)
-        if (DEBUG)
-          console.log(`Processed declaration added to dtsLines: ${processed}`)
       }
     }
   }
@@ -136,7 +120,6 @@ function processDeclaration(declaration: string): string {
 function processConstDeclaration(declaration: string): string {
   if (DEBUG)
     console.log(`Processing const declaration: ${declaration}`)
-
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('export const')[1].split('=')[0].trim().split(':')[0].trim()
@@ -158,7 +141,7 @@ function processConstDeclaration(declaration: string): string {
           inString = true
           stringChar = char
         }
-        else if (char === '/' && line[i + 1] === '/') {
+        else if (char === '/' && line[i + 1] === '//') {
           commentIndex = i
           break
         }
@@ -200,7 +183,10 @@ function processInterfaceDeclaration(declaration: string): string {
 function processTypeDeclaration(declaration: string): string {
   if (DEBUG)
     console.log(`Processing type declaration: ${declaration}`)
-  const result = declaration.replace('export type', 'export declare type')
+  const lines = declaration.split('\n')
+  const typeName = lines[0].split('type')[1].split('=')[0].trim()
+  const typeBody = lines.slice(1).map(line => `  ${line.trim()}`).join('\n')
+  const result = `export declare type ${typeName} = ${typeBody}`
   if (DEBUG)
     console.log(`Processed type declaration: ${result}`)
   return result
