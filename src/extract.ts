@@ -90,10 +90,16 @@ function processDeclaration(declaration: string): string {
 
     // Handle multi-line object literals
     if (value.startsWith('{')) {
-      const lastBracketIndex = value.lastIndexOf('}')
-      if (lastBracketIndex !== -1) {
-        value = value.slice(0, lastBracketIndex + 1)
+      let bracketCount = 1
+      let i = 1
+      while (bracketCount > 0 && i < value.length) {
+        if (value[i] === '{')
+          bracketCount++
+        if (value[i] === '}')
+          bracketCount--
+        i++
       }
+      value = value.slice(0, i)
     }
 
     const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
@@ -137,9 +143,12 @@ function parseObjectLiteral(objectLiteral: string): string {
   let currentPair = ''
   let inQuotes = false
   let bracketCount = 0
+  let escapeNext = false
 
-  for (const char of content) {
-    if (char === '"' || char === '\'') {
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+
+    if (!escapeNext && (char === '"' || char === '\'')) {
       inQuotes = !inQuotes
     }
     else if (!inQuotes) {
@@ -156,6 +165,8 @@ function parseObjectLiteral(objectLiteral: string): string {
     else {
       currentPair += char
     }
+
+    escapeNext = char === '\\' && !escapeNext
   }
 
   if (currentPair.trim()) {
@@ -181,7 +192,7 @@ function preserveValueType(value: string): string {
   value = value.trim()
   if (value.startsWith('\'') || value.startsWith('"')) {
     // Handle string literals, including URLs
-    return value // Keep the original string as is
+    return value // Keep the original string as is, including quotes
   }
   else if (value === 'true' || value === 'false') {
     return value // Keep true and false as literal types
