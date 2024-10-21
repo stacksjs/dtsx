@@ -10,8 +10,10 @@ export declare const conf: {
 };
 
 export declare const someObject: {
-  someString: string;
-  someNumber: number;
+  someString: 'Stacks';
+  someNumber: 1000;
+  someBoolean: true;
+  someFalse: false;
 };
 
 /**

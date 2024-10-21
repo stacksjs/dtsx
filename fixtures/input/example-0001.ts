@@ -10,12 +10,14 @@ import { resolve } from 'node:path'
  */
 export const conf: { [key: string]: string } = {
   apiUrl: 'https://api.stacksjs.org',
-  timeout: '5000',
+  timeout: '5000', // as string
 }
 
 export const someObject = {
   someString: 'Stacks',
   someNumber: 1000,
+  someBoolean: true,
+  someFalse: false,
 }
 
 /**
