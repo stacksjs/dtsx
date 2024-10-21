@@ -76,7 +76,7 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
         // Parse the object literal
         const parsedValue = parseObjectLiteral(constValue.slice(1, -1))
         const formattedValue = Object.entries(parsedValue)
-          .map(([key, value]) => `  ${key}: ${value.includes('/') || value.includes('\'') ? `'${value}'` : value}`)
+          .map(([key, value]) => `  ${key}: ${value.match(/^['"].*['"]$/) ? value : `'${value}'`}`)
           .join(',\n')
 
         if (pendingComment) {
