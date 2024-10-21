@@ -22,6 +22,8 @@ export function generateDtsTypes(sourceCode: string): string {
   let lastCommentBlock = ''
 
   function processDeclaration(declaration: string): string {
+    console.log('processDeclaration input:', declaration)
+
     // Remove comments
     const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
     const trimmed = declWithoutComments
@@ -74,50 +76,29 @@ export function generateDtsTypes(sourceCode: string): string {
     return ''
   }
 
-  function preserveValueType(value: string): string {
-    value = value.trim()
-    if (value.startsWith('\'') || value.startsWith('"')) {
-      // Preserve string literals exactly as they appear in the source
-      // Ensure that the entire string is captured, including any special characters
-      const match = value.match(/^(['"])(.*)\1$/)
-      if (match) {
-        return `'${match[2]}'` // Return the content of the string, wrapped in single quotes
-      }
-      return 'string' // Fallback to string if the regex doesn't match
-    }
-    else if (value === 'true' || value === 'false') {
-      return value // Keep true and false as literal types
-    }
-    else if (!Number.isNaN(Number(value))) {
-      return value // Keep numbers as literal types
-    }
-    else if (value.startsWith('[') && value.endsWith(']')) {
-      return 'any[]' // Generic array type
-    }
-    else {
-      return 'string' // Default to string for other cases
-    }
-  }
-
   function parseObjectLiteral(objectLiteral: string): string {
+    console.log('parseObjectLiteral input:', objectLiteral)
     // Remove the opening and closing braces
     const content = objectLiteral.slice(1, -1).trim()
+    console.log('Cleaned content:', content)
 
-    // Split the object literal into key-value pairs, respecting nested structures
     const pairs = []
     let currentPair = ''
-    let nestLevel = 0
     let inQuotes = false
+    let bracketCount = 0
 
     for (const char of content) {
-      if (char === '{' && !inQuotes)
-        nestLevel++
-      if (char === '}' && !inQuotes)
-        nestLevel--
-      if (char === '"' || char === '\'')
+      if (char === '"' || char === '\'') {
         inQuotes = !inQuotes
+      }
+      else if (!inQuotes) {
+        if (char === '{')
+          bracketCount++
+        if (char === '}')
+          bracketCount--
+      }
 
-      if (char === ',' && nestLevel === 0 && !inQuotes) {
+      if (char === ',' && !inQuotes && bracketCount === 0) {
         pairs.push(currentPair.trim())
         currentPair = ''
       }
@@ -125,21 +106,54 @@ export function generateDtsTypes(sourceCode: string): string {
         currentPair += char
       }
     }
-    if (currentPair)
+
+    if (currentPair.trim()) {
       pairs.push(currentPair.trim())
+    }
+
+    console.log('Pairs:', pairs)
 
     const parsedProperties = pairs.map((pair) => {
-      const [key, ...valueParts] = pair.split(':')
-      const value = valueParts.join(':').trim() // Rejoin in case the value contained a colon
-
-      if (!key)
+      console.log('Processing pair:', pair)
+      const colonIndex = pair.indexOf(':')
+      if (colonIndex === -1)
         return null // Invalid pair
 
+      const key = pair.slice(0, colonIndex).trim()
+      const value = pair.slice(colonIndex + 1).trim()
+      console.log('Key:', key, 'Value:', value)
+
       const sanitizedValue = preserveValueType(value)
-      return `  ${key.trim()}: ${sanitizedValue};`
+      return `  ${key}: ${sanitizedValue};`
     }).filter(Boolean)
 
-    return `{\n${parsedProperties.join('\n')}\n}`
+    const result = `{\n${parsedProperties.join('\n')}\n}`
+    console.log('parseObjectLiteral output:', result)
+    return result
+  }
+
+  function preserveValueType(value: string): string {
+    console.log('preserveValueType input:', value)
+    value = value.trim()
+    let result
+    if (value.startsWith('\'') || value.startsWith('"')) {
+      // Handle string literals, including URLs
+      result = value // Keep the original string as is
+    }
+    else if (value === 'true' || value === 'false') {
+      result = value // Keep true and false as literal types
+    }
+    else if (!Number.isNaN(Number(value))) {
+      result = value // Keep numbers as literal types
+    }
+    else if (value.startsWith('[') && value.endsWith(']')) {
+      result = 'any[]' // Generic array type
+    }
+    else {
+      result = 'string' // Default to string for other cases
+    }
+    console.log('preserveValueType output:', result)
+    return result
   }
 
   for (let i = 0; i < lines.length; i++) {
