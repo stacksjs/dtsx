@@ -1,9 +1,11 @@
+/* eslint-disable no-console */
 const DEBUG = true // Set to false to disable debug logs
 
-export async function extract(filePath: string): Promise<string> {
+export async function extract(filePath: string, debug: boolean): Promise<string> {
   try {
+    debug = debug || DEBUG
     const sourceCode = await Bun.file(filePath).text()
-    return generateDtsTypes(sourceCode)
+    return generateDtsTypes(sourceCode, debug)
   }
   catch (error) {
     console.error(error)
@@ -11,8 +13,9 @@ export async function extract(filePath: string): Promise<string> {
   }
 }
 
-function generateDtsTypes(sourceCode: string): string {
-  if (DEBUG)
+function generateDtsTypes(sourceCode: string, debug: boolean): string {
+  debug = debug || DEBUG
+  if (debug)
     console.log('Starting generateDtsTypes')
   const lines = sourceCode.split('\n')
   const dtsLines: string[] = []
@@ -42,7 +45,7 @@ function generateDtsTypes(sourceCode: string): string {
     if (line.trim().startsWith('import')) {
       const processedImport = processImport(line)
       imports.push(processedImport)
-      if (DEBUG)
+      if (debug)
         console.log(`Processed import: ${processedImport}`)
       continue
     }
@@ -133,15 +136,42 @@ function processDeclaration(declaration: string): string {
 function processConstDeclaration(declaration: string): string {
   if (DEBUG)
     console.log(`Processing const declaration: ${declaration}`)
+
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('export const')[1].split('=')[0].trim().split(':')[0].trim()
 
   const properties = lines.slice(1, -1).map((line) => {
-    const commentIndex = line.indexOf('//')
+    let inString = false
+    let stringChar = ''
+    let commentIndex = -1
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i]
+      if (inString) {
+        if (char === stringChar && line[i - 1] !== '\\') {
+          inString = false
+        }
+      }
+      else {
+        if (char === '"' || char === '\'' || char === '`') {
+          inString = true
+          stringChar = char
+        }
+        else if (char === '/' && line[i + 1] === '/') {
+          commentIndex = i
+          break
+        }
+      }
+    }
+
     const hasComment = commentIndex !== -1
     const mainPart = hasComment ? line.slice(0, commentIndex) : line
-    const comment = hasComment ? line.slice(commentIndex) : ''
+    let comment = hasComment ? line.slice(commentIndex) : ''
+
+    if (hasComment && !comment.startsWith(' //')) {
+      comment = ` //${comment.slice(2)}`
+    }
 
     const [key, ...valueParts] = mainPart.split(':')
     let value = valueParts.join(':').trim()
@@ -189,6 +219,7 @@ function processFunctionDeclaration(declaration: string): string {
 function cleanOutput(output: string): string {
   if (DEBUG)
     console.log('Cleaning output')
+
   const result = output
     .replace(/\{\s*\}/g, '{}')
     .replace(/\s*;\s*(?=\}|$)/g, ';')
@@ -201,8 +232,15 @@ function cleanOutput(output: string): string {
     .replace(/;\n(\s*)\}/g, ';\n$1\n$1}')
     .replace(/,\n\s*;/g, ';') // Remove unnecessary commas before semicolons
     .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
+    .replace(/,\s*;/g, ';') // Remove trailing commas before semicolons
+    .replace(/;[\t\v\f\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\n\s*\}/g, ';\n}') // Ensure closing braces are on their own lines
+    .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
+    .replace(/;\s*\}/g, ';\n}') // Ensure closing braces are on their own lines
+    .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
     .trim()
+
   if (DEBUG)
     console.log('Cleaned output:', result)
+
   return result
 }
