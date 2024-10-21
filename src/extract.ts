@@ -32,7 +32,7 @@ export function generateDtsTypes(sourceCode: string): string {
       continue
     }
 
-    if (isMultiLineDeclaration || line.trim().startsWith('export const') || line.trim().startsWith('export function')) {
+    if (isMultiLineDeclaration || line.trim().startsWith('export')) {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
 
@@ -51,31 +51,98 @@ export function generateDtsTypes(sourceCode: string): string {
         isMultiLineDeclaration = true
       }
     }
-    else if (line.trim().startsWith('export') || line.trim().startsWith('import') || line.trim().startsWith('interface')) {
-      if (lastCommentBlock) {
-        dtsLines.push(lastCommentBlock.trimEnd())
-        lastCommentBlock = ''
-      }
-      const processed = processDeclaration(line)
-      if (processed)
-        dtsLines.push(processed)
+    else if (line.trim().startsWith('import')) {
+      imports.push(line)
     }
   }
 
   // Combine imports, declarations, and exports
-  const result = [
+  const result = cleanOutput([
     ...imports,
     '',
     ...dtsLines,
     '',
     ...exports,
-  ].filter(Boolean).join('\n')
+  ].filter(Boolean).join('\n'))
 
   return result
 }
 
+function processDeclaration(declaration: string): string {
+  // Remove comments
+  const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
+  const trimmed = declWithoutComments
+
+  if (trimmed.startsWith('export const')) {
+    return processConstDeclaration(trimmed)
+  }
+  else if (trimmed.startsWith('export interface')) {
+    return processInterfaceDeclaration(trimmed)
+  }
+  else if (trimmed.startsWith('export type')) {
+    return processTypeDeclaration(trimmed)
+  }
+  else if (trimmed.startsWith('export function')) {
+    return processFunctionDeclaration(trimmed)
+  }
+  else if (trimmed.startsWith('export')) {
+    return trimmed.endsWith(';') ? trimmed : `${trimmed};`
+  }
+
+  return ''
+}
+
+function processConstDeclaration(declaration: string): string {
+  const equalIndex = declaration.indexOf('=')
+  if (equalIndex === -1)
+    return declaration // No value assigned
+
+  const name = declaration.slice(0, equalIndex).trim()
+  const value = declaration.slice(equalIndex + 1).trim()
+
+  // Handle multi-line object literals
+  if (value.startsWith('{')) {
+    const objectValue = extractObjectLiteral(value)
+    const objectType = parseObjectLiteral(objectValue)
+    return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${objectType};`
+  }
+  else {
+    const valueType = preserveValueType(value)
+    return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${valueType};`
+  }
+}
+
+function processInterfaceDeclaration(declaration: string): string {
+  return `export declare ${declaration.slice('export'.length).trim()}`
+}
+
+function processTypeDeclaration(declaration: string): string {
+  return `export declare ${declaration.slice('export'.length).trim()}`
+}
+
+function processFunctionDeclaration(declaration: string): string {
+  const functionSignature = declaration.split('{')[0].trim()
+  return `export declare ${functionSignature.slice('export'.length).trim()};`
+}
+
+function extractObjectLiteral(value: string): string {
+  let bracketCount = 0
+  let endIndex = 0
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '{')
+      bracketCount++
+    if (value[i] === '}')
+      bracketCount--
+    if (bracketCount === 0) {
+      endIndex = i + 1
+      break
+    }
+  }
+  return value.slice(0, endIndex)
+}
+
 function parseObjectLiteral(objectLiteral: string): string {
-  // Remove the opening and closing braces and any newlines
+  // Remove the opening and closing braces and newlines
   const content = objectLiteral.replace(/^\{|\}$/g, '').replace(/\n/g, ' ').trim()
 
   const pairs = content.split(',').map(pair => pair.trim()).filter(Boolean)
@@ -98,70 +165,6 @@ function parseObjectLiteral(objectLiteral: string): string {
   return `{\n${parsedProperties.join('\n')}\n}`
 }
 
-function processDeclaration(declaration: string): string {
-  // Remove comments
-  const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
-  const trimmed = declWithoutComments
-
-  // Handle const declarations
-  if (trimmed.startsWith('export const')) {
-    const equalIndex = trimmed.indexOf('=')
-    if (equalIndex === -1)
-      return trimmed // No value assigned
-
-    const name = trimmed.slice(0, equalIndex).trim()
-    let value = trimmed.slice(equalIndex + 1).trim()
-
-    // Handle multi-line object literals
-    if (value.startsWith('{')) {
-      const matchResult = value.match(/\{([^}]*)\}/)
-      if (matchResult) {
-        value = matchResult[0]
-      }
-    }
-
-    if (value) {
-      if (value.startsWith('{')) {
-        // For object literals, preserve the exact structure
-        const objectType = parseObjectLiteral(value)
-        return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${objectType};`
-      }
-      else {
-        // For primitive values, use the exact value as the type
-        const valueType = preserveValueType(value)
-        return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${valueType};`
-      }
-    }
-    else {
-      // If no value, default to 'any'
-      return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: any;`
-    }
-  }
-
-  // Handle interface declarations
-  if (trimmed.startsWith('export interface')) {
-    return `export declare ${trimmed.slice('export'.length).trim()}`
-  }
-
-  // Handle type declarations
-  if (trimmed.startsWith('export type')) {
-    return `export declare ${trimmed.slice('export'.length).trim()}`
-  }
-
-  // Handle function declarations
-  if (trimmed.startsWith('export function')) {
-    const functionSignature = trimmed.split('{')[0].trim()
-    return `export declare ${functionSignature.slice('export'.length).trim()};`
-  }
-
-  // Handle other declarations
-  if (trimmed.startsWith('export')) {
-    return trimmed.endsWith(';') ? trimmed : `${trimmed};`
-  }
-
-  return ''
-}
-
 function preserveValueType(value: string): string {
   value = value.trim()
   if (value === 'true' || value === 'false') {
@@ -179,4 +182,12 @@ function preserveValueType(value: string): string {
   else {
     return 'any' // Default to any for other cases
   }
+}
+
+function cleanOutput(output: string): string {
+  return output
+    .replace(/\{\s*\}/g, '{}') // Replace empty objects with {}
+    .replace(/\s*;\s*(?=\}|$)/g, ';') // Clean up semicolons before closing braces or end of string
+    .replace(/\n+/g, '\n') // Remove multiple consecutive newlines
+    .trim()
 }
