@@ -37,7 +37,7 @@ export function generateDtsTypes(sourceCode: string): string {
       continue
     }
 
-    if (line.trim().startsWith('export') && (line.includes('{') || line.includes('*'))) {
+    if (line.trim().startsWith('export') && (line.includes('{') || line.includes('*') || line.includes('from'))) {
       exports.push(line)
       continue
     }
@@ -108,26 +108,29 @@ function processConstDeclaration(declaration: string): string {
   if (equalIndex === -1)
     return declaration // No value assigned
 
-  const name = declaration.slice(0, equalIndex).trim()
+  const name = declaration.slice(0, equalIndex).trim().replace('export const', '').trim()
   const value = declaration.slice(equalIndex + 1).trim().replace(/;$/, '')
 
   // Handle object literals
   if (value.startsWith('{')) {
     const objectType = parseObjectLiteral(value)
-    return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${objectType};`
+    return `export declare const ${name}: ${objectType};`
   }
   else {
     const valueType = preserveValueType(value)
-    return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${valueType};`
+    return `export declare const ${name}: ${valueType};`
   }
 }
 
 function processInterfaceDeclaration(declaration: string): string {
-  return `export declare ${declaration.slice('export'.length).trim()}`
+  const lines = declaration.split('\n')
+  const interfaceName = lines[0].split('interface')[1].split('{')[0].trim()
+  const interfaceBody = lines.slice(1, -1).join('\n')
+  return `export declare interface ${interfaceName} {\n${interfaceBody}\n}`
 }
 
 function processTypeDeclaration(declaration: string): string {
-  return `export declare ${declaration.slice('export'.length).trim()}`
+  return declaration.replace('export type', 'export declare type')
 }
 
 function processFunctionDeclaration(declaration: string): string {
@@ -163,19 +166,19 @@ function parseObjectLiteral(objectLiteral: string): string {
 function preserveValueType(value: string): string {
   value = value.trim()
   if (value === 'true' || value === 'false') {
-    return value // Keep true and false as literal types
+    return 'boolean' // Use boolean type for true and false
   }
   else if (!Number.isNaN(Number(value))) {
-    return value // Keep numbers as literal types
+    return 'number' // Use number type for numeric values
   }
   else if (value.startsWith('[') && value.endsWith(']')) {
     return 'any[]' // Generic array type
   }
   else if ((value.startsWith('\'') && value.endsWith('\'')) || (value.startsWith('"') && value.endsWith('"'))) {
-    return value // Keep string literals as is
+    return 'string' // Use string type for string literals
   }
   else {
-    return value // Keep other values as is
+    return 'any' // Default to any for other cases
   }
 }
 
