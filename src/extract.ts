@@ -56,6 +56,7 @@ export function generateDtsTypes(sourceCode: string): string {
           dtsLines.push(processed)
         isMultiLineDeclaration = false
         currentDeclaration = ''
+        bracketCount = 0
       }
       else {
         isMultiLineDeclaration = true
@@ -122,13 +123,11 @@ function processConstDeclaration(declaration: string): string {
 }
 
 function processInterfaceDeclaration(declaration: string): string {
-  // Remove the function body if present
-  const interfaceBody = declaration.split('{')[1].split('}')[0]
-  return `export declare interface ${declaration.split(' ')[2]} {\n${interfaceBody}\n}`
+  return `export declare ${declaration.slice('export'.length).trim()}`
 }
 
 function processTypeDeclaration(declaration: string): string {
-  return declaration
+  return `export declare ${declaration.slice('export'.length).trim()}`
 }
 
 function processFunctionDeclaration(declaration: string): string {
@@ -176,7 +175,7 @@ function preserveValueType(value: string): string {
     return value // Keep string literals as is
   }
   else {
-    return 'string' // Default to string for other cases
+    return value // Keep other values as is
   }
 }
 
