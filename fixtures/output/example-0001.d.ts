@@ -6,7 +6,7 @@ import type { BunPlugin } from 'bun';
  */
 export declare const conf: {
   apiUrl: 'https://api.stacksjs.org';
-  timeout: '5000';
+  timeout: '5000'; // as string
 };
 
 export declare const someObject: {

@@ -10,12 +10,13 @@ export async function extract(filePath: string): Promise<string> {
   }
 }
 
-export function generateDtsTypes(sourceCode: string): string {
+function generateDtsTypes(sourceCode: string): string {
   console.log('Starting generateDtsTypes')
   const lines = sourceCode.split('\n')
   const dtsLines: string[] = []
   const imports: string[] = []
   const exports: string[] = []
+  let defaultExport = ''
 
   let isMultiLineDeclaration = false
   let currentDeclaration = ''
@@ -23,66 +24,70 @@ export function generateDtsTypes(sourceCode: string): string {
   let lastCommentBlock = ''
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i].trim()
     console.log(`Processing line ${i + 1}: ${line}`)
 
-    // Handle comments
-    if (line.trim().startsWith('/**') || line.trim().startsWith('*') || line.trim().startsWith('*/')) {
-      if (line.trim().startsWith('/**'))
+    if (line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')) {
+      if (line.startsWith('/**'))
         lastCommentBlock = ''
       lastCommentBlock += `${line}\n`
       console.log('Comment line added to lastCommentBlock')
       continue
     }
 
-    if (line.trim().startsWith('import')) {
+    if (line.startsWith('import')) {
       const processedImport = processImport(line)
       imports.push(processedImport)
       console.log(`Processed import: ${processedImport}`)
       continue
     }
 
-    if (line.trim().startsWith('export') && (line.includes('{') || line.includes('*') || line.includes('from'))) {
-      exports.push(line)
-      console.log(`Export line added: ${line}`)
+    if (line.startsWith('export default')) {
+      defaultExport = `${line};`
+      console.log(`Default export found: ${defaultExport}`)
       continue
     }
 
-    if (isMultiLineDeclaration || line.trim().startsWith('export')) {
+    if (line.startsWith('export const')) {
+      isMultiLineDeclaration = true
+      currentDeclaration = ''
+      bracketCount = 0
+    }
+
+    if (isMultiLineDeclaration) {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
-      console.log(`Current declaration: ${currentDeclaration.trim()}, Bracket count: ${bracketCount}`)
 
-      if (bracketCount === 0 || (i === lines.length - 1)) {
+      if (bracketCount === 0 || i === lines.length - 1) {
         if (lastCommentBlock) {
           dtsLines.push(lastCommentBlock.trimEnd())
           console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
           lastCommentBlock = ''
         }
-        const processed = processDeclaration(currentDeclaration.trim())
+        const processed = processConstDeclaration(currentDeclaration.trim())
         if (processed) {
           dtsLines.push(processed)
-          console.log(`Processed declaration added to dtsLines: ${processed}`)
+          console.log(`Processed const declaration added to dtsLines: ${processed}`)
         }
         isMultiLineDeclaration = false
         currentDeclaration = ''
-        bracketCount = 0
       }
-      else {
-        isMultiLineDeclaration = true
+    }
+    else if (line.startsWith('export')) {
+      if (lastCommentBlock) {
+        dtsLines.push(lastCommentBlock.trimEnd())
+        console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
+        lastCommentBlock = ''
+      }
+      const processed = processDeclaration(line)
+      if (processed) {
+        dtsLines.push(processed)
+        console.log(`Processed declaration added to dtsLines: ${processed}`)
       }
     }
   }
 
-  // Combine imports, declarations, and exports
-  const result = cleanOutput([
-    ...imports,
-    '',
-    ...dtsLines,
-    '',
-    ...exports,
-  ].filter(Boolean).join('\n'))
-
+  const result = cleanOutput([...imports, '', ...dtsLines, '', ...exports, defaultExport].filter(Boolean).join('\n'))
   console.log('Final result:', result)
   return result
 }
@@ -90,9 +95,7 @@ export function generateDtsTypes(sourceCode: string): string {
 function processImport(importLine: string): string {
   console.log(`Processing import: ${importLine}`)
   if (importLine.includes('type')) {
-    const processed = importLine.replace('import', 'import type').replace('type type', 'type')
-    console.log(`Processed import: ${processed}`)
-    return processed
+    return importLine.replace('import', 'import type').replace('type type', 'type')
   }
   return importLine
 }
@@ -120,30 +123,25 @@ function processDeclaration(declaration: string): string {
 
 function processConstDeclaration(declaration: string): string {
   console.log(`Processing const declaration: ${declaration}`)
-  const equalIndex = declaration.indexOf('=')
-  if (equalIndex === -1)
-    return declaration
+  const lines = declaration.split('\n')
+  const firstLine = lines[0]
+  const name = firstLine.split('export const')[1].split('=')[0].trim()
+  const type = firstLine.includes(':') ? firstLine.split(':')[1].split('=')[0].trim() : inferType(lines.slice(1, -1))
 
-  const name = declaration.slice(0, equalIndex).trim().replace('export const', '').trim()
-  const value = declaration.slice(equalIndex + 1).trim().replace(/;$/, '')
+  const properties = lines.slice(1, -1).map((line) => {
+    const [key, value] = line.split(':').map(part => part.trim())
+    return `  ${key}: ${value.replace(',', ';')}`
+  }).join('\n')
 
-  if (value.startsWith('{')) {
-    const objectType = parseObjectLiteral(value)
-    const result = `export declare const ${name}: ${objectType};`
-    console.log(`Processed const declaration: ${result}`)
-    return result
-  }
-  else {
-    const valueType = inferValueType(value)
-    const result = `export declare const ${name}: ${valueType};`
-    console.log(`Processed const declaration: ${result}`)
-    return result
-  }
+  return `export declare const ${name}: ${type} {\n${properties}\n};`
 }
 
 function processInterfaceDeclaration(declaration: string): string {
   console.log(`Processing interface declaration: ${declaration}`)
-  const result = declaration.replace('export interface', 'export declare interface')
+  const lines = declaration.split('\n')
+  const interfaceName = lines[0].split('interface')[1].split('{')[0].trim()
+  const interfaceBody = lines.slice(1, -1).map(line => `  ${line.trim()}`).join('\n')
+  const result = `export declare interface ${interfaceName} {\n${interfaceBody}\n}`
   console.log(`Processed interface declaration: ${result}`)
   return result
 }
@@ -157,8 +155,8 @@ function processTypeDeclaration(declaration: string): string {
 
 function processFunctionDeclaration(declaration: string): string {
   console.log(`Processing function declaration: ${declaration}`)
-  const functionBody = declaration.match(/\{[\s\S]*\}/)?.[0] || ''
-  const result = `export declare ${declaration.replace(functionBody, '').trim()};`
+  const functionSignature = declaration.split('{')[0].trim()
+  const result = `export declare ${functionSignature.replace('export ', '')};`
   console.log(`Processed function declaration: ${result}`)
   return result
 }
@@ -168,23 +166,27 @@ function parseObjectLiteral(objectLiteral: string): string {
   const content = objectLiteral.replace(/^\{|\}$/g, '').split(',').map(pair => pair.trim())
   const parsedProperties = content.map((pair) => {
     const [key, value] = pair.split(':').map(p => p.trim())
-    return `  ${key}: ${inferValueType(value)};`
+    console.log(`Parsing property: key=${key}, value=${value}`)
+    return `  ${key}: ${value};`
   })
   const result = `{\n${parsedProperties.join('\n')}\n}`
   console.log(`Parsed object literal: ${result}`)
   return result
 }
 
-function inferValueType(value: string): string {
-  console.log(`Inferring value type for: ${value}`)
-  if (value === 'true' || value === 'false')
-    return value
-  if (!Number.isNaN(Number(value)))
-    return value
-  if (value.startsWith('\'') || value.startsWith('"'))
-    return value
-  console.log(`Defaulting to string for: ${value}`)
-  return 'string' // Default to string for other cases
+function inferType(properties: string[]): string {
+  const types = properties.map((prop) => {
+    const value = prop.split(':')[1].trim()
+    if (value.startsWith('\'') || value.startsWith('"'))
+      return 'string'
+    if (value === 'true' || value === 'false')
+      return 'boolean'
+    if (!isNaN(Number(value)))
+      return 'number'
+    return 'any'
+  })
+  const uniqueTypes = [...new Set(types)]
+  return uniqueTypes.length === 1 ? `{ [key: string]: ${uniqueTypes[0]} }` : '{ [key: string]: any }'
 }
 
 function cleanOutput(output: string): string {
