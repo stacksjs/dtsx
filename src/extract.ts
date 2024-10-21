@@ -46,7 +46,7 @@ export function generateDtsTypes(sourceCode: string): string {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
 
-      if (bracketCount === 0 || (i === lines.length - 1 && !line.trim().endsWith(','))) {
+      if (bracketCount === 0 || (i === lines.length - 1)) {
         if (lastCommentBlock) {
           dtsLines.push(lastCommentBlock.trimEnd())
           lastCommentBlock = ''
@@ -89,8 +89,11 @@ function processDeclaration(declaration: string): string {
   else if (trimmed.startsWith('export type')) {
     return processTypeDeclaration(trimmed)
   }
-  else if (trimmed.startsWith('export function')) {
+  else if (trimmed.startsWith('export function') || trimmed.startsWith('export async function')) {
     return processFunctionDeclaration(trimmed)
+  }
+  else if (trimmed.startsWith('export default')) {
+    return `${trimmed};`
   }
   else if (trimmed.startsWith('export')) {
     return trimmed.endsWith(';') ? trimmed : `${trimmed};`
@@ -105,12 +108,11 @@ function processConstDeclaration(declaration: string): string {
     return declaration // No value assigned
 
   const name = declaration.slice(0, equalIndex).trim()
-  const value = declaration.slice(equalIndex + 1).trim()
+  const value = declaration.slice(equalIndex + 1).trim().replace(/;$/, '')
 
-  // Handle multi-line object literals
+  // Handle object literals
   if (value.startsWith('{')) {
-    const objectValue = extractObjectLiteral(value)
-    const objectType = parseObjectLiteral(objectValue)
+    const objectType = parseObjectLiteral(value)
     return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${objectType};`
   }
   else {
@@ -120,67 +122,26 @@ function processConstDeclaration(declaration: string): string {
 }
 
 function processInterfaceDeclaration(declaration: string): string {
-  return `export declare ${declaration.slice('export'.length).trim()}`
+  // Remove the function body if present
+  const interfaceBody = declaration.split('{')[1].split('}')[0]
+  return `export declare interface ${declaration.split(' ')[2]} {\n${interfaceBody}\n}`
 }
 
 function processTypeDeclaration(declaration: string): string {
-  return `export declare ${declaration.slice('export'.length).trim()}`
+  return declaration
 }
 
 function processFunctionDeclaration(declaration: string): string {
+  // Remove the function body
   const functionSignature = declaration.split('{')[0].trim()
-  return `export declare ${functionSignature.slice('export'.length).trim()};`
-}
-
-function extractObjectLiteral(value: string): string {
-  let bracketCount = 0
-  let endIndex = 0
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] === '{')
-      bracketCount++
-    if (value[i] === '}')
-      bracketCount--
-    if (bracketCount === 0) {
-      endIndex = i + 1
-      break
-    }
-  }
-  return value.slice(0, endIndex)
+  return `export declare ${functionSignature.replace('export ', '')};`
 }
 
 function parseObjectLiteral(objectLiteral: string): string {
   // Remove the opening and closing braces and newlines
   const content = objectLiteral.replace(/^\{|\}$/g, '').replace(/\n/g, ' ').trim()
 
-  const pairs = []
-  let currentPair = ''
-  let inQuotes = false
-  let quoteChar = ''
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-    if ((char === '"' || char === '\'') && content[i - 1] !== '\\') {
-      if (!inQuotes) {
-        inQuotes = true
-        quoteChar = char
-      }
-      else if (char === quoteChar) {
-        inQuotes = false
-      }
-    }
-
-    if (char === ',' && !inQuotes) {
-      pairs.push(currentPair.trim())
-      currentPair = ''
-    }
-    else {
-      currentPair += char
-    }
-  }
-
-  if (currentPair.trim()) {
-    pairs.push(currentPair.trim())
-  }
+  const pairs = content.split(',').map(pair => pair.trim()).filter(Boolean)
 
   const parsedProperties = pairs.map((pair) => {
     const [key, ...valueParts] = pair.split(':')
