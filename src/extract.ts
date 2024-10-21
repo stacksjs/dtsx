@@ -23,7 +23,6 @@ export function generateDtsTypes(sourceCode: string): string {
 
   function processDeclaration(declaration: string): string {
     console.log('processDeclaration input:', declaration)
-
     // Remove comments
     const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
     const trimmed = declWithoutComments
@@ -42,19 +41,41 @@ export function generateDtsTypes(sourceCode: string): string {
 
     // Handle const declarations
     if (trimmed.startsWith('export const')) {
-      const [name, rest] = trimmed.split('=').map(s => s.trim())
+      const equalIndex = trimmed.indexOf('=')
+      if (equalIndex === -1)
+        return trimmed // No value assigned
+
+      const name = trimmed.slice(0, equalIndex).trim()
+      let value = trimmed.slice(equalIndex + 1).trim()
+
+      // Handle multi-line object literals
+      if (value.startsWith('{') && !value.endsWith('}')) {
+        let bracketCount = 1
+        let i = 1
+        while (bracketCount > 0 && i < value.length) {
+          if (value[i] === '{')
+            bracketCount++
+          if (value[i] === '}')
+            bracketCount--
+          i++
+        }
+        if (i < value.length) {
+          value = value.slice(0, i)
+        }
+      }
+
       const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
 
-      if (rest) {
+      if (value) {
         // If we have a value, use it to infer the most specific type
-        if (rest.startsWith('{')) {
+        if (value.startsWith('{')) {
           // For object literals, preserve the exact structure
-          const objectType = parseObjectLiteral(rest)
+          const objectType = parseObjectLiteral(value)
           return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${objectType};`
         }
         else {
           // For primitive values, use the exact value as the type
-          const valueType = preserveValueType(rest)
+          const valueType = preserveValueType(value)
           return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${valueType};`
         }
       }
