@@ -4,9 +4,12 @@ import type { BunPlugin } from 'bun';
 /**
  * Example of const declaration
  */
-export const conf: { [key: string]: string };
+export declare const conf: {
+  apiUrl: 'https://api.stacksjs.org';
+  timeout: '5000';
+};
 
-export const someObject: {
+export declare const someObject: {
   someString: string;
   someNumber: number;
 };
@@ -14,7 +17,7 @@ export const someObject: {
 /**
  * Example of interface declaration
  */
-export interface User {
+export declare interface User {
   id: number;
   name: string;
   email: string;
@@ -23,7 +26,7 @@ export interface User {
 /**
  * Example of type declaration
  */
-export interface ResponseData {
+export declare interface ResponseData {
   success: boolean;
   data: User[];
 }
@@ -31,15 +34,15 @@ export interface ResponseData {
 /**
  * Example of function declaration
  */
-export function fetchUsers(): Promise<ResponseData>;
+export declare function fetchUsers(): Promise<ResponseData>;
 
-export interface ApiResponse<T> {
+export declare interface ApiResponse<T> {
   status: number;
   message: string;
   data: T;
 }
 
-export interface Product {
+export declare interface Product {
   id: number;
   name: string;
   price: number;
@@ -48,22 +51,22 @@ export interface Product {
 /**
  * Example of function declaration
  */
-export function getProduct(id: number): Promise<ApiResponse<Product>>;
+export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 
-export interface AuthResponse {
+export declare interface AuthResponse {
   token: string;
   expiresIn: number;
 }
 
-export type AuthStatus = 'authenticated' | 'unauthenticated';
+export declare type AuthStatus = 'authenticated' | 'unauthenticated';
 
-export function authenticate(user: string, password: string): Promise<AuthResponse>;
+export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
 
-export const defaultHeaders: {
+export declare const defaultHeaders: {
   'Content-Type': string;
 };
 
-export function dts(options?: DtsGenerationOption): BunPlugin;
+export declare function dts(options?: DtsGenerationOption): BunPlugin;
 
 interface Options<T> {
   name: string;
@@ -71,9 +74,9 @@ interface Options<T> {
   defaultConfig: T;
 }
 
-export function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
+export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
-export const dtsConfig: DtsGenerationConfig;
+export declare const dtsConfig: DtsGenerationConfig;
 
 export { generate } from '@stacksjs/dtsx';
 

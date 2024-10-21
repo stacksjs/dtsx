@@ -13,6 +13,8 @@ export async function extract(filePath: string): Promise<string> {
 export function generateDtsTypes(sourceCode: string): string {
   const lines = sourceCode.split('\n')
   const dtsLines: string[] = []
+  const imports: string[] = []
+  const exports: string[] = []
 
   let isMultiLineDeclaration = false
   let currentDeclaration = ''
@@ -24,39 +26,49 @@ export function generateDtsTypes(sourceCode: string): string {
 
     // Handle imports
     if (trimmed.startsWith('import')) {
-      return trimmed.endsWith(';') ? trimmed : `${trimmed};`
+      imports.push(trimmed.endsWith(';') ? trimmed : `${trimmed};`)
+      return ''
     }
 
     // Handle exports from other files
     if (trimmed.startsWith('export') && trimmed.includes('from')) {
-      return trimmed.endsWith(';') ? trimmed : `${trimmed};`
+      exports.push(trimmed.endsWith(';') ? trimmed : `${trimmed};`)
+      return ''
     }
 
-    // Handle interfaces and types
-    if (trimmed.startsWith('export interface') || trimmed.startsWith('export type') || trimmed.startsWith('interface')) {
+    // Handle const declarations
+    if (trimmed.startsWith('export const')) {
+      const [name, rest] = trimmed.split('=')
+      const type = name.split(':')[1]?.trim() || 'any'
+      return `export declare const ${name.split(':')[0].replace('export const', '').trim()}: ${type};`
+    }
+
+    // Handle interface declarations
+    if (trimmed.startsWith('export interface')) {
       return trimmed.replace(/\s*\{\s*([^}]+)\}\s*$/, (_, content) => {
         const formattedContent = content
-          .split(/[,;]/)
+          .split(';')
           .map(prop => prop.trim())
           .filter(Boolean)
           .map(prop => `  ${prop};`)
           .join('\n')
         return ` {\n${formattedContent}\n}`
-      })
+      }).replace('export ', 'export declare ')
     }
 
-    // Handle const declarations
-    if (trimmed.startsWith('export const')) {
-      const [name, type] = trimmed.split(/:\s*/, 2)
-      if (type) {
-        return `${name}: ${type.split('=')[0].trim()};`
-      }
-      return `${name}: any;`
+    // Handle type declarations
+    if (trimmed.startsWith('export type')) {
+      return `export declare ${trimmed.replace('export ', '')}`
     }
 
     // Handle function declarations
     if (trimmed.includes('function')) {
-      return `${trimmed.split('{')[0].trim()};`
+      return `export declare ${trimmed.replace('export ', '').split('{')[0].trim()};`
+    }
+
+    // Handle default exports
+    if (trimmed.startsWith('export default')) {
+      return `export default ${trimmed.replace('export default ', '')};`
     }
 
     return trimmed
@@ -79,10 +91,12 @@ export function generateDtsTypes(sourceCode: string): string {
 
       if (bracketCount === 0 || i === lines.length - 1) {
         if (lastCommentBlock) {
-          dtsLines.push(lastCommentBlock.trim())
+          dtsLines.push(lastCommentBlock.trimEnd())
           lastCommentBlock = ''
         }
-        dtsLines.push(processDeclaration(currentDeclaration))
+        const processed = processDeclaration(currentDeclaration)
+        if (processed)
+          dtsLines.push(processed)
         isMultiLineDeclaration = false
         currentDeclaration = ''
       }
@@ -92,10 +106,12 @@ export function generateDtsTypes(sourceCode: string): string {
 
       if (bracketCount === 0) {
         if (lastCommentBlock) {
-          dtsLines.push(lastCommentBlock.trim())
+          dtsLines.push(lastCommentBlock.trimEnd())
           lastCommentBlock = ''
         }
-        dtsLines.push(processDeclaration(line))
+        const processed = processDeclaration(line)
+        if (processed)
+          dtsLines.push(processed)
       }
       else {
         isMultiLineDeclaration = true
@@ -104,35 +120,14 @@ export function generateDtsTypes(sourceCode: string): string {
     }
   }
 
-  // Remove duplicate exports and format specific declarations
-  const seenExports = new Set()
-  const filteredLines = dtsLines.filter((line) => {
-    if (line.startsWith('export {') || line.startsWith('export type {')) {
-      const exportName = line.match(/export (?:type )?\{([^}]+)\}/)?.[1].trim()
-      if (seenExports.has(exportName))
-        return false
-      seenExports.add(exportName)
-    }
-    return true
-  }).map((line) => {
-    if (line.startsWith('export function loadConfig')) {
-      return 'export function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;'
-    }
-    if (line.startsWith('export const dtsConfig')) {
-      return 'export const dtsConfig: DtsGenerationConfig;'
-    }
-    return line
-  })
+  // Combine imports, declarations, and exports
+  const result = [
+    ...imports,
+    '',
+    ...dtsLines,
+    '',
+    ...exports,
+  ].filter(Boolean).join('\n')
 
-  // Add missing declarations
-  filteredLines.push('export { generate } from \'@stacksjs/dtsx\';')
-  filteredLines.push('export default dts;')
-
-  // Join lines with a single line break, and add an extra line break before certain declarations
-  return filteredLines.map((line, index) => {
-    if (index > 0 && (line.startsWith('export') || line.startsWith('import'))) {
-      return `\n${line}`
-    }
-    return line
-  }).join('\n')
+  return result
 }
