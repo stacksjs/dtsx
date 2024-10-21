@@ -1,5 +1,11 @@
 const DEBUG = true // Set to false to disable debug logs
 
+function logDebug(...messages: any[]): void {
+  if (DEBUG) {
+    console.log(...messages)
+  }
+}
+
 export async function extract(filePath: string): Promise<string> {
   try {
     const sourceCode = await Bun.file(filePath).text()
@@ -12,8 +18,7 @@ export async function extract(filePath: string): Promise<string> {
 }
 
 function generateDtsTypes(sourceCode: string): string {
-  if (DEBUG)
-    console.log('Starting generateDtsTypes')
+  logDebug('Starting generateDtsTypes')
   const lines = sourceCode.split('\n')
   const dtsLines: string[] = []
   const imports: string[] = []
@@ -27,30 +32,26 @@ function generateDtsTypes(sourceCode: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    if (DEBUG)
-      console.log(`Processing line ${i + 1}: ${line}`)
+    logDebug(`Processing line ${i + 1}: ${line}`)
 
     if (line.trim().startsWith('/**') || line.trim().startsWith('*') || line.trim().startsWith('*/')) {
       if (line.trim().startsWith('/**'))
         lastCommentBlock = ''
       lastCommentBlock += `${line}\n`
-      if (DEBUG)
-        console.log('Comment line added to lastCommentBlock')
+      logDebug('Comment line added to lastCommentBlock')
       continue
     }
 
     if (line.trim().startsWith('import')) {
       const processedImport = processImport(line)
       imports.push(processedImport)
-      if (DEBUG)
-        console.log(`Processed import: ${processedImport}`)
+      logDebug(`Processed import: ${processedImport}`)
       continue
     }
 
     if (line.trim().startsWith('export default')) {
       defaultExport = `\n${line.trim()};`
-      if (DEBUG)
-        console.log(`Default export found: ${defaultExport}`)
+      logDebug(`Default export found: ${defaultExport}`)
       continue
     }
 
@@ -62,15 +63,13 @@ function generateDtsTypes(sourceCode: string): string {
       if (!isMultiLineDeclaration) {
         if (lastCommentBlock) {
           dtsLines.push(lastCommentBlock.trimEnd())
-          if (DEBUG)
-            console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
+          logDebug(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
           lastCommentBlock = ''
         }
         const processed = processDeclaration(currentDeclaration.trim())
         if (processed) {
           dtsLines.push(processed)
-          if (DEBUG)
-            console.log(`Processed declaration added to dtsLines: ${processed}`)
+          logDebug(`Processed declaration added to dtsLines: ${processed}`)
         }
         currentDeclaration = ''
         bracketCount = 0
@@ -81,14 +80,12 @@ function generateDtsTypes(sourceCode: string): string {
   const result = cleanOutput([...imports, '', ...dtsLines, '', ...exports].filter(Boolean).join('\n'))
   const finalResult = defaultExport ? `${result}\n${defaultExport}` : result
 
-  if (DEBUG)
-    console.log('Final result:', finalResult)
+  logDebug('Final result:', finalResult)
   return finalResult
 }
 
 function processImport(importLine: string): string {
-  if (DEBUG)
-    console.log(`Processing import: ${importLine}`)
+  logDebug(`Processing import: ${importLine}`)
   if (importLine.includes('type')) {
     return importLine.replace('import', 'import type').replace('type type', 'type')
   }
@@ -96,8 +93,7 @@ function processImport(importLine: string): string {
 }
 
 function processDeclaration(declaration: string): string {
-  if (DEBUG)
-    console.log(`Processing declaration: ${declaration}`)
+  logDebug(`Processing declaration: ${declaration}`)
   if (declaration.startsWith('export const')) {
     return processConstDeclaration(declaration)
   }
@@ -113,14 +109,12 @@ function processDeclaration(declaration: string): string {
   else if (declaration.startsWith('export default')) {
     return `${declaration};`
   }
-  if (DEBUG)
-    console.log(`Declaration not processed: ${declaration}`)
+  logDebug(`Declaration not processed: ${declaration}`)
   return declaration
 }
 
 function processConstDeclaration(declaration: string): string {
-  if (DEBUG)
-    console.log(`Processing const declaration: ${declaration}`)
+  logDebug(`Processing const declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('export const')[1].split('=')[0].trim().split(':')[0].trim()
@@ -170,42 +164,35 @@ function processConstDeclaration(declaration: string): string {
 }
 
 function processInterfaceDeclaration(declaration: string): string {
-  if (DEBUG)
-    console.log(`Processing interface declaration: ${declaration}`)
+  logDebug(`Processing interface declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const interfaceName = lines[0].split('interface')[1].split('{')[0].trim()
   const interfaceBody = lines.slice(1, -1).map(line => `  ${line.trim()}`).join('\n')
   const result = `export declare interface ${interfaceName} {\n${interfaceBody}\n}`
-  if (DEBUG)
-    console.log(`Processed interface declaration: ${result}`)
+  logDebug(`Processed interface declaration: ${result}`)
   return result
 }
 
 function processTypeDeclaration(declaration: string): string {
-  if (DEBUG)
-    console.log(`Processing type declaration: ${declaration}`)
+  logDebug(`Processing type declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const typeName = lines[0].split('type')[1].split('=')[0].trim()
   const typeBody = lines.slice(1).join('\n').trim()
   const result = `export declare type ${typeName} = ${typeBody}`
-  if (DEBUG)
-    console.log(`Processed type declaration: ${result}`)
+  logDebug(`Processed type declaration: ${result}`)
   return result
 }
 
 function processFunctionDeclaration(declaration: string): string {
-  if (DEBUG)
-    console.log(`Processing function declaration: ${declaration}`)
+  logDebug(`Processing function declaration: ${declaration}`)
   const functionSignature = declaration.split('{')[0].trim()
   const result = `export declare ${functionSignature.replace('export ', '')};`
-  if (DEBUG)
-    console.log(`Processed function declaration: ${result}`)
+  logDebug(`Processed function declaration: ${result}`)
   return result
 }
 
 function cleanOutput(output: string): string {
-  if (DEBUG)
-    console.log('Cleaning output')
+  logDebug('Cleaning output')
 
   const result = output
     .replace(/\{\s*\}/g, '{}')
@@ -217,17 +204,16 @@ function cleanOutput(output: string): string {
     .replace(/\}\n(?!$)/g, '}\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/;\n(\s*)\}/g, ';\n$1\n$1}')
-    .replace(/,\n\s*;/g, ';') // Remove unnecessary commas before semicolons
-    .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
-    .replace(/,\s*;/g, ';') // Remove trailing commas before semicolons
-    .replace(/;[\t\v\f\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\n\s*\}/g, ';\n}') // Ensure closing braces are on their own lines
-    .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
-    .replace(/;\s*\}/g, ';\n}') // Ensure closing braces are on their own lines
-    .replace(/;\s*\/\/\s*/g, '; // ') // Ensure comments are properly formatted
+    .replace(/,\n\s*;/g, ';')
+    .replace(/;\s*\/\/\s*/g, '; // ')
+    .replace(/,\s*;/g, ';')
+    .replace(/;[\t\v\f\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\n\s*\}/g, ';\n}')
+    .replace(/;\s*\/\/\s*/g, '; // ')
+    .replace(/;\s*\}/g, ';\n}')
+    .replace(/;\s*\/\/\s*/g, '; // ')
     .trim()
 
-  if (DEBUG)
-    console.log('Cleaned output:', result)
+  logDebug('Cleaned output:', result)
 
   return result
 }
