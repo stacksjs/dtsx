@@ -50,17 +50,14 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
   // Function to parse object literal
   function parseObjectLiteral(str: string) {
     const obj: Record<string, string> = {}
-    str.split(',').forEach((pair) => {
-      const trimmedPair = pair.trim()
-      if (trimmedPair) {
-        const colonIndex = trimmedPair.indexOf(':')
-        if (colonIndex !== -1) {
-          const key = trimmedPair.slice(0, colonIndex).trim().replace(/['"]/g, '')
-          const value = trimmedPair.slice(colonIndex + 1).trim()
-          obj[key] = value
-        }
-      }
-    })
+    const regex = /(['"]?)([^\s'":]+)\1\s*:\s*(['"]?)([^\s'"]+)\3/g
+    let match
+
+    while ((match = regex.exec(str)) !== null) {
+      const [, , key, , value] = match
+      obj[key] = value
+    }
+
     return obj
   }
 
@@ -79,8 +76,8 @@ export async function extractTypeFromSource(filePath: string): Promise<string> {
         // Parse the object literal
         const parsedValue = parseObjectLiteral(constValue.slice(1, -1))
         const formattedValue = Object.entries(parsedValue)
-          .map(([key, value]) => `  ${key}: ${value.includes('/') || value.includes('\'') ? value : `'${value}'`}`)
-          .join('\n')
+          .map(([key, value]) => `  ${key}: ${value.includes('/') || value.includes('\'') ? `'${value}'` : value}`)
+          .join(',\n')
 
         if (pendingComment) {
           declarations += `${pendingComment}\n`
