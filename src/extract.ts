@@ -22,21 +22,21 @@ export function generateDtsTypes(sourceCode: string): string {
   let lastCommentBlock = ''
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+    const line = lines[i]
 
     // Handle comments
-    if (line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')) {
-      if (line.startsWith('/**'))
+    if (line.trim().startsWith('/**') || line.trim().startsWith('*') || line.trim().startsWith('*/')) {
+      if (line.trim().startsWith('/**'))
         lastCommentBlock = ''
-      lastCommentBlock += `${lines[i]}\n`
+      lastCommentBlock += `${line}\n`
       continue
     }
 
-    if (isMultiLineDeclaration || line.startsWith('export const') || line.startsWith('export function')) {
-      currentDeclaration += ` ${line}`
+    if (isMultiLineDeclaration || line.trim().startsWith('export const') || line.trim().startsWith('export function')) {
+      currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
 
-      if (bracketCount === 0 || (i === lines.length - 1 && !line.endsWith(','))) {
+      if (bracketCount === 0 || (i === lines.length - 1 && !line.trim().endsWith(','))) {
         if (lastCommentBlock) {
           dtsLines.push(lastCommentBlock.trimEnd())
           lastCommentBlock = ''
@@ -51,7 +51,7 @@ export function generateDtsTypes(sourceCode: string): string {
         isMultiLineDeclaration = true
       }
     }
-    else if (line.startsWith('export') || line.startsWith('import') || line.startsWith('interface')) {
+    else if (line.trim().startsWith('export') || line.trim().startsWith('import') || line.trim().startsWith('interface')) {
       if (lastCommentBlock) {
         dtsLines.push(lastCommentBlock.trimEnd())
         lastCommentBlock = ''
@@ -75,7 +75,6 @@ export function generateDtsTypes(sourceCode: string): string {
 }
 
 function processDeclaration(declaration: string): string {
-  console.log('Processing declaration:', declaration)
   // Remove comments
   const declWithoutComments = declaration.replace(/\/\/.*$/gm, '').trim()
   const trimmed = declWithoutComments
@@ -89,24 +88,13 @@ function processDeclaration(declaration: string): string {
     const name = trimmed.slice(0, equalIndex).trim()
     let value = trimmed.slice(equalIndex + 1).trim()
 
-    console.log('Const name:', name)
-    console.log('Const value:', value)
-
     // Handle multi-line object literals
     if (value.startsWith('{')) {
-      let bracketCount = 1
-      let i = 1
-      while (bracketCount > 0 && i < value.length) {
-        if (value[i] === '{')
-          bracketCount++
-        if (value[i] === '}')
-          bracketCount--
-        i++
+      const lastBracketIndex = value.lastIndexOf('}')
+      if (lastBracketIndex !== -1) {
+        value = value.slice(0, lastBracketIndex + 1)
       }
-      value = value.slice(0, i)
     }
-
-    console.log('Processed value:', value)
 
     const declaredType = name.includes(':') ? name.split(':')[1].trim() : null
 
@@ -142,7 +130,6 @@ function processDeclaration(declaration: string): string {
 }
 
 function parseObjectLiteral(objectLiteral: string): string {
-  console.log('Parsing object literal:', objectLiteral)
   // Remove the opening and closing braces
   const content = objectLiteral.slice(1, -1).trim()
 
@@ -175,8 +162,6 @@ function parseObjectLiteral(objectLiteral: string): string {
     pairs.push(currentPair.trim())
   }
 
-  console.log('Parsed pairs:', pairs)
-
   const parsedProperties = pairs.map((pair) => {
     const colonIndex = pair.indexOf(':')
     if (colonIndex === -1)
@@ -185,19 +170,14 @@ function parseObjectLiteral(objectLiteral: string): string {
     const key = pair.slice(0, colonIndex).trim()
     const value = pair.slice(colonIndex + 1).trim()
 
-    console.log('Parsing pair - Key:', key, 'Value:', value)
-
     const sanitizedValue = preserveValueType(value)
     return `  ${key}: ${sanitizedValue};`
   }).filter(Boolean)
 
-  const result = `{\n${parsedProperties.join('\n')}\n}`
-  console.log('Parsed object literal result:', result)
-  return result
+  return `{\n${parsedProperties.join('\n')}\n}`
 }
 
 function preserveValueType(value: string): string {
-  console.log('Preserving value type for:', value)
   value = value.trim()
   if (value.startsWith('\'') || value.startsWith('"')) {
     // Handle string literals, including URLs
