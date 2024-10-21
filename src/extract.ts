@@ -1,6 +1,6 @@
 const DEBUG = true // Set to false to disable debug logs
 
-function logDebug(...messages: any[]): void {
+function logDebug(...messages: unknown[]): void {
   if (DEBUG) {
     console.log(...messages)
   }
@@ -103,6 +103,9 @@ function processDeclaration(declaration: string): string {
   else if (declaration.startsWith('interface')) {
     return processInterfaceDeclaration(declaration)
   }
+  else if (declaration.startsWith('export type {')) {
+    return processTypeOnlyExport(declaration)
+  }
   else if (declaration.startsWith('export type')) {
     return processTypeDeclaration(declaration)
   }
@@ -176,12 +179,18 @@ function processInterfaceDeclaration(declaration: string): string {
   return result
 }
 
+function processTypeOnlyExport(declaration: string): string {
+  logDebug(`Processing type-only export: ${declaration}`)
+  return declaration.replace('export type', 'export declare type')
+}
+
 function processTypeDeclaration(declaration: string): string {
   logDebug(`Processing type declaration: ${declaration}`)
   const lines = declaration.split('\n')
-  const typeName = lines[0].split('type')[1].split('=')[0].trim()
-  const typeBody = lines.slice(1).join('\n').trim().replace(/;$/, '')
-  const result = `export declare type ${typeName} = ${typeBody}`
+  const firstLine = lines[0]
+  const typeName = firstLine.split('type')[1].split('=')[0].trim()
+  const typeBody = firstLine.split('=')[1]?.trim() || lines.slice(1).join('\n').trim().replace(/;$/, '')
+  const result = `export declare type ${typeName} = ${typeBody};`
   logDebug(`Processed type declaration: ${result}`)
   return result
 }
