@@ -1,5 +1,3 @@
-import { Bun } from 'bun'
-
 const DEBUG = true // Set to false to disable debug logs
 
 export async function extract(filePath: string): Promise<string> {
