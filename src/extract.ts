@@ -24,41 +24,36 @@ function generateDtsTypes(sourceCode: string): string {
   let lastCommentBlock = ''
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+    const line = lines[i]
     console.log(`Processing line ${i + 1}: ${line}`)
 
-    if (line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')) {
-      if (line.startsWith('/**'))
+    if (line.trim().startsWith('/**') || line.trim().startsWith('*') || line.trim().startsWith('*/')) {
+      if (line.trim().startsWith('/**'))
         lastCommentBlock = ''
       lastCommentBlock += `${line}\n`
       console.log('Comment line added to lastCommentBlock')
       continue
     }
 
-    if (line.startsWith('import')) {
+    if (line.trim().startsWith('import')) {
       const processedImport = processImport(line)
       imports.push(processedImport)
       console.log(`Processed import: ${processedImport}`)
       continue
     }
 
-    if (line.startsWith('export default')) {
-      defaultExport = `${line};`
+    if (line.trim().startsWith('export default')) {
+      defaultExport = `${line.trim()};`
       console.log(`Default export found: ${defaultExport}`)
       continue
     }
 
-    if (line.startsWith('export const')) {
-      isMultiLineDeclaration = true
-      currentDeclaration = ''
-      bracketCount = 0
-    }
-
-    if (isMultiLineDeclaration) {
+    if (line.trim().startsWith('export const') || isMultiLineDeclaration) {
       currentDeclaration += `${line}\n`
       bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
+      isMultiLineDeclaration = bracketCount > 0
 
-      if (bracketCount === 0 || i === lines.length - 1) {
+      if (!isMultiLineDeclaration) {
         if (lastCommentBlock) {
           dtsLines.push(lastCommentBlock.trimEnd())
           console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
@@ -69,11 +64,11 @@ function generateDtsTypes(sourceCode: string): string {
           dtsLines.push(processed)
           console.log(`Processed const declaration added to dtsLines: ${processed}`)
         }
-        isMultiLineDeclaration = false
         currentDeclaration = ''
+        bracketCount = 0
       }
     }
-    else if (line.startsWith('export')) {
+    else if (line.trim().startsWith('export')) {
       if (lastCommentBlock) {
         dtsLines.push(lastCommentBlock.trimEnd())
         console.log(`Comment block added to dtsLines: ${lastCommentBlock.trimEnd()}`)
@@ -125,15 +120,15 @@ function processConstDeclaration(declaration: string): string {
   console.log(`Processing const declaration: ${declaration}`)
   const lines = declaration.split('\n')
   const firstLine = lines[0]
-  const name = firstLine.split('export const')[1].split('=')[0].trim()
-  const type = firstLine.includes(':') ? firstLine.split(':')[1].split('=')[0].trim() : inferType(lines.slice(1, -1))
+  const name = firstLine.split('export const')[1].split('=')[0].trim().split(':')[0].trim()
 
   const properties = lines.slice(1, -1).map((line) => {
-    const [key, value] = line.split(':').map(part => part.trim())
-    return `  ${key}: ${value.replace(',', ';')}`
+    const [key, ...valueParts] = line.split(':')
+    const value = valueParts.join(':').trim().replace(',', '')
+    return `  ${key.trim()}: ${value};`
   }).join('\n')
 
-  return `export declare const ${name}: ${type} {\n${properties}\n};`
+  return `export declare const ${name}: {\n${properties}\n};`
 }
 
 function processInterfaceDeclaration(declaration: string): string {
@@ -195,8 +190,9 @@ function cleanOutput(output: string): string {
     .replace(/\{\s*\}/g, '{}')
     .replace(/\s*;\s*(?=\}|$)/g, ';')
     .replace(/\n+/g, '\n')
-    .replace(/;\n\}/g, ';\n  }')
+    .replace(/;\n\}/g, ';\n}')
     .replace(/\{;/g, '{')
+    .replace(/\};\n/g, '}\n\n') // Add an extra line break after each declaration
     .trim()
   console.log('Cleaned output:', result)
   return result
