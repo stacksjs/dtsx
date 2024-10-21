@@ -100,6 +100,9 @@ function processDeclaration(declaration: string): string {
   else if (declaration.startsWith('export interface')) {
     return processInterfaceDeclaration(declaration)
   }
+  else if (declaration.startsWith('interface')) {
+    return processInterfaceDeclaration(declaration)
+  }
   else if (declaration.startsWith('export type')) {
     return processTypeDeclaration(declaration)
   }
