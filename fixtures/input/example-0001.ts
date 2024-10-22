@@ -19,7 +19,7 @@ export const someObject = {
   someBoolean: true,
   someFalse: false,
   someFunction: () => { console.log('hello world') },
-  someFunction2: () => {
+  anotherOne: () => {
     // some comment
     /* some other comment */
     return some.object ?? 'default'
@@ -27,6 +27,16 @@ export const someObject = {
   someArray: [1, 2, 3],
   someNestedArray: [
     [1, 2, 3],
+    [4, 5, 6, 7, 8, 9, 10],
+  ],
+  someOtherNestedArray: [
+    [
+      'some text',
+      2,
+      console.log,
+      () => console.log('hello world'),
+      helloWorld,
+    ],
     [4, 5, 6, 7, 8, 9, 10],
   ],
   someComplexArray: [
