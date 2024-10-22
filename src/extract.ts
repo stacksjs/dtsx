@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 const DEBUG = true
 
 function logDebug(...messages: unknown[]): void {
@@ -235,7 +236,11 @@ function processCompleteProperty({ key, content }: { key?: string, content: stri
     return null
 
   const fullContent = content.join(' ').trim()
-  const valueContent = fullContent.substring(fullContent.indexOf(':') + 1).trim()
+  const colonIndex = fullContent.indexOf(':')
+  if (colonIndex === -1)
+    return null
+
+  const valueContent = fullContent.substring(colonIndex + 1).trim()
 
   // Handle nested objects
   if (valueContent.startsWith('{')) {
@@ -346,7 +351,7 @@ function inferElementType(element: string): string {
   }
 
   // Handle numbers
-  if (!isNaN(Number(element))) {
+  if (!Number.isNaN(Number(element))) {
     return element // Use literal type for numbers
   }
 
@@ -389,7 +394,7 @@ function inferFunctionType(func: string): string {
       if (returnStatement.startsWith('\'') || returnStatement.startsWith('"')) {
         returnType = 'string'
       }
-      else if (!isNaN(Number(returnStatement))) {
+      else if (!Number.isNaN(Number(returnStatement))) {
         returnType = 'number'
       }
       else if (returnStatement === 'true' || returnStatement === 'false') {
@@ -451,92 +456,6 @@ function parseObjectLiteral(objStr: string): PropertyInfo[] {
   return extractObjectProperties([content])
 }
 
-function processValue(key: string, value: string): PropertyInfo {
-  // Clean the value
-  const cleanValue = value.replace(/,\s*$/, '').trim()
-
-  // Handle array literals
-  if (cleanValue.startsWith('[')) {
-    return {
-      key,
-      value: cleanValue,
-      type: inferArrayType(cleanValue),
-    }
-  }
-
-  // Handle object literals
-  if (cleanValue.startsWith('{')) {
-    const props = parseObjectLiteral(cleanValue)
-    return {
-      key,
-      value: cleanValue,
-      type: formatObjectType(props),
-      nested: props,
-    }
-  }
-
-  // Handle function literals
-  if (cleanValue.includes('=>') || cleanValue.startsWith('function')) {
-    return {
-      key,
-      value: cleanValue,
-      type: inferFunctionType(cleanValue),
-    }
-  }
-
-  // Handle string literals
-  if (cleanValue.startsWith('\'') || cleanValue.startsWith('"')) {
-    const stringContent = cleanValue.slice(1, -1)
-    return {
-      key,
-      value: cleanValue,
-      type: `'${stringContent}'`,
-    }
-  }
-
-  // Handle number literals
-  if (!isNaN(Number(cleanValue))) {
-    return {
-      key,
-      value: cleanValue,
-      type: cleanValue, // Use literal type
-    }
-  }
-
-  // Handle boolean literals
-  if (cleanValue === 'true' || cleanValue === 'false') {
-    return {
-      key,
-      value: cleanValue,
-      type: cleanValue, // Use literal type
-    }
-  }
-
-  // Handle known function references
-  if (cleanValue === 'console.log') {
-    return {
-      key,
-      value: cleanValue,
-      type: '(...args: any[]) => void',
-    }
-  }
-
-  // Handle potentially undefined references
-  if (cleanValue.includes('.')) {
-    return {
-      key,
-      value: cleanValue,
-      type: 'unknown',
-    }
-  }
-
-  return {
-    key,
-    value: cleanValue,
-    type: 'any',
-  }
-}
-
 function processSimpleValue(key: string, value: string): PropertyInfo {
   // Clean the value first - remove trailing commas and whitespace
   const cleanValue = value.replace(/,\s*$/, '').trim()
@@ -552,7 +471,7 @@ function processSimpleValue(key: string, value: string): PropertyInfo {
   }
 
   // Numbers
-  if (!isNaN(Number(cleanValue))) {
+  if (!Number.isNaN(Number(cleanValue))) {
     return {
       key,
       value: cleanValue,
@@ -584,53 +503,6 @@ function processSimpleValue(key: string, value: string): PropertyInfo {
     value: cleanValue,
     type: 'Object',
   }
-}
-
-function processCompleteProperty({ key, content }: { key?: string, content: string[] }): PropertyInfo | null {
-  if (!key)
-    return null
-
-  const fullContent = content.join(' ').trim()
-  const colonIndex = fullContent.indexOf(':')
-  if (colonIndex === -1)
-    return null
-
-  const valueContent = fullContent.substring(colonIndex + 1).trim()
-
-  // Handle nested objects
-  if (valueContent.startsWith('{')) {
-    const nestedContent = extractNestedContent(valueContent, '{', '}')
-    if (nestedContent) {
-      const nestedProps = extractObjectProperties(nestedContent.split(',').map(line => line.trim()))
-      return {
-        key,
-        value: valueContent,
-        type: formatNestedType(nestedProps),
-        nested: nestedProps,
-      }
-    }
-  }
-
-  // Handle arrays
-  if (valueContent.startsWith('[')) {
-    return {
-      key,
-      value: valueContent,
-      type: inferArrayType(valueContent),
-    }
-  }
-
-  // Handle functions
-  if (isFunction(valueContent)) {
-    return {
-      key,
-      value: valueContent,
-      type: 'Function',
-    }
-  }
-
-  // Handle other types
-  return processSimpleValue(key, valueContent)
 }
 
 function formatNestedType(properties: PropertyInfo[]): string {
@@ -717,7 +589,7 @@ function extractPropertyInfo(key: string, value: string, originalLines: string[]
   }
 
   // Handle numbers
-  if (!isNaN(Number(value))) {
+  if (!Number.isNaN(Number(value))) {
     return {
       key,
       value,
