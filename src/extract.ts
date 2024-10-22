@@ -240,7 +240,7 @@ function processFunctionDeclaration(declaration: string, usedTypes: Set<string>,
   // Fix invalid ending `):;` to `;`
   const result = `${isExported ? 'export ' : ''}declare ${asyncKeyword}function ${functionName}(${params}): ${returnType};`
   logDebug(`Processed function declaration: ${result}`)
-  return result
+  return result.replace('function function', 'function')
 }
 
 function getReturnType(functionSignature: string): string {
