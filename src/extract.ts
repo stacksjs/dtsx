@@ -68,7 +68,7 @@ export interface ProcessingState {
 export async function extract(filePath: string): Promise<string> {
   try {
     const sourceCode = await Bun.file(filePath).text()
-    return generateDtsTypes(sourceCode)
+    return extractDtsTypes(sourceCode)
   }
   catch (error) {
     console.error('Failed to extract types:', error)
@@ -77,9 +77,9 @@ export async function extract(filePath: string): Promise<string> {
 }
 
 /**
- * Generates TypeScript declaration types from source code
+ * Generates TypeScript declaration types from source code.
  */
-export function generateDtsTypes(sourceCode: string): string {
+export function extractDtsTypes(sourceCode: string): string {
   const state: ProcessingState = {
     dtsLines: [],
     imports: [],
@@ -145,6 +145,21 @@ export function processImport(importLine: string, typeSources: Map<string, strin
   }
 
   return importLine
+}
+
+/**
+ * Filter out unused imports and only keep type imports
+ */
+export function processImports(lines: string[]): string[] {
+  const typeImports = new Set<string>()
+  const imports: string[] = []
+
+  for (const line of lines) {
+    if (line.trim().startsWith('import type'))
+      imports.push(line)
+  }
+
+  return imports
 }
 
 /**
@@ -294,11 +309,12 @@ export function processCompleteProperty({ key, content }: { key?: string, conten
     }
   }
 
+  // Handle arrays with proper type parameters
   if (valueContent.startsWith('[')) {
     return {
       key,
       value: valueContent,
-      type: inferArrayType(valueContent),
+      type: inferArrayType(valueContent).replace(/'+$/, ''), // Remove any trailing quotes
     }
   }
 
@@ -362,25 +378,35 @@ export function inferArrayType(value: string): string {
     return 'never[]'
 
   const elementTypes = elements.map(element => inferElementType(element.trim()))
-  const uniqueTypes = [...new Set(elementTypes)]
 
-  return uniqueTypes.length === 1
-    ? `Array<${uniqueTypes[0]}>`
-    : `Array<${uniqueTypes.join(' | ')}>`
+  // Handle nested arrays
+  if (elementTypes.some(type => type.includes('Array'))) {
+    const nestedTypes = elementTypes.map((type) => {
+      if (type.startsWith('Array<'))
+        return type.slice(6, -1) // Remove Array< and >
+      return type
+    })
+    return `Array<${nestedTypes.join(' | ')}>`
+  }
+
+  const uniqueTypes = [...new Set(elementTypes)]
+  return `Array<${uniqueTypes.join(' | ')}>`
 }
 
 /**
  * Infer element type from a single array element
  */
 export function inferElementType(element: string): string {
-  if (element.startsWith('['))
-    return inferArrayType(element)
+  if (element.startsWith('[')) {
+    const nested = inferArrayType(element)
+    return nested
+  }
 
   if (element.startsWith('{'))
     return formatObjectType(parseObjectLiteral(element))
 
   if (element.startsWith('\'') || element.startsWith('"'))
-    return `'${element.slice(1, -1)}'`
+    return `'${element.slice(1, -1).replace(/'+$/, '')}'` // Remove extra quotes
 
   if (!Number.isNaN(Number(element)))
     return element
@@ -388,11 +414,11 @@ export function inferElementType(element: string): string {
   if (element === 'true' || element === 'false')
     return element
 
-  if (element.includes('=>') || element.startsWith('function'))
-    return inferFunctionType(element)
-
-  if (element === 'console.log' || element.endsWith('.log'))
+  if (element === 'console.log')
     return '(...args: any[]) => void'
+
+  if (element.includes('=>'))
+    return inferFunctionType(element)
 
   if (element.includes('.'))
     return 'unknown'
@@ -669,18 +695,35 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
 }
 
 export function formatOutput(state: ProcessingState): string {
-  const dynamicImports = Array.from(state.usedTypes)
-    .map((type) => {
-      const source = state.typeSources.get(type)
-      return source ? `import type { ${type} } from '${source}';` : ''
-    })
-    .filter(Boolean)
+  const imports = processImports(state.imports)
+  const dynamicImports = generateDynamicImports(state.usedTypes, state.typeSources)
 
-  const result = [...state.imports, ...dynamicImports, '', ...state.dtsLines]
-    .filter(Boolean)
-    .join('\n')
+  // Group similar declarations together
+  const declarations = state.dtsLines.reduce((acc, line) => {
+    if (line.startsWith('/**')) {
+      if (acc.length > 0)
+        acc.push('') // Add space before comment block
+      acc.push(line)
+    }
+    else if (line.startsWith('export declare') || line.startsWith('declare')) {
+      acc.push(line)
+      if (line.includes('interface') || line.includes('type'))
+        acc.push('') // Add space after interfaces and types
+    }
+    else {
+      acc.push(line)
+    }
+    return acc
+  }, [] as string[])
 
-  return state.defaultExport ? `${result}\n${state.defaultExport}` : result
+  const result = [
+    ...imports,
+    ...dynamicImports,
+    '',
+    ...declarations,
+  ].filter(Boolean).join('\n')
+
+  return state.defaultExport ? `${result}\n\nexport default ${state.defaultExport.trim()};` : result
 }
 
 /**
