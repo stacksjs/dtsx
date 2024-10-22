@@ -157,7 +157,7 @@ export function processImport(importLine: string, typeSources: Map<string, strin
 /**
  * Filter out unused imports and only keep type imports
  */
-function processImports(imports: string[]): string[] {
+export function processImports(imports: string[], usedTypes: Set<string>): string[] {
   const importMap = new Map<string, Set<string>>()
 
   // Process each import line to extract module and types
@@ -170,16 +170,27 @@ function processImports(imports: string[]): string[] {
       const types = match[1].split(',').map(t => t.trim())
       const module = match[2]
 
-      // Add types to the set for this module
-      if (!importMap.has(module)) {
-        importMap.set(module, new Set())
+      // Only track types that are actually used
+      const usedImports = types.filter((type) => {
+        const baseName = type.split(' as ')[0].trim()
+        return usedTypes.has(baseName)
+      })
+
+      if (usedImports.length > 0) {
+        if (!importMap.has(module)) {
+          importMap.set(module, new Set())
+        }
+        usedImports.forEach(type => importMap.get(module)!.add(type))
       }
-      types.forEach(type => importMap.get(module)!.add(type))
     }
   }
 
-  // Format imports
+  // These are the only modules we want to keep imports from
+  const allowedModules = ['bun', '@stacksjs/dtsx']
+
+  // Format imports, filtering to allowed modules only
   return Array.from(importMap.entries())
+    .filter(([module]) => allowedModules.includes(module))
     .map(([module, types]) => {
       const sortedTypes = Array.from(types).sort()
       return `import type { ${sortedTypes.join(', ')} } from '${module}';`
@@ -785,12 +796,15 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
   }
 }
 
-export function formatOutput(state: ProcessingState): string {
-  const uniqueImports = processImports(state.imports)
+function formatOutput(state: ProcessingState): string {
+  const uniqueImports = processImports(state.imports, state.usedTypes)
   const dynamicImports = Array.from(state.usedTypes)
     .map((type) => {
       const source = state.typeSources.get(type)
-      return source ? `import type { ${type} } from '${source}';` : ''
+      if (source && ['bun', '@stacksjs/dtsx'].includes(source)) {
+        return `import type { ${type} } from '${source}';`
+      }
+      return ''
     })
     .filter(Boolean)
     .sort()
@@ -805,10 +819,13 @@ export function formatOutput(state: ProcessingState): string {
   const result = [
     ...allImports,
     '',
+    '', // Extra newline after imports
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  return state.defaultExport ? `${result}\n\nexport default ${state.defaultExport.trim()};` : result
+  return state.defaultExport
+    ? `${result}\n\nexport default ${state.defaultExport.trim()};\n`
+    : `${result}\n`
 }
 
 /**
