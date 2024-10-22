@@ -265,7 +265,7 @@ function cleanOutput(output: string): string {
     .replace(/\n+/g, '\n')
     .replace(/;\n\}/g, ';\n}')
     .replace(/\{;/g, '{')
-    .replace(/\};\n/g, '}\n\n')
+    .replace(/\};\n/g, '};\n\n')
     .replace(/\}\n(?!$)/g, '}\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/;\n(\s*)\}/g, ';\n$1\n$1}')
@@ -282,6 +282,7 @@ function cleanOutput(output: string): string {
     .replace(/declare function ([^(]+)\(([^)]+)\): ([^;]+)\);/g, 'declare function $1($2): $3;')
     .replace(/declare declare/g, 'declare')
     .replace(/\):;/g, ');') // Fix invalid ending
+    .replace(/;\n/g, ';\n') // Ensure semicolons are preserved
     .trim()
 
   logDebug('Cleaned output:', result)
