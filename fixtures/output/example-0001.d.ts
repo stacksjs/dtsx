@@ -5,10 +5,7 @@ import { generate } from '@stacksjs/dtsx';
 /**
  * Example of const declaration
  */
-export declare const conf: {
-  apiUrl: 'https://api.stacksjs.org';
-  timeout: '5000'; // as string
-};
+export declare const conf: { [key: string]: string };
 
 export declare const someObject: {
   someString: 'Stacks';
@@ -19,6 +16,7 @@ export declare const someObject: {
 
 /**
  * Example of interface declaration
+ * with another comment in an extra line
  */
 export declare interface User {
   id: number;
@@ -28,6 +26,8 @@ export declare interface User {
 
 /**
  * Example of type declaration
+ *
+ * with multiple lines of comments, including an empty line
  */
 export declare interface ResponseData {
   success: boolean;
@@ -36,6 +36,9 @@ export declare interface ResponseData {
 
 /**
  * Example of function declaration
+ *
+ *
+ * with multiple empty lines, including an empty lines
  */
 export declare function fetchUsers(): Promise<ResponseData>;
 
@@ -43,6 +46,16 @@ export declare interface ApiResponse<T> {
   status: number;
   message: string;
   data: T;
+}
+
+/**
+ * Example of another const declaration
+    *
+* with multiple empty lines, including being poorly formatted
+ */
+declare const settings: {
+  theme: 'dark';
+  language: 'en';
 }
 
 export declare interface Product {
@@ -59,7 +72,7 @@ export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 export declare interface AuthResponse {
   token: string;
   expiresIn: number;
-};
+}
 
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
 
@@ -71,7 +84,7 @@ export declare const defaultHeaders: {
 
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
 
-interface Options<T> {
+declare interface Options<T> {
   name: string;
   cwd?: string;
   defaultConfig: T;

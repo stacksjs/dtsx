@@ -18,10 +18,28 @@ export const someObject = {
   someNumber: 1000,
   someBoolean: true,
   someFalse: false,
+  someFunction: () => { console.log('hello world') },
+  someArray: [1, 2, 3],
+  someObject: { key: 'value' },
+  someNestedObject: {
+    key: {
+      nestedKey: 'value',
+    }
+  },
+  someNestedArray: [
+    [1, 2, 3],
+    [4, 5, 6],
+  ],
+  someNestedObjectArray: [
+    { key: 'value' },
+    { key: 'value' },
+  ],
+  someInlineCall: process.cwd(),
 }
 
 /**
  * Example of interface declaration
+ * with another comment in an extra line
  */
 export interface User {
   id: number
@@ -31,6 +49,8 @@ export interface User {
 
 /**
  * Example of type declaration
+ *
+ * with multiple lines of comments, including an empty line
  */
 export interface ResponseData {
   success: boolean
@@ -39,6 +59,9 @@ export interface ResponseData {
 
 /**
  * Example of function declaration
+ *
+ *
+ * with multiple empty lines, including an empty lines
  */
 export function fetchUsers(): Promise<ResponseData> {
   return fetch(conf.apiUrl)
@@ -53,6 +76,8 @@ export interface ApiResponse<T> {
 
 /**
  * Example of another const declaration
+    *
+* with multiple empty lines, including being poorly formatted
  */
 const settings: { [key: string]: any } = {
   theme: 'dark',
