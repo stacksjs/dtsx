@@ -210,13 +210,17 @@ function extractObjectProperties(lines: string[]): PropertyInfo[] {
 }
 
 function inferType(value: string): string {
-  if (value.startsWith('"') || value.startsWith('\''))
-    return value.replace(/^['"]|['"]$/g, '')
+  // Handle string literals - keep the quotes
+  if (value.startsWith('"') || value.startsWith('\'')) {
+    // Ensure consistent quote style (using single quotes)
+    const cleanValue = value.trim().replace(/^["']|["']$/g, '')
+    return `'${cleanValue}'`
+  }
 
   if (value === 'true' || value === 'false')
     return value
 
-  if (!isNaN(Number(value)))
+  if (!Number.isNaN(Number(value)))
     return value
 
   if (value.includes('=>') || value.includes('function'))
