@@ -18,7 +18,7 @@ export const REGEX: RegexPatterns = {
   typeImport: /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
   regularImport: /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
   returnType: /\):\s*([^{;]+)/,
-  constType: /const\s[^:]+:\s*([^=]+)\s*=/,
+  constType: /const([^:=]+):\s*([^=]+)=/,
   bracketOpen: /[[{]/g,
   bracketClose: /[\]}]/g,
   functionReturn: /return\s+([^;]+)/,
@@ -150,16 +150,8 @@ export function processImport(importLine: string, typeSources: Map<string, strin
 /**
  * Filter out unused imports and only keep type imports
  */
-export function processImports(lines: string[]): string[] {
-  const typeImports = new Set<string>()
-  const imports: string[] = []
-
-  for (const line of lines) {
-    if (line.trim().startsWith('import type'))
-      imports.push(line)
-  }
-
-  return imports
+export function processImports(imports: string[]): string[] {
+  return imports.filter(line => line.trim().startsWith('import type'))
 }
 
 /**
@@ -696,7 +688,12 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
 
 export function formatOutput(state: ProcessingState): string {
   const imports = processImports(state.imports)
-  const dynamicImports = generateDynamicImports(state.usedTypes, state.typeSources)
+  const dynamicImports = Array.from(state.usedTypes)
+    .map((type) => {
+      const source = state.typeSources.get(type)
+      return source ? `import type { ${type} } from '${source}';` : ''
+    })
+    .filter(Boolean)
 
   // Group similar declarations together
   const declarations = state.dtsLines.reduce((acc, line) => {
