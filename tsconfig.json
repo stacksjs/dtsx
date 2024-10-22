@@ -7,6 +7,9 @@
     "moduleDetection": "force",
     "module": "esnext",
     "moduleResolution": "bundler",
+    "paths": {
+      "@stacksjs/dtsx": ["./src/index.ts"]
+    },
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "strict": true,
@@ -20,10 +23,7 @@
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
     "skipDefaultLibCheck": true,
-    "skipLibCheck": true,
-    "paths": {
-      "@stacksjs/dtsx": ["./src/index.ts"]
-    },
+    "skipLibCheck": true
   },
   "exclude": [
     "**/fixtures"
