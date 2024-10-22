@@ -1,6 +1,6 @@
-// const DEBUG = false
-
-/** RegExp patterns used throughout the module */
+/**
+ * RegExp patterns used throughout the module
+ */
 export interface RegexPatterns {
   readonly typeImport: RegExp
   readonly regularImport: RegExp
@@ -18,6 +18,7 @@ export const REGEX: RegexPatterns = {
   typeImport: /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
   regularImport: /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
   returnType: /\):\s*([^{;]+)/,
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   constType: /const([^:=]+):\s*([^=]+)=/,
   bracketOpen: /[[{]/g,
   bracketClose: /[\]}]/g,
@@ -53,14 +54,6 @@ export interface ProcessingState {
   bracketCount: number
   isMultiLineDeclaration: boolean
 }
-
-/**
- * Debug logging utility
- */
-// function logDebug(...messages: unknown[]): void {
-//   if (DEBUG)
-//     console.debug('[dtsx]', ...messages)
-// }
 
 /**
  * Extracts types from a TypeScript file and generates corresponding .d.ts content
