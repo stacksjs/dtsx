@@ -151,7 +151,15 @@ function processConstDeclaration(declaration: string, isExported = true): string
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('const')[1].split('=')[0].trim().split(':')[0].trim()
+  const typeMatch = firstLine.match(/const\s+\w+\s*:\s*([^=]+)\s*=/)
 
+  if (typeMatch) {
+    // If a type is defined, use it directly in the generated declaration
+    const type = typeMatch[1].trim()
+    return `${isExported ? 'export ' : ''}declare const ${name}: ${type};`
+  }
+
+  // If no type is defined, process the properties as before
   const properties = lines.slice(1, -1).map((line) => {
     let inString = false
     let stringChar = ''
