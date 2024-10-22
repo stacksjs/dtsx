@@ -1,171 +1,205 @@
-/* eslint-disable no-console */
-const DEBUG = true
+// const DEBUG = false
 
-function logDebug(...messages: unknown[]): void {
-  if (DEBUG)
-    console.debug('[dtsx]', ...messages)
+/** RegExp patterns used throughout the module */
+export interface RegexPatterns {
+  readonly typeImport: RegExp
+  readonly regularImport: RegExp
+  readonly returnType: RegExp
+  readonly constType: RegExp
+  readonly bracketOpen: RegExp
+  readonly bracketClose: RegExp
+  readonly functionReturn: RegExp
 }
 
-interface PropertyInfo {
+/**
+ * Regular expression patterns used throughout the module
+ */
+export const REGEX: RegexPatterns = {
+  typeImport: /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
+  regularImport: /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
+  returnType: /\):\s*([^{;]+)/,
+  constType: /const\s[^:]+:\s*([^=]+)\s*=/,
+  bracketOpen: /[[{]/g,
+  bracketClose: /[\]}]/g,
+  functionReturn: /return\s+([^;]+)/,
+} as const satisfies RegexPatterns
+
+// Type Definitions
+/**
+ * Represents type information for a property
+ */
+export interface PropertyInfo {
+  /** Property name */
   key: string
+  /** Original value from source */
   value: string
+  /** Inferred TypeScript type */
   type: string
+  /** Nested properties for objects */
   nested?: PropertyInfo[]
 }
 
+/**
+ * Represents the current state of the processing
+ */
+export interface ProcessingState {
+  dtsLines: string[]
+  imports: string[]
+  usedTypes: Set<string>
+  typeSources: Map<string, string>
+  defaultExport: string
+  currentDeclaration: string
+  lastCommentBlock: string
+  bracketCount: number
+  isMultiLineDeclaration: boolean
+}
+
+/**
+ * Debug logging utility
+ */
+// function logDebug(...messages: unknown[]): void {
+//   if (DEBUG)
+//     console.debug('[dtsx]', ...messages)
+// }
+
+/**
+ * Extracts types from a TypeScript file and generates corresponding .d.ts content
+ */
 export async function extract(filePath: string): Promise<string> {
   try {
     const sourceCode = await Bun.file(filePath).text()
     return generateDtsTypes(sourceCode)
   }
   catch (error) {
-    console.error(error)
+    console.error('Failed to extract types:', error)
     throw new Error('Failed to extract and generate .d.ts file')
   }
 }
 
-function generateDtsTypes(sourceCode: string): string {
-  logDebug('Starting generateDtsTypes')
-  const lines = sourceCode.split('\n')
-  const dtsLines: string[] = []
-  const imports: string[] = []
-  const usedTypes: Set<string> = new Set()
-  const typeSources: Map<string, string> = new Map()
-  let defaultExport = ''
-
-  let isMultiLineDeclaration = false
-  let currentDeclaration = ''
-  let bracketCount = 0
-  let lastCommentBlock = ''
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    logDebug(`Processing line ${i + 1}: ${line}`)
-
-    if (line.trim().startsWith('/**') || line.trim().startsWith('*') || line.trim().startsWith('*/')) {
-      if (line.trim().startsWith('/**'))
-        lastCommentBlock = ''
-      lastCommentBlock += `${line}\n`
-      continue
-    }
-
-    if (line.trim().startsWith('import')) {
-      imports.push(processImport(line, typeSources))
-      continue
-    }
-
-    if (line.trim().startsWith('export default')) {
-      defaultExport = `\n${line.trim()};`
-      continue
-    }
-
-    const isDeclaration = line.trim().startsWith('export')
-      || isMultiLineDeclaration
-      || line.trim().startsWith('const')
-      || line.trim().startsWith('interface')
-      || line.trim().startsWith('type')
-      || line.trim().startsWith('function')
-
-    if (isDeclaration) {
-      currentDeclaration += `${line}\n`
-      bracketCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
-      isMultiLineDeclaration = bracketCount > 0
-
-      if (!isMultiLineDeclaration) {
-        if (lastCommentBlock) {
-          dtsLines.push(lastCommentBlock.trimEnd())
-          lastCommentBlock = ''
-        }
-        const processed = processDeclaration(currentDeclaration.trim(), usedTypes)
-        if (processed)
-          dtsLines.push(processed)
-
-        currentDeclaration = ''
-        bracketCount = 0
-      }
-    }
+/**
+ * Generates TypeScript declaration types from source code
+ */
+export function generateDtsTypes(sourceCode: string): string {
+  const state: ProcessingState = {
+    dtsLines: [],
+    imports: [],
+    usedTypes: new Set(),
+    typeSources: new Map(),
+    defaultExport: '',
+    currentDeclaration: '',
+    lastCommentBlock: '',
+    bracketCount: 0,
+    isMultiLineDeclaration: false,
   }
 
-  const dynamicImports = Array.from(usedTypes)
-    .map((type) => {
-      const source = typeSources.get(type)
-      return source ? `import type { ${type} } from '${source}';` : ''
-    })
-    .filter(Boolean)
+  const lines = sourceCode.split('\n')
+  for (const line of lines) {
+    processLine(line, state)
+  }
 
-  const result = [...imports, ...dynamicImports, '', ...dtsLines]
-    .filter(Boolean)
-    .join('\n')
-
-  console.log('result:', result)
-
-  return defaultExport ? `${result}\n${defaultExport}` : result
+  return formatOutput(state)
 }
 
-function processImport(importLine: string, typeSources: Map<string, string>): string {
-  const typeImportMatch = importLine.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
-  const regularImportMatch = importLine.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+function processLine(line: string, state: ProcessingState): void {
+  const trimmedLine = line.trim()
+
+  if (!trimmedLine)
+    return
+
+  if (isCommentLine(trimmedLine)) {
+    processCommentLine(trimmedLine, state)
+    return
+  }
+
+  if (trimmedLine.startsWith('import')) {
+    state.imports.push(processImport(line, state.typeSources))
+    return
+  }
+
+  if (trimmedLine.startsWith('export default')) {
+    state.defaultExport = `\n${trimmedLine};`
+    return
+  }
+
+  if (isDeclarationLine(trimmedLine) || state.isMultiLineDeclaration) {
+    processDeclarationLine(trimmedLine, state)
+  }
+}
+
+/**
+ * Process import statements and track type sources
+ */
+export function processImport(importLine: string, typeSources: Map<string, string>): string {
+  const typeImportMatch = importLine.match(REGEX.typeImport)
+  const regularImportMatch = importLine.match(REGEX.regularImport)
 
   const match = typeImportMatch || regularImportMatch
   if (match) {
     const types = match[1].split(',').map(type => type.trim())
     const source = match[2]
 
-    types.forEach((type) => {
-      // Handle 'as' syntax in imports
+    for (const type of types) {
       const actualType = type.split(' as ')[0].trim()
       typeSources.set(actualType, source)
-    })
+    }
   }
 
   return importLine
 }
 
-function processDeclaration(declaration: string, usedTypes: Set<string>): string {
-  if (declaration.startsWith('export const'))
-    return processConstDeclaration(declaration)
+/**
+ * Process declarations (const, interface, type, function)
+ */
+export function processDeclaration(declaration: string, usedTypes: Set<string>): string {
+  const trimmed = declaration.trim()
 
-  if (declaration.startsWith('const'))
-    return processConstDeclaration(declaration, false)
+  if (trimmed.startsWith('export const'))
+    return processConstDeclaration(trimmed)
 
-  if (declaration.startsWith('export interface'))
-    return processInterfaceDeclaration(declaration)
+  if (trimmed.startsWith('const'))
+    return processConstDeclaration(trimmed, false)
 
-  if (declaration.startsWith('interface'))
-    return processInterfaceDeclaration(declaration, false)
+  if (trimmed.startsWith('export interface'))
+    return processInterfaceDeclaration(trimmed)
 
-  if (declaration.startsWith('export type {'))
-    return processTypeOnlyExport(declaration)
+  if (trimmed.startsWith('interface'))
+    return processInterfaceDeclaration(trimmed, false)
 
-  if (declaration.startsWith('type {'))
-    return processTypeOnlyExport(declaration, false)
+  if (trimmed.startsWith('export type {'))
+    return processTypeOnlyExport(trimmed)
 
-  if (declaration.startsWith('export type'))
-    return processTypeDeclaration(declaration)
+  if (trimmed.startsWith('type {'))
+    return processTypeOnlyExport(trimmed, false)
 
-  if (declaration.startsWith('type'))
-    return processTypeDeclaration(declaration, false)
+  if (trimmed.startsWith('export type'))
+    return processTypeDeclaration(trimmed)
 
-  if (declaration.startsWith('export function') || declaration.startsWith('export async function'))
-    return processFunctionDeclaration(declaration, usedTypes)
+  if (trimmed.startsWith('type'))
+    return processTypeDeclaration(trimmed, false)
 
-  if (declaration.startsWith('function') || declaration.startsWith('async function'))
-    return processFunctionDeclaration(declaration, usedTypes, false)
+  if (trimmed.startsWith('export function') || trimmed.startsWith('export async function'))
+    return processFunctionDeclaration(trimmed, usedTypes)
 
-  if (declaration.startsWith('export default'))
-    return `${declaration};`
+  if (trimmed.startsWith('function') || trimmed.startsWith('async function'))
+    return processFunctionDeclaration(trimmed, usedTypes, false)
 
-  if (declaration.startsWith('export'))
-    return declaration
+  if (trimmed.startsWith('export default'))
+    return `${trimmed};`
 
-  return `declare ${declaration}`
+  if (trimmed.startsWith('export'))
+    return trimmed
+
+  return `declare ${trimmed}`
 }
 
-function processConstDeclaration(declaration: string, isExported = true): string {
+/**
+ * Process constant declarations
+ */
+export function processConstDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('const')[1].split('=')[0].trim().split(':')[0].trim()
-  const typeMatch = firstLine.match(/const\s[^:]+:\s*([^=]+)\s*=/)
+  const typeMatch = firstLine.match(REGEX.constType)
 
   if (typeMatch) {
     const type = typeMatch[1].trim()
@@ -178,7 +212,10 @@ function processConstDeclaration(declaration: string, isExported = true): string
   return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
 }
 
-function formatProperties(properties: PropertyInfo[], indent = 2): string {
+/**
+ * Format nested properties with proper indentation
+ */
+export function formatProperties(properties: PropertyInfo[], indent = 2): string {
   return properties.map((prop) => {
     const spaces = ' '.repeat(indent)
     if (prop.nested && prop.nested.length > 0) {
@@ -189,41 +226,40 @@ function formatProperties(properties: PropertyInfo[], indent = 2): string {
   }).join('\n')
 }
 
-function extractObjectProperties(lines: string[]): PropertyInfo[] {
+/**
+ * Extract object properties and their types
+ */
+export function extractObjectProperties(lines: string[]): PropertyInfo[] {
   const properties: PropertyInfo[] = []
   let currentProperty: { key?: string, content: string[] } = { content: [] }
   let depth = 0
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+  for (const line of lines) {
+    const trimmed = line.trim()
 
-    if (!line || line.startsWith('//') || line.startsWith('/*'))
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*'))
       continue
 
-    const openCount = (line.match(/[[{]/g) || []).length
-    const closeCount = (line.match(/[\]}]/g) || []).length
+    const openCount = (trimmed.match(REGEX.bracketOpen) || []).length
+    const closeCount = (trimmed.match(REGEX.bracketClose) || []).length
 
-    // Start of a new property
-    if (depth === 0 && line.includes(':')) {
-      const [key] = line.split(':')
+    if (depth === 0 && trimmed.includes(':')) {
+      const [key] = trimmed.split(':')
       currentProperty = {
         key: key.trim(),
-        content: [line],
+        content: [trimmed],
       }
     }
-    // Continue current property
     else if (depth > 0 || openCount > 0) {
-      currentProperty.content.push(line)
+      currentProperty.content.push(trimmed)
     }
 
     depth += openCount - closeCount
 
-    // Property is complete
     if (depth === 0 && currentProperty.key) {
       const propertyInfo = processCompleteProperty(currentProperty)
-      if (propertyInfo) {
+      if (propertyInfo)
         properties.push(propertyInfo)
-      }
       currentProperty = { content: [] }
     }
   }
@@ -231,7 +267,10 @@ function extractObjectProperties(lines: string[]): PropertyInfo[] {
   return properties
 }
 
-function processCompleteProperty({ key, content }: { key?: string, content: string[] }): PropertyInfo | null {
+/**
+ * Process a complete property with all its nested content
+ */
+export function processCompleteProperty({ key, content }: { key?: string, content: string[] }): PropertyInfo | null {
   if (!key)
     return null
 
@@ -242,7 +281,6 @@ function processCompleteProperty({ key, content }: { key?: string, content: stri
 
   const valueContent = fullContent.substring(colonIndex + 1).trim()
 
-  // Handle nested objects
   if (valueContent.startsWith('{')) {
     const nestedContent = extractNestedContent(valueContent, '{', '}')
     if (nestedContent) {
@@ -256,7 +294,6 @@ function processCompleteProperty({ key, content }: { key?: string, content: stri
     }
   }
 
-  // Handle arrays
   if (valueContent.startsWith('[')) {
     return {
       key,
@@ -265,23 +302,23 @@ function processCompleteProperty({ key, content }: { key?: string, content: stri
     }
   }
 
-  // Handle functions
   if (isFunction(valueContent)) {
     return {
       key,
       value: valueContent,
-      type: 'Function',
+      type: inferFunctionType(valueContent),
     }
   }
 
-  // Handle other types
   return processSimpleValue(key, valueContent)
 }
 
-function extractNestedContent(content: string, openChar: string, closeChar: string): string | null {
+/**
+ * Extract nested content between matching delimiters
+ */
+export function extractNestedContent(content: string, openChar: string, closeChar: string): string | null {
   let depth = 0
   let start = -1
-  let result = ''
 
   for (let i = 0; i < content.length; i++) {
     if (content[i] === openChar) {
@@ -292,16 +329,18 @@ function extractNestedContent(content: string, openChar: string, closeChar: stri
     else if (content[i] === closeChar) {
       depth--
       if (depth === 0 && start !== -1) {
-        result = content.substring(start + 1, i)
-        break
+        return content.substring(start + 1, i)
       }
     }
   }
 
-  return result || null
+  return null
 }
 
-function isFunction(value: string): boolean {
+/**
+ * Check if a value represents a function
+ */
+export function isFunction(value: string): boolean {
   return (
     value.includes('=>')
     || value.startsWith('function')
@@ -310,7 +349,10 @@ function isFunction(value: string): boolean {
   )
 }
 
-function inferArrayType(value: string): string {
+/**
+ * Infer array type from array literal
+ */
+export function inferArrayType(value: string): string {
   const content = extractNestedContent(value, '[', ']')
   if (!content)
     return 'never[]'
@@ -319,100 +361,84 @@ function inferArrayType(value: string): string {
   if (elements.length === 0)
     return 'never[]'
 
-  // Analyze each element to determine specific types
   const elementTypes = elements.map(element => inferElementType(element.trim()))
-
-  // If all elements are of the same type, use that type
-  if (elementTypes.every(type => type === elementTypes[0])) {
-    return `Array<${elementTypes[0]}>`
-  }
-
-  // For mixed types, create a union
   const uniqueTypes = [...new Set(elementTypes)]
-  return `Array<${uniqueTypes.join(' | ')}>`
+
+  return uniqueTypes.length === 1
+    ? `Array<${uniqueTypes[0]}>`
+    : `Array<${uniqueTypes.join(' | ')}>`
 }
 
-function inferElementType(element: string): string {
-  // Handle nested arrays
-  if (element.startsWith('[')) {
+/**
+ * Infer element type from a single array element
+ */
+export function inferElementType(element: string): string {
+  if (element.startsWith('['))
     return inferArrayType(element)
-  }
 
-  // Handle objects
-  if (element.startsWith('{')) {
-    const props = parseObjectLiteral(element)
-    return formatObjectType(props)
-  }
+  if (element.startsWith('{'))
+    return formatObjectType(parseObjectLiteral(element))
 
-  // Handle string literals
-  if (element.startsWith('\'') || element.startsWith('"')) {
-    const stringContent = element.slice(1, -1)
-    return `'${stringContent}'`
-  }
+  if (element.startsWith('\'') || element.startsWith('"'))
+    return `'${element.slice(1, -1)}'`
 
-  // Handle numbers
-  if (!Number.isNaN(Number(element))) {
-    return element // Use literal type for numbers
-  }
-
-  // Handle booleans
-  if (element === 'true' || element === 'false') {
+  if (!Number.isNaN(Number(element)))
     return element
-  }
 
-  // Handle functions
-  if (element.includes('=>') || element.startsWith('function')) {
+  if (element === 'true' || element === 'false')
+    return element
+
+  if (element.includes('=>') || element.startsWith('function'))
     return inferFunctionType(element)
-  }
 
-  // Handle known function references
-  if (element === 'console.log' || element.endsWith('.log')) {
+  if (element === 'console.log' || element.endsWith('.log'))
     return '(...args: any[]) => void'
-  }
 
-  // Handle potentially undefined references
-  if (element.includes('.')) {
+  if (element.includes('.'))
     return 'unknown'
-  }
 
   return 'any'
 }
 
-function inferFunctionType(func: string): string {
-  // Check for async functions
+/**
+ * Infer function type including return type
+ */
+export function inferFunctionType(func: string): string {
   const isAsync = func.startsWith('async')
-
-  // Try to determine return type
   let returnType = 'unknown'
 
   if (func.includes('console.log')) {
     returnType = 'void'
   }
   else if (func.includes('return')) {
-    const returnStatement = func.match(/return\s+([^;]+)/)?.[1]
+    const returnStatement = func.match(REGEX.functionReturn)?.[1]
     if (returnStatement) {
-      if (returnStatement.startsWith('\'') || returnStatement.startsWith('"')) {
-        returnType = 'string'
-      }
-      else if (!Number.isNaN(Number(returnStatement))) {
-        returnType = 'number'
-      }
-      else if (returnStatement === 'true' || returnStatement === 'false') {
-        returnType = 'boolean'
-      }
-      else if (returnStatement.includes('??')) {
-        const [, fallback] = returnStatement.split('??').map(s => s.trim())
-        if (fallback.startsWith('\'') || fallback.startsWith('"')) {
-          returnType = 'string'
-        }
-      }
+      returnType = inferReturnType(returnStatement)
     }
   }
 
   return `${isAsync ? 'async ' : ''}(...args: any[]) => ${returnType}`
 }
 
-function splitArrayElements(content: string): string[] {
+export function inferReturnType(returnStatement: string): string {
+  if (returnStatement.startsWith('\'') || returnStatement.startsWith('"'))
+    return 'string'
+  if (!Number.isNaN(Number(returnStatement)))
+    return 'number'
+  if (returnStatement === 'true' || returnStatement === 'false')
+    return 'boolean'
+  if (returnStatement.includes('??')) {
+    const [, fallback] = returnStatement.split('??').map(s => s.trim())
+    if (fallback.startsWith('\'') || fallback.startsWith('"'))
+      return 'string'
+  }
+  return 'unknown'
+}
+
+/**
+ * Split array elements while respecting nested structures
+ */
+export function splitArrayElements(content: string): string[] {
   const elements: string[] = []
   let current = ''
   let depth = 0
@@ -444,68 +470,69 @@ function splitArrayElements(content: string): string[] {
     }
   }
 
-  if (current.trim()) {
+  if (current.trim())
     elements.push(current.trim())
-  }
 
   return elements
 }
 
-function parseObjectLiteral(objStr: string): PropertyInfo[] {
+/**
+ * Parse object literal into properties
+ */
+export function parseObjectLiteral(objStr: string): PropertyInfo[] {
   const content = objStr.slice(1, -1).trim()
   return extractObjectProperties([content])
 }
 
-function processSimpleValue(key: string, value: string): PropertyInfo {
-  // Clean the value first - remove trailing commas and whitespace
+/**
+ * Process simple value types (string, number, boolean)
+ */
+export function processSimpleValue(key: string, value: string): PropertyInfo {
   const cleanValue = value.replace(/,\s*$/, '').trim()
 
-  // String literals
   if (cleanValue.startsWith('\'') || cleanValue.startsWith('"')) {
-    const stringContent = cleanValue.slice(1, -1)
     return {
       key,
       value: cleanValue,
-      type: `'${stringContent}'`,
+      type: `'${cleanValue.slice(1, -1)}'`,
     }
   }
 
-  // Numbers
   if (!Number.isNaN(Number(cleanValue))) {
     return {
       key,
       value: cleanValue,
-      type: cleanValue, // Keep the exact number
+      type: cleanValue,
     }
   }
 
-  // Booleans
   if (cleanValue === 'true' || cleanValue === 'false') {
     return {
       key,
       value: cleanValue,
-      type: cleanValue, // Keep the exact boolean value
+      type: cleanValue,
     }
   }
 
-  // Function calls
   if (cleanValue.endsWith('()') || cleanValue === 'console.log') {
     return {
       key,
       value: cleanValue,
-      type: 'Function',
+      type: '(...args: any[]) => void',
     }
   }
 
-  // Default to Object for unknown types
   return {
     key,
     value: cleanValue,
-    type: 'Object',
+    type: 'unknown',
   }
 }
 
-function formatNestedType(properties: PropertyInfo[]): string {
+/**
+ * Format nested type structure
+ */
+export function formatNestedType(properties: PropertyInfo[]): string {
   if (properties.length === 0)
     return 'Object'
 
@@ -516,152 +543,10 @@ function formatNestedType(properties: PropertyInfo[]): string {
   return `{ ${formattedProps} }`
 }
 
-function extractPropertyInfo(key: string, value: string, originalLines: string[]): PropertyInfo {
-  // Handle multiline object definitions
-  if (value.startsWith('{') && value.includes('{}')) {
-    const objectLines = originalLines.filter(line =>
-      line.trim().startsWith(key)
-      || (line.includes('{') && line.includes('}'))
-      || line.trim().endsWith(',')
-      || line.trim().endsWith('}'),
-    )
-
-    const nestedProperties = parseNestedObject(objectLines)
-    if (nestedProperties.length > 0) {
-      return {
-        key,
-        value,
-        type: formatNestedType(nestedProperties),
-        nested: nestedProperties,
-      }
-    }
-  }
-
-  // Handle arrow functions and function declarations
-  if ((value.includes('=>') && !value.includes('['))
-    || value.startsWith('function')
-    || (value.includes('()') && value.includes('{'))) {
-    return {
-      key,
-      value,
-      type: 'Function',
-    }
-  }
-
-  // Handle arrays
-  if (value.startsWith('[')) {
-    return {
-      key,
-      value,
-      type: inferArrayType(value),
-    }
-  }
-
-  // Handle inline objects
-  if (value.startsWith('{')) {
-    const objectContent = value.slice(1, -1).trim()
-    const nestedProps = extractObjectProperties([objectContent])
-    return {
-      key,
-      value,
-      type: formatObjectType(nestedProps),
-      nested: nestedProps.length > 0 ? nestedProps : undefined,
-    }
-  }
-
-  // Handle function references and console methods
-  if (value === 'console.log' || value.endsWith('.log')) {
-    return {
-      key,
-      value,
-      type: 'Function',
-    }
-  }
-
-  // Handle string literals
-  if (value.startsWith('\'') || value.startsWith('"')) {
-    const cleanValue = value.slice(1, -1)
-    return {
-      key,
-      value,
-      type: `'${cleanValue}'`,
-    }
-  }
-
-  // Handle numbers
-  if (!Number.isNaN(Number(value))) {
-    return {
-      key,
-      value,
-      type: value,
-    }
-  }
-
-  // Handle booleans
-  if (value === 'true' || value === 'false') {
-    return {
-      key,
-      value,
-      type: value,
-    }
-  }
-
-  // Handle object references
-  return {
-    key,
-    value,
-    type: 'Object',
-  }
-}
-
-function parseNestedObject(lines: string[]): PropertyInfo[] {
-  const nestedLines = lines
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('//'))
-
-  let braceCount = 0
-  let currentBlock = ''
-  const properties: PropertyInfo[] = []
-
-  for (const line of nestedLines) {
-    braceCount += (line.match(/\{/g) || []).length
-    braceCount -= (line.match(/\}/g) || []).length
-
-    if (line.includes(':')) {
-      const [key, ...valueParts] = line.split(':')
-      const value = valueParts.join(':').trim()
-
-      if (value.includes('{')) {
-        // Start of nested object
-        currentBlock = `${key.trim()}: ${value}`
-      }
-      else if (braceCount === 0) {
-        // Simple property
-        const propInfo = extractPropertyInfo(
-          key.trim(),
-          value.replace(/,$/, ''),
-          nestedLines,
-        )
-        properties.push(propInfo)
-      }
-    }
-  }
-
-  return properties
-}
-
-function formatObjectType(properties: PropertyInfo[]): string {
-  if (properties.length === 0)
-    return 'Object'
-
-  const formattedProps = properties
-    .map(prop => `${prop.key}: ${prop.nested ? formatNestedType(prop.nested) : prop.type}`)
-    .join('; ')
-
-  return `{ ${formattedProps} }`
-}
-
-function processInterfaceDeclaration(declaration: string, isExported = true): string {
+/**
+ * Process interface declarations
+ */
+export function processInterfaceDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
   const interfaceName = lines[0].split('interface')[1].split('{')[0].trim()
   const interfaceBody = lines
@@ -672,13 +557,19 @@ function processInterfaceDeclaration(declaration: string, isExported = true): st
   return `${isExported ? 'export ' : ''}declare interface ${interfaceName} {\n${interfaceBody}\n}`
 }
 
-function processTypeOnlyExport(declaration: string, isExported = true): string {
+/**
+ * Process type-only exports
+ */
+export function processTypeOnlyExport(declaration: string, isExported = true): string {
   return declaration
     .replace('export type', `${isExported ? 'export ' : ''}declare type`)
     .replace(/;$/, '')
 }
 
-function processTypeDeclaration(declaration: string, isExported = true): string {
+/**
+ * Process type declarations
+ */
+export function processTypeDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const typeName = firstLine.split('type')[1].split('=')[0].trim()
@@ -687,7 +578,10 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
   return `${isExported ? 'export ' : ''}declare type ${typeName} = ${typeBody};`
 }
 
-function processFunctionDeclaration(
+/**
+ * Process function declarations
+ */
+export function processFunctionDeclaration(
   declaration: string,
   usedTypes: Set<string>,
   isExported = true,
@@ -722,14 +616,88 @@ function processFunctionDeclaration(
     .replace('function function', 'function')
 }
 
-function getReturnType(functionSignature: string): string {
-  // Match everything after ): up to { or end of string
-  const returnTypeMatch = functionSignature.match(/\):\s*([^{;]+)/)
+/**
+ * Get function return type
+ */
+export function getReturnType(functionSignature: string): string {
+  const returnTypeMatch = functionSignature.match(REGEX.returnType)
   if (!returnTypeMatch)
     return 'void'
 
-  // Clean up the return type
   return returnTypeMatch[1]
-    .replace(/[;,]$/, '') // Remove trailing semicolons and commas
+    .replace(/[;,]$/, '')
     .trim()
+}
+
+// Helper functions for line processing
+export function isCommentLine(line: string): boolean {
+  return line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')
+}
+
+export function processCommentLine(line: string, state: ProcessingState): void {
+  if (line.startsWith('/**'))
+    state.lastCommentBlock = ''
+  state.lastCommentBlock += `${line}\n`
+}
+
+export function isDeclarationLine(line: string): boolean {
+  return line.startsWith('export')
+    || line.startsWith('const')
+    || line.startsWith('interface')
+    || line.startsWith('type')
+    || line.startsWith('function')
+}
+
+export function processDeclarationLine(line: string, state: ProcessingState): void {
+  state.currentDeclaration += `${line}\n`
+  const opens = (line.match(REGEX.bracketOpen) || []).length
+  const closes = (line.match(REGEX.bracketClose) || []).length
+  state.bracketCount += opens - closes
+  state.isMultiLineDeclaration = state.bracketCount > 0
+
+  if (!state.isMultiLineDeclaration) {
+    if (state.lastCommentBlock) {
+      state.dtsLines.push(state.lastCommentBlock.trimEnd())
+      state.lastCommentBlock = ''
+    }
+    const processed = processDeclaration(state.currentDeclaration.trim(), state.usedTypes)
+    if (processed)
+      state.dtsLines.push(processed)
+    state.currentDeclaration = ''
+    state.bracketCount = 0
+  }
+}
+
+export function formatOutput(state: ProcessingState): string {
+  const dynamicImports = Array.from(state.usedTypes)
+    .map((type) => {
+      const source = state.typeSources.get(type)
+      return source ? `import type { ${type} } from '${source}';` : ''
+    })
+    .filter(Boolean)
+
+  const result = [...state.imports, ...dynamicImports, '', ...state.dtsLines]
+    .filter(Boolean)
+    .join('\n')
+
+  return state.defaultExport ? `${result}\n${state.defaultExport}` : result
+}
+
+/**
+ * Formats an object's properties into a TypeScript type string
+ * @param properties - Array of property information to format
+ * @returns Formatted type string
+ */
+export function formatObjectType(properties: PropertyInfo[]): string {
+  if (properties.length === 0)
+    return 'Object'
+
+  const formattedProps = properties
+    .map((prop) => {
+      const type = prop.nested ? formatNestedType(prop.nested) : prop.type
+      return `${prop.key}: ${type}`
+    })
+    .join('; ')
+
+  return `{ ${formattedProps} }`
 }
