@@ -102,15 +102,22 @@ function generateDtsTypes(sourceCode: string): string {
 }
 
 function processImport(importLine: string, typeSources: Map<string, string>): string {
-  const importMatch = importLine.match(/import(?: type)? \{([^}]+)\} from ['"]([^'"]+)['"]/)
-  if (importMatch) {
-    const types = importMatch[1].split(',').map(t => t.trim())
-    const source = importMatch[2]
-    types.forEach(type => typeSources.set(type, source))
+  const typeImportMatch = importLine.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+  const regularImportMatch = importLine.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+
+  const match = typeImportMatch || regularImportMatch
+  if (match) {
+    const types = match[1].split(',').map(type => type.trim())
+    const source = match[2]
+
+    types.forEach((type) => {
+      // Handle 'as' syntax in imports
+      const actualType = type.split(' as ')[0].trim()
+      typeSources.set(actualType, source)
+    })
   }
-  return importLine.includes('type')
-    ? importLine.replace('import', 'import type').replace('type type', 'type')
-    : importLine
+
+  return importLine
 }
 
 function processDeclaration(declaration: string, usedTypes: Set<string>): string {
@@ -823,14 +830,34 @@ function processFunctionDeclaration(
   const params = functionSignature.split('(')[1].split(')')[0].trim()
   const returnType = getReturnType(functionSignature)
 
-  if (returnType && returnType !== 'void')
-    usedTypes.add(returnType)
+  if (returnType && returnType !== 'void') {
+    // Add base type and any generic parameters to usedTypes
+    const baseType = returnType.split('<')[0].trim()
+    usedTypes.add(baseType)
+
+    // Extract types from generic parameters if present
+    const genericMatch = returnType.match(/<([^>]+)>/)?.[1]
+    if (genericMatch) {
+      genericMatch.split(',').forEach((type) => {
+        const cleanType = type.trim().split('<')[0].trim()
+        if (cleanType)
+          usedTypes.add(cleanType)
+      })
+    }
+  }
 
   return `${isExported ? 'export ' : ''}declare ${asyncKeyword}function ${functionName}(${params}): ${returnType};`
     .replace('function function', 'function')
 }
 
 function getReturnType(functionSignature: string): string {
-  const returnTypeMatch = functionSignature.match(/:\s*([^\s{]+)/)
-  return returnTypeMatch ? returnTypeMatch[1].replace(/;$/, '') : 'void'
+  // Match everything after ): up to { or end of string
+  const returnTypeMatch = functionSignature.match(/\):\s*([^{;]+)/)
+  if (!returnTypeMatch)
+    return 'void'
+
+  // Clean up the return type
+  return returnTypeMatch[1]
+    .replace(/[;,]$/, '') // Remove trailing semicolons and commas
+    .trim()
 }
