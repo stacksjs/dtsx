@@ -157,8 +157,34 @@ export function processImport(importLine: string, typeSources: Map<string, strin
 /**
  * Filter out unused imports and only keep type imports
  */
-export function processImports(imports: string[]): string[] {
-  return imports.filter(line => line.trim().startsWith('import type'))
+function processImports(imports: string[]): string[] {
+  const importMap = new Map<string, Set<string>>()
+
+  // Process each import line to extract module and types
+  for (const line of imports) {
+    const typeImportMatch = line.match(REGEX.typeImport)
+    const regularImportMatch = line.match(REGEX.regularImport)
+    const match = typeImportMatch || regularImportMatch
+
+    if (match) {
+      const types = match[1].split(',').map(t => t.trim())
+      const module = match[2]
+
+      // Add types to the set for this module
+      if (!importMap.has(module)) {
+        importMap.set(module, new Set())
+      }
+      types.forEach(type => importMap.get(module)!.add(type))
+    }
+  }
+
+  // Format imports
+  return Array.from(importMap.entries())
+    .map(([module, types]) => {
+      const sortedTypes = Array.from(types).sort()
+      return `import type { ${sortedTypes.join(', ')} } from '${module}';`
+    })
+    .sort() // Sort imports alphabetically
 }
 
 /**
@@ -368,7 +394,7 @@ export function isFunction(value: string): boolean {
 /**
  * Infer array type from array literal
  */
-export function inferArrayType(value: string): string {
+function inferArrayType(value: string): string {
   const content = extractNestedContent(value, '[', ']')
   if (!content)
     return 'never[]'
@@ -422,12 +448,12 @@ export function inferElementType(element: string): string {
     return formatObjectType(parseObjectLiteral(trimmed))
   }
 
-  // Handle function references and calls
+  // Handle function references and calls - now parenthesized
   if (trimmed === 'console.log' || trimmed.endsWith('.log')) {
     return '((...args: any[]) => void)'
   }
 
-  // Handle arrow functions
+  // Handle arrow functions - now parenthesized
   if (trimmed.includes('=>')) {
     return '((...args: any[]) => void)'
   }
@@ -513,7 +539,7 @@ export function inferReturnType(returnStatement: string): string {
 /**
  * Split array elements while respecting nested structures
  */
-export function splitArrayElements(content: string): string[] {
+function splitArrayElements(content: string): string[] {
   const elements: string[] = []
   let current = ''
   let depth = 0
@@ -554,7 +580,6 @@ export function splitArrayElements(content: string): string[] {
     }
   }
 
-  // Add the last element
   if (current.trim()) {
     elements.push(current.trim())
   }
@@ -760,35 +785,30 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
   }
 }
 
-function formatOutput(state: ProcessingState): string {
-  const imports = processImports(state.imports)
+export function formatOutput(state: ProcessingState): string {
+  const uniqueImports = processImports(state.imports)
   const dynamicImports = Array.from(state.usedTypes)
     .map((type) => {
       const source = state.typeSources.get(type)
       return source ? `import type { ${type} } from '${source}';` : ''
     })
     .filter(Boolean)
+    .sort()
+
+  // Combine and deduplicate all imports
+  const allImports = [...new Set([...uniqueImports, ...dynamicImports])]
 
   const declarations = state.dtsLines.map(line =>
     line.startsWith('*') ? `  ${line}` : line,
   )
 
   const result = [
-    ...imports,
-    ...dynamicImports,
+    ...allImports,
     '',
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  // Handle default export
-  if (state.defaultExport) {
-    const cleanDefaultExport = state.defaultExport
-      .replace(/^export\s+default\s+/, '')
-      .replace(/;+$/, '')
-    return `${result}\n\nexport default ${cleanDefaultExport};`
-  }
-
-  return result
+  return state.defaultExport ? `${result}\n\nexport default ${state.defaultExport.trim()};` : result
 }
 
 /**
