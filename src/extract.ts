@@ -377,24 +377,24 @@ export function inferArrayType(value: string): string {
   if (elements.length === 0)
     return 'never[]'
 
-  // For deeply nested arrays, handle each level properly
-  const isNestedArray = elements.some(el => el.trim().startsWith('['))
-  if (isNestedArray) {
-    const processedTypes = elements.map((element) => {
+  // Handle case where elements themselves are arrays
+  if (elements.some(el => el.trim().startsWith('['))) {
+    const nestedTypes = elements.map((element) => {
       const trimmed = element.trim()
       if (trimmed.startsWith('[')) {
-        const innerTypes = inferArrayType(trimmed)
-        return innerTypes
+        const nestedContent = extractNestedContent(trimmed, '[', ']')
+        if (nestedContent) {
+          const nestedElements = splitArrayElements(nestedContent)
+          return `Array<${nestedElements.map(ne => inferElementType(ne.trim())).join(' | ')}>`
+        }
       }
       return inferElementType(trimmed)
     })
 
-    // Filter out any invalid types and create union
-    const validTypes = processedTypes.filter(type => type !== 'never' && type !== '')
-    return `Array<${[...new Set(validTypes)].join(' | ')}>`
+    return `Array<${nestedTypes.join(' | ')}>`
   }
 
-  // For simple arrays, process elements normally
+  // Handle simple array case
   const elementTypes = elements.map(element => inferElementType(element.trim()))
   const uniqueTypes = [...new Set(elementTypes)]
   return `Array<${uniqueTypes.join(' | ')}>`
@@ -422,18 +422,29 @@ export function inferElementType(element: string): string {
     return formatObjectType(parseObjectLiteral(trimmed))
   }
 
-  // Handle function expressions and references
-  if (
-    trimmed === 'console.log'
-    || trimmed.endsWith('.log')
-    || trimmed.includes('=>')
-    || trimmed.includes('function')
-  ) {
+  // Handle function references and calls
+  if (trimmed === 'console.log' || trimmed.endsWith('.log')) {
     return '(...args: any[]) => void'
   }
 
-  // Handle global references and unknown identifiers
-  if (trimmed.includes('.') || /^[a-z_]\w*$/i.test(trimmed)) {
+  // Handle arrow functions
+  if (trimmed.includes('=>')) {
+    const arrowFn = trimmed.match(/\(.*\)\s*=>\s*(.*)/)
+    return '(...args: any[]) => void'
+  }
+
+  // Handle function calls
+  if (trimmed.endsWith('()')) {
+    return 'unknown'
+  }
+
+  // Handle object references
+  if (trimmed.includes('.')) {
+    return 'unknown'
+  }
+
+  // Handle identifiers that might be undefined
+  if (/^[a-z_]\w*$/i.test(trimmed)) {
     return 'unknown'
   }
 
@@ -452,17 +463,17 @@ export function processNestedArray(elements: string[]): string {
       const nestedContent = extractNestedContent(trimmed, '[', ']')
       if (nestedContent) {
         const nestedElements = splitArrayElements(nestedContent)
-        // Ensure nested arrays are properly typed
-        const nestedTypes = nestedElements.map(e => inferElementType(e.trim()))
-        return `Array<${[...new Set(nestedTypes)].join(' | ')}>`
+        // Process each nested element to create a proper union type
+        const nestedTypes = nestedElements.map(ne => inferElementType(ne.trim()))
+        return `Array<${nestedTypes.join(' | ')}>`
       }
       return 'never'
     }
 
     return inferElementType(trimmed)
-  }).filter(type => type !== 'never' && type !== '')
+  }).filter(type => type !== 'never')
 
-  return [...new Set(processedTypes)].join(' | ')
+  return processedTypes.join(' | ')
 }
 
 /**
@@ -510,17 +521,21 @@ export function splitArrayElements(content: string): string[] {
   let inString = false
   let stringChar = ''
 
-  for (const char of content) {
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+
     // Handle string boundaries
-    if ((char === '"' || char === '\'') && !inString) {
-      inString = true
-      stringChar = char
-    }
-    else if (char === stringChar && !inString) {
-      inString = false
+    if ((char === '"' || char === '\'') && (i === 0 || content[i - 1] !== '\\')) {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
     }
 
-    // Track nesting depth
+    // Track nested structures
     if (!inString) {
       if (char === '[' || char === '{')
         depth++
@@ -530,8 +545,9 @@ export function splitArrayElements(content: string): string[] {
 
     // Split elements only at top level
     if (char === ',' && depth === 0 && !inString) {
-      if (current.trim())
+      if (current.trim()) {
         elements.push(current.trim())
+      }
       current = ''
     }
     else {
@@ -540,8 +556,9 @@ export function splitArrayElements(content: string): string[] {
   }
 
   // Add the last element
-  if (current.trim())
+  if (current.trim()) {
     elements.push(current.trim())
+  }
 
   return elements.filter(Boolean)
 }
