@@ -9,6 +9,7 @@ interface PropertyInfo {
   key: string
   value: string
   type: string
+  nested?: PropertyInfo[]
 }
 
 export async function extract(filePath: string): Promise<string> {
@@ -95,7 +96,8 @@ function generateDtsTypes(sourceCode: string): string {
     .filter(Boolean)
     .join('\n')
 
-  console.log('Final result', result)
+  console.log('result:', result)
+
   return defaultExport ? `${result}\n${defaultExport}` : result
 }
 
@@ -163,45 +165,190 @@ function processConstDeclaration(declaration: string, isExported = true): string
   }
 
   const properties = extractObjectProperties(lines.slice(1, -1))
-  const propertyStrings = properties.map(prop => `  ${prop.key}: ${prop.type};`)
+  const propertyStrings = formatProperties(properties)
 
-  return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings.join('\n')}\n};`
+  return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
+}
+
+function formatProperties(properties: PropertyInfo[], indent = 2): string {
+  return properties.map((prop) => {
+    const spaces = ' '.repeat(indent)
+    if (prop.nested && prop.nested.length > 0) {
+      const nestedProps = formatProperties(prop.nested, indent + 2)
+      return `${spaces}${prop.key}: {\n${nestedProps}\n${spaces}};`
+    }
+    return `${spaces}${prop.key}: ${prop.type};`
+  }).join('\n')
 }
 
 function extractObjectProperties(lines: string[]): PropertyInfo[] {
   const properties: PropertyInfo[] = []
-  let currentProperty: Partial<PropertyInfo> | null = null
+  let currentBlock = ''
   let bracketCount = 0
+  let braceCount = 0
 
   for (const line of lines) {
     const trimmedLine = line.trim()
+
     if (!trimmedLine || trimmedLine.startsWith('//') || trimmedLine.startsWith('/*'))
       continue
 
-    if (currentProperty === null) {
-      const match = trimmedLine.match(/^(\w+)\s*:\s*(.+?),?$/)
-      if (match) {
-        const [, key, value] = match
-        properties.push({
-          key,
-          value,
-          type: inferType(value.trim()),
-        })
+    // Count brackets and braces
+    const openBrackets = (trimmedLine.match(/\[/g) || []).length
+    const closeBrackets = (trimmedLine.match(/\]/g) || []).length
+    const openBraces = (trimmedLine.match(/\{/g) || []).length
+    const closeBraces = (trimmedLine.match(/\}/g) || []).length
+
+    bracketCount += openBrackets - closeBrackets
+    braceCount += openBraces - closeBraces
+
+    currentBlock += `${trimmedLine} `
+
+    // Process complete property when we're back at root level
+    if (bracketCount === 0 && braceCount === 0 && currentBlock.includes(':')) {
+      const propertyMatch = currentBlock.match(/^(\w+)\s*:\s*(.+?)(?:,\s*$|,?\s*$)/)
+      if (propertyMatch) {
+        const [, key, rawValue] = propertyMatch
+        const value = rawValue.trim()
+        const propertyInfo = extractPropertyInfo(key, value, lines)
+        if (propertyInfo) {
+          properties.push(propertyInfo)
+        }
+      }
+      currentBlock = ''
+    }
+  }
+
+  return properties
+}
+
+function extractPropertyInfo(key: string, value: string, originalLines: string[]): PropertyInfo {
+  // Handle multiline object definitions
+  if (value.startsWith('{') && value.includes('{}')) {
+    const objectLines = originalLines.filter(line =>
+      line.trim().startsWith(key)
+      || (line.includes('{') && line.includes('}'))
+      || line.trim().endsWith(',')
+      || line.trim().endsWith('}'),
+    )
+
+    const nestedProperties = parseNestedObject(objectLines)
+    if (nestedProperties.length > 0) {
+      return {
+        key,
+        value,
+        type: formatNestedType(nestedProperties),
+        nested: nestedProperties,
       }
     }
-    else {
-      bracketCount += (trimmedLine.match(/\{/g) || []).length
-      bracketCount -= (trimmedLine.match(/\}/g) || []).length
+  }
 
-      if (bracketCount === 0) {
-        if (currentProperty.key) {
-          properties.push({
-            key: currentProperty.key,
-            value: currentProperty.value || '',
-            type: currentProperty.type || 'any',
-          })
-        }
-        currentProperty = null
+  // Handle arrow functions and function declarations
+  if ((value.includes('=>') && !value.includes('['))
+    || value.startsWith('function')
+    || (value.includes('()') && value.includes('{'))) {
+    return {
+      key,
+      value,
+      type: 'Function',
+    }
+  }
+
+  // Handle arrays
+  if (value.startsWith('[')) {
+    return {
+      key,
+      value,
+      type: inferArrayType(value),
+    }
+  }
+
+  // Handle inline objects
+  if (value.startsWith('{')) {
+    const objectContent = value.slice(1, -1).trim()
+    const nestedProps = extractObjectProperties([objectContent])
+    return {
+      key,
+      value,
+      type: formatObjectType(nestedProps),
+      nested: nestedProps.length > 0 ? nestedProps : undefined,
+    }
+  }
+
+  // Handle function references and console methods
+  if (value === 'console.log' || value.endsWith('.log')) {
+    return {
+      key,
+      value,
+      type: 'Function',
+    }
+  }
+
+  // Handle string literals
+  if (value.startsWith('\'') || value.startsWith('"')) {
+    const cleanValue = value.slice(1, -1)
+    return {
+      key,
+      value,
+      type: `'${cleanValue}'`,
+    }
+  }
+
+  // Handle numbers
+  if (!isNaN(Number(value))) {
+    return {
+      key,
+      value,
+      type: value,
+    }
+  }
+
+  // Handle booleans
+  if (value === 'true' || value === 'false') {
+    return {
+      key,
+      value,
+      type: value,
+    }
+  }
+
+  // Handle object references
+  return {
+    key,
+    value,
+    type: 'Object',
+  }
+}
+
+function parseNestedObject(lines: string[]): PropertyInfo[] {
+  const nestedLines = lines
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('//'))
+
+  let braceCount = 0
+  let currentBlock = ''
+  const properties: PropertyInfo[] = []
+
+  for (const line of nestedLines) {
+    braceCount += (line.match(/\{/g) || []).length
+    braceCount -= (line.match(/\}/g) || []).length
+
+    if (line.includes(':')) {
+      const [key, ...valueParts] = line.split(':')
+      const value = valueParts.join(':').trim()
+
+      if (value.includes('{')) {
+        // Start of nested object
+        currentBlock = `${key.trim()}: ${value}`
+      }
+      else if (braceCount === 0) {
+        // Simple property
+        const propInfo = extractPropertyInfo(
+          key.trim(),
+          value.replace(/,$/, ''),
+          nestedLines,
+        )
+        properties.push(propInfo)
       }
     }
   }
@@ -209,33 +356,63 @@ function extractObjectProperties(lines: string[]): PropertyInfo[] {
   return properties
 }
 
-function inferType(value: string): string {
-  // Handle string literals - keep the quotes
-  if (value.startsWith('"') || value.startsWith('\'')) {
-    // Ensure consistent quote style (using single quotes)
-    const cleanValue = value.trim().replace(/^["']|["']$/g, '')
-    return `'${cleanValue}'`
-  }
+function inferArrayType(arrayValue: string): string {
+  const content = arrayValue.slice(1, -1).trim()
 
-  if (value === 'true' || value === 'false')
-    return value
-
-  if (!Number.isNaN(Number(value)))
-    return value
-
-  if (value.includes('=>') || value.includes('function'))
-    return 'Function'
-
-  if (value.startsWith('['))
+  if (!content)
     return 'Array<any>'
 
-  if (value.startsWith('{'))
+  // Handle nested arrays
+  if (content.startsWith('[')) {
+    const nestedContent = content.match(/\[(.*)\]/)?.[1]
+    return `Array<${nestedContent ? inferArrayType(`[${nestedContent}]`) : 'any'}>`
+  }
+
+  // Handle array of objects
+  if (content.includes('{')) {
+    const objects = content.split('},{').map(obj => obj.replace(/^\{|\}$/g, ''))
+    const objectProps = objects.map(obj => extractObjectProperties([obj]))
+    return `Array<${formatObjectType(objectProps[0])}>`
+  }
+
+  // Handle simple numeric arrays
+  if (content.split(',').every(item => !isNaN(Number(item.trim())))) {
+    return 'Array<number>'
+  }
+
+  return 'Array<any>'
+}
+
+function formatObjectType(properties: PropertyInfo[]): string {
+  if (properties.length === 0)
     return 'Object'
 
-  if (value.includes('.'))
+  const formattedProps = properties
+    .map(prop => `${prop.key}: ${prop.nested ? formatNestedType(prop.nested) : prop.type}`)
+    .join('; ')
+
+  return `{ ${formattedProps} }`
+}
+
+function isFunctionReference(value: string): boolean {
+  // Check for common function reference patterns
+  return value.endsWith('.log')
+    || value.endsWith('()')
+    || value.includes('.bind')
+    || value.includes('.call')
+    || value.includes('.apply')
+    || /\w+\.\w+/.test(value) // Matches object method references
+}
+
+function formatNestedType(properties: PropertyInfo[]): string {
+  if (properties.length === 0)
     return 'Object'
 
-  return value
+  const formattedProps = properties
+    .map(prop => `${prop.key}: ${prop.nested ? formatNestedType(prop.nested) : prop.type}`)
+    .join(', ')
+
+  return `{ ${formattedProps} }`
 }
 
 function processInterfaceDeclaration(declaration: string, isExported = true): string {

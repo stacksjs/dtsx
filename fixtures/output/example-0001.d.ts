@@ -15,7 +15,7 @@ export declare const someObject: {
   someFunction: Function;
   anotherOne: Function;
   someArray: Array<any>;
-  someNestedArray: Array<any>;
+  someNestedArray: Array<Array<number>>;
   someComplexArray: Array<any>;
   someObject: Object;
   someNestedObject: Object;
