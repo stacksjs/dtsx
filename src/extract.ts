@@ -796,7 +796,7 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
   }
 }
 
-function formatOutput(state: ProcessingState): string {
+export function formatOutput(state: ProcessingState): string {
   const uniqueImports = processImports(state.imports, state.usedTypes)
   const dynamicImports = Array.from(state.usedTypes)
     .map((type) => {
@@ -816,16 +816,28 @@ function formatOutput(state: ProcessingState): string {
     line.startsWith('*') ? `  ${line}` : line,
   )
 
-  const result = [
+  let result = [
     ...allImports,
     '',
     '', // Extra newline after imports
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  return state.defaultExport
-    ? `${result}\n\nexport default ${state.defaultExport.trim()};\n`
-    : `${result}\n`
+  // Clean up default export - extract just the identifier
+  if (state.defaultExport) {
+    const exportIdentifier = state.defaultExport
+      .replace(/^export\s+default\s+/, '') // Remove leading export default
+      .replace(/export\s+default\s+/, '') // Remove any additional export default
+      .replace(/;+$/, '') // Remove trailing semicolons
+      .trim()
+
+    result += `\nexport default ${exportIdentifier};\n`
+  }
+  else {
+    result += '\n'
+  }
+
+  return result
 }
 
 /**

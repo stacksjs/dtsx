@@ -1,5 +1,3 @@
-import type { BunPlugin } from 'bun'
-import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun';
 /**
  * Example of const declaration
@@ -103,6 +101,4 @@ export * from './extract'
 export * from './generate'
 export * from './types'
 export * from './utils'
-
-export default 
 export default dts;
