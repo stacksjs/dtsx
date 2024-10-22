@@ -6,8 +6,6 @@ bunx
 changelogen
 changelogithub
 codecov
-commitlint
-commitlintrc
 composables
 davidanson
 degit

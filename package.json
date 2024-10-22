@@ -70,8 +70,7 @@
     "vitepress": "^1.4.1"
   },
   "simple-git-hooks": {
-    "pre-commit": "bunx lint-staged",
-    "commit-msg": "bunx --no -- commitlint --edit $1"
+    "pre-commit": "bunx lint-staged"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "bunx eslint . --fix"
