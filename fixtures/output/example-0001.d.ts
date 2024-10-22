@@ -16,8 +16,8 @@ export declare const someObject: {
   someNestedArray: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
   someNestedArray2: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value'>;
   someNestedArray3: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value' | Array<11 | 12 | 13>>;
-  someOtherNestedArray: Array<Array<'some text' | 2 | (...args: any[]) => void | (...args: any[]) => void | unknown> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
-  someComplexArray: Array<Array<{ key: 'value' }> | Array<{ key2: 'value2' } | 'test' | 1000> | Array<'some string' | (...args: any[]) => void | unknown>>;
+  someOtherNestedArray: Array<Array<'some text' | 2 | ((...args: any[]) => void) | ((...args: any[]) => void) | unknown> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
+  someComplexArray: Array<Array<{ key: 'value' }> | Array<{ key2: 'value2' } | 'test' | 1000> | Array<'some string' | ((...args: any[]) => void) | unknown>>;
   someObject: {
     key: 'value';
   };

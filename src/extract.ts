@@ -424,13 +424,12 @@ export function inferElementType(element: string): string {
 
   // Handle function references and calls
   if (trimmed === 'console.log' || trimmed.endsWith('.log')) {
-    return '(...args: any[]) => void'
+    return '((...args: any[]) => void)'
   }
 
   // Handle arrow functions
   if (trimmed.includes('=>')) {
-    const arrowFn = trimmed.match(/\(.*\)\s*=>\s*(.*)/)
-    return '(...args: any[]) => void'
+    return '((...args: any[]) => void)'
   }
 
   // Handle function calls
@@ -463,8 +462,8 @@ export function processNestedArray(elements: string[]): string {
       const nestedContent = extractNestedContent(trimmed, '[', ']')
       if (nestedContent) {
         const nestedElements = splitArrayElements(nestedContent)
-        // Process each nested element to create a proper union type
         const nestedTypes = nestedElements.map(ne => inferElementType(ne.trim()))
+        // Ensure nested array types are properly formatted
         return `Array<${nestedTypes.join(' | ')}>`
       }
       return 'never'
