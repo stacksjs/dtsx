@@ -29,6 +29,17 @@ export const someObject = {
     [1, 2, 3],
     [4, 5, 6, 7, 8, 9, 10],
   ],
+  someNestedArray2: [
+    [1, 2, 3],
+    [4, 5, 6, 7, 8, 9, 10],
+    'dummy value',
+  ],
+  someNestedArray3: [
+    [1, 2, 3],
+    [4, 5, 6, 7, 8, 9, 10],
+    'dummy value',
+    [11, 12, 13],
+  ],
   someOtherNestedArray: [
     [
       'some text',
