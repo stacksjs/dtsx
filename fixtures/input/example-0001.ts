@@ -19,22 +19,48 @@ export const someObject = {
   someBoolean: true,
   someFalse: false,
   someFunction: () => { console.log('hello world') },
+  someFunction2: () => {
+    // some comment
+    /* some other comment */
+    return some.object ?? 'default'
+  },
   someArray: [1, 2, 3],
+  someNestedArray: [
+    [1, 2, 3],
+    [4, 5, 6, 7, 8, 9, 10],
+  ],
+  someComplexArray: [
+    [
+      { key: 'value' },
+    ],
+    [
+      { key2: 'value2' },
+      'test',
+      1000,
+    ],
+    [
+      'some string',
+      console.log,
+      someFunction(),
+    ]
+  ],
   someObject: { key: 'value' },
   someNestedObject: {
     key: {
       nestedKey: 'value',
+    },
+    otherKey: {
+      nestedKey: process.cwd(),
+      nestedKey2: () => { console.log('hello world') },
     }
   },
-  someNestedArray: [
-    [1, 2, 3],
-    [4, 5, 6],
-  ],
   someNestedObjectArray: [
     { key: 'value' },
-    { key: 'value' },
+    { key2: 'value2' },
   ],
-  someInlineCall: process.cwd(),
+  someOtherObject: some.deep.object,
+  someInlineCall2: console.log,
+  someInlineCall3: console.log(),
 }
 
 /**

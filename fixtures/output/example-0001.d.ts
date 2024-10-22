@@ -12,6 +12,35 @@ export declare const someObject: {
   someNumber: 1000;
   someBoolean: true;
   someFalse: false;
+  someFunction: Function;
+  someFunction2: Function;
+  someArray: [1, 2, 3];
+  someNestedArray: [
+    [1, 2, 3],
+    [4, 5, 6, 7, 8, 9, 10]
+  ];
+  someComplexArray: [
+    [{ key: 'value' }],
+    [{ key2: 'value2' }, 'test', 1000],
+    ['some string', Function, Function]
+  ];
+  someObject: { key: 'value' };
+  someNestedObject: {
+    key: {
+      nestedKey: 'value';
+    };
+    otherKey: {
+      nestedKey: Function;
+      nestedKey2: Function;
+    };
+  };
+  someNestedObjectArray: [
+    { key: 'value' },
+    { key2: 'value2' }
+  ];
+  someOtherObject: unknown;
+  someInlineCall2: Function;
+  someInlineCall3: Function;
 };
 
 /**
@@ -92,7 +121,26 @@ declare interface Options<T> {
 
 export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
-declare const dtsConfig: DtsGenerationConfig;
+declare const dtsConfig: {
+  name: 'dts';
+  cwd: process.cwd();
+  defaultConfig: {
+    root: './src';
+    entrypoints: ['**/*.ts'];
+    outdir: './dist',
+    keepComments: true,
+    clean: true,
+    tsconfigPath: './tsconfig.json',
+  },
+  root: './src',
+  entrypoints: ['**/*.ts'],
+  outdir: './dist',
+  keepComments: true,
+  clean: true,
+  tsconfigPath: './tsconfig.json',
+}
+
+// declare const dtsConfig: DtsGenerationConfig;
 
 export { generate, dtsConfig };
 
