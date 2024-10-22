@@ -61,6 +61,7 @@ interface TypeAnnotation {
 }
 
 function getTypeAnnotation(declaration: string): TypeAnnotation {
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   const match = declaration.match(/:\s*(\{[^=]+\}|\[[^\]]+\]|[^=]+?)\s*=/)
   return {
     raw: match?.[1]?.trim() ?? null,
@@ -376,46 +377,79 @@ function inferArrayType(value: string): string {
   if (elements.length === 0)
     return 'never[]'
 
-  const elementTypes = elements.map(element => inferElementType(element.trim()))
-
-  // Check if we have nested arrays
-  if (elements.some(el => el.trim().startsWith('['))) {
-    // Preserve array nesting structure
-    return `Array<${elementTypes.join(' | ').replace(/'+$/, '')}>`
-  }
-
-  const uniqueTypes = [...new Set(elementTypes)]
-  return `Array<${uniqueTypes.join(' | ')}>`
+  // Use processNestedArray to handle the array structure
+  const processedType = processNestedArray(elements)
+  return `Array<${processedType}>`
 }
 
 /**
  * Infer element type from a single array element
  */
 export function inferElementType(element: string): string {
-  if (element.trim().startsWith('[')) {
-    const nested = inferArrayType(element)
-    return nested
+  const trimmed = element.trim()
+
+  // Handle string literals
+  if (trimmed.startsWith('\'') || trimmed.startsWith('"')) {
+    const cleanValue = trimmed.slice(1, -1).replace(/'+$/, '')
+    return `'${cleanValue}'`
   }
 
-  if (element.trim().startsWith('{'))
-    return formatObjectType(parseObjectLiteral(element))
+  // Handle numbers
+  if (!Number.isNaN(Number(trimmed))) {
+    return trimmed
+  }
 
-  if (element.trim().startsWith('\'') || element.trim().startsWith('"'))
-    return `'${element.slice(1, -1).replace(/'+$/, '')}'`
+  // Handle objects
+  if (trimmed.startsWith('{')) {
+    return formatObjectType(parseObjectLiteral(trimmed))
+  }
 
-  if (!Number.isNaN(Number(element.trim())))
-    return element.trim()
-
-  if (element.trim() === 'console.log')
+  // Handle known function references
+  if (trimmed === 'console.log' || trimmed.endsWith('.log')) {
     return '(...args: any[]) => void'
+  }
 
-  if (element.includes('=>'))
+  // Handle arrow functions
+  if (trimmed.includes('=>')) {
     return '(...args: any[]) => void'
+  }
 
-  if (element.includes('.'))
+  // Handle function calls
+  if (trimmed.includes('(') && trimmed.includes(')')) {
     return 'unknown'
+  }
 
-  return 'any'
+  // Handle references to global objects
+  if (trimmed.includes('.')) {
+    return 'unknown'
+  }
+
+  // Default case
+  return 'unknown'
+}
+
+/**
+ * Process nested array structures
+ */
+export function processNestedArray(elements: string[]): string {
+  const processedTypes = elements.map((element) => {
+    const trimmed = element.trim()
+
+    // Handle nested arrays
+    if (trimmed.startsWith('[')) {
+      const nestedContent = extractNestedContent(trimmed, '[', ']')
+      if (nestedContent) {
+        const nestedElements = splitArrayElements(nestedContent)
+        return `Array<${processNestedArray(nestedElements)}>`
+      }
+      return 'never'
+    }
+
+    return inferElementType(trimmed)
+  })
+
+  const uniqueTypes = [...new Set(processedTypes.filter(type => type !== 'never'))]
+  return uniqueTypes.join(' | ')
 }
 
 /**
@@ -491,7 +525,7 @@ export function splitArrayElements(content: string): string[] {
   if (current.trim())
     elements.push(current.trim())
 
-  return elements
+  return elements.filter(Boolean)
 }
 
 /**
@@ -654,10 +688,10 @@ export function isCommentLine(line: string): boolean {
 
 function processCommentLine(line: string, state: ProcessingState): void {
   const indentedLine = line.startsWith('*')
-    ? `  ${line}` // Add indentation for content lines
+    ? ` ${line}` // Add indentation for content lines
     : line.startsWith('/**') || line.startsWith('*/')
       ? line // Keep delimiters at original indentation
-      : `  ${line}` // Add indentation for other lines
+      : ` ${line}` // Add indentation for other lines
 
   if (line.startsWith('/**'))
     state.lastCommentBlock = ''

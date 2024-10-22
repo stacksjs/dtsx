@@ -2,9 +2,9 @@ import type { BunPlugin } from 'bun'
 import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun';
 /**
-* Example of const declaration
-*/
-export declare const conf: conf;
+ * Example of const declaration
+ */
+export declare const conf: { [key: string]: string };
 export declare const someObject: {
   someString: 'Stacks';
   someNumber: 1000;
@@ -13,11 +13,11 @@ export declare const someObject: {
   someFunction: (...args: any[]) => void;
   anotherOne: (...args: any[]) => string;
   someArray: Array<1 | 2 | 3>;
-  someNestedArray: Array<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10>;
-  someNestedArray2: Array<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 'dummy value'>;
-  someNestedArray3: Array<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 'dummy value', [11, 12, 13]'>;
-  someOtherNestedArray: Array<'some text', 2, console.log, () => console.log('hello world'), helloWorld'>;
-  someComplexArray: Array<Object>;
+  someNestedArray: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
+  someNestedArray2: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value'>;
+  someNestedArray3: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value', [11, 12, 13]'>;
+  someOtherNestedArray: Array<Array<'some text', 2, console.log, () => console.log('hello world'), helloWorld'>>;
+  someComplexArray: Array<Array<Object>>;
   someObject: {
     key: 'value';
   };
@@ -35,29 +35,29 @@ export declare const someObject: {
   someInlineCall3: (...args: any[]) => void;
 };
 /**
-* Example of interface declaration
-* with another comment in an extra line
-*/
+ * Example of interface declaration
+ * with another comment in an extra line
+ */
 export declare interface User {
   id: number;
   name: string;
   email: string;
 }
 /**
-* Example of type declaration
-*
-* with multiple lines of comments, including an empty line
-*/
+ * Example of type declaration
+ *
+ * with multiple lines of comments, including an empty line
+ */
 export declare interface ResponseData {
   success: boolean;
   data: User[];
 }
 /**
-* Example of function declaration
-*
-*
-* with multiple empty lines, including an empty lines
-*/
+ * Example of function declaration
+ *
+ *
+ * with multiple empty lines, including an empty lines
+ */
 export declare function fetchUsers(): Promise<ResponseData>;
 export declare interface ApiResponse<T> {
   status: number;
@@ -65,19 +65,19 @@ export declare interface ApiResponse<T> {
   data: T;
 }
 /**
-* Example of another const declaration
-*
-* with multiple empty lines, including being poorly formatted
-*/
-declare const settings: settings;
+ * Example of another const declaration
+ *
+ * with multiple empty lines, including being poorly formatted
+ */
+declare const settings: { [key: string]: any };
 export declare interface Product {
   id: number;
   name: string;
   price: number;
 }
 /**
-* Example of function declaration
-*/
+ * Example of function declaration
+ */
 export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 export declare interface AuthResponse {
   token: string;
@@ -95,7 +95,7 @@ declare interface Options<T> {
   defaultConfig: T;
 }
 export declare async function loadConfig<T extends Record<string, unknown>>(): void;
-declare const dtsConfig: dtsConfig;
+declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export declare type { DtsGenerationOption }
 export { config } from './config'
@@ -104,4 +104,5 @@ export * from './generate'
 export * from './types'
 export * from './utils'
 
-export default export default dts;;
+export default 
+export default dts;
