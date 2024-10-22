@@ -55,6 +55,19 @@ export interface ProcessingState {
   isMultiLineDeclaration: boolean
 }
 
+interface TypeAnnotation {
+  raw: string | null
+  parsed: string
+}
+
+function getTypeAnnotation(declaration: string): TypeAnnotation {
+  const match = declaration.match(/:\s*(\{[^=]+\}|\[[^\]]+\]|[^=]+?)\s*=/)
+  return {
+    raw: match?.[1]?.trim() ?? null,
+    parsed: match?.[1]?.trim() ?? 'any',
+  }
+}
+
 /**
  * Extracts types from a TypeScript file and generates corresponding .d.ts content
  */
@@ -195,17 +208,18 @@ export function processDeclaration(declaration: string, usedTypes: Set<string>):
 /**
  * Process constant declarations
  */
-export function processConstDeclaration(declaration: string, isExported = true): string {
+function processConstDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const name = firstLine.split('const')[1].split('=')[0].trim().split(':')[0].trim()
-  const typeMatch = firstLine.match(REGEX.constType)
+  const typeAnnotation = getTypeAnnotation(firstLine)
 
-  if (typeMatch) {
-    const type = typeMatch[1].trim()
-    return `${isExported ? 'export ' : ''}declare const ${name}: ${type};`
+  // If there's an explicit type annotation, use it
+  if (typeAnnotation.raw) {
+    return `${isExported ? 'export ' : ''}declare const ${name}: ${typeAnnotation.raw};`
   }
 
+  // Otherwise, infer the type from the value
   const properties = extractObjectProperties(lines.slice(1, -1))
   const propertyStrings = formatProperties(properties)
 
@@ -353,7 +367,7 @@ export function isFunction(value: string): boolean {
 /**
  * Infer array type from array literal
  */
-export function inferArrayType(value: string): string {
+function inferArrayType(value: string): string {
   const content = extractNestedContent(value, '[', ']')
   if (!content)
     return 'never[]'
@@ -364,14 +378,10 @@ export function inferArrayType(value: string): string {
 
   const elementTypes = elements.map(element => inferElementType(element.trim()))
 
-  // Handle nested arrays
-  if (elementTypes.some(type => type.includes('Array'))) {
-    const nestedTypes = elementTypes.map((type) => {
-      if (type.startsWith('Array<'))
-        return type.slice(6, -1) // Remove Array< and >
-      return type
-    })
-    return `Array<${nestedTypes.join(' | ')}>`
+  // Check if we have nested arrays
+  if (elements.some(el => el.trim().startsWith('['))) {
+    // Preserve array nesting structure
+    return `Array<${elementTypes.join(' | ').replace(/'+$/, '')}>`
   }
 
   const uniqueTypes = [...new Set(elementTypes)]
@@ -382,28 +392,25 @@ export function inferArrayType(value: string): string {
  * Infer element type from a single array element
  */
 export function inferElementType(element: string): string {
-  if (element.startsWith('[')) {
+  if (element.trim().startsWith('[')) {
     const nested = inferArrayType(element)
     return nested
   }
 
-  if (element.startsWith('{'))
+  if (element.trim().startsWith('{'))
     return formatObjectType(parseObjectLiteral(element))
 
-  if (element.startsWith('\'') || element.startsWith('"'))
-    return `'${element.slice(1, -1).replace(/'+$/, '')}'` // Remove extra quotes
+  if (element.trim().startsWith('\'') || element.trim().startsWith('"'))
+    return `'${element.slice(1, -1).replace(/'+$/, '')}'`
 
-  if (!Number.isNaN(Number(element)))
-    return element
+  if (!Number.isNaN(Number(element.trim())))
+    return element.trim()
 
-  if (element === 'true' || element === 'false')
-    return element
-
-  if (element === 'console.log')
+  if (element.trim() === 'console.log')
     return '(...args: any[]) => void'
 
   if (element.includes('=>'))
-    return inferFunctionType(element)
+    return '(...args: any[]) => void'
 
   if (element.includes('.'))
     return 'unknown'
@@ -645,10 +652,16 @@ export function isCommentLine(line: string): boolean {
   return line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')
 }
 
-export function processCommentLine(line: string, state: ProcessingState): void {
+function processCommentLine(line: string, state: ProcessingState): void {
+  const indentedLine = line.startsWith('*')
+    ? `  ${line}` // Add indentation for content lines
+    : line.startsWith('/**') || line.startsWith('*/')
+      ? line // Keep delimiters at original indentation
+      : `  ${line}` // Add indentation for other lines
+
   if (line.startsWith('/**'))
     state.lastCommentBlock = ''
-  state.lastCommentBlock += `${line}\n`
+  state.lastCommentBlock += `${indentedLine}\n`
 }
 
 export function isDeclarationLine(line: string): boolean {
@@ -679,7 +692,7 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
   }
 }
 
-export function formatOutput(state: ProcessingState): string {
+function formatOutput(state: ProcessingState): string {
   const imports = processImports(state.imports)
   const dynamicImports = Array.from(state.usedTypes)
     .map((type) => {
@@ -688,23 +701,9 @@ export function formatOutput(state: ProcessingState): string {
     })
     .filter(Boolean)
 
-  // Group similar declarations together
-  const declarations = state.dtsLines.reduce((acc, line) => {
-    if (line.startsWith('/**')) {
-      if (acc.length > 0)
-        acc.push('') // Add space before comment block
-      acc.push(line)
-    }
-    else if (line.startsWith('export declare') || line.startsWith('declare')) {
-      acc.push(line)
-      if (line.includes('interface') || line.includes('type'))
-        acc.push('') // Add space after interfaces and types
-    }
-    else {
-      acc.push(line)
-    }
-    return acc
-  }, [] as string[])
+  const declarations = state.dtsLines.map(line =>
+    line.startsWith('*') ? `  ${line}` : line,
+  )
 
   const result = [
     ...imports,
@@ -713,7 +712,15 @@ export function formatOutput(state: ProcessingState): string {
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  return state.defaultExport ? `${result}\n\nexport default ${state.defaultExport.trim()};` : result
+  // Handle default export
+  if (state.defaultExport) {
+    const cleanDefaultExport = state.defaultExport
+      .replace(/^export\s+default\s+/, '')
+      .replace(/;+$/, '')
+    return `${result}\n\nexport default ${cleanDefaultExport};`
+  }
+
+  return result
 }
 
 /**
