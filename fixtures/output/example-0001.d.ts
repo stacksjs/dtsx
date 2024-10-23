@@ -57,7 +57,7 @@ export declare interface ResponseData {
  *
  * with multiple empty lines, including an empty lines
  */
-export declare function fetchUsers(): Promise<ResponseData>;
+export declare function fetchUsers<ResponseData>(): Promise;
 export declare interface ApiResponse<T> {
   status: number;
   message: string;
@@ -77,23 +77,23 @@ export declare interface Product {
 /**
  * Example of function declaration
  */
-export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
+export declare function getProduct<ApiResponse<Product>(id: number): Promise>;
 export declare interface AuthResponse {
   token: string;
   expiresIn: number;
 }
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
-export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
+export declare function authenticate<AuthResponse>(user: string, password: string): Promise;
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
-export declare function dts(options?: DtsGenerationOption): BunPlugin;
+export declare async function dts(options?: DtsGenerationOption): BunPlugin;
 declare interface Options<T> {
   name: string;
   cwd?: string;
   defaultConfig: T;
 }
-export declare async function loadConfig<T extends Record<string, unknown>(options: Options<T>): Promise<T>;
+export declare async function loadConfig><T extends Record<string, unknown>(options: Options<T>): Promise<T>;
 declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export declare type { DtsGenerationOption }
