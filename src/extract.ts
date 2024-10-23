@@ -796,10 +796,7 @@ export function extractFunctionSignature(declaration: string): {
   console.log('\n[Signature Extraction Debug]')
   console.log('Input:', declaration)
 
-  // Check if the function is actually declared as async in the source
   const isAsync = declaration.includes('async function')
-  console.log('Is Async:', isAsync)
-
   const cleanDeclaration = declaration
     .replace('export ', '')
     .replace('async function ', 'function ')
@@ -817,15 +814,17 @@ export function extractFunctionSignature(declaration: string): {
 
   console.log('Name and Generics:', { name, generics })
 
-  // Extract parameters with improved pattern matching
+  // Extract parameters with improved destructuring handling
   const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
 
-  // Clean up destructured parameters to use simple parameter name
+  // Transform destructured parameters by extracting only the type
   if (params.startsWith('{')) {
-    const paramTypeMatch = params.match(/:\s*([^}]+)\}/)
-    if (paramTypeMatch) {
-      params = `options: ${paramTypeMatch[1]}`
+    // Match the type after the colon, handling possible generic types
+    const typeMatch = params.match(/\}:\s*([^)]+)$/)
+    if (typeMatch) {
+      const paramType = typeMatch[1].trim()
+      params = `options: ${paramType}`
     }
   }
 
@@ -863,7 +862,6 @@ export function processFunctionDeclaration(
   const functionSignature = declaration.split('{')[0].trim()
   console.log('Signature:', functionSignature)
 
-  // Parse function parts
   const {
     name,
     params,
@@ -880,7 +878,7 @@ export function processFunctionDeclaration(
     generics,
   })
 
-  // Track used types from generics
+  // Track used types
   if (generics) {
     const genericTypes = generics.slice(1, -1).split(',').map(t => t.trim())
     genericTypes.forEach((type) => {
@@ -898,7 +896,6 @@ export function processFunctionDeclaration(
     })
   }
 
-  // Track used types from return type
   if (returnType && returnType !== 'void') {
     const typeMatches = returnType.match(/([A-Z_]\w*)/gi)
     if (typeMatches) {
@@ -906,8 +903,8 @@ export function processFunctionDeclaration(
     }
   }
 
-  // Build declaration parts
-  const parts = [
+  // Build the declaration
+  const result = [
     isExported ? 'export ' : '',
     'declare ',
     isAsync ? 'async ' : '',
@@ -919,10 +916,7 @@ export function processFunctionDeclaration(
     '): ',
     returnType,
     ';',
-  ]
-
-  const result = parts.join('')
-  console.log('Generated Declaration:', result)
+  ].join('')
 
   return result
     .replace(/\s+/g, ' ')
