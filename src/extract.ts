@@ -784,68 +784,62 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
 }
 
 /**
- * Extract complete function signature handling multi-line declarations
+ * Enhanced function signature extraction with better destructuring and generics support
  */
-export function extractFunctionSignature(declaration: string): {
+export interface FunctionSignature {
   name: string
   params: string
   returnType: string
   isAsync: boolean
   generics: string
-} {
-  console.log('\n[Signature Extraction Debug]')
-  console.log('Input:', declaration)
+}
 
-  const isAsync = declaration.includes('async function')
+
+/**
+ * Extract complete function signature handling multi-line declarations
+ */
+export function extractFunctionSignature(declaration: string): FunctionSignature {
+  // Remove export keyword and clean up whitespace
   const cleanDeclaration = declaration
-    .replace('export ', '')
-    .replace('async function ', 'function ')
-    .replace('function ', '')
+    .replace(/^export\s+/, '')
+    .replace(/^async\s+/, '')
+    .replace(/^function\s+/, '')
     .trim()
 
-  console.log('Cleaned Declaration:', cleanDeclaration)
+  // Extract generics first
+  const genericsMatch = cleanDeclaration.match(/<([^>]+)>/)
+  const generics = genericsMatch ? `<${genericsMatch[1]}>` : ''
 
-  // Extract name and generics
-  const nameAndGenericsMatch = cleanDeclaration.match(/^([^(<\s]+)(?:<([^>]+)>)?/)
-  const name = nameAndGenericsMatch ? nameAndGenericsMatch[1] : ''
-  const generics = nameAndGenericsMatch && nameAndGenericsMatch[2]
-    ? `<${nameAndGenericsMatch[2]}>`
-    : ''
+  // Remove generics from declaration for easier parsing
+  const withoutGenerics = cleanDeclaration.replace(/<([^>]+)>/, '')
 
-  console.log('Name and Generics:', { name, generics })
+  // Extract function name
+  const nameMatch = withoutGenerics.match(/^([^(<\s]+)/)
+  const name = nameMatch ? nameMatch[1] : ''
 
-  // Extract parameters with improved destructuring handling
-  const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)(?=\s*:)/)
+  // Extract parameters section
+  const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
 
-  // Transform destructured parameters by extracting only the type
+  // Handle destructured parameters
   if (params.startsWith('{')) {
-    // Match the type after the colon, handling possible generic types
     const typeMatch = params.match(/\}:\s*([^)]+)$/)
     if (typeMatch) {
-      const paramType = typeMatch[1].trim()
-      params = `options: ${paramType}`
+      params = `options: ${typeMatch[1].trim()}`
     }
   }
 
-  console.log('Processed Params:', params)
-
   // Extract return type
-  const returnTypeMatch = cleanDeclaration.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
+  const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   const returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
 
-  console.log('Return Type:', returnType)
-
-  const result = {
+  return {
     name,
     params,
     returnType,
-    isAsync,
+    isAsync: declaration.includes('async'),
     generics,
   }
-
-  console.log('Final Extraction Result:', result)
-  return result
 }
 
 /**
@@ -856,9 +850,6 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  console.log('\n[Function Declaration Debug]')
-  console.log('Input:', declaration)
-
   const {
     name,
     params,
@@ -867,73 +858,47 @@ export function processFunctionDeclaration(
     generics,
   } = extractFunctionSignature(declaration)
 
-  console.log('Parsed Components:', {
-    name,
-    params,
-    returnType,
-    isAsync,
-    generics,
-  })
-
-  // Track used types from generics
+  // Track generic types
   if (generics) {
-    const genericTypes = generics.slice(1, -1).split(',').map(t => t.trim())
-    genericTypes.forEach((type) => {
-      const baseType = type.split('extends')[0].trim()
-      if (baseType)
-        usedTypes.add(baseType)
+    const genericTypes = generics
+      .slice(1, -1)
+      .split(',')
+      .map(t => t.trim().split('extends')[0].trim())
 
-      const constraintType = type.split('extends')[1]?.trim()
-      if (constraintType) {
-        const typeMatches = constraintType.match(/([A-Z_]\w*)/gi)
-        if (typeMatches) {
-          typeMatches.forEach(t => usedTypes.add(t))
-        }
-      }
+    genericTypes.forEach((type) => {
+      if (type)
+        usedTypes.add(type)
     })
   }
 
-  if (returnType && returnType !== 'void') {
-    const typeMatches = returnType.match(/([A-Z_]\w*)/gi)
-    if (typeMatches) {
-      typeMatches.forEach(t => usedTypes.add(t))
-    }
-  }
-
-  // Build the declaration
-  let result = ''
-
-  // Add export if needed
-  if (isExported)
-    result += 'export '
-
-  // Add declare and async
-  result += 'declare '
+  // Build declaration string
+  let result = `${isExported ? 'export ' : ''}declare `
   if (isAsync)
     result += 'async '
 
-  // Add function name
-  result += `function ${name}`
+  result += `function ${name}${generics}(${params}): ${returnType};`
 
-  // Add generic type with proper closing
-  if (generics) {
-    let genericPart = generics
-    if (!genericPart.endsWith('>'))
-      genericPart += '>'
-    result += genericPart
-  }
+  return result.trim()
+}
 
-  // Add parameters and return type
-  result += `(${params}): ${returnType};`
-
-  // Clean up the result
-  return result
+export function cleanParameters(params: string): string {
+  return params
     .replace(/\s+/g, ' ')
-    .replace(/\s*([<>(),;])\s*/g, '$1')
-    .replace(/,([^,\s])/g, ', $1')
-    .replace(/function\s+function/, 'function')
-    .replace(/>\s+\(/, '>(')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s*:\s*/g, ': ')
     .trim()
+}
+
+/**
+ * Analyze a function body to track used type references
+ */
+export function trackUsedTypes(body: string, usedTypes: Set<string>): void {
+  const typeMatches = body.match(/[A-Z][a-zA-Z0-9]*(?:<[^>]+>)?/g) || []
+  typeMatches.forEach((type) => {
+    const baseType = type.split('<')[0]
+    if (baseType)
+      usedTypes.add(baseType)
+  })
 }
 
 // Helper functions for line processing
