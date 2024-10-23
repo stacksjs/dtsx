@@ -784,7 +784,7 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
 }
 
 /**
- * Enhanced function signature extraction with better destructuring and generics support
+ * Extract complete function signature
  */
 export interface FunctionSignature {
   name: string
@@ -814,9 +814,11 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
     .replace(/^function\s+/, '')
     .trim()
 
-  // Extract generics with improved regex
+  // Extract complete generic section including constraints
   const genericsMatch = cleanDeclaration.match(/<([^>]+)>(?=\s*\()/)
-  const generics = genericsMatch ? `<${genericsMatch[1]}>` : ''
+  const generics = genericsMatch
+    ? normalizeGenerics(genericsMatch[1])
+    : ''
 
   // Remove generics for further parsing
   const withoutGenerics = cleanDeclaration.replace(/<([^>]+)>(?=\s*\()/, '')
@@ -829,23 +831,40 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
   const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
 
-  // Clean up parameters
+  // Clean up parameters while preserving generic references
   params = cleanParameters(params)
 
-  // Extract return type with improved generic handling
+  // Extract return type with generic preservation
   const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
 
   // Ensure generic type parameters in return types are preserved
-  returnType = returnType.replace(/\s+/g, '')
+  returnType = normalizeType(returnType)
 
   return {
     name,
     params,
     returnType,
     isAsync: declaration.includes('async'),
-    generics,
+    generics: generics ? `<${generics}>` : '',
   }
+}
+
+/**
+ * Normalize generic type parameters and constraints
+ */
+function normalizeGenerics(generics: string): string {
+  return generics
+    .split(',')
+    .map((param) => {
+      const parts = param.trim().split(/\s+extends\s+/)
+      if (parts.length === 2) {
+        const [typeParam, constraint] = parts
+        return `${typeParam.trim()} extends ${normalizeType(constraint)}`
+      }
+      return param.trim()
+    })
+    .join(', ')
 }
 
 /**
@@ -864,19 +883,20 @@ export function processFunctionDeclaration(
     generics,
   } = extractFunctionSignature(declaration)
 
-  // Track all used types
+  // Track all used types including generics
   trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
 
-  // Build declaration string ensuring correct placement of generics
+  // Build declaration string ensuring proper generic scope
   const parts = [
     isExported ? 'export' : '',
     'declare',
     isAsync ? 'async' : '',
     'function',
     name,
+    // Ensure generics are properly placed
     generics,
     `(${params})`,
-    `:`,
+    ':',
     returnType,
     ';',
   ]
@@ -886,7 +906,7 @@ export function processFunctionDeclaration(
     .join(' ')
     .replace(/\s+([<>(),;:])/g, '$1')
     .replace(/([<>(),;:])\s+/g, '$1 ')
-    .replace(/\s+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
@@ -898,24 +918,33 @@ export function cleanParameters(params: string): string {
     return ''
 
   return params
-    // Handle destructured parameters
+    // Handle destructured parameters while preserving generic references
     .replace(/\{([^}]+)\}:\s*([^,)]+)/g, (_, props, type) => {
-      // Convert destructured parameters to a single options parameter
-      const typeName = type.trim()
+      // Preserve the generic type reference
+      const typeName = normalizeType(type.trim())
       return `options: ${typeName}`
     })
     // Normalize spaces around special characters
     .replace(/\s*([,:])\s*/g, '$1 ')
-    // Clean up multiple spaces
-    .replace(/\s+/g, ' ')
     // Add space after commas if missing
     .replace(/,(\S)/g, ', $1')
     // Normalize optional parameter syntax
     .replace(/\s*\?\s*:/g, '?: ')
-    // Clean up spaces around array/generic brackets
+    // Clean up spaces around array/generic brackets while preserving content
     .replace(/\s*([<[\]>])\s*/g, '$1')
     // Final cleanup of any double spaces
     .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+/**
+ * Normalize type references while preserving generic parameters
+ */
+function normalizeType(type: string): string {
+  return type
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>])\s*/g, '$1')
+    .replace(/\s*,\s*/g, ', ')
     .trim()
 }
 
@@ -932,7 +961,7 @@ export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
     if (type) {
       // Extract base type and any nested generic types
       const [baseType, ...genericParams] = type.split(/[<>]/)
-      if (baseType)
+      if (baseType && /^[A-Z]/.test(baseType))
         usedTypes.add(baseType)
 
       // Process generic parameters
