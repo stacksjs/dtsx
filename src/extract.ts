@@ -859,9 +859,6 @@ export function processFunctionDeclaration(
   console.log('\n[Function Declaration Debug]')
   console.log('Input:', declaration)
 
-  const functionSignature = declaration.split('{')[0].trim()
-  console.log('Signature:', functionSignature)
-
   const {
     name,
     params,
@@ -896,6 +893,7 @@ export function processFunctionDeclaration(
     })
   }
 
+  // Track return type usage
   if (returnType && returnType !== 'void') {
     const typeMatches = returnType.match(/([A-Z_]\w*)/gi)
     if (typeMatches) {
@@ -903,28 +901,34 @@ export function processFunctionDeclaration(
     }
   }
 
-  // Build the declaration
-  const result = [
+  // Ensure proper generic closing before params
+  const genericPart = generics ? `${generics.endsWith('>') ? generics : `${generics}>`}` : ''
+
+  // Build the declaration ensuring proper spacing and bracket placement
+  const parts = [
     isExported ? 'export ' : '',
     'declare ',
     isAsync ? 'async ' : '',
     'function ',
     name,
-    generics,
+    genericPart,
     '(',
     params,
     '): ',
     returnType,
     ';',
-  ].join('')
+  ]
 
-  return result
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([<>(),;])\s*/g, '$1')
-    .replace(/,([^,\s])/g, ', $1')
-    .replace(/>\s*\(/g, '>(')
-    .replace(/\(\s*\)/g, '()')
-    .replace(/function\s+function/, 'function')
+  // Join with proper spacing and clean up
+  return parts.join('')
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .replace(/\s*([<>(),;])\s*/g, '$1') // Clean up around punctuation
+    .replace(/,([^,\s])/g, ', $1') // Ensure space after commas
+    .replace(/>\s*\(/g, '>(') // No space between generic close and params
+    .replace(/\(\s*\)/g, '()') // Clean empty params
+    .replace(/function\s+function/, 'function') // Remove duplicate function
+    .replace(/([^<])\s+>/g, '$1>') // Clean space before closing generic
+    .trim()
 }
 
 // Helper functions for line processing
