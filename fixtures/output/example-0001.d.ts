@@ -1,4 +1,5 @@
 import type { BunPlugin } from 'bun';
+import type { DtsGenerationOption } from '@stacksjs/dtsx';
 /**
  * Example of const declaration
  */

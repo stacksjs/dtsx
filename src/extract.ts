@@ -610,7 +610,6 @@ export function parseObjectLiteral(objStr: string): PropertyInfo[] {
  * Parses a function declaration into its components
  */
 export function parseFunctionDeclaration(declaration: string): FunctionParseState {
-  // Initial state
   const state: FunctionParseState = {
     genericParams: '',
     functionName: '',
@@ -619,7 +618,7 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
     isAsync: false,
   }
 
-  // Clean the declaration and check for async
+  // Check for async and clean declaration
   state.isAsync = declaration.includes('async')
   let cleanDeclaration = declaration
     .replace(/^export\s+/, '')
@@ -627,7 +626,7 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
     .replace(/^function\s+/, '')
     .trim()
 
-  // Function name and generic parameters extraction
+  // Extract function name and generic parameters
   const functionMatch = cleanDeclaration.match(/^([^(<\s]+)(\s*<[^>]+>)?/)
   if (functionMatch) {
     state.functionName = functionMatch[1]
@@ -637,18 +636,62 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
     cleanDeclaration = cleanDeclaration.slice(functionMatch[0].length).trim()
   }
 
-  // Parameter extraction
-  const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)/)
-  if (paramsMatch) {
-    state.parameters = paramsMatch[1].trim()
-    cleanDeclaration = cleanDeclaration.slice(paramsMatch[0].length).trim()
+  // Extract full parameter string by matching balanced parentheses
+  let paramDepth = 0
+  let paramStart = -1
+  let paramEnd = -1
+  let inGeneric = false
+
+  for (let i = 0; i < cleanDeclaration.length; i++) {
+    const char = cleanDeclaration[i]
+    if (char === '<') {
+      inGeneric = true
+    }
+    else if (char === '>') {
+      inGeneric = false
+    }
+    else if (!inGeneric) {
+      if (char === '(') {
+        if (paramDepth === 0)
+          paramStart = i
+        paramDepth++
+      }
+      else if (char === ')') {
+        paramDepth--
+        if (paramDepth === 0) {
+          paramEnd = i
+          break
+        }
+      }
+    }
   }
 
-  // Return type extraction
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
+  if (paramStart !== -1 && paramEnd !== -1) {
+    state.parameters = cleanDeclaration.slice(paramStart + 1, paramEnd).trim()
+    cleanDeclaration = cleanDeclaration.slice(paramEnd + 1).trim()
+  }
+
+  // Extract return type, handling Promise types correctly
   const returnMatch = cleanDeclaration.match(/^:\s*(.+?)(?:$|\{)/)
   if (returnMatch) {
-    state.returnType = returnMatch[1].trim().replace(/;$/, '')
+    let returnType = returnMatch[1].trim()
+      .replace(/;$/, '')
+      .replace(/\s+/g, ' ')
+
+    // Parse Promise return types
+    if (returnType.includes('Promise')) {
+      const promiseMatch = returnType.match(/Promise\s*<(.+)>/)
+      if (promiseMatch) {
+        returnType = `Promise<${promiseMatch[1].trim()}>`
+      }
+      else {
+        // If Promise is specified without type parameter, try to infer it
+        const typeParam = returnType.replace('Promise', '').trim()
+        returnType = typeParam ? `Promise<${typeParam}>` : 'Promise<void>'
+      }
+    }
+
+    state.returnType = returnType
   }
 
   return state
@@ -756,7 +799,6 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  // Get the declaration up to the function body
   const signatureMatch = declaration.match(/^.*?(?=\{|$)/)
   if (!signatureMatch)
     return declaration
@@ -764,37 +806,36 @@ export function processFunctionDeclaration(
   const signature = signatureMatch[0].trim()
   const parseResult = parseFunctionDeclaration(signature)
 
-  // Add types to usedTypes set
+  // Track used types, handling complex type expressions
   const addTypeToUsed = (type: string) => {
     if (!type)
       return
 
-    // Split on any special characters that might separate types
-    const types = type.split(/[<>,\s()]+/)
-
-    types.forEach((t) => {
-      const cleanType = t.trim()
-      if (cleanType && !cleanType.match(/^(void|any|number|string|boolean|null|undefined|never|unknown|Promise)$/)) {
-        usedTypes.add(cleanType)
+    // Handle types with generics
+    const typeMatches = type.match(/([A-Z_]\w*)/gi) || []
+    typeMatches.forEach((t) => {
+      if (!t.match(/^(void|any|number|string|boolean|null|undefined|never|unknown|Promise)$/)) {
+        usedTypes.add(t)
       }
     })
   }
 
-  // Process return type and add to used types
+  // Process return type and parameters
   addTypeToUsed(parseResult.returnType)
+  addTypeToUsed(parseResult.parameters)
 
-  // Process generic parameters if present
+  // Process generic type parameters
   if (parseResult.genericParams) {
-    const genericContent = parseResult.genericParams.slice(1, -1) // Remove < >
+    const genericContent = parseResult.genericParams.slice(1, -1)
     genericContent.split(',').forEach((param) => {
-      const parts = param.trim().split(' extends ')
-      if (parts[1]) {
-        addTypeToUsed(parts[1])
+      const [, constraint] = param.split(' extends ')
+      if (constraint) {
+        addTypeToUsed(constraint)
       }
     })
   }
 
-  // Construct the final declaration
+  // Preserve original parameter structure and return type
   return [
     isExported ? 'export ' : '',
     'declare ',
@@ -807,28 +848,7 @@ export function processFunctionDeclaration(
     '): ',
     parseResult.returnType,
     ';',
-  ].join('')
-}
-
-/**
- * Get function return type
- */
-export function getReturnType(functionSignature: string): string {
-  const returnTypeMatch = functionSignature.match(/\):\s*([^{;]+)/)
-  if (!returnTypeMatch)
-    return 'void'
-
-  const returnType = returnTypeMatch[1].trim()
-
-  // Handle Promise types
-  if (returnType.includes('Promise')) {
-    const promiseMatch = returnType.match(/Promise\s*<(.+)>/)
-    if (promiseMatch) {
-      return `Promise<${promiseMatch[1].trim()}>`
-    }
-  }
-
-  return returnType
+  ].join('').replace(/\s+/g, ' ').trim()
 }
 
 // Helper functions for line processing
