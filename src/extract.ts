@@ -210,7 +210,8 @@ export function generateImports(state: ProcessingState): string[] {
   const processContent = (content: string) => {
     // Track used values - now includes both function calls and references
     const valueRegex = /\b([a-z_$][\w$]*)\s*(?:[(,;})\s]|$)/gi
-    let match
+    let match: any
+    // eslint-disable-next-line no-cond-assign
     while ((match = valueRegex.exec(content)) !== null) {
       const [, value] = match
       if (state.availableValues.has(value)) {
@@ -913,14 +914,10 @@ export interface TypeReference {
  * Extract complete function signature handling multi-line declarations
  */
 export function extractFunctionSignature(declaration: string): FunctionSignature {
-  console.log('\n[Function Signature Extraction]')
-  console.log('Input declaration:', declaration)
-
   // Check if the main function declaration is async
   // Only match 'async' at the start of the declaration before 'function'
   const isAsync = /^export\s+async\s+function/.test(declaration)
     || /^async\s+function/.test(declaration)
-  console.log('Is async:', isAsync)
 
   // Remove export keyword and clean up whitespace
   const cleanDeclaration = declaration
@@ -929,12 +926,9 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
     .replace(/^function\s+/, '')
     .trim()
 
-  console.log('Cleaned declaration:', cleanDeclaration)
-
   // Extract complete generic section with improved regex
   const genericsRegex = /^([a-z_$][\w$]*)\s*(<[^(]+>)/i
   const genericsMatch = cleanDeclaration.match(genericsRegex)
-  console.log('Generics match:', genericsMatch)
 
   // Process generics if found
   let generics = ''
@@ -942,35 +936,29 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
   if (genericsMatch) {
     nameFromGenerics = genericsMatch[1]
     generics = genericsMatch[2]
-    console.log('Raw generics:', generics)
   }
 
   // Remove generics for further parsing
   const withoutGenerics = cleanDeclaration
     .replace(genericsRegex, nameFromGenerics)
-  console.log('Declaration without generics:', withoutGenerics)
 
   // Extract function name (use the one we got from generics match if available)
   const name = nameFromGenerics || withoutGenerics.match(/^([^(<\s]+)/)?.[1] || ''
-  console.log('Extracted name:', name)
 
   // Extract parameters section
   const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
-  console.log('Raw parameters:', params)
 
   // Clean up parameters while preserving generic references
   params = cleanParameters(params)
-  console.log('Cleaned parameters:', params)
 
   // Extract return type
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
-  console.log('Raw return type:', returnType)
 
   // Clean up return type
   returnType = normalizeType(returnType)
-  console.log('Normalized return type:', returnType)
 
   const result = {
     name,
@@ -980,7 +968,6 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
     generics,
   }
 
-  console.log('Final signature:', result)
   return result
 }
 
@@ -992,9 +979,6 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  console.log('\n[Process Function Declaration]')
-  console.log('Input declaration:', declaration)
-
   const {
     name,
     params,
@@ -1005,7 +989,6 @@ export function processFunctionDeclaration(
 
   // Track all used types including generics
   trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
-  console.log('Tracked types:', Array.from(usedTypes))
 
   // Build declaration string
   const parts = [
@@ -1029,7 +1012,6 @@ export function processFunctionDeclaration(
     .replace(/\s{2,}/g, ' ')
     .trim()
 
-  console.log('Final declaration:', result)
   return result
 }
 
@@ -1078,8 +1060,9 @@ function normalizeType(type: string): string {
 export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
   // Track type references in generics, parameters, and return types
   const typePattern = /(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)|extends\s+([A-Z]\w*(?:<[^>]+>)?)/g
-  let match
+  let match: any
 
+  // eslint-disable-next-line no-cond-assign
   while ((match = typePattern.exec(content)) !== null) {
     const type = match[1] || match[2]
     if (type) {
@@ -1090,9 +1073,9 @@ export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
 
       // Process generic parameters
       if (genericParams.length > 0) {
-        genericParams.forEach((param) => {
+        genericParams.forEach((param: any) => {
           const nestedTypes = param.split(/[,\s]/)
-          nestedTypes.forEach((t) => {
+          nestedTypes.forEach((t: any) => {
             if (/^[A-Z]/.test(t))
               usedTypes.add(t)
           })
