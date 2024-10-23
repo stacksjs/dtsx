@@ -607,6 +607,54 @@ export function parseObjectLiteral(objStr: string): PropertyInfo[] {
 }
 
 /**
+ * Parses a function declaration into its components
+ */
+export function parseFunctionDeclaration(declaration: string): FunctionParseState {
+  // Initial state
+  const state: FunctionParseState = {
+    genericParams: '',
+    functionName: '',
+    parameters: '',
+    returnType: 'void',
+    isAsync: false,
+  }
+
+  // Clean the declaration and check for async
+  state.isAsync = declaration.includes('async')
+  let cleanDeclaration = declaration
+    .replace(/^export\s+/, '')
+    .replace(/^async\s+/, '')
+    .replace(/^function\s+/, '')
+    .trim()
+
+  // Function name and generic parameters extraction
+  const functionMatch = cleanDeclaration.match(/^([^(<\s]+)(\s*<[^>]+>)?/)
+  if (functionMatch) {
+    state.functionName = functionMatch[1]
+    if (functionMatch[2]) {
+      state.genericParams = functionMatch[2].trim()
+    }
+    cleanDeclaration = cleanDeclaration.slice(functionMatch[0].length).trim()
+  }
+
+  // Parameter extraction
+  const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)/)
+  if (paramsMatch) {
+    state.parameters = paramsMatch[1].trim()
+    cleanDeclaration = cleanDeclaration.slice(paramsMatch[0].length).trim()
+  }
+
+  // Return type extraction
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
+  const returnMatch = cleanDeclaration.match(/^:\s*(.+?)(?:$|\{)/)
+  if (returnMatch) {
+    state.returnType = returnMatch[1].trim().replace(/;$/, '')
+  }
+
+  return state
+}
+
+/**
  * Process simple value types (string, number, boolean)
  */
 export function processSimpleValue(key: string, value: string): PropertyInfo {
@@ -701,54 +749,86 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
 }
 
 /**
- * Process function declarations
+ * Process function declarations with full type information preservation
  */
 export function processFunctionDeclaration(
   declaration: string,
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  const functionSignature = declaration.split('{')[0].trim()
-  const asyncKeyword = functionSignature.includes('async') ? 'async ' : ''
-  const functionName = functionSignature
-    .replace('export ', '')
-    .replace('async ', '')
-    .split('(')[0]
-    .trim()
-  const params = functionSignature.split('(')[1].split(')')[0].trim()
-  const returnType = getReturnType(functionSignature)
+  // Get the declaration up to the function body
+  const signatureMatch = declaration.match(/^.*?(?=\{|$)/)
+  if (!signatureMatch)
+    return declaration
 
-  if (returnType && returnType !== 'void') {
-    // Add base type and any generic parameters to usedTypes
-    const baseType = returnType.split('<')[0].trim()
-    usedTypes.add(baseType)
+  const signature = signatureMatch[0].trim()
+  const parseResult = parseFunctionDeclaration(signature)
 
-    // Extract types from generic parameters if present
-    const genericMatch = returnType.match(/<([^>]+)>/)?.[1]
-    if (genericMatch) {
-      genericMatch.split(',').forEach((type) => {
-        const cleanType = type.trim().split('<')[0].trim()
-        if (cleanType)
-          usedTypes.add(cleanType)
-      })
-    }
+  // Add types to usedTypes set
+  const addTypeToUsed = (type: string) => {
+    if (!type)
+      return
+
+    // Split on any special characters that might separate types
+    const types = type.split(/[<>,\s()]+/)
+
+    types.forEach((t) => {
+      const cleanType = t.trim()
+      if (cleanType && !cleanType.match(/^(void|any|number|string|boolean|null|undefined|never|unknown|Promise)$/)) {
+        usedTypes.add(cleanType)
+      }
+    })
   }
 
-  return `${isExported ? 'export ' : ''}declare ${asyncKeyword}function ${functionName}(${params}): ${returnType};`
-    .replace('function function', 'function')
+  // Process return type and add to used types
+  addTypeToUsed(parseResult.returnType)
+
+  // Process generic parameters if present
+  if (parseResult.genericParams) {
+    const genericContent = parseResult.genericParams.slice(1, -1) // Remove < >
+    genericContent.split(',').forEach((param) => {
+      const parts = param.trim().split(' extends ')
+      if (parts[1]) {
+        addTypeToUsed(parts[1])
+      }
+    })
+  }
+
+  // Construct the final declaration
+  return [
+    isExported ? 'export ' : '',
+    'declare ',
+    parseResult.isAsync ? 'async ' : '',
+    'function ',
+    parseResult.functionName,
+    parseResult.genericParams,
+    '(',
+    parseResult.parameters,
+    '): ',
+    parseResult.returnType,
+    ';',
+  ].join('')
 }
 
 /**
  * Get function return type
  */
 export function getReturnType(functionSignature: string): string {
-  const returnTypeMatch = functionSignature.match(REGEX.returnType)
+  const returnTypeMatch = functionSignature.match(/\):\s*([^{;]+)/)
   if (!returnTypeMatch)
     return 'void'
 
-  return returnTypeMatch[1]
-    .replace(/[;,]$/, '')
-    .trim()
+  const returnType = returnTypeMatch[1].trim()
+
+  // Handle Promise types
+  if (returnType.includes('Promise')) {
+    const promiseMatch = returnType.match(/Promise\s*<(.+)>/)
+    if (promiseMatch) {
+      return `Promise<${promiseMatch[1].trim()}>`
+    }
+  }
+
+  return returnType
 }
 
 // Helper functions for line processing
@@ -796,6 +876,17 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
   }
 }
 
+/**
+ * Represents the current state of function parsing
+ */
+export interface FunctionParseState {
+  genericParams: string
+  functionName: string
+  parameters: string
+  returnType: string
+  isAsync: boolean
+}
+
 export function formatOutput(state: ProcessingState): string {
   const uniqueImports = processImports(state.imports, state.usedTypes)
   const dynamicImports = Array.from(state.usedTypes)
@@ -816,19 +907,20 @@ export function formatOutput(state: ProcessingState): string {
     line.startsWith('*') ? `  ${line}` : line,
   )
 
+  // Ensure double newline after imports
+  const importSection = allImports.length > 0 ? [...allImports, '', ''] : []
+
   let result = [
-    ...allImports,
-    '',
-    '', // Extra newline after imports
+    ...importSection,
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  // Clean up default export - extract just the identifier
+  // Clean up default export if present
   if (state.defaultExport) {
     const exportIdentifier = state.defaultExport
-      .replace(/^export\s+default\s+/, '') // Remove leading export default
-      .replace(/export\s+default\s+/, '') // Remove any additional export default
-      .replace(/;+$/, '') // Remove trailing semicolons
+      .replace(/^export\s+default\s+/, '')
+      .replace(/export\s+default\s+/, '')
+      .replace(/;+$/, '')
       .trim()
 
     result += `\nexport default ${exportIdentifier};\n`
