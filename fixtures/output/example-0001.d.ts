@@ -6,6 +6,7 @@ import { generate } from '@stacksjs/dtsx';
  * Example of const declaration
  */
 export declare const conf: { [key: string]: string };
+
 export declare const someObject: {
   someString: 'Stacks';
   someNumber: 1000;
@@ -35,6 +36,7 @@ export declare const someObject: {
   someInlineCall2: (...args: any[]) => void;
   someInlineCall3: (...args: any[]) => void;
 };
+
 /**
  * Example of interface declaration
  * with another comment in an extra line
@@ -44,6 +46,7 @@ export declare interface User {
   name: string;
   email: string;
 }
+
 /**
  * Example of type declaration
  *
@@ -53,6 +56,7 @@ export declare interface ResponseData {
   success: boolean;
   data: User[];
 }
+
 /**
  * Example of function declaration
  *
@@ -60,48 +64,65 @@ export declare interface ResponseData {
  * with multiple empty lines, including an empty lines
  */
 export declare function fetchUsers(): Promise<ResponseData>;
+
 export declare interface ApiResponse<T> {
   status: number;
   message: string;
   data: T;
 }
+
 /**
  * Example of another const declaration
  *
  * with multiple empty lines, including being poorly formatted
  */
 declare const settings: { [key: string]: any };
+
 export declare interface Product {
   id: number;
   name: string;
   price: number;
 }
+
 /**
  * Example of function declaration
  */
 export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
+
 export declare interface AuthResponse {
   token: string;
   expiresIn: number;
 }
+
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
+
 export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
+
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
+
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
+
 declare interface Options<T> {
   name: string;
   cwd?: string;
   defaultConfig: T;
 }
-export declare async function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
+
+export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
+
 declare const dtsConfig: DtsGenerationConfig;
+
 export { generate, dtsConfig }
-export declare type { DtsGenerationOption }
-export { config } from './config'
-export * from './extract'
-export * from './generate'
-export * from './types'
-export * from './utils'
+
+export type { DtsGenerationOption };
+
+export { config } from './config';
+
+export * from './extract';
+export * from './generate';
+export * from './types';
+export * from './utils';
+
 export default dts;

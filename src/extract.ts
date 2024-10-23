@@ -315,41 +315,55 @@ export function processImports(imports: string[], usedTypes: Set<string>): strin
 export function processDeclaration(declaration: string, state: ProcessingState): string {
   const trimmed = declaration.trim()
 
-  if (trimmed.startsWith('export const'))
+  // Handle different declaration types with proper formatting
+  if (trimmed.startsWith('export const')) {
     return processConstDeclaration(trimmed)
+  }
 
-  if (trimmed.startsWith('const'))
+  if (trimmed.startsWith('const')) {
     return processConstDeclaration(trimmed, false)
+  }
 
-  if (trimmed.startsWith('export interface'))
+  if (trimmed.startsWith('export interface')) {
     return processInterfaceDeclaration(trimmed)
+  }
 
-  if (trimmed.startsWith('interface'))
+  if (trimmed.startsWith('interface')) {
     return processInterfaceDeclaration(trimmed, false)
+  }
 
-  if (trimmed.startsWith('export type {'))
-    return processTypeOnlyExport(trimmed, state)
-
-  if (trimmed.startsWith('type {'))
-    return processTypeOnlyExport(trimmed, state, false)
-
-  if (trimmed.startsWith('export type'))
-    return processTypeDeclaration(trimmed)
-
-  if (trimmed.startsWith('type'))
-    return processTypeDeclaration(trimmed, false)
-
-  if (trimmed.startsWith('export function') || trimmed.startsWith('export async function'))
-    return processFunctionDeclaration(trimmed, state.usedTypes)
-
-  if (trimmed.startsWith('function') || trimmed.startsWith('async function'))
-    return processFunctionDeclaration(trimmed, state.usedTypes, false)
-
-  if (trimmed.startsWith('export default'))
-    return `${trimmed};`
-
-  if (trimmed.startsWith('export'))
+  if (trimmed.startsWith('export type {')) {
+    // Handle type-only exports without 'declare'
     return trimmed
+  }
+
+  if (trimmed.startsWith('export type')) {
+    return processTypeDeclaration(trimmed)
+  }
+
+  if (trimmed.startsWith('type')) {
+    return processTypeDeclaration(trimmed, false)
+  }
+
+  if (trimmed.startsWith('export function') || trimmed.startsWith('export async function')) {
+    // Remove async from ambient context
+    const processed = trimmed.replace(/\basync\s+/, '')
+    return processFunctionDeclaration(processed, state.usedTypes)
+  }
+
+  if (trimmed.startsWith('function') || trimmed.startsWith('async function')) {
+    // Remove async from ambient context
+    const processed = trimmed.replace(/\basync\s+/, '')
+    return processFunctionDeclaration(processed, state.usedTypes, false)
+  }
+
+  if (trimmed.startsWith('export default')) {
+    return `${trimmed};`
+  }
+
+  if (trimmed.startsWith('export')) {
+    return trimmed
+  }
 
   return `declare ${trimmed}`
 }
@@ -1116,7 +1130,7 @@ export function isDeclarationLine(line: string): boolean {
 export function processDeclarationLine(line: string, state: ProcessingState): void {
   state.currentDeclaration += `${line}\n`
 
-  // Count brackets to track multi-line declarations
+  // Track brackets for multi-line declarations
   const bracketMatch = line.match(/[[{(]/g)
   const closeBracketMatch = line.match(/[\]})]/g)
   const openCount = bracketMatch ? bracketMatch.length : 0
@@ -1130,9 +1144,13 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
       state.dtsLines.push(state.lastCommentBlock.trimEnd())
       state.lastCommentBlock = ''
     }
+
+    // Process and format the declaration
     const processed = processDeclaration(state.currentDeclaration.trim(), state)
-    if (processed)
+    if (processed) {
       state.dtsLines.push(processed)
+    }
+
     state.currentDeclaration = ''
     state.bracketCount = 0
   }
@@ -1156,24 +1174,34 @@ export function formatOutput(state: ProcessingState): string {
   // Generate optimized imports
   const imports = generateImports(state)
 
-  // Build the output sections
-  const sections = [
-    // Imports section (if any imports exist)
-    imports.length > 0 ? imports.join('\n') : null,
+  // Process declarations with proper grouping and spacing
+  const { regularDeclarations, starExports } = categorizeDeclarations(state.dtsLines)
 
-    // Main declarations
-    state.dtsLines
-      .filter(line => line.trim())
-      .join('\n'),
-  ]
+  // Build sections with careful spacing
+  const sections: string[] = []
 
-  // Combine sections with proper spacing
+  // Add imports with proper spacing after
+  if (imports.length > 0) {
+    sections.push(`${imports.join('\n')}\n`)
+  }
+
+  // Add regular declarations with proper spacing between them
+  if (regularDeclarations.length > 0) {
+    sections.push(regularDeclarations.join('\n\n'))
+  }
+
+  // Add export * declarations grouped together
+  if (starExports.length > 0) {
+    sections.push(starExports.join('\n'))
+  }
+
+  // Combine sections
   let result = sections
     .filter(Boolean)
     .join('\n\n')
     .trim()
 
-  // Add final newline and handle default export
+  // Handle default export
   if (state.defaultExport) {
     const exportIdentifier = state.defaultExport
       .replace(/^export\s+default\s+/, '')
@@ -1181,13 +1209,138 @@ export function formatOutput(state: ProcessingState): string {
       .replace(/;+$/, '')
       .trim()
 
-    result += `\nexport default ${exportIdentifier};\n`
-  }
-  else {
-    result += '\n'
+    // Ensure blank line before default export if there's content before it
+    result = result.replace(/\n*$/, '\n\n')
+    result += `export default ${exportIdentifier};`
   }
 
-  return result
+  // Ensure final newline
+  result += '\n'
+
+  return fixDtsOutput(result)
+}
+
+/**
+ * Categorize declarations into different types
+ */
+function categorizeDeclarations(declarations: string[]): {
+  regularDeclarations: string[]
+  starExports: string[]
+} {
+  const regularDeclarations: string[] = []
+  const starExports: string[] = []
+  let currentComment = ''
+
+  declarations.forEach((declaration) => {
+    const trimmed = declaration.trim()
+
+    if (trimmed.startsWith('/**') || trimmed.startsWith('*')) {
+      currentComment = currentComment ? `${currentComment}\n${declaration}` : declaration
+      return
+    }
+
+    if (trimmed.startsWith('export *')) {
+      starExports.push(ensureSemicolon(trimmed))
+    }
+    else if (trimmed) {
+      const formattedDeclaration = formatSingleDeclaration(
+        currentComment ? `${currentComment}\n${declaration}` : declaration,
+      )
+      regularDeclarations.push(formattedDeclaration)
+    }
+
+    currentComment = ''
+  })
+
+  return { regularDeclarations, starExports }
+}
+
+/**
+ * Format a single declaration with proper spacing and fixes
+ */
+function formatSingleDeclaration(declaration: string): string {
+  if (!declaration.trim())
+    return ''
+
+  let formatted = declaration
+
+  // Fix 'export declare type' statements
+  if (formatted.includes('export declare type {')) {
+    formatted = formatted.replace('export declare type', 'export type')
+  }
+
+  // Remove async from ambient declarations
+  if (formatted.includes('declare') && formatted.includes('async')) {
+    formatted = formatted
+      .replace(/declare\s+async\s+/, 'declare ')
+      .replace(/export\s+declare\s+async\s+/, 'export declare ')
+  }
+
+  // Only add semicolon if it's needed and not after an opening brace
+  if (!formatted.endsWith(';') && !formatted.endsWith('{') && shouldAddSemicolon(formatted)) {
+    formatted = `${formatted.trimEnd()};`
+  }
+
+  return formatted
+}
+
+/**
+ * Determine if a semicolon should be added to the declaration
+ */
+function shouldAddSemicolon(declaration: string): boolean {
+  const trimmed = declaration.trim()
+
+  // Skip comments and formatting-only lines
+  if (trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('//')) {
+    return false
+  }
+
+  // Skip interface/type declarations ending with opening or closing braces
+  if (trimmed.endsWith('{') || trimmed.endsWith('}')) {
+    return false
+  }
+
+  // Skip declarations that already have semicolons
+  if (trimmed.endsWith(';')) {
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Ensure declaration ends with semicolon
+ */
+function ensureSemicolon(declaration: string): string {
+  return declaration.trim()
+    .replace(/;+$/, '') // Remove any existing semicolons first
+    .replace(/\{\s*$/, '{') // Remove any spaces after opening brace
+    + (declaration.trim().endsWith('{') ? '' : ';') // Add semicolon only if not ending with brace
+}
+
+/**
+ * Apply final fixes to the complete DTS output
+ */
+function fixDtsOutput(content: string): string {
+  return content
+    // First ensure all line endings are consistent
+    .replace(/\r\n/g, '\n')
+    // Remove semicolons after opening braces
+    .replace(/\{\s*;/g, '{')
+    // Fix any duplicate semicolons
+    .replace(/;+/g, ';')
+    // Normalize empty lines (no more than 2 consecutive newlines)
+    .replace(/\n{3,}/g, '\n\n')
+    // Add semicolons to declarations if missing (but not after opening braces)
+    .replace(/^(export (?!.*\{$)[^*{}\n].*[^;\n])$/gm, '$1;')
+    // Ensure proper spacing for export * declarations (without duplicate semicolons)
+    .replace(/^(export \* from [^;\n]+);*$/gm, '$1;')
+    // Fix export statements with duplicated semicolons
+    .replace(/^(export \{[^}]+\} from [^;\n]+);*$/gm, '$1;')
+    // Remove any trailing whitespace
+    .replace(/[ \t]+$/gm, '')
+    // Ensure single newline at the end
+    .replace(/\n*$/, '\n')
 }
 
 /**
