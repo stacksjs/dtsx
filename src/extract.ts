@@ -672,6 +672,7 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
   }
 
   // Extract return type, handling Promise types correctly
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   const returnMatch = cleanDeclaration.match(/^:\s*(.+?)(?:$|\{)/)
   if (returnMatch) {
     let returnType = returnMatch[1].trim()
