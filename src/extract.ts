@@ -88,10 +88,14 @@ export const REGEX: RegexPatterns = {
   defaultExport: /export\s+default\s+/,
 
   // New patterns for complex types
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   complexType: /type\s+([^=<]+)(?:<[^>]+>)?\s*=\s*([^;]+)/,
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
   unionIntersection: /([^|&]+)(?:\s*[|&]\s*([^|&]+))+/,
-  mappedType: /\{\s*\[\s*([^\]]+)\s*in\s*([^\]]+)\s*\]:/,
-  conditionalType: /([^extnds]+)\s+extends\s+([^?]+)\s*\?\s*([^:]+)\s*:\s*([^;]+)/,
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
+  mappedType: /\{\s*\[\s*([^\]]+)in\s*([^\]]+)\]:/,
+  // eslint-disable-next-line regexp/no-super-linear-backtracking
+  conditionalType: /([^extnds]+)\s+extends\s+([^?]+)\?\s*([^:]+):\s*([^;]+)/,
   genericConstraints: /<([^>]+)>/,
   functionOverload: /^(?:export\s+)?(?:declare\s+)?function\s+([^(<\s]+)/,
 } as const satisfies RegexPatterns
