@@ -40,6 +40,13 @@ export interface RegexPatterns {
   readonly exportCleanup: RegExp
   /** Default export */
   readonly defaultExport: RegExp
+
+  readonly complexType: RegExp
+  readonly unionIntersection: RegExp
+  readonly mappedType: RegExp
+  readonly conditionalType: RegExp
+  readonly genericConstraints: RegExp
+  readonly functionOverload: RegExp
 }
 
 /**
@@ -79,6 +86,14 @@ export const REGEX: RegexPatterns = {
   // Export patterns
   exportCleanup: /^export\s+default\s+/,
   defaultExport: /export\s+default\s+/,
+
+  // New patterns for complex types
+  complexType: /type\s+([^=<]+)(?:<[^>]+>)?\s*=\s*([^;]+)/,
+  unionIntersection: /([^|&]+)(?:\s*[|&]\s*([^|&]+))+/,
+  mappedType: /\{\s*\[\s*([^\]]+)\s*in\s*([^\]]+)\s*\]:/,
+  conditionalType: /([^extnds]+)\s+extends\s+([^?]+)\s*\?\s*([^:]+)\s*:\s*([^;]+)/,
+  genericConstraints: /<([^>]+)>/,
+  functionOverload: /^(?:export\s+)?(?:declare\s+)?function\s+([^(<\s]+)/,
 } as const satisfies RegexPatterns
 
 /**
@@ -416,11 +431,12 @@ export function processImports(imports: string[], usedTypes: Set<string>): strin
 }
 
 /**
- * Process declarations with type inference
+ * Process declarations
  */
 export function processDeclaration(declaration: string, state: ProcessingState): string {
   const trimmed = declaration.trim()
 
+  // Handle different declaration types with proper formatting
   if (trimmed.startsWith('export const')) {
     return processConstDeclaration(trimmed)
   }
@@ -451,7 +467,7 @@ export function processDeclaration(declaration: string, state: ProcessingState):
 
   if (trimmed.startsWith('export function') || trimmed.startsWith('export async function')) {
     const processed = trimmed.replace(/\basync\s+/, '')
-    return processFunctionDeclaration(processed, state.usedTypes)
+    return processFunctionDeclaration(processed, state.usedTypes, true)
   }
 
   if (trimmed.startsWith('function') || trimmed.startsWith('async function')) {
@@ -608,6 +624,60 @@ export function processCompleteProperty({ key, content }: { key?: string, conten
 }
 
 /**
+ * Process complex type declarations
+ */
+function processComplexTypeDeclaration(declaration: string): string {
+  // Handle union and intersection types
+  if (declaration.includes('|') || declaration.includes('&')) {
+    const match = declaration.match(REGEX.unionIntersection)
+    if (match) {
+      const types = declaration.split(/\s*[|&]\s*/)
+      return types.join(declaration.includes('|') ? ' | ' : ' & ')
+    }
+  }
+
+  // Handle mapped types
+  if (declaration.includes('[') && declaration.includes('in')) {
+    const match = declaration.match(REGEX.mappedType)
+    if (match) {
+      const [, keyType, valueType] = match
+      return `{ [${keyType} in ${valueType}]: ${processTypeExpression(valueType)} }`
+    }
+  }
+
+  // Handle conditional types
+  if (declaration.includes('extends') && declaration.includes('?')) {
+    const match = declaration.match(REGEX.conditionalType)
+    if (match) {
+      const [, condition, constraint, trueType, falseType] = match
+      return `${condition} extends ${constraint} ? ${trueType} : ${falseType}`
+    }
+  }
+
+  return declaration
+}
+
+/**
+ * Process type expressions
+ */
+function processTypeExpression(expression: string): string {
+  // Handle generics
+  if (expression.includes('<')) {
+    const match = expression.match(REGEX.genericConstraints)
+    if (match) {
+      const [fullMatch, constraints] = match
+      const processedConstraints = constraints.split(',').map((c) => {
+        const [name, constraint] = c.split('extends').map(s => s.trim())
+        return constraint ? `${name} extends ${constraint}` : name
+      })
+      return expression.replace(fullMatch, `<${processedConstraints.join(', ')}>`)
+    }
+  }
+
+  return expression
+}
+
+/**
  * Extract nested content between delimiters
  */
 export function extractNestedContent(content: string, openChar: string, closeChar: string): string | null {
@@ -697,6 +767,36 @@ function inferArrayType(value: string): string {
   const elementTypes = elements.map(element => inferElementType(element.trim()))
   const uniqueTypes = [...new Set(elementTypes)]
   return `Array<${uniqueTypes.join(' | ')}>`
+}
+
+/**
+ * Enhanced type inference for complex cases
+ */
+export function inferComplexType(value: string): string {
+  const trimmed = value.trim()
+
+  if (trimmed.includes('=>')) {
+    return inferFunctionType(trimmed)
+  }
+
+  if (trimmed.startsWith('[')) {
+    return inferArrayType(trimmed)
+  }
+
+  if (trimmed.startsWith('{')) {
+    return processObjectLiteral(trimmed)
+  }
+
+  if (trimmed.includes('extends')) {
+    return processComplexTypeDeclaration(trimmed)
+  }
+
+  if (trimmed.includes('|') || trimmed.includes('&')) {
+    return processComplexTypeDeclaration(trimmed)
+  }
+
+  // Pass through direct type references and primitives
+  return trimmed
 }
 
 /**
@@ -859,6 +959,14 @@ export function parseObjectLiteral(objStr: string): PropertyInfo[] {
 }
 
 /**
+ * Process object type literals
+ */
+function processObjectLiteral(obj: string): string {
+  const properties = extractObjectProperties([obj])
+  return formatObjectType(properties)
+}
+
+/**
  * Process interface declarations
  */
 export function processInterfaceDeclaration(declaration: string, isExported = true): string {
@@ -879,9 +987,13 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
   const lines = declaration.split('\n')
   const firstLine = lines[0]
   const typeName = firstLine.split('type')[1].split('=')[0].trim()
-  const typeBody = firstLine.split('=')[1]?.trim() || lines.slice(1).join('\n').trim().replace(/;$/, '')
+  const typeBody = firstLine.split('=')[1]?.trim()
+    || lines.slice(1).join('\n').trim().replace(/;$/, '')
 
-  return `${isExported ? 'export ' : ''}declare type ${typeName} = ${typeBody};`
+  // Use complex type inference for the type body
+  const inferredType = inferComplexType(typeBody)
+
+  return `${isExported ? 'export ' : ''}declare type ${typeName} = ${inferredType};`
 }
 
 /**
@@ -929,11 +1041,14 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
 }
 
 /**
- * Process function declarations
+ * Process function declarations with overloads
+ * @param declaration - Function declaration to process
+ * @param usedTypes - Set of used types to track
+ * @param isExported - Whether the function is exported
  */
 export function processFunctionDeclaration(
   declaration: string,
-  usedTypes: Set<string>,
+  usedTypes?: Set<string>,
   isExported = true,
 ): string {
   const {
@@ -944,7 +1059,10 @@ export function processFunctionDeclaration(
     generics,
   } = extractFunctionSignature(declaration)
 
-  trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
+  // Track used types if provided
+  if (usedTypes) {
+    trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
+  }
 
   const parts = [
     isExported ? 'export' : '',
@@ -1244,6 +1362,26 @@ function formatSingleDeclaration(declaration: string): string {
   }
 
   return formatted
+}
+
+/**
+ * Format function declaration
+ */
+function formatFunctionDeclaration(
+  signature: FunctionSignature,
+  isExported: boolean,
+): string {
+  const {
+    name,
+    params,
+    returnType,
+    isAsync,
+    generics,
+  } = signature
+
+  return `${isExported ? 'export ' : ''}declare ${isAsync ? 'async ' : ''}function ${name}${
+    generics ? `<${generics}>` : ''
+  }(${params}): ${returnType};`
 }
 
 /**
