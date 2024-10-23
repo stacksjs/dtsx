@@ -93,7 +93,7 @@ declare interface Options<T> {
   cwd?: string;
   defaultConfig: T;
 }
-export declare async function loadConfig(options: Options<T>): Promise<T>;
+export declare async function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export declare type { DtsGenerationOption }

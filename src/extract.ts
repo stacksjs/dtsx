@@ -814,18 +814,26 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
     .replace(/^function\s+/, '')
     .trim()
 
-  // Extract complete generic section including constraints
-  const genericsMatch = cleanDeclaration.match(/<([^>]+)>(?=\s*\()/)
-  const generics = genericsMatch
-    ? normalizeGenerics(genericsMatch[1])
-    : ''
+  // Extract complete generic section with improved regex
+  // This pattern looks for generics after the function name but before parameters
+  const genericsRegex = /^([a-z_$][\w$]*)\s*(<[^(]+>)/i
+  const genericsMatch = cleanDeclaration.match(genericsRegex)
+
+  // Process generics if found
+  let generics = ''
+  let nameFromGenerics = ''
+  if (genericsMatch) {
+    nameFromGenerics = genericsMatch[1]
+    // Extract everything between < and > including nested generic constraints
+    generics = genericsMatch[2]
+  }
 
   // Remove generics for further parsing
-  const withoutGenerics = cleanDeclaration.replace(/<([^>]+)>(?=\s*\()/, '')
+  const withoutGenerics = cleanDeclaration
+    .replace(genericsRegex, nameFromGenerics)
 
-  // Extract function name
-  const nameMatch = withoutGenerics.match(/^([^(<\s]+)/)
-  const name = nameMatch ? nameMatch[1] : ''
+  // Extract function name (use the one we got from generics match if available)
+  const name = nameFromGenerics || withoutGenerics.match(/^([^(<\s]+)/)?.[1] || ''
 
   // Extract parameters section
   const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
@@ -834,37 +842,22 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
   // Clean up parameters while preserving generic references
   params = cleanParameters(params)
 
-  // Extract return type with generic preservation
+  // Extract return type
   const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
 
-  // Ensure generic type parameters in return types are preserved
+  // Clean up return type
   returnType = normalizeType(returnType)
 
-  return {
+  const result = {
     name,
     params,
     returnType,
     isAsync: declaration.includes('async'),
-    generics: generics ? `<${generics}>` : '',
+    generics,
   }
-}
 
-/**
- * Normalize generic type parameters and constraints
- */
-function normalizeGenerics(generics: string): string {
-  return generics
-    .split(',')
-    .map((param) => {
-      const parts = param.trim().split(/\s+extends\s+/)
-      if (parts.length === 2) {
-        const [typeParam, constraint] = parts
-        return `${typeParam.trim()} extends ${normalizeType(constraint)}`
-      }
-      return param.trim()
-    })
-    .join(', ')
+  return result
 }
 
 /**
@@ -893,7 +886,7 @@ export function processFunctionDeclaration(
     isAsync ? 'async' : '',
     'function',
     name,
-    // Ensure generics are properly placed
+    // Keep the raw generics as they were captured, including constraints
     generics,
     `(${params})`,
     ':',
@@ -901,13 +894,15 @@ export function processFunctionDeclaration(
     ';',
   ]
 
-  return parts
+  const result = parts
     .filter(Boolean)
     .join(' ')
     .replace(/\s+([<>(),;:])/g, '$1')
     .replace(/([<>(),;:])\s+/g, '$1 ')
     .replace(/\s{2,}/g, ' ')
     .trim()
+
+  return result
 }
 
 /**
@@ -917,10 +912,9 @@ export function cleanParameters(params: string): string {
   if (!params.trim())
     return ''
 
-  return params
+  const result = params
     // Handle destructured parameters while preserving generic references
     .replace(/\{([^}]+)\}:\s*([^,)]+)/g, (_, props, type) => {
-      // Preserve the generic type reference
       const typeName = normalizeType(type.trim())
       return `options: ${typeName}`
     })
@@ -935,6 +929,8 @@ export function cleanParameters(params: string): string {
     // Final cleanup of any double spaces
     .replace(/\s{2,}/g, ' ')
     .trim()
+
+  return result
 }
 
 /**
