@@ -794,6 +794,14 @@ export interface FunctionSignature {
   generics: string
 }
 
+/**
+ * Represents a tracked type reference
+ */
+export interface TypeReference {
+  name: string
+  generics: string[]
+  isExternal: boolean
+}
 
 /**
  * Extract complete function signature handling multi-line declarations
@@ -821,13 +829,8 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
   const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
 
-  // Handle destructured parameters
-  if (params.startsWith('{')) {
-    const typeMatch = params.match(/\}:\s*([^)]+)$/)
-    if (typeMatch) {
-      params = `options: ${typeMatch[1].trim()}`
-    }
-  }
+  // Clean up parameters
+  params = cleanParameters(params)
 
   // Extract return type
   const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
@@ -858,18 +861,10 @@ export function processFunctionDeclaration(
     generics,
   } = extractFunctionSignature(declaration)
 
-  // Track generic types
-  if (generics) {
-    const genericTypes = generics
-      .slice(1, -1)
-      .split(',')
-      .map(t => t.trim().split('extends')[0].trim())
-
-    genericTypes.forEach((type) => {
-      if (type)
-        usedTypes.add(type)
-    })
-  }
+  // Track types used in the signature
+  trackUsedTypes(generics, usedTypes)
+  trackUsedTypes(params, usedTypes)
+  trackUsedTypes(returnType, usedTypes)
 
   // Build declaration string
   let result = `${isExported ? 'export ' : ''}declare `
@@ -882,23 +877,81 @@ export function processFunctionDeclaration(
 }
 
 export function cleanParameters(params: string): string {
+  if (!params.trim())
+    return ''
+
   return params
+    // Handle destructured parameters
+    .replace(/\{([^}]+)\}:\s*([^,)]+)/g, (_, props, type) => {
+      // Convert destructured parameters to a single options parameter
+      const typeName = type.trim()
+      return `options: ${typeName}`
+    })
+    // Normalize spaces around special characters
+    .replace(/\s*([,:])\s*/g, '$1 ')
+    // Clean up multiple spaces
     .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/\s*:\s*/g, ': ')
+    // Add space after commas if missing
+    .replace(/,(\S)/g, ', $1')
+    // Normalize optional parameter syntax
+    .replace(/\s*\?\s*:/g, '?: ')
+    // Clean up spaces around array/generic brackets
+    .replace(/\s*([<[\]>])\s*/g, '$1')
+    // Final cleanup of any double spaces
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
 /**
  * Analyze a function body to track used type references
  */
-export function trackUsedTypes(body: string, usedTypes: Set<string>): void {
-  const typeMatches = body.match(/[A-Z][a-zA-Z0-9]*(?:<[^>]+>)?/g) || []
-  typeMatches.forEach((type) => {
-    const baseType = type.split('<')[0]
-    if (baseType)
-      usedTypes.add(baseType)
-  })
+export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
+  // Reset tracking for this content
+  const typeRefs = new Set<string>()
+
+  // Track explicit type references
+  const typeMatches = content.matchAll(/(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)/g)
+  for (const match of typeMatches) {
+    const fullType = match[1]
+    const baseType = fullType.split('<')[0]
+
+    // Add base type
+    typeRefs.add(baseType)
+
+    // Extract and track generic parameter types
+    const genericMatch = fullType.match(/<(.+)>/)
+    if (genericMatch) {
+      const genericTypes = genericMatch[1].split(',')
+      for (const genericType of genericTypes) {
+        const cleanType = genericType.trim().split(/[<>\s]/)[0]
+        if (/^[A-Z]/.test(cleanType))
+          typeRefs.add(cleanType)
+      }
+    }
+  }
+
+  // Track types used in extends clauses
+  const extendsMatches = content.matchAll(/extends\s+([A-Z]\w*(?:<[^>]+>)?)/g)
+  for (const match of extendsMatches) {
+    const fullType = match[1]
+    const baseType = fullType.split('<')[0]
+    typeRefs.add(baseType)
+  }
+
+  // Track types used in type predicates
+  const predicateMatches = content.matchAll(/is\s+([A-Z]\w*)/g)
+  for (const match of predicateMatches) {
+    typeRefs.add(match[1])
+  }
+
+  // Track mapped type references
+  const mappedMatches = content.matchAll(/(?:in|of)\s+([A-Z]\w*)/g)
+  for (const match of mappedMatches) {
+    typeRefs.add(match[1])
+  }
+
+  // Add all discovered types to the main set
+  typeRefs.forEach(type => usedTypes.add(type))
 }
 
 // Helper functions for line processing
@@ -1023,4 +1076,17 @@ export function formatObjectType(properties: PropertyInfo[]): string {
     .join('; ')
 
   return `{ ${formattedProps} }`
+}
+
+/**
+ * Utility function to format type parameters
+ */
+export function formatTypeParameters(params: string): string {
+  return params
+    .split(',')
+    .map((param) => {
+      const [name, constraint] = param.split('extends').map(p => p.trim())
+      return constraint ? `${name} extends ${constraint}` : name
+    })
+    .join(', ')
 }
