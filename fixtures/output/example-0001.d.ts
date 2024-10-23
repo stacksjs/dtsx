@@ -128,7 +128,12 @@ export declare interface ComplexGeneric<T extends Record<string, unknown>, K ext
   nested: Array<Partial<T>>;
 }
 
-export declare type ComplexUnionIntersection = ;
+export declare type ComplexUnionIntersection =
+  | (User & { role: 'admin' })
+  | (Product & { category: string })
+  & {
+    metadata: Record<string, unknown>
+  }
 
 export * from './extract';
 export * from './generate';
