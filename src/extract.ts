@@ -101,6 +101,14 @@ export function extractDtsTypes(sourceCode: string): string {
 
   const lines = sourceCode.split('\n')
   for (const line of lines) {
+    // Add explicitly re-exported types to usedTypes
+    if (line.trim().startsWith('export type {')) {
+      const typeMatch = line.match(/export\s+type\s*\{([^}]+)\}/)
+      if (typeMatch) {
+        const types = typeMatch[1].split(',').map(t => t.trim())
+        types.forEach(type => state.usedTypes.add(type))
+      }
+    }
     processLine(line, state)
   }
 
@@ -159,8 +167,9 @@ export function processImport(importLine: string, typeSources: Map<string, strin
  */
 export function processImports(imports: string[], usedTypes: Set<string>): string[] {
   const importMap = new Map<string, Set<string>>()
+  const reExportedTypes = new Set<string>()
 
-  // Process each import line to extract module and types
+  // First pass: process each import line
   for (const line of imports) {
     const typeImportMatch = line.match(REGEX.typeImport)
     const regularImportMatch = line.match(REGEX.regularImport)
@@ -170,18 +179,18 @@ export function processImports(imports: string[], usedTypes: Set<string>): strin
       const types = match[1].split(',').map(t => t.trim())
       const module = match[2]
 
-      // Only track types that are actually used
-      const usedImports = types.filter((type) => {
+      // Track all imported types, including those that might be re-exported
+      types.forEach((type) => {
         const baseName = type.split(' as ')[0].trim()
-        return usedTypes.has(baseName)
-      })
-
-      if (usedImports.length > 0) {
-        if (!importMap.has(module)) {
+        if (!importMap.has(module))
           importMap.set(module, new Set())
-        }
-        usedImports.forEach(type => importMap.get(module)!.add(type))
-      }
+
+        importMap.get(module)!.add(type)
+
+        // If this is a type that's re-exported, mark it
+        if (usedTypes.has(baseName))
+          reExportedTypes.add(baseName)
+      })
     }
   }
 
@@ -189,19 +198,29 @@ export function processImports(imports: string[], usedTypes: Set<string>): strin
   const allowedModules = ['bun', '@stacksjs/dtsx']
 
   // Format imports, filtering to allowed modules only
+  // Now include both used types and re-exported types
   return Array.from(importMap.entries())
     .filter(([module]) => allowedModules.includes(module))
     .map(([module, types]) => {
-      const sortedTypes = Array.from(types).sort()
+      const relevantTypes = Array.from(types).filter((type) => {
+        const baseName = type.split(' as ')[0].trim()
+        return usedTypes.has(baseName) || reExportedTypes.has(baseName)
+      })
+
+      if (relevantTypes.length === 0)
+        return ''
+
+      const sortedTypes = relevantTypes.sort()
       return `import type { ${sortedTypes.join(', ')} } from '${module}';`
     })
-    .sort() // Sort imports alphabetically
+    .filter(Boolean)
+    .sort()
 }
 
 /**
  * Process declarations (const, interface, type, function)
  */
-export function processDeclaration(declaration: string, usedTypes: Set<string>): string {
+export function processDeclaration(declaration: string, state: ProcessingState): string {
   const trimmed = declaration.trim()
 
   if (trimmed.startsWith('export const'))
@@ -217,10 +236,10 @@ export function processDeclaration(declaration: string, usedTypes: Set<string>):
     return processInterfaceDeclaration(trimmed, false)
 
   if (trimmed.startsWith('export type {'))
-    return processTypeOnlyExport(trimmed)
+    return processTypeOnlyExport(trimmed, state)
 
   if (trimmed.startsWith('type {'))
-    return processTypeOnlyExport(trimmed, false)
+    return processTypeOnlyExport(trimmed, state, false)
 
   if (trimmed.startsWith('export type'))
     return processTypeDeclaration(trimmed)
@@ -229,10 +248,10 @@ export function processDeclaration(declaration: string, usedTypes: Set<string>):
     return processTypeDeclaration(trimmed, false)
 
   if (trimmed.startsWith('export function') || trimmed.startsWith('export async function'))
-    return processFunctionDeclaration(trimmed, usedTypes)
+    return processFunctionDeclaration(trimmed, state.usedTypes)
 
   if (trimmed.startsWith('function') || trimmed.startsWith('async function'))
-    return processFunctionDeclaration(trimmed, usedTypes, false)
+    return processFunctionDeclaration(trimmed, state.usedTypes, false)
 
   if (trimmed.startsWith('export default'))
     return `${trimmed};`
@@ -739,7 +758,14 @@ export function processInterfaceDeclaration(declaration: string, isExported = tr
 /**
  * Process type-only exports
  */
-export function processTypeOnlyExport(declaration: string, isExported = true): string {
+export function processTypeOnlyExport(declaration: string, state: ProcessingState, isExported = true): string {
+  // When processing "export type { X }", add X to usedTypes
+  const typeMatch = declaration.match(/export\s+type\s*\{([^}]+)\}/)
+  if (typeMatch) {
+    const types = typeMatch[1].split(',').map(t => t.trim())
+    types.forEach(type => state.usedTypes.add(type))
+  }
+
   return declaration
     .replace('export type', `${isExported ? 'export ' : ''}declare type`)
     .replace(/;$/, '')
@@ -760,59 +786,39 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
 /**
  * Extract complete function signature handling multi-line declarations
  */
-export function extractFunctionSignature(declaration: string): string {
-  // First, normalize line breaks and whitespace
-  const normalized = declaration
-    .split('\n')
-    .map(line => line.trim())
-    .join(' ')
-
-  // Match function declaration including parameters and return type
-  const match = normalized.match(/^(export\s+)?(async\s+)?function\s+([^{]+)/)
-  if (!match)
-    return ''
-
-  let signature = match[0]
-  let depth = 0
-  let genericDepth = 0
-  let foundBody = false
-
-  // Process character by character to find the complete signature
-  for (let i = match[0].length; i < normalized.length && !foundBody; i++) {
-    const char = normalized[i]
-
-    if (char === '<') {
-      genericDepth++
-    }
-    else if (char === '>') {
-      genericDepth--
-    }
-    else if (genericDepth === 0) {
-      if (char === '(') {
-        depth++
-      }
-      else if (char === ')') {
-        depth--
-      }
-      else if (char === '{') {
-        foundBody = true
-        break
-      }
-    }
-
-    if (!foundBody) {
-      signature += char
-    }
-  }
-
-  // Clean up the signature
-  signature = signature
-    .replace(/\s+/g, ' ')
-    .replace(/:\s+/g, ': ')
+export function extractFunctionSignature(declaration: string): {
+  name: string
+  params: string
+  returnType: string
+  isAsync: boolean
+  generics: string
+} {
+  const isAsync = declaration.includes('async')
+  const cleanDeclaration = declaration
+    .replace('export ', '')
+    .replace('async ', '')
+    .replace('function ', '')
     .trim()
 
-  console.log('Extracted raw signature:', signature)
-  return signature
+  const nameMatch = cleanDeclaration.match(/^([^<(\s]+)/)
+  const name = nameMatch ? nameMatch[1] : ''
+
+  const genericsMatch = cleanDeclaration.match(/<([^>]+)>/)
+  const generics = genericsMatch ? `<${genericsMatch[1]}>` : ''
+
+  const paramsMatch = cleanDeclaration.match(/\((.*?)\)/)
+  const params = paramsMatch ? paramsMatch[1] : ''
+
+  const returnTypeMatch = cleanDeclaration.match(/\):\s*([^{;]+)/)
+  const returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
+
+  return {
+    name,
+    params,
+    returnType,
+    isAsync,
+    generics,
+  }
 }
 
 /**
@@ -823,61 +829,76 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  console.log('Processing declaration:', declaration)
+  const functionSignature = declaration.split('{')[0].trim()
+  const asyncKeyword = functionSignature.includes('async') ? 'async ' : ''
 
-  const signature = extractFunctionSignature(declaration)
-  if (!signature) {
-    console.log('No valid signature found')
-    return declaration
-  }
+  // Extract function name and generic parameters
+  const nameAndGenerics = functionSignature
+    .replace('export ', '')
+    .replace('async ', '')
+    .replace('function ', '')
+    .split('(')[0]
+    .trim()
 
-  console.log('Using signature:', signature)
-  const parseResult = parseFunctionDeclaration(signature)
-  console.log('Parse result:', parseResult)
+  // Handle generic type parameters
+  const genericMatch = nameAndGenerics.match(/<([^>]+)>/)?.[1]
+  const functionName = nameAndGenerics.split('<')[0].trim()
+  const genericParams = genericMatch ? `<${genericMatch}>` : ''
 
-  // Add types to usedTypes set
-  const addTypeToUsed = (type: string) => {
-    if (!type)
-      return
+  // Extract parameters
+  const paramsMatch = functionSignature.match(/\((.*?)\)/)?.[1] || ''
 
-    const typeMatches = type.match(/([A-Z_]\w*)/gi) || []
-    typeMatches.forEach((t) => {
-      if (!t.match(/^(void|any|number|string|boolean|null|undefined|never|unknown|Promise)$/)) {
-        usedTypes.add(t)
-        console.log('Added type to used:', t)
-      }
+  // Get return type
+  const returnTypeMatch = functionSignature.match(/\):\s*([^{;]+)/)?.[1]?.trim()
+  const returnType = returnTypeMatch || 'void'
+
+  // Add used types
+  if (genericMatch) {
+    genericMatch.split(',').forEach((type) => {
+      const cleanType = type.split('extends')[0].trim()
+      if (cleanType)
+        usedTypes.add(cleanType)
     })
   }
 
-  // Process all types
-  addTypeToUsed(parseResult.returnType)
-  addTypeToUsed(parseResult.parameters)
+  if (returnType && returnType !== 'void') {
+    // Add base type and any generic parameters to usedTypes
+    const baseType = returnType.split('<')[0].trim()
+    usedTypes.add(baseType)
 
-  if (parseResult.genericParams) {
-    const genericContent = parseResult.genericParams.slice(1, -1)
-    genericContent.split(',').forEach((param) => {
-      const [, constraint] = param.split(' extends ')
-      if (constraint) {
-        addTypeToUsed(constraint)
-        console.log('Added generic constraint:', constraint)
-      }
-    })
+    // Extract types from generic parameters if present
+    const returnGenericMatch = returnType.match(/<([^>]+)>/)?.[1]
+    if (returnGenericMatch) {
+      returnGenericMatch.split(',').forEach((type) => {
+        const cleanType = type.trim().split('<')[0].trim()
+        if (cleanType)
+          usedTypes.add(cleanType)
+      })
+    }
   }
 
-  // Construct the declaration, ensuring proper spacing and no duplicate colons
-  return [
+  // Build the function declaration string
+  const functionDeclaration = [
     isExported ? 'export ' : '',
     'declare ',
-    parseResult.isAsync ? 'async ' : '',
+    asyncKeyword,
     'function ',
-    parseResult.functionName,
-    parseResult.genericParams,
+    functionName,
+    genericParams,
     '(',
-    parseResult.parameters,
+    paramsMatch,
     '): ',
-    parseResult.returnType,
+    returnType,
     ';',
   ].join('')
+
+  return functionDeclaration
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>(),;])\s*/g, '$1')
+    .replace(/,([^,\s])/g, ', $1')
+    .replace(/>\s*\(/g, '>(')
+    .replace(/\(\s*\)/g, '()')
+    .replace(/function\s+function/, 'function')
 }
 
 // Helper functions for line processing
@@ -907,9 +928,14 @@ export function isDeclarationLine(line: string): boolean {
 
 export function processDeclarationLine(line: string, state: ProcessingState): void {
   state.currentDeclaration += `${line}\n`
-  const opens = (line.match(REGEX.bracketOpen) || []).length
-  const closes = (line.match(REGEX.bracketClose) || []).length
-  state.bracketCount += opens - closes
+
+  // Count brackets to track multi-line declarations
+  const bracketMatch = line.match(/[[{(]/g)
+  const closeBracketMatch = line.match(/[\]})]/g)
+  const openCount = bracketMatch ? bracketMatch.length : 0
+  const closeCount = closeBracketMatch ? closeBracketMatch.length : 0
+  state.bracketCount += openCount - closeCount
+
   state.isMultiLineDeclaration = state.bracketCount > 0
 
   if (!state.isMultiLineDeclaration) {
@@ -917,7 +943,7 @@ export function processDeclarationLine(line: string, state: ProcessingState): vo
       state.dtsLines.push(state.lastCommentBlock.trimEnd())
       state.lastCommentBlock = ''
     }
-    const processed = processDeclaration(state.currentDeclaration.trim(), state.usedTypes)
+    const processed = processDeclaration(state.currentDeclaration.trim(), state)
     if (processed)
       state.dtsLines.push(processed)
     state.currentDeclaration = ''
@@ -956,15 +982,14 @@ export function formatOutput(state: ProcessingState): string {
     line.startsWith('*') ? `  ${line}` : line,
   )
 
-  // Ensure double newline after imports
-  const importSection = allImports.length > 0 ? [...allImports, '', ''] : []
-
   let result = [
-    ...importSection,
+    ...allImports,
+    '',
+    '', // Extra newline after imports
     ...declarations,
   ].filter(Boolean).join('\n')
 
-  // Clean up default export if present
+  // Clean up default export
   if (state.defaultExport) {
     const exportIdentifier = state.defaultExport
       .replace(/^export\s+default\s+/, '')
