@@ -618,8 +618,10 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
     isAsync: false,
   }
 
-  // Check for async and clean declaration
+  // Check for async
   state.isAsync = declaration.includes('async')
+
+  // Clean declaration
   let cleanDeclaration = declaration
     .replace(/^export\s+/, '')
     .replace(/^async\s+/, '')
@@ -636,63 +638,26 @@ export function parseFunctionDeclaration(declaration: string): FunctionParseStat
     cleanDeclaration = cleanDeclaration.slice(functionMatch[0].length).trim()
   }
 
-  // Extract full parameter string by matching balanced parentheses
-  let paramDepth = 0
-  let paramStart = -1
-  let paramEnd = -1
-  let inGeneric = false
-
-  for (let i = 0; i < cleanDeclaration.length; i++) {
-    const char = cleanDeclaration[i]
-    if (char === '<') {
-      inGeneric = true
-    }
-    else if (char === '>') {
-      inGeneric = false
-    }
-    else if (!inGeneric) {
-      if (char === '(') {
-        if (paramDepth === 0)
-          paramStart = i
-        paramDepth++
-      }
-      else if (char === ')') {
-        paramDepth--
-        if (paramDepth === 0) {
-          paramEnd = i
-          break
-        }
-      }
-    }
+  // Extract parameters
+  const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)/)
+  if (paramsMatch) {
+    state.parameters = paramsMatch[1].trim()
+    cleanDeclaration = cleanDeclaration.slice(paramsMatch[0].length).trim()
   }
 
-  if (paramStart !== -1 && paramEnd !== -1) {
-    state.parameters = cleanDeclaration.slice(paramStart + 1, paramEnd).trim()
-    cleanDeclaration = cleanDeclaration.slice(paramEnd + 1).trim()
-  }
+  // Extract return type, removing any duplicate colons
+  if (cleanDeclaration.startsWith(':')) {
+    let returnType = cleanDeclaration.slice(1).trim()
+    returnType = returnType
+      .replace(/:\s*$/, '') // Remove trailing colons
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim()
 
-  // Extract return type, handling Promise types correctly
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
-  const returnMatch = cleanDeclaration.match(/^:\s*(.+?)(?:$|\{)/)
-  if (returnMatch) {
-    let returnType = returnMatch[1].trim()
-      .replace(/;$/, '')
-      .replace(/\s+/g, ' ')
-
-    // Parse Promise return types
-    if (returnType.includes('Promise')) {
-      const promiseMatch = returnType.match(/Promise\s*<(.+)>/)
-      if (promiseMatch) {
-        returnType = `Promise<${promiseMatch[1].trim()}>`
-      }
-      else {
-        // If Promise is specified without type parameter, try to infer it
-        const typeParam = returnType.replace('Promise', '').trim()
-        returnType = typeParam ? `Promise<${typeParam}>` : 'Promise<void>'
-      }
+    // Match the return type up to any trailing colon
+    const returnMatch = returnType.match(/^([^:]+)/)
+    if (returnMatch) {
+      state.returnType = returnMatch[1].trim()
     }
-
-    state.returnType = returnType
   }
 
   return state
@@ -793,6 +758,64 @@ export function processTypeDeclaration(declaration: string, isExported = true): 
 }
 
 /**
+ * Extract complete function signature handling multi-line declarations
+ */
+export function extractFunctionSignature(declaration: string): string {
+  // First, normalize line breaks and whitespace
+  const normalized = declaration
+    .split('\n')
+    .map(line => line.trim())
+    .join(' ')
+
+  // Match function declaration including parameters and return type
+  const match = normalized.match(/^(export\s+)?(async\s+)?function\s+([^{]+)/)
+  if (!match)
+    return ''
+
+  let signature = match[0]
+  let depth = 0
+  let genericDepth = 0
+  let foundBody = false
+
+  // Process character by character to find the complete signature
+  for (let i = match[0].length; i < normalized.length && !foundBody; i++) {
+    const char = normalized[i]
+
+    if (char === '<') {
+      genericDepth++
+    }
+    else if (char === '>') {
+      genericDepth--
+    }
+    else if (genericDepth === 0) {
+      if (char === '(') {
+        depth++
+      }
+      else if (char === ')') {
+        depth--
+      }
+      else if (char === '{') {
+        foundBody = true
+        break
+      }
+    }
+
+    if (!foundBody) {
+      signature += char
+    }
+  }
+
+  // Clean up the signature
+  signature = signature
+    .replace(/\s+/g, ' ')
+    .replace(/:\s+/g, ': ')
+    .trim()
+
+  console.log('Extracted raw signature:', signature)
+  return signature
+}
+
+/**
  * Process function declarations with full type information preservation
  */
 export function processFunctionDeclaration(
@@ -800,43 +823,48 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
-  const signatureMatch = declaration.match(/^.*?(?=\{|$)/)
-  if (!signatureMatch)
+  console.log('Processing declaration:', declaration)
+
+  const signature = extractFunctionSignature(declaration)
+  if (!signature) {
+    console.log('No valid signature found')
     return declaration
+  }
 
-  const signature = signatureMatch[0].trim()
+  console.log('Using signature:', signature)
   const parseResult = parseFunctionDeclaration(signature)
+  console.log('Parse result:', parseResult)
 
-  // Track used types, handling complex type expressions
+  // Add types to usedTypes set
   const addTypeToUsed = (type: string) => {
     if (!type)
       return
 
-    // Handle types with generics
     const typeMatches = type.match(/([A-Z_]\w*)/gi) || []
     typeMatches.forEach((t) => {
       if (!t.match(/^(void|any|number|string|boolean|null|undefined|never|unknown|Promise)$/)) {
         usedTypes.add(t)
+        console.log('Added type to used:', t)
       }
     })
   }
 
-  // Process return type and parameters
+  // Process all types
   addTypeToUsed(parseResult.returnType)
   addTypeToUsed(parseResult.parameters)
 
-  // Process generic type parameters
   if (parseResult.genericParams) {
     const genericContent = parseResult.genericParams.slice(1, -1)
     genericContent.split(',').forEach((param) => {
       const [, constraint] = param.split(' extends ')
       if (constraint) {
         addTypeToUsed(constraint)
+        console.log('Added generic constraint:', constraint)
       }
     })
   }
 
-  // Preserve original parameter structure and return type
+  // Construct the declaration, ensuring proper spacing and no duplicate colons
   return [
     isExported ? 'export ' : '',
     'declare ',
@@ -849,7 +877,7 @@ export function processFunctionDeclaration(
     '): ',
     parseResult.returnType,
     ';',
-  ].join('').replace(/\s+/g, ' ').trim()
+  ].join('')
 }
 
 // Helper functions for line processing
