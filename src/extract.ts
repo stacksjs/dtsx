@@ -875,7 +875,7 @@ export function processFunctionDeclaration(
     generics,
   })
 
-  // Track used types
+  // Track used types from generics
   if (generics) {
     const genericTypes = generics.slice(1, -1).split(',').map(t => t.trim())
     genericTypes.forEach((type) => {
@@ -893,7 +893,6 @@ export function processFunctionDeclaration(
     })
   }
 
-  // Track return type usage
   if (returnType && returnType !== 'void') {
     const typeMatches = returnType.match(/([A-Z_]\w*)/gi)
     if (typeMatches) {
@@ -901,33 +900,39 @@ export function processFunctionDeclaration(
     }
   }
 
-  // Ensure proper generic closing before params
-  const genericPart = generics ? `${generics.endsWith('>') ? generics : `${generics}>`}` : ''
+  // Build the declaration
+  let result = ''
 
-  // Build the declaration ensuring proper spacing and bracket placement
-  const parts = [
-    isExported ? 'export ' : '',
-    'declare ',
-    isAsync ? 'async ' : '',
-    'function ',
-    name,
-    genericPart,
-    '(',
-    params,
-    '): ',
-    returnType,
-    ';',
-  ]
+  // Add export if needed
+  if (isExported)
+    result += 'export '
 
-  // Join with proper spacing and clean up
-  return parts.join('')
-    .replace(/\s+/g, ' ') // Normalize spaces
-    .replace(/\s*([<>(),;])\s*/g, '$1') // Clean up around punctuation
-    .replace(/,([^,\s])/g, ', $1') // Ensure space after commas
-    .replace(/>\s*\(/g, '>(') // No space between generic close and params
-    .replace(/\(\s*\)/g, '()') // Clean empty params
-    .replace(/function\s+function/, 'function') // Remove duplicate function
-    .replace(/([^<])\s+>/g, '$1>') // Clean space before closing generic
+  // Add declare and async
+  result += 'declare '
+  if (isAsync)
+    result += 'async '
+
+  // Add function name
+  result += `function ${name}`
+
+  // Add generic type with proper closing
+  if (generics) {
+    let genericPart = generics
+    if (!genericPart.endsWith('>'))
+      genericPart += '>'
+    result += genericPart
+  }
+
+  // Add parameters and return type
+  result += `(${params}): ${returnType};`
+
+  // Clean up the result
+  return result
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>(),;])\s*/g, '$1')
+    .replace(/,([^,\s])/g, ', $1')
+    .replace(/function\s+function/, 'function')
+    .replace(/>\s+\(/, '>(')
     .trim()
 }
 
