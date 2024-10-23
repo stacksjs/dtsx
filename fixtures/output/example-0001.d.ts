@@ -120,6 +120,16 @@ export type { DtsGenerationOption };
 
 export { config } from './config';
 
+export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
+  data: T;
+  key: K;
+  value: T[K];
+  transform: (input: T[K]) => string;
+  nested: Array<Partial<T>>;
+}
+
+export declare type ComplexUnionIntersection = ;
+
 export * from './extract';
 export * from './generate';
 export * from './types';
