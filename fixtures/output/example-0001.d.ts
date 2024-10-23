@@ -1,5 +1,7 @@
 import type { BunPlugin } from 'bun';
-import type { DtsGenerationOption } from '@stacksjs/dtsx';
+import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx';
+import { generate } from '@stacksjs/dtsx';
+
 /**
  * Example of const declaration
  */
@@ -87,7 +89,7 @@ export declare function authenticate(user: string, password: string): Promise<Au
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
-export declare async function dts(options?: DtsGenerationOption): BunPlugin;
+export declare function dts(options?: DtsGenerationOption): BunPlugin;
 declare interface Options<T> {
   name: string;
   cwd?: string;

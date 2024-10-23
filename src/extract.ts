@@ -53,6 +53,29 @@ export interface ProcessingState {
   lastCommentBlock: string
   bracketCount: number
   isMultiLineDeclaration: boolean
+  moduleImports: Map<string, ImportInfo>
+  availableTypes: Map<string, string>
+  availableValues: Map<string, string>
+}
+
+/**
+ * Initialize processing state
+ */
+export function createProcessingState(): ProcessingState {
+  return {
+    dtsLines: [],
+    imports: [],
+    usedTypes: new Set(),
+    typeSources: new Map(),
+    defaultExport: '',
+    currentDeclaration: '',
+    lastCommentBlock: '',
+    bracketCount: 0,
+    isMultiLineDeclaration: false,
+    moduleImports: new Map(),
+    availableTypes: new Map(),
+    availableValues: new Map(),
+  }
 }
 
 interface TypeAnnotation {
@@ -87,35 +110,17 @@ export async function extract(filePath: string): Promise<string> {
  * Generates TypeScript declaration types from source code.
  */
 export function extractDtsTypes(sourceCode: string): string {
-  const state: ProcessingState = {
-    dtsLines: [],
-    imports: [],
-    usedTypes: new Set(),
-    typeSources: new Map(),
-    defaultExport: '',
-    currentDeclaration: '',
-    lastCommentBlock: '',
-    bracketCount: 0,
-    isMultiLineDeclaration: false,
-  }
+  const state = createProcessingState()
 
   const lines = sourceCode.split('\n')
   for (const line of lines) {
-    // Add explicitly re-exported types to usedTypes
-    if (line.trim().startsWith('export type {')) {
-      const typeMatch = line.match(/export\s+type\s*\{([^}]+)\}/)
-      if (typeMatch) {
-        const types = typeMatch[1].split(',').map(t => t.trim())
-        types.forEach(type => state.usedTypes.add(type))
-      }
-    }
     processLine(line, state)
   }
 
   return formatOutput(state)
 }
 
-function processLine(line: string, state: ProcessingState): void {
+export function processLine(line: string, state: ProcessingState): void {
   const trimmedLine = line.trim()
 
   if (!trimmedLine)
@@ -127,7 +132,7 @@ function processLine(line: string, state: ProcessingState): void {
   }
 
   if (trimmedLine.startsWith('import')) {
-    state.imports.push(processImport(line, state.typeSources))
+    state.imports.push(processImport(line, state))
     return
   }
 
@@ -141,77 +146,164 @@ function processLine(line: string, state: ProcessingState): void {
   }
 }
 
-/**
- * Process import statements and track type sources
- */
-export function processImport(importLine: string, typeSources: Map<string, string>): string {
-  const typeImportMatch = importLine.match(REGEX.typeImport)
-  const regularImportMatch = importLine.match(REGEX.regularImport)
-
-  const match = typeImportMatch || regularImportMatch
-  if (match) {
-    const types = match[1].split(',').map(type => type.trim())
-    const source = match[2]
-
-    for (const type of types) {
-      const actualType = type.split(' as ')[0].trim()
-      typeSources.set(actualType, source)
-    }
-  }
-
-  return importLine
+export interface ImportInfo {
+  kind: 'type' | 'value' | 'mixed'
+  usedTypes: Set<string>
+  usedValues: Set<string>
+  source: string
 }
 
 /**
- * Filter out unused imports and only keep type imports
+ * Process import statements with improved tracking
+ */
+export function processImport(line: string, state: ProcessingState): string {
+  // Track both type and value imports
+  const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/i)
+  const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/i)
+
+  if (typeImportMatch || valueImportMatch) {
+    const match = typeImportMatch || valueImportMatch
+    const isTypeImport = Boolean(typeImportMatch)
+    const [, items, source] = match!
+
+    // Get or create module import info
+    if (!state.moduleImports.has(source)) {
+      state.moduleImports.set(source, {
+        kind: isTypeImport ? 'type' : 'value',
+        usedTypes: new Set(),
+        usedValues: new Set(),
+        source,
+      })
+    }
+
+    const moduleInfo = state.moduleImports.get(source)!
+
+    // Process imported items
+    items.split(',').forEach((item) => {
+      const [name, alias] = item.trim().split(/\s+as\s+/).map(s => s.trim())
+      const importedName = alias || name
+
+      if (isTypeImport) {
+        state.availableTypes.set(importedName, source)
+        moduleInfo.kind = moduleInfo.kind === 'value' ? 'mixed' : 'type'
+      }
+      else {
+        state.availableValues.set(importedName, source)
+        moduleInfo.kind = moduleInfo.kind === 'type' ? 'mixed' : 'value'
+
+        // Also check if this value is immediately used in a type context
+        if (state.currentDeclaration?.includes(importedName)) {
+          moduleInfo.usedValues.add(importedName)
+        }
+      }
+    })
+  }
+
+  return line
+}
+
+/**
+ * Generate final import statements
+ */
+export function generateImports(state: ProcessingState): string[] {
+  // Track which values and types are actually used
+  const processContent = (content: string) => {
+    // Track used values - now includes both function calls and references
+    const valueRegex = /\b([a-z_$][\w$]*)\s*(?:[(,;})\s]|$)/gi
+    let match
+    while ((match = valueRegex.exec(content)) !== null) {
+      const [, value] = match
+      if (state.availableValues.has(value)) {
+        const source = state.availableValues.get(value)!
+        state.moduleImports.get(source)!.usedValues.add(value)
+      }
+    }
+
+    // Track used types
+    const typeMatches = content.matchAll(/\b([A-Z][\w$]*)\b/g)
+    for (const [, type] of typeMatches) {
+      if (state.availableTypes.has(type)) {
+        const source = state.availableTypes.get(type)!
+        state.moduleImports.get(source)!.usedTypes.add(type)
+      }
+    }
+  }
+
+  // Process all content including comments and declarations
+  state.dtsLines.forEach(processContent)
+  if (state.currentDeclaration) {
+    processContent(state.currentDeclaration)
+  }
+
+  // Generate imports by module
+  const imports: string[] = []
+
+  for (const [source, info] of state.moduleImports) {
+    const { usedTypes, usedValues } = info
+
+    // Skip if nothing is used from this module
+    if (usedTypes.size === 0 && usedValues.size === 0)
+      continue
+
+    // Generate type imports if needed
+    if (usedTypes.size > 0) {
+      const types = Array.from(usedTypes).sort()
+      imports.push(`import type { ${types.join(', ')} } from '${source}';`)
+    }
+
+    // Generate value imports if needed
+    if (usedValues.size > 0) {
+      const values = Array.from(usedValues).sort()
+      imports.push(`import { ${values.join(', ')} } from '${source}';`)
+    }
+  }
+
+  return imports.sort()
+}
+
+/**
+ * Process imports while preserving their original sources
  */
 export function processImports(imports: string[], usedTypes: Set<string>): string[] {
   const importMap = new Map<string, Set<string>>()
   const reExportedTypes = new Set<string>()
 
-  // First pass: process each import line
+  // Process each import line
   for (const line of imports) {
-    const typeImportMatch = line.match(REGEX.typeImport)
-    const regularImportMatch = line.match(REGEX.regularImport)
+    const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/i)
+    const regularImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/i)
     const match = typeImportMatch || regularImportMatch
 
     if (match) {
-      const types = match[1].split(',').map(t => t.trim())
+      const types = match[1]
+        .split(',')
+        .map((t) => {
+          const [type, alias] = t.trim().split(/\s+as\s+/)
+          return alias || type.trim()
+        })
       const module = match[2]
 
-      // Track all imported types, including those that might be re-exported
+      if (!importMap.has(module))
+        importMap.set(module, new Set())
+
       types.forEach((type) => {
-        const baseName = type.split(' as ')[0].trim()
-        if (!importMap.has(module))
-          importMap.set(module, new Set())
-
         importMap.get(module)!.add(type)
-
-        // If this is a type that's re-exported, mark it
-        if (usedTypes.has(baseName))
-          reExportedTypes.add(baseName)
+        if (usedTypes.has(type))
+          reExportedTypes.add(type)
       })
     }
   }
 
-  // These are the only modules we want to keep imports from
-  const allowedModules = ['bun', '@stacksjs/dtsx']
-
-  // Format imports, filtering to allowed modules only
-  // Now include both used types and re-exported types
+  // Format imports with only the types that are actually used
   return Array.from(importMap.entries())
-    .filter(([module]) => allowedModules.includes(module))
     .map(([module, types]) => {
-      const relevantTypes = Array.from(types).filter((type) => {
-        const baseName = type.split(' as ')[0].trim()
-        return usedTypes.has(baseName) || reExportedTypes.has(baseName)
-      })
+      const relevantTypes = Array.from(types).filter(type =>
+        usedTypes.has(type) || reExportedTypes.has(type))
 
       if (relevantTypes.length === 0)
         return ''
 
-      const sortedTypes = relevantTypes.sort()
-      return `import type { ${sortedTypes.join(', ')} } from '${module}';`
+      return `import type { ${relevantTypes.sort().join(', ')} } from '${module}';`
     })
     .filter(Boolean)
     .sort()
@@ -807,6 +899,15 @@ export interface TypeReference {
  * Extract complete function signature handling multi-line declarations
  */
 export function extractFunctionSignature(declaration: string): FunctionSignature {
+  console.log('\n[Function Signature Extraction]')
+  console.log('Input declaration:', declaration)
+
+  // Check if the main function declaration is async
+  // Only match 'async' at the start of the declaration before 'function'
+  const isAsync = /^export\s+async\s+function/.test(declaration)
+    || /^async\s+function/.test(declaration)
+  console.log('Is async:', isAsync)
+
   // Remove export keyword and clean up whitespace
   const cleanDeclaration = declaration
     .replace(/^export\s+/, '')
@@ -814,49 +915,58 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
     .replace(/^function\s+/, '')
     .trim()
 
+  console.log('Cleaned declaration:', cleanDeclaration)
+
   // Extract complete generic section with improved regex
-  // This pattern looks for generics after the function name but before parameters
   const genericsRegex = /^([a-z_$][\w$]*)\s*(<[^(]+>)/i
   const genericsMatch = cleanDeclaration.match(genericsRegex)
+  console.log('Generics match:', genericsMatch)
 
   // Process generics if found
   let generics = ''
   let nameFromGenerics = ''
   if (genericsMatch) {
     nameFromGenerics = genericsMatch[1]
-    // Extract everything between < and > including nested generic constraints
     generics = genericsMatch[2]
+    console.log('Raw generics:', generics)
   }
 
   // Remove generics for further parsing
   const withoutGenerics = cleanDeclaration
     .replace(genericsRegex, nameFromGenerics)
+  console.log('Declaration without generics:', withoutGenerics)
 
   // Extract function name (use the one we got from generics match if available)
   const name = nameFromGenerics || withoutGenerics.match(/^([^(<\s]+)/)?.[1] || ''
+  console.log('Extracted name:', name)
 
   // Extract parameters section
   const paramsMatch = withoutGenerics.match(/\(([\s\S]*?)\)(?=\s*:)/)
   let params = paramsMatch ? paramsMatch[1].trim() : ''
+  console.log('Raw parameters:', params)
 
   // Clean up parameters while preserving generic references
   params = cleanParameters(params)
+  console.log('Cleaned parameters:', params)
 
   // Extract return type
   const returnTypeMatch = withoutGenerics.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
+  console.log('Raw return type:', returnType)
 
   // Clean up return type
   returnType = normalizeType(returnType)
+  console.log('Normalized return type:', returnType)
 
   const result = {
     name,
     params,
     returnType,
-    isAsync: declaration.includes('async'),
+    isAsync,
     generics,
   }
 
+  console.log('Final signature:', result)
   return result
 }
 
@@ -868,6 +978,9 @@ export function processFunctionDeclaration(
   usedTypes: Set<string>,
   isExported = true,
 ): string {
+  console.log('\n[Process Function Declaration]')
+  console.log('Input declaration:', declaration)
+
   const {
     name,
     params,
@@ -878,15 +991,15 @@ export function processFunctionDeclaration(
 
   // Track all used types including generics
   trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
+  console.log('Tracked types:', Array.from(usedTypes))
 
-  // Build declaration string ensuring proper generic scope
+  // Build declaration string
   const parts = [
     isExported ? 'export' : '',
     'declare',
     isAsync ? 'async' : '',
     'function',
     name,
-    // Keep the raw generics as they were captured, including constraints
     generics,
     `(${params})`,
     ':',
@@ -902,6 +1015,7 @@ export function processFunctionDeclaration(
     .replace(/\s{2,}/g, ' ')
     .trim()
 
+  console.log('Final declaration:', result)
   return result
 }
 
@@ -1035,34 +1149,31 @@ export interface FunctionParseState {
   isAsync: boolean
 }
 
+/**
+ * Format the final output
+ */
 export function formatOutput(state: ProcessingState): string {
-  const uniqueImports = processImports(state.imports, state.usedTypes)
-  const dynamicImports = Array.from(state.usedTypes)
-    .map((type) => {
-      const source = state.typeSources.get(type)
-      if (source && ['bun', '@stacksjs/dtsx'].includes(source)) {
-        return `import type { ${type} } from '${source}';`
-      }
-      return ''
-    })
+  // Generate optimized imports
+  const imports = generateImports(state)
+
+  // Build the output sections
+  const sections = [
+    // Imports section (if any imports exist)
+    imports.length > 0 ? imports.join('\n') : null,
+
+    // Main declarations
+    state.dtsLines
+      .filter(line => line.trim())
+      .join('\n'),
+  ]
+
+  // Combine sections with proper spacing
+  let result = sections
     .filter(Boolean)
-    .sort()
+    .join('\n\n')
+    .trim()
 
-  // Combine and deduplicate all imports
-  const allImports = [...new Set([...uniqueImports, ...dynamicImports])]
-
-  const declarations = state.dtsLines.map(line =>
-    line.startsWith('*') ? `  ${line}` : line,
-  )
-
-  let result = [
-    ...allImports,
-    '',
-    '', // Extra newline after imports
-    ...declarations,
-  ].filter(Boolean).join('\n')
-
-  // Clean up default export
+  // Add final newline and handle default export
   if (state.defaultExport) {
     const exportIdentifier = state.defaultExport
       .replace(/^export\s+default\s+/, '')
