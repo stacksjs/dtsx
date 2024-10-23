@@ -796,11 +796,13 @@ export function extractFunctionSignature(declaration: string): {
   console.log('\n[Signature Extraction Debug]')
   console.log('Input:', declaration)
 
-  // Handle async
-  const isAsync = declaration.includes('async')
+  // Check if the function is actually declared as async in the source
+  const isAsync = declaration.includes('async function')
+  console.log('Is Async:', isAsync)
+
   const cleanDeclaration = declaration
     .replace('export ', '')
-    .replace('async ', '')
+    .replace('async function ', 'function ')
     .replace('function ', '')
     .trim()
 
@@ -813,19 +815,27 @@ export function extractFunctionSignature(declaration: string): {
     ? `<${nameAndGenericsMatch[2]}>`
     : ''
 
-  console.log('Name Match:', nameAndGenericsMatch)
+  console.log('Name and Generics:', { name, generics })
 
-  // Extract parameters
+  // Extract parameters with improved pattern matching
   const paramsMatch = cleanDeclaration.match(/\(([\s\S]*?)\)(?=\s*:)/)
-  const params = paramsMatch ? paramsMatch[1].trim() : ''
+  let params = paramsMatch ? paramsMatch[1].trim() : ''
 
-  console.log('Params Match:', paramsMatch)
+  // Clean up destructured parameters to use simple parameter name
+  if (params.startsWith('{')) {
+    const paramTypeMatch = params.match(/:\s*([^}]+)\}/)
+    if (paramTypeMatch) {
+      params = `options: ${paramTypeMatch[1]}`
+    }
+  }
+
+  console.log('Processed Params:', params)
 
   // Extract return type
   const returnTypeMatch = cleanDeclaration.match(/\)\s*:\s*([\s\S]+?)(?=\{|$)/)
   const returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
 
-  console.log('Return Type Match:', returnTypeMatch)
+  console.log('Return Type:', returnType)
 
   const result = {
     name,
@@ -835,7 +845,7 @@ export function extractFunctionSignature(declaration: string): {
     generics,
   }
 
-  console.log('Extraction Result:', result)
+  console.log('Final Extraction Result:', result)
   return result
 }
 
@@ -880,7 +890,6 @@ export function processFunctionDeclaration(
 
       const constraintType = type.split('extends')[1]?.trim()
       if (constraintType) {
-        // Handle compound types in constraints (e.g., Record<string, unknown>)
         const typeMatches = constraintType.match(/([A-Z_]\w*)/gi)
         if (typeMatches) {
           typeMatches.forEach(t => usedTypes.add(t))
