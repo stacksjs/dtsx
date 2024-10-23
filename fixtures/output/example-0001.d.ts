@@ -87,13 +87,13 @@ export declare function authenticate(user: string, password: string): Promise<Au
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
-export declare function dts(options?: DtsGenerationOption): BunPlugin;
+export declare async function dts(options?: DtsGenerationOption): BunPlugin;
 declare interface Options<T> {
   name: string;
   cwd?: string;
   defaultConfig: T;
 }
-export declare async function loadConfig<T extends Record<string, unknown>(): void;
+export declare async function loadConfig<T extends Record<string, unknown>({ name, cwd, defaultConfig }: Options<T>): Promise<T>;
 declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export declare type { DtsGenerationOption }
