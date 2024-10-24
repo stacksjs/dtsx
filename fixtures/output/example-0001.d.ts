@@ -1,7 +1,3 @@
-import type { BunPlugin } from 'bun';
-import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx';
-import { generate } from '@stacksjs/dtsx';
-
 /**
  * Example of const declaration
  */
@@ -42,9 +38,9 @@ export declare const someObject: {
  * with another comment in an extra line
  */
 export declare interface User {
-id: number
-name: string
-email: string
+  id: number
+  name: string
+  email: string
 }
 
 /**
@@ -53,8 +49,8 @@ email: string
  * with multiple lines of comments, including an empty line
  */
 export declare interface ResponseData {
-success: boolean
-data: User[]
+  success: boolean
+  data: User[]
 }
 
 /**
@@ -66,25 +62,22 @@ data: User[]
 export declare function fetchUsers(): Promise<ResponseData>;
 
 export declare interface ApiResponse<T> {
-status: number
-message: string
-data: T
+  status: number
+  message: string
+  data: T
 }
 
 /**
  * Example of another const declaration
- *
- * with multiple empty lines, including being poorly formatted
+    *
+* with multiple empty lines, including being poorly formatted
  */
-declare const settings: { [key: string]: any } = {
-theme: 'dark',
-language: 'en',
-}
+declare const settings: { [key: string]: any };
 
 export declare interface Product {
-id: number
-name: string
-price: number
+  id: number
+  name: string
+  price: number
 }
 
 /**
@@ -93,8 +86,8 @@ price: number
 export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 
 export declare interface AuthResponse {
-token: string
-expiresIn: number
+  token: string
+  expiresIn: number
 }
 
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
@@ -107,27 +100,15 @@ export declare const defaultHeaders: {
 
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
 
-declare interface interface Options<T> {
-name: string
-cwd?: string
-defaultConfig: T
+declare interface Options<T> {
+  name: string
+  cwd?: string
+  defaultConfig: T
 }
 
 export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
-declare const dtsConfig: DtsGenerationConfig = await loadConfig({
-name: 'dts',
-cwd: process.cwd(),
-defaultConfig: {
-cwd: process.cwd(),
-root: './src',
-entrypoints: ['**/*.ts'],
-outdir: './dist',
-keepComments: true,
-clean: true,
-tsconfigPath: './tsconfig.json',
-},
-});
+declare const dtsConfig: DtsGenerationConfig;
 
 export { generate, dtsConfig }
 
@@ -136,23 +117,26 @@ export type { DtsGenerationOption };
 export { config } from './config';
 
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
-data: T
-key: K
-value: T[K]
-transform: (input: T[K]) => string
-nested: Array<Partial<T>>
+  data: T
+  key: K
+  value: T[K]
+  transform: (input: T[K]) => string
+  nested: Array<Partial<T>>
 }
 
-export declare type ComplexUnionIntersection =
-  | (User & { role: 'admin' })
-  | (Product & { category: string })
+export declare type ComplexUnionIntersection =;
+
+  | (User & { role: 'admin' });
+
+  | (Product & { category: string });
+
   & {
     metadata: Record<string, unknown>
   }
+
+export default dts;
 
 export * from './extract';
 export * from './generate';
 export * from './types';
 export * from './utils';
-
-export default dts;
