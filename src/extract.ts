@@ -1232,20 +1232,39 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
 
 function processSourceFile(content: string, state: ProcessingState): void {
   const lines = content.split('\n')
-
-  // First pass: collect imports
-  const imports = lines.filter(line => line.trim().startsWith('import')).join('\n')
-  if (imports) {
-    state.imports = processImports(imports.split('\n'), state.usedTypes)
-  }
-
-  // Second pass: process everything else
+  const importLines: string[] = []
+  const exportDefaultLines: string[] = []
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
 
+  // First pass: collect imports and export defaults
   for (const line of lines) {
     const trimmedLine = line.trim()
+    if (trimmedLine.startsWith('import')) {
+      importLines.push(line)
+      continue
+    }
+    if (trimmedLine.startsWith('export default')) {
+      exportDefaultLines.push(line)
+      continue
+    }
+  }
+
+  // Process imports
+  if (importLines.length > 0) {
+    state.dtsLines.push(...importLines)
+    state.dtsLines.push('') // Add single line break after imports
+  }
+
+  // Process rest of the content
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+
+    // Skip imports and export defaults as they're handled separately
+    if (trimmedLine.startsWith('import') || trimmedLine.startsWith('export default')) {
+      continue
+    }
 
     // Skip empty lines between declarations
     if (!trimmedLine && !isInMultilineDeclaration) {
@@ -1300,6 +1319,14 @@ function processSourceFile(content: string, state: ProcessingState): void {
   // Process any remaining block
   if (currentBlock.length > 0) {
     processDeclarationBlock(currentBlock, currentComments, state)
+  }
+
+  // Add export default at the end with proper spacing
+  if (exportDefaultLines.length > 0) {
+    if (state.dtsLines[state.dtsLines.length - 1] !== '') {
+      state.dtsLines.push('') // Add line break before export default
+    }
+    state.dtsLines.push(...exportDefaultLines)
   }
 }
 
@@ -1418,6 +1445,28 @@ export function cleanParameters(params: string): string {
     .replace(/\s*([<[\]>])\s*/g, '$1')
     .replace(/\s{2,}/g, ' ')
     .trim()
+}
+
+function cleanImports(imports: string[]): string[] {
+  const seen = new Set<string>()
+  return imports
+    .filter((imp) => {
+      const normalized = imp.trim()
+      if (seen.has(normalized))
+        return false
+      seen.add(normalized)
+      return true
+    })
+    .sort((a, b) => {
+      // Sort type imports before regular imports
+      const aIsType = a.includes('import type')
+      const bIsType = b.includes('import type')
+      if (aIsType && !bIsType)
+        return -1
+      if (!aIsType && bIsType)
+        return 1
+      return a.localeCompare(b)
+    })
 }
 
 /**
@@ -1634,129 +1683,22 @@ function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'fun
 /**
  * Format the final output with proper spacing and organization
  */
-export function formatOutput(state: ProcessingState): string {
-  const imports = generateImports(state)
-  const { regularDeclarations, starExports } = categorizeDeclarations(state.dtsLines)
-  const sections: string[] = []
+function formatOutput(state: ProcessingState): string {
+  let output = state.dtsLines.join('\n')
 
-  if (imports.length > 0) {
-    sections.push(`${imports.join('\n')}\n`)
-  }
+  // Ensure proper formatting
+  output = `${output
+  // Remove multiple consecutive empty lines
+    .replace(/\n{3,}/g, '\n\n')
+  // Ensure file ends with single newline
+    .trim()}\n`
 
-  if (regularDeclarations.length > 0) {
-    sections.push(regularDeclarations.join('\n\n'))
-  }
-
-  if (starExports.length > 0) {
-    sections.push(starExports.join('\n'))
-  }
-
-  let result = sections
-    .filter(Boolean)
-    .join('\n\n')
-    .trim()
-
-  if (state.defaultExport) {
-    const exportIdentifier = state.defaultExport
-      .replace(REGEX.exportCleanup, '')
-      .replace(REGEX.defaultExport, '')
-      .replace(/;+$/, '')
-      .trim()
-
-    result = result.replace(/\n*$/, '\n\n')
-    result += `export default ${exportIdentifier};`
-  }
-
-  result += '\n'
-
-  return fixDtsOutput(result)
-}
-
-/**
- * Categorize declarations by type
- */
-function categorizeDeclarations(declarations: string[]): {
-  regularDeclarations: string[]
-  starExports: string[]
-} {
-  const regularDeclarations: string[] = []
-  const starExports: string[] = []
-  let currentComment = ''
-
-  declarations.forEach((declaration) => {
-    const trimmed = declaration.trim()
-
-    if (trimmed.startsWith('/**') || trimmed.startsWith('*')) {
-      currentComment = currentComment ? `${currentComment}\n${declaration}` : declaration
-      return
-    }
-
-    if (trimmed.startsWith('export *')) {
-      starExports.push(ensureSemicolon(trimmed))
-    }
-    else if (trimmed) {
-      const formattedDeclaration = formatSingleDeclaration(
-        currentComment ? `${currentComment}\n${declaration}` : declaration,
-      )
-      regularDeclarations.push(formattedDeclaration)
-    }
-
-    currentComment = ''
-  })
-
-  return { regularDeclarations, starExports }
-}
-
-/**
- * Format individual declarations
- */
-function formatSingleDeclaration(declaration: string): string {
-  if (!declaration.trim())
-    return ''
-
-  let formatted = declaration
-
-  if (formatted.includes('export declare type {')) {
-    formatted = formatted.replace('export declare type', 'export type')
-  }
-
-  if (formatted.includes('declare') && formatted.includes('async')) {
-    formatted = formatted
-      .replace(/declare\s+async\s+/, 'declare ')
-      .replace(/export\s+declare\s+async\s+/, 'export declare ')
-  }
-
-  if (!formatted.endsWith(';') && !formatted.endsWith('{') && shouldAddSemicolon(formatted)) {
-    formatted = `${formatted.trimEnd()};`
-  }
-
-  return formatted
+  return output
 }
 
 function getIndentation(line: string): string {
   const match = line.match(/^(\s+)/)
   return match ? match[1] : ''
-}
-
-/**
- * Check if semicolon should be added
- */
-function shouldAddSemicolon(declaration: string): boolean {
-  const trimmed = declaration.trim()
-
-  if (trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('//')) {
-    return false
-  }
-
-  if (trimmed.endsWith('{') || trimmed.endsWith('}')) {
-    return false
-  }
-
-  if (trimmed.endsWith(';')) {
-    return false
-  }
-
-  return true
 }
 
 function needsExport(line: string): boolean {
@@ -1767,38 +1709,4 @@ function needsExport(line: string): boolean {
     || trimmed.startsWith('export type ')
     || trimmed.startsWith('export interface ')
   )
-}
-
-/**
- * Ensure proper semicolon placement
- */
-function ensureSemicolon(declaration: string): string {
-  return declaration.trim()
-    .replace(/;+$/, '')
-    .replace(/\{\s*$/, '{')
-    + (declaration.trim().endsWith('{') ? '' : ';')
-}
-
-/**
- * Final output formatting and cleanup
- */
-function fixDtsOutput(content: string): string {
-  return content
-    // First ensure all line endings are consistent
-    .replace(/\r\n/g, '\n')
-    // Remove semicolons after opening braces
-    .replace(/\{\s*;/g, '{')
-    // Fix any duplicate semicolons
-    .replace(/;+/g, ';')
-    // Normalize empty lines (no more than 2 consecutive newlines)
-    .replace(/\n{3,}/g, '\n\n')
-    // Add semicolons to declarations if missing (but not after opening braces)
-    .replace(/^(export (?!.*\{$)[^*{}\n].*[^;\n])$/gm, '$1;')
-    .replace(/^(export \* from [^;\n]+);*$/gm, '$1;')
-    // Fix export statements with duplicated semicolons
-    .replace(/^(export \{[^}]+\} from [^;\n]+);*$/gm, '$1;')
-    // Remove any trailing whitespace
-    .replace(/[ \t]+$/gm, '')
-    // Ensure single newline at the end
-    .replace(/\n*$/, '\n')
 }
