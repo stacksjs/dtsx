@@ -118,8 +118,7 @@ export interface PropertyInfo {
  * Central state management for DTS processing
  * Tracks all aspects of the declaration file generation process
  */
-export interface ProcessingState {
-  /** Generated declaration lines */
+interface ProcessingState {
   dtsLines: string[]
   /** Import statements */
   imports: string[]
@@ -144,10 +143,12 @@ export interface ProcessingState {
   /** Map of available value names */
   availableValues: Map<string, string>
   currentIndentation: string
-  declarationFormatting?: {
+  declarationBuffer: {
+    type: 'interface' | 'type' | 'const' | 'function'
     indent: string
-    content: string[]
-  }
+    lines: string[]
+    comments: string[]
+  } | null
 }
 
 /**
@@ -195,14 +196,6 @@ export interface FunctionParseState {
   isAsync: boolean
 }
 
-/**
- * Type annotation extraction result
- */
-interface TypeAnnotation {
-  raw: string | null
-  parsed: string
-}
-
 // ===========================
 // Core Functions
 // ===========================
@@ -224,17 +217,9 @@ export function createProcessingState(): ProcessingState {
     moduleImports: new Map(),
     availableTypes: new Map(),
     availableValues: new Map(),
-  }
-}
-
-/**
- * Extracts type annotation from a declaration
- */
-function getTypeAnnotation(declaration: string): TypeAnnotation {
-  const match = declaration.match(REGEX.typeAnnotation)
-  return {
-    raw: match?.[1]?.trim() ?? null,
-    parsed: match?.[1]?.trim() ?? 'any',
+    sourceLines: [],
+    currentIndentation: '',
+    declarationBuffer: null,
   }
 }
 
@@ -259,11 +244,9 @@ export async function extract(filePath: string): Promise<string> {
  */
 export function extractDtsTypes(sourceCode: string): string {
   const state = createProcessingState()
-  const lines = sourceCode.split('\n')
 
-  for (const line of lines) {
-    processLine(line, state)
-  }
+  // Process the entire source file
+  processSourceFile(sourceCode, state)
 
   return formatOutput(state)
 }
@@ -273,6 +256,23 @@ export function extractDtsTypes(sourceCode: string): string {
  * Handles different types of content and maintains state
  */
 export function processLine(line: string, state: ProcessingState): void {
+  const indent = getIndentation(line)
+  console.log('Processing line with indent:', { line, indent })
+
+  if (!state.sourceLines) {
+    state.sourceLines = []
+  }
+
+  state.sourceLines.push(line)
+  state.currentIndentation = indent
+
+  if (!state.isMultiLineDeclaration) {
+    state.declarationFormatting = {
+      indent,
+      content: [],
+    }
+  }
+
   const trimmedLine = line.trim()
   if (!trimmedLine)
     return
@@ -506,23 +506,47 @@ export function processDeclaration(declaration: string, state: ProcessingState):
   return `declare ${trimmed}`
 }
 
+function processDeclarationBuffer(
+  buffer: NonNullable<ProcessingState['declarationBuffer']>,
+  state: ProcessingState,
+): string {
+  const declaration = buffer.lines.join('\n')
+  const isExported = needsExport(declaration)
+  const cleaned = cleanDeclaration(declaration)
+
+  switch (buffer.type) {
+    case 'interface':
+      return processInterfaceDeclaration(cleaned, isExported)
+    case 'type':
+      return processTypeDeclaration(cleaned, isExported)
+    case 'const':
+      return processConstDeclaration(cleaned, isExported)
+    case 'function':
+      return processFunctionDeclaration(cleaned, state.usedTypes, isExported)
+    default:
+      return declaration
+  }
+}
+
 /**
  * Process constant declarations with type inference
  */
 function processConstDeclaration(declaration: string, isExported = true): string {
   console.log('Processing const declaration:', { declaration })
   const lines = declaration.split('\n')
-  const firstLine = lines[0].trim()
+  const firstLine = lines[0]
+  const indentMatch = firstLine.match(/^(\s*)/)
+  const indent = indentMatch ? indentMatch[1] : ''
 
-  // Check for type annotation in first line
+  // Check for type annotation
   const typeMatch = firstLine.match(/const\s+([^:]+):\s*([^=]+)\s*=/)
   if (typeMatch) {
     const [, name, type] = typeMatch
     // When there's an explicit type annotation, only use the type
-    return `${isExported ? 'export ' : ''}declare const ${name.trim()}: ${type.trim()};`
+    return `${indent}declare const ${name.trim()}: ${type.trim()};`
   }
 
-  // No type annotation, extract name and use inference
+  // No type annotation, extract name and infer type
   const nameMatch = firstLine.match(/const\s+([^=\s]+)\s*=/)
   if (!nameMatch) {
     console.log('No const declaration found:', firstLine)
@@ -532,27 +556,20 @@ function processConstDeclaration(declaration: string, isExported = true): string
   const name = nameMatch[1].trim()
   console.log('Processing const without type annotation:', name)
 
-  // For declarations without a type annotation, use full type inference
+  // For declarations without a type annotation, use type inference
   const properties = extractObjectProperties(lines.slice(1, -1))
   if (properties.length > 0) {
     const propertyStrings = formatProperties(properties)
     return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
   }
 
-  // For simple values without type annotation
-  const valueMatch = firstLine.match(/=\s*(.+)$/)
-  if (!valueMatch)
-    return declaration
-
-  const value = valueMatch[1].trim()
-  const inferredType = inferComplexType(value)
-  return `${isExported ? 'export ' : ''}declare const ${name}: ${inferredType};`
+  return declaration
 }
 
 /**
  * Format nested properties with proper indentation
  */
-export function formatProperties(properties: PropertyInfo[], indent = 2): string {
+function formatProperties(properties: PropertyInfo[], indent = 2): string {
   return properties.map((prop) => {
     const spaces = ' '.repeat(indent)
     if (prop.nested && prop.nested.length > 0) {
@@ -778,6 +795,34 @@ export function isDeclarationLine(line: string): boolean {
     || line.startsWith('interface')
     || line.startsWith('type')
     || line.startsWith('function')
+}
+
+function isDeclarationStart(line: string): boolean {
+  return (
+    line.startsWith('export ')
+    || line.startsWith('interface ')
+    || line.startsWith('type ')
+    || line.startsWith('const ')
+    || line.startsWith('function ')
+    || line.startsWith('async function ')
+    // Handle possible declare keywords
+    || line.startsWith('declare ')
+    // Handle possible export combinations
+    || /^export\s+(interface|type|const|function|async\s+function)/.test(line)
+  )
+}
+
+function isDeclarationComplete(lines: string[]): boolean {
+  let bracketCount = 0
+  for (const line of lines) {
+    for (const char of line) {
+      if (char === '{')
+        bracketCount++
+      if (char === '}')
+        bracketCount--
+    }
+  }
+  return bracketCount === 0
 }
 
 /**
@@ -1014,96 +1059,101 @@ function processObjectLiteral(obj: string): string {
  * Process interface declarations
  */
 function processInterfaceDeclaration(declaration: string, isExported = true): string {
-  console.log('Processing interface declaration:', { declaration })
   const lines = declaration.split('\n')
-  const firstLine = lines[0]
+  const baseIndent = getIndentation(lines[0])
+  const memberIndent = `${baseIndent}  `
 
-  // Get original indentation of properties
-  const propertyLines = lines.slice(1, -1)
+  // Process the interface header
+  const firstLine = lines[0].trim()
+  const match = firstLine.match(/^(?:export\s+)?interface\s+([^<\s{]+)(<[^{]+>)?/)
+  if (!match)
+    return declaration
 
-  // Reconstruct with preserved formatting
+  const [, name, generics = ''] = match
   const prefix = isExported ? 'export declare' : 'declare'
-  const result = [
-    `${prefix} ${firstLine.replace(/^export\s+/, '')}`,
-    ...propertyLines,
-    lines[lines.length - 1],
-  ].join('\n')
 
-  console.log('Final interface declaration:', result)
-  return result
+  // Process interface members maintaining original indentation
+  const processedLines = [
+    `${baseIndent}${prefix} interface ${name}${generics} {`,
+  ]
+
+  // Add members with preserved indentation
+  for (let i = 1; i < lines.length - 1; i++) {
+    const line = lines[i]
+    const content = line.trim()
+    if (content) {
+      processedLines.push(`${memberIndent}${content}`)
+    }
+  }
+
+  processedLines.push(`${baseIndent}}`)
+  return processedLines.join('\n')
 }
-
 /**
  * Process type declarations
  */
 function processTypeDeclaration(declaration: string, isExported = true): string {
-  console.log('Processing type declaration:', { declaration })
-
-  const firstLine = declaration.split('\n')[0]
+  const lines = declaration.split('\n')
+  const baseIndent = getIndentation(lines[0])
 
   // Handle type exports (e.g., "export type { DtsGenerationOption }")
-  if (firstLine.includes('type {')) {
+  if (lines[0].includes('type {')) {
     return declaration
   }
 
-  // Extract type name from the first line
-  const typeNameMatch = firstLine.match(/type\s+(\w+)/)
-  if (!typeNameMatch) {
-    console.log('No type name found, returning original')
+  // Extract type name and process content
+  const typeMatch = lines[0].match(/^(?:export\s+)?type\s+([^=\s]+)\s*=\s*(.*)/)
+  if (!typeMatch)
     return declaration
+
+  const [, name, initialContent] = typeMatch
+  const prefix = isExported ? 'export declare' : 'declare'
+
+  // Handle single-line type declarations
+  if (lines.length === 1 && initialContent) {
+    return `${baseIndent}${prefix} type ${name} = ${initialContent};`
   }
 
-  const typeName = typeNameMatch[1]
-  console.log('Found type name:', typeName)
+  // Handle multi-line type declarations
+  const processedLines = [`${baseIndent}${prefix} type ${name} = ${initialContent}`]
 
-  // For single-line type declarations that have everything after the equals
-  if (firstLine.includes('=')) {
-    const typeContent = firstLine.split('=')[1]?.trim()
-    if (typeContent) {
-      return `${isExported ? 'export ' : ''}declare type ${typeName} = ${typeContent};`
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]
+    const lineIndent = getIndentation(line)
+    const content = line.trim()
+    if (content) {
+      processedLines.push(`${lineIndent}${content}`)
     }
   }
 
-  // For multi-line type declarations
-  const allLines = declaration.split('\n')
-  const typeContent: string[] = []
-  let inDefinition = false
-  let bracketCount = 0
+  return processedLines.join('\n')
+}
 
-  for (const line of allLines) {
-    // Start collecting after we see the equals sign
-    if (line.includes('=')) {
-      inDefinition = true
-      const afterEquals = line.split('=')[1]?.trim()
-      if (afterEquals)
-        typeContent.push(afterEquals)
-      continue
+function processSourceFile(content: string, state: ProcessingState): void {
+  console.log('Processing source file...')
+
+  const lines = content.split('\n')
+  let lineNumber = 0
+
+  for (const line of lines) {
+    lineNumber++
+    try {
+      // Clean the line before processing
+      const cleaned = cleanDeclaration(line)
+
+      // Check if line needs export
+      if (needsExport(cleaned)) {
+        console.log(`Line ${lineNumber}: Processing exportable declaration:`, cleaned)
+      }
+
+      processDeclarationLine(line, state)
     }
-
-    if (!inDefinition)
-      continue
-
-    // Track brackets/braces for nested structures
-    const openCount = (line.match(/[{[(]/g) || []).length
-    const closeCount = (line.match(/[}\])]/g) || []).length
-    bracketCount += openCount - closeCount
-
-    typeContent.push(line.trim())
+    catch (error) {
+      console.error(`Error processing line ${lineNumber}:`, { line, error })
+    }
   }
 
-  // Clean up the collected type content
-  const finalContent = typeContent
-    .join('\n')
-    .trim()
-    .replace(/;$/, '')
-
-  console.log('Collected type content:', { finalContent })
-
-  if (finalContent) {
-    return `${isExported ? 'export ' : ''}declare type ${typeName} = ${finalContent};`
-  }
-
-  return declaration
+  console.log('Finished processing source file')
 }
 
 /**
@@ -1193,6 +1243,13 @@ export function processFunctionDeclaration(
     .replace(/\s+([<>(),;:])/g, '$1')
     .replace(/([<>(),;:])\s+/g, '$1 ')
     .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function cleanDeclaration(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([{};,])\s*/g, '$1')
     .trim()
 }
 
@@ -1346,121 +1403,79 @@ export function formatTypeParameters(params: string): string {
  * Process declarations with improved structure
  */
 function processDeclarationLine(line: string, state: ProcessingState): void {
-  // Get the original indentation from the line
-  const indentMatch = line.match(/^(\s+)/)
-  const originalIndent = indentMatch ? indentMatch[1] : ''
-  state.currentIndentation = originalIndent
+  const indent = getIndentation(line)
+  const trimmedLine = line.trim()
 
-  // Store original formatting in state
-  if (!state.isMultiLineDeclaration) {
-    state.declarationFormatting = {
-      indent: originalIndent,
-      content: [],
-    }
+  if (!trimmedLine) {
+    state.dtsLines.push('')
+    return
   }
 
-  // Add the line with its original formatting
-  if (state.declarationFormatting) {
-    state.declarationFormatting.content.push(line)
-  }
-
-  // Rest of the existing processDeclarationLine logic...
-  state.currentDeclaration += `${line}\n`
-
-  // Count brackets for nested structures
-  const openCount = (line.match(/[{[(]/g) || []).length
-  const closeCount = (line.match(/[})\]]/g) || []).length
-  state.bracketCount += openCount - closeCount
-
-  state.isMultiLineDeclaration = state.bracketCount > 0
-
-  if (!state.isMultiLineDeclaration && state.declarationFormatting) {
-    if (state.lastCommentBlock) {
-      state.dtsLines.push(state.lastCommentBlock.trimEnd())
+  // Handle comments
+  if (isCommentLine(trimmedLine)) {
+    if (trimmedLine.startsWith('/**')) {
       state.lastCommentBlock = ''
     }
+    state.lastCommentBlock += `${line}\n`
+    return
+  }
 
-    const processed = processDeclarationWithFormatting(
-      state.declarationFormatting.content,
-      state.declarationFormatting.indent,
-      state,
-    )
+  // Process declaration start
+  if (isDeclarationStart(trimmedLine)) {
+    // Clean up any existing declaration first
+    if (state.declarationBuffer) {
+      const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
+      const isExported = needsExport(cleaned)
+      const processed = processDeclarationBuffer(state.declarationBuffer, state)
 
-    if (processed) {
-      state.dtsLines.push(processed)
+      if (processed) {
+        if (state.declarationBuffer.comments.length > 0) {
+          state.dtsLines.push(...state.declarationBuffer.comments)
+        }
+        state.dtsLines.push(processed)
+      }
     }
 
-    state.currentDeclaration = ''
-    state.bracketCount = 0
-    state.declarationFormatting = undefined
+    // Start new declaration buffer
+    state.declarationBuffer = {
+      type: getDeclarationType(trimmedLine),
+      indent,
+      lines: [line],
+      comments: state.lastCommentBlock ? [state.lastCommentBlock] : [],
+    }
+    state.lastCommentBlock = ''
+    return
+  }
+
+  // Add to existing buffer
+  if (state.declarationBuffer) {
+    state.declarationBuffer.lines.push(line)
+
+    // Check for completion
+    if (isDeclarationComplete(state.declarationBuffer.lines)) {
+      const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
+      const isExported = needsExport(cleaned)
+      const processed = processDeclarationBuffer(state.declarationBuffer, state)
+
+      if (processed) {
+        if (state.declarationBuffer.comments.length > 0) {
+          state.dtsLines.push(...state.declarationBuffer.comments)
+        }
+        state.dtsLines.push(processed)
+      }
+      state.declarationBuffer = null
+    }
   }
 }
 
-function processDeclarationWithFormatting(
-  lines: string[],
-  indent: string,
-  state: ProcessingState,
-): string {
-  const declaration = lines.join('\n')
-
-  if (declaration.startsWith('export type') || declaration.startsWith('type')) {
-    return processTypeDeclarationWithFormatting(lines, indent)
-  }
-
-  if (declaration.startsWith('export interface') || declaration.startsWith('interface')) {
-    return processInterfaceDeclarationWithFormatting(lines, indent)
-  }
-
-  // For other declarations, use existing processing
-  return processDeclaration(declaration, state)
-}
-
-function processTypeDeclarationWithFormatting(lines: string[], indent: string): string {
-  const firstLine = lines[0]
-  const isExported = firstLine.startsWith('export')
-
-  // Handle type declarations that span multiple lines
-  if (lines.length > 1) {
-    const typeContent = lines.slice(1).map((line) => {
-      // Preserve original indentation for continued lines
-      const lineMatch = line.match(/^(\s+)/)
-      const currentIndent = lineMatch ? lineMatch[1] : indent
-      return `${currentIndent}${line.trim()}`
-    }).join('\n')
-
-    const declaration = `${isExported ? 'export ' : ''}declare type ${
-      firstLine.replace(/^export\s+type\s+/, '').trim()
-    }${typeContent}`
-
-    return declaration
-  }
-
-  // For single-line type declarations
-  return `${isExported ? 'export ' : ''}declare type ${
-    firstLine.replace(/^export\s+type\s+/, '').trim()
-  }`
-}
-
-// New function to process interface declarations with formatting preservation
-function processInterfaceDeclarationWithFormatting(lines: string[], indent: string): string {
-  const firstLine = lines[0]
-  const isExported = firstLine.startsWith('export')
-
-  // Process interface content while preserving formatting
-  const interfaceContent = lines.slice(1, -1).map((line) => {
-    // Keep original indentation for interface members
-    const lineMatch = line.match(/^(\s+)/)
-    const currentIndent = lineMatch ? lineMatch[1] : indent
-    return `${currentIndent}${line.trim()}`
-  }).join('\n')
-
-  return [
-    `${isExported ? 'export ' : ''}declare interface ${
-      firstLine.replace(/^export\s+interface\s+/, '').trim()
-    }`,
-    interfaceContent,
-    `${indent}}`,
-  ].join('\n')
+function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'function' {
+  if (line.includes('interface'))
+    return 'interface'
+  if (line.includes('type'))
+    return 'type'
+  if (line.includes('const'))
+    return 'const'
+  return 'function'
 }
 
 /**
@@ -1565,6 +1580,11 @@ function formatSingleDeclaration(declaration: string): string {
   return formatted
 }
 
+function getIndentation(line: string): string {
+  const match = line.match(/^(\s+)/)
+  return match ? match[1] : ''
+}
+
 /**
  * Check if semicolon should be added
  */
@@ -1584,6 +1604,16 @@ function shouldAddSemicolon(declaration: string): boolean {
   }
 
   return true
+}
+
+function needsExport(line: string): boolean {
+  const trimmed = line.trim()
+  return (
+    trimmed.startsWith('export ')
+    || trimmed.startsWith('export default ')
+    || trimmed.startsWith('export type ')
+    || trimmed.startsWith('export interface ')
+  )
 }
 
 /**
