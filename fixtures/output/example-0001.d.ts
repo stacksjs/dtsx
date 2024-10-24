@@ -42,9 +42,9 @@ export declare const someObject: {
  * with another comment in an extra line
  */
 export declare interface User {
-  id: number;
-  name: string;
-  email: string;
+id: number
+name: string
+email: string
 }
 
 /**
@@ -53,8 +53,8 @@ export declare interface User {
  * with multiple lines of comments, including an empty line
  */
 export declare interface ResponseData {
-  success: boolean;
-  data: User[];
+success: boolean
+data: User[]
 }
 
 /**
@@ -66,9 +66,9 @@ export declare interface ResponseData {
 export declare function fetchUsers(): Promise<ResponseData>;
 
 export declare interface ApiResponse<T> {
-  status: number;
-  message: string;
-  data: T;
+status: number
+message: string
+data: T
 }
 
 /**
@@ -76,12 +76,15 @@ export declare interface ApiResponse<T> {
  *
  * with multiple empty lines, including being poorly formatted
  */
-declare const settings: { [key: string]: any };
+declare const settings: { [key: string]: any } = {
+theme: 'dark',
+language: 'en',
+}
 
 export declare interface Product {
-  id: number;
-  name: string;
-  price: number;
+id: number
+name: string
+price: number
 }
 
 /**
@@ -90,8 +93,8 @@ export declare interface Product {
 export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 
 export declare interface AuthResponse {
-  token: string;
-  expiresIn: number;
+token: string
+expiresIn: number
 }
 
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
@@ -104,15 +107,27 @@ export declare const defaultHeaders: {
 
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
 
-declare interface Options<T> {
-  name: string;
-  cwd?: string;
-  defaultConfig: T;
+declare interface interface Options<T> {
+name: string
+cwd?: string
+defaultConfig: T
 }
 
 export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
-declare const dtsConfig: DtsGenerationConfig;
+declare const dtsConfig: DtsGenerationConfig = await loadConfig({
+name: 'dts',
+cwd: process.cwd(),
+defaultConfig: {
+cwd: process.cwd(),
+root: './src',
+entrypoints: ['**/*.ts'],
+outdir: './dist',
+keepComments: true,
+clean: true,
+tsconfigPath: './tsconfig.json',
+},
+});
 
 export { generate, dtsConfig }
 
@@ -121,19 +136,14 @@ export type { DtsGenerationOption };
 export { config } from './config';
 
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
-  data: T;
-  key: K;
-  value: T[K];
-  transform: (input: T[K]) => string;
-  nested: Array<Partial<T>>;
+data: T
+key: K
+value: T[K]
+transform: (input: T[K]) => string
+nested: Array<Partial<T>>
 }
 
-export declare type ComplexUnionIntersection =
-  | (User & { role: 'admin' })
-  | (Product & { category: string })
-  & {
-    metadata: Record<string, unknown>
-  }
+export declare type ComplexUnionIntersection =;
 
 export * from './extract';
 export * from './generate';
