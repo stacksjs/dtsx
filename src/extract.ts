@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 // ===========================
 // Type Definitions
 // ===========================
@@ -217,7 +218,6 @@ export function createProcessingState(): ProcessingState {
     moduleImports: new Map(),
     availableTypes: new Map(),
     availableValues: new Map(),
-    sourceLines: [],
     currentIndentation: '',
     declarationBuffer: null,
   }
@@ -259,19 +259,7 @@ export function processLine(line: string, state: ProcessingState): void {
   const indent = getIndentation(line)
   console.log('Processing line with indent:', { line, indent })
 
-  if (!state.sourceLines) {
-    state.sourceLines = []
-  }
-
-  state.sourceLines.push(line)
   state.currentIndentation = indent
-
-  if (!state.isMultiLineDeclaration) {
-    state.declarationFormatting = {
-      indent,
-      content: [],
-    }
-  }
 
   const trimmedLine = line.trim()
   if (!trimmedLine)
@@ -509,9 +497,9 @@ export function processDeclaration(declaration: string, state: ProcessingState):
 function processDeclarationBuffer(
   buffer: NonNullable<ProcessingState['declarationBuffer']>,
   state: ProcessingState,
+  isExported: boolean,
 ): string {
   const declaration = buffer.lines.join('\n')
-  const isExported = needsExport(declaration)
   const cleaned = cleanDeclaration(declaration)
 
   switch (buffer.type) {
@@ -1425,8 +1413,11 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
     // Clean up any existing declaration first
     if (state.declarationBuffer) {
       const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
-      const isExported = needsExport(cleaned)
-      const processed = processDeclarationBuffer(state.declarationBuffer, state)
+      const processed = processDeclarationBuffer(
+        state.declarationBuffer,
+        state,
+        needsExport(cleaned),
+      )
 
       if (processed) {
         if (state.declarationBuffer.comments.length > 0) {
@@ -1454,8 +1445,11 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
     // Check for completion
     if (isDeclarationComplete(state.declarationBuffer.lines)) {
       const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
-      const isExported = needsExport(cleaned)
-      const processed = processDeclarationBuffer(state.declarationBuffer, state)
+      const processed = processDeclarationBuffer(
+        state.declarationBuffer,
+        state,
+        needsExport(cleaned),
+      )
 
       if (processed) {
         if (state.declarationBuffer.comments.length > 0) {
