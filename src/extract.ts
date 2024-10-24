@@ -587,8 +587,6 @@ function processConstDeclaration(declaration: string, isExported = true): string
   console.log('Processing const declaration:', { declaration })
   const lines = declaration.split('\n')
   const firstLine = lines[0]
-  const indentMatch = firstLine.match(/^(\s*)/)
-  const indent = indentMatch ? indentMatch[1] : ''
 
   // Check for type annotation
   const typeMatch = firstLine.match(/const\s+([^:]+):\s*([^=]+)\s*=/)
@@ -1234,11 +1232,12 @@ function processSourceFile(content: string, state: ProcessingState): void {
   const lines = content.split('\n')
   const importLines: string[] = []
   const exportDefaultLines: string[] = []
+  const exportStarLines: string[] = []
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
 
-  // First pass: collect imports and export defaults
+  // First pass: collect imports and exports
   for (const line of lines) {
     const trimmedLine = line.trim()
     if (trimmedLine.startsWith('import')) {
@@ -1249,20 +1248,26 @@ function processSourceFile(content: string, state: ProcessingState): void {
       exportDefaultLines.push(line)
       continue
     }
+    if (trimmedLine.startsWith('export *')) {
+      exportStarLines.push(line)
+      continue
+    }
   }
 
   // Process imports
   if (importLines.length > 0) {
-    state.dtsLines.push(...importLines)
+    state.dtsLines.push(...cleanImports(importLines))
     state.dtsLines.push('') // Add single line break after imports
   }
 
-  // Process rest of the content
+  // Process main content
   for (const line of lines) {
     const trimmedLine = line.trim()
 
-    // Skip imports and export defaults as they're handled separately
-    if (trimmedLine.startsWith('import') || trimmedLine.startsWith('export default')) {
+    // Skip already processed lines
+    if (trimmedLine.startsWith('import')
+      || trimmedLine.startsWith('export default')
+      || trimmedLine.startsWith('export *')) {
       continue
     }
 
@@ -1272,6 +1277,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
         processDeclarationBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
+        state.dtsLines.push('') // Add line break after each declaration
       }
       continue
     }
@@ -1307,24 +1313,35 @@ function processSourceFile(content: string, state: ProcessingState): void {
         processDeclarationBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
+        state.dtsLines.push('') // Add line break after each declaration
       }
     }
     else if (!trimmedLine.endsWith(',')) {
       processDeclarationBlock(currentBlock, currentComments, state)
       currentBlock = []
       currentComments = []
+      state.dtsLines.push('') // Add line break after each declaration
     }
   }
 
   // Process any remaining block
   if (currentBlock.length > 0) {
     processDeclarationBlock(currentBlock, currentComments, state)
+    state.dtsLines.push('')
+  }
+
+  // Add export * statements with proper spacing
+  if (exportStarLines.length > 0) {
+    if (state.dtsLines[state.dtsLines.length - 1] !== '') {
+      state.dtsLines.push('')
+    }
+    state.dtsLines.push(...exportStarLines)
   }
 
   // Add export default at the end with proper spacing
   if (exportDefaultLines.length > 0) {
     if (state.dtsLines[state.dtsLines.length - 1] !== '') {
-      state.dtsLines.push('') // Add line break before export default
+      state.dtsLines.push('')
     }
     state.dtsLines.push(...exportDefaultLines)
   }
@@ -1684,16 +1701,18 @@ function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'fun
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
-  let output = state.dtsLines.join('\n')
+  const output = state.dtsLines
+    // Remove more than two consecutive empty lines
+    .reduce((acc, line, index, arr) => {
+      if (line === '' && arr[index - 1] === '' && arr[index - 2] === '') {
+        return acc
+      }
+      return [...acc, line]
+    }, [] as string[])
+    .join('\n')
 
-  // Ensure proper formatting
-  output = `${output
-  // Remove multiple consecutive empty lines
-    .replace(/\n{3,}/g, '\n\n')
   // Ensure file ends with single newline
-    .trim()}\n`
-
-  return output
+  return `${output.trim()}\n`
 }
 
 function getIndentation(line: string): string {
