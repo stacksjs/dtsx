@@ -121,31 +121,20 @@ export interface PropertyInfo {
  */
 interface ProcessingState {
   dtsLines: string[]
-  /** Import statements */
   imports: string[]
-  /** Set of types used in declarations */
   usedTypes: Set<string>
-  /** Map of type names to their source modules */
   typeSources: Map<string, string>
-  /** Default export declaration */
   defaultExport: string
-  /** Current declaration being processed */
   currentDeclaration: string
-  /** Last processed JSDoc comment block */
   lastCommentBlock: string
-  /** Bracket nesting level counter */
   bracketCount: number
-  /** Flag for multi-line declarations */
   isMultiLineDeclaration: boolean
-  /** Map of module imports with metadata */
   moduleImports: Map<string, ImportInfo>
-  /** Map of available type names */
   availableTypes: Map<string, string>
-  /** Map of available value names */
   availableValues: Map<string, string>
   currentIndentation: string
   declarationBuffer: {
-    type: 'interface' | 'type' | 'const' | 'function'
+    type: 'interface' | 'type' | 'const' | 'function' | 'import' | 'export'
     indent: string
     lines: string[]
     comments: string[]
@@ -499,9 +488,20 @@ function processDeclarationBuffer(
   state: ProcessingState,
   isExported: boolean,
 ): string {
-  const declaration = buffer.lines.join('\n')
-  const cleaned = cleanDeclaration(declaration)
+  const content = buffer.lines.join('\n')
 
+  // Skip processing for export * statements
+  if (content.trim().startsWith('export *')) {
+    return content
+  }
+
+  // Skip processing for export type {} statements
+  if (content.trim().startsWith('export type {')) {
+    return content
+  }
+
+  // Process regular declarations
+  const cleaned = cleanDeclaration(content)
   switch (buffer.type) {
     case 'interface':
       return processInterfaceDeclaration(cleaned, isExported)
@@ -512,8 +512,72 @@ function processDeclarationBuffer(
     case 'function':
       return processFunctionDeclaration(cleaned, state.usedTypes, isExported)
     default:
-      return declaration
+      return content
   }
+}
+
+function processDeclarationBlock(lines: string[], comments: string[], state: ProcessingState): void {
+  const declaration = lines.join('\n')
+  const trimmed = declaration.trim()
+
+  if (!trimmed || trimmed.startsWith('//'))
+    return
+
+  // Keep original indentation
+  const indentMatch = lines[0].match(/^(\s*)/)
+  const baseIndent = indentMatch ? indentMatch[1] : ''
+
+  if (comments.length > 0) {
+    state.dtsLines.push(...comments)
+  }
+
+  if (trimmed.startsWith('import')) {
+    // Imports are handled separately in the first pass
+    return
+  }
+
+  if (trimmed.startsWith('export * from')) {
+    state.dtsLines.push(declaration)
+    return
+  }
+
+  if (trimmed.startsWith('export type {')) {
+    state.dtsLines.push(declaration)
+    return
+  }
+
+  if (trimmed.startsWith('export {')) {
+    state.dtsLines.push(declaration)
+    return
+  }
+
+  if (trimmed.startsWith('interface') || trimmed.startsWith('export interface')) {
+    const processed = processInterfaceDeclaration(declaration, trimmed.startsWith('export'))
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (trimmed.startsWith('type') || trimmed.startsWith('export type')) {
+    const processed = processTypeDeclaration(declaration, trimmed.startsWith('export'))
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (trimmed.startsWith('const') || trimmed.startsWith('export const')) {
+    const processed = processConstDeclaration(declaration, trimmed.startsWith('export'))
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (trimmed.startsWith('function') || trimmed.startsWith('export function')
+    || trimmed.startsWith('async function') || trimmed.startsWith('export async function')) {
+    const processed = processFunctionDeclaration(declaration, state.usedTypes, trimmed.startsWith('export'))
+    state.dtsLines.push(processed)
+    return
+  }
+
+  // Default case: preserve the declaration as-is
+  state.dtsLines.push(declaration)
 }
 
 /**
@@ -530,8 +594,7 @@ function processConstDeclaration(declaration: string, isExported = true): string
   const typeMatch = firstLine.match(/const\s+([^:]+):\s*([^=]+)\s*=/)
   if (typeMatch) {
     const [, name, type] = typeMatch
-    // When there's an explicit type annotation, only use the type
-    return `${indent}declare const ${name.trim()}: ${type.trim()};`
+    return `${isExported ? 'export ' : ''}declare const ${name.trim()}: ${type.trim()};`
   }
 
   // No type annotation, extract name and infer type
@@ -551,7 +614,31 @@ function processConstDeclaration(declaration: string, isExported = true): string
     return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
   }
 
+  // Handle simple value assignments
+  const valueMatch = firstLine.match(/=\s*(.+)$/)
+  if (valueMatch) {
+    const value = valueMatch[1].trim()
+    const inferredType = inferValueType(value)
+    return `${isExported ? 'export ' : ''}declare const ${name}: ${inferredType};`
+  }
+
   return declaration
+}
+
+function inferValueType(value: string): string {
+  if (value.startsWith('{'))
+    return 'Record<string, unknown>'
+  if (value.startsWith('['))
+    return 'unknown[]'
+  if (value.startsWith('\'') || value.startsWith('"'))
+    return 'string'
+  if (!Number.isNaN(Number(value)))
+    return 'number'
+  if (value === 'true' || value === 'false')
+    return 'boolean'
+  if (value.includes('=>'))
+    return '(...args: any[]) => unknown'
+  return 'unknown'
 }
 
 /**
@@ -802,15 +889,33 @@ function isDeclarationStart(line: string): boolean {
 
 function isDeclarationComplete(lines: string[]): boolean {
   let bracketCount = 0
+  let inString = false
+  let stringChar = ''
+
   for (const line of lines) {
     for (const char of line) {
-      if (char === '{')
-        bracketCount++
-      if (char === '}')
-        bracketCount--
+      // Handle string content
+      if ((char === '"' || char === '\'') && !inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (inString && char === stringChar) {
+        inString = false
+        continue
+      }
+
+      if (!inString) {
+        if (char === '{' || char === '(')
+          bracketCount++
+        if (char === '}' || char === ')')
+          bracketCount--
+      }
     }
   }
-  return bracketCount === 0
+
+  // Also check for single-line declarations
+  const lastLine = lines[lines.length - 1].trim()
+  return bracketCount === 0 && (lastLine.endsWith(';') || lastLine.endsWith('}'))
 }
 
 /**
@@ -1066,17 +1171,25 @@ function processInterfaceDeclaration(declaration: string, isExported = true): st
   ]
 
   // Add members with preserved indentation
+  let seenContent = false
   for (let i = 1; i < lines.length - 1; i++) {
     const line = lines[i]
     const content = line.trim()
     if (content) {
+      seenContent = true
       processedLines.push(`${memberIndent}${content}`)
     }
+  }
+
+  // If no content was found, add a newline for better formatting
+  if (!seenContent) {
+    processedLines.push('')
   }
 
   processedLines.push(`${baseIndent}}`)
   return processedLines.join('\n')
 }
+
 /**
  * Process type declarations
  */
@@ -1118,30 +1231,76 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
-  console.log('Processing source file...')
-
   const lines = content.split('\n')
-  let lineNumber = 0
+
+  // First pass: collect imports
+  const imports = lines.filter(line => line.trim().startsWith('import')).join('\n')
+  if (imports) {
+    state.imports = processImports(imports.split('\n'), state.usedTypes)
+  }
+
+  // Second pass: process everything else
+  let currentBlock: string[] = []
+  let currentComments: string[] = []
+  let isInMultilineDeclaration = false
 
   for (const line of lines) {
-    lineNumber++
-    try {
-      // Clean the line before processing
-      const cleaned = cleanDeclaration(line)
+    const trimmedLine = line.trim()
 
-      // Check if line needs export
-      if (needsExport(cleaned)) {
-        console.log(`Line ${lineNumber}: Processing exportable declaration:`, cleaned)
+    // Skip empty lines between declarations
+    if (!trimmedLine && !isInMultilineDeclaration) {
+      if (currentBlock.length > 0) {
+        processDeclarationBlock(currentBlock, currentComments, state)
+        currentBlock = []
+        currentComments = []
       }
-
-      processDeclarationLine(line, state)
+      continue
     }
-    catch (error) {
-      console.error(`Error processing line ${lineNumber}:`, { line, error })
+
+    // Handle comments
+    if (isCommentLine(trimmedLine)) {
+      if (!isInMultilineDeclaration) {
+        if (trimmedLine.startsWith('/**')) {
+          currentComments = []
+        }
+        currentComments.push(line)
+      }
+      else {
+        currentBlock.push(line)
+      }
+      continue
+    }
+
+    // Track multiline declarations
+    if (!isInMultilineDeclaration && (trimmedLine.includes('{') || trimmedLine.includes('('))) {
+      isInMultilineDeclaration = true
+    }
+
+    currentBlock.push(line)
+
+    if (isInMultilineDeclaration) {
+      const openCount = (line.match(/[{(]/g) || []).length
+      const closeCount = (line.match(/[})]/g) || []).length
+      state.bracketCount += openCount - closeCount
+
+      if (state.bracketCount === 0) {
+        isInMultilineDeclaration = false
+        processDeclarationBlock(currentBlock, currentComments, state)
+        currentBlock = []
+        currentComments = []
+      }
+    }
+    else if (!trimmedLine.endsWith(',')) {
+      processDeclarationBlock(currentBlock, currentComments, state)
+      currentBlock = []
+      currentComments = []
     }
   }
 
-  console.log('Finished processing source file')
+  // Process any remaining block
+  if (currentBlock.length > 0) {
+    processDeclarationBlock(currentBlock, currentComments, state)
+  }
 }
 
 /**
