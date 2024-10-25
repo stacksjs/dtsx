@@ -889,20 +889,30 @@ function isDeclarationStart(line: string): boolean {
   )
 }
 
-function isDeclarationComplete(lines: string[]): boolean {
+function isDeclarationComplete(content: string): boolean {
+  // Split into lines while preserving empty lines
+  const lines = content.split('\n')
   let bracketCount = 0
   let inString = false
   let stringChar = ''
+  let lastNonEmptyLine = ''
 
   for (const line of lines) {
-    for (const char of line) {
-      // Handle string content
-      if ((char === '"' || char === '\'') && !inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (inString && char === stringChar) {
-        inString = false
+    if (line.trim())
+      lastNonEmptyLine = line.trim()
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i]
+
+      // Handle strings
+      if ((char === '"' || char === '\'') && (i === 0 || line[i - 1] !== '\\')) {
+        if (!inString) {
+          inString = true
+          stringChar = char
+        }
+        else if (char === stringChar) {
+          inString = false
+        }
         continue
       }
 
@@ -915,9 +925,18 @@ function isDeclarationComplete(lines: string[]): boolean {
     }
   }
 
-  // Also check for single-line declarations
-  const lastLine = lines[lines.length - 1].trim()
-  return bracketCount === 0 && (lastLine.endsWith(';') || lastLine.endsWith('}'))
+  // Consider a declaration complete if:
+  return (
+    bracketCount === 0 && (
+      // Ends with semicolon or closing brace
+      lastNonEmptyLine.endsWith(';')
+      || lastNonEmptyLine.endsWith('}')
+      // Is a type export
+      || lastNonEmptyLine.startsWith('export type {')
+      // Is a module export
+      || lastNonEmptyLine.startsWith('export * from')
+    )
+  )
 }
 
 /**
@@ -1199,12 +1218,12 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
   const lines = declaration.split('\n')
   const baseIndent = getIndentation(lines[0])
 
-  // Handle type exports (e.g., "export type { DtsGenerationOption }")
+  // Handle type exports
   if (lines[0].includes('type {')) {
     return declaration
   }
 
-  // Extract type name and process content
+  // Extract type name and initial content
   const typeMatch = lines[0].match(/^(?:export\s+)?type\s+([^=\s]+)\s*=\s*(.*)/)
   if (!typeMatch)
     return declaration
@@ -1212,20 +1231,21 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
   const [, name, initialContent] = typeMatch
   const prefix = isExported ? 'export declare' : 'declare'
 
-  // Handle single-line type declarations
-  if (lines.length === 1 && initialContent) {
+  // If it's a simple single-line type
+  if (lines.length === 1) {
     return `${baseIndent}${prefix} type ${name} = ${initialContent};`
   }
 
-  // Handle multi-line type declarations
-  const processedLines = [`${baseIndent}${prefix} type ${name} = ${initialContent}`]
+  // For multi-line types, properly format with line breaks
+  const processedLines = [`${baseIndent}${prefix} type ${name} = ${initialContent.trim()}`]
+  const remainingLines = lines.slice(1)
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]
-    const lineIndent = getIndentation(line)
-    const content = line.trim()
-    if (content) {
-      processedLines.push(`${lineIndent}${content}`)
+  for (const line of remainingLines) {
+    const trimmed = line.trim()
+    if (trimmed) {
+      // Keep original indentation for the line
+      const lineIndent = getIndentation(line)
+      processedLines.push(`${lineIndent}${trimmed}`)
     }
   }
 
@@ -1234,121 +1254,78 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
 
 function processSourceFile(content: string, state: ProcessingState): void {
   const lines = content.split('\n')
-  const importLines: string[] = []
-  const exportDefaultLines: string[] = []
-  const exportStarLines: string[] = []
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
 
-  // First pass: collect imports and exports
-  for (const line of lines) {
-    const trimmedLine = line.trim()
-    if (trimmedLine.startsWith('import')) {
-      importLines.push(line)
-      continue
-    }
-    if (trimmedLine.startsWith('export default')) {
-      exportDefaultLines.push(line)
-      continue
-    }
-    if (trimmedLine.startsWith('export *')) {
-      exportStarLines.push(line)
-      continue
-    }
-  }
+  function flushBlock() {
+    if (currentBlock.length > 0) {
+      const fullBlock = currentBlock.join('\n')
 
-  // Process imports
-  if (importLines.length > 0) {
-    state.dtsLines.push(...cleanImports(importLines))
-    state.dtsLines.push('') // Add single line break after imports
-  }
-
-  // Process main content
-  for (const line of lines) {
-    const trimmedLine = line.trim()
-
-    // Skip already processed lines
-    if (trimmedLine.startsWith('import')
-      || trimmedLine.startsWith('export default')
-      || trimmedLine.startsWith('export *')) {
-      continue
-    }
-
-    // Skip empty lines between declarations
-    if (!trimmedLine && !isInMultilineDeclaration) {
-      if (currentBlock.length > 0) {
-        processDeclarationBlock(currentBlock, currentComments, state)
-        currentBlock = []
-        currentComments = []
-        state.dtsLines.push('') // Add line break after each declaration
+      // If we have multiple declarations in one block, split them
+      if (!fullBlock.includes('type ') && fullBlock.includes('\nexport')) {
+        const declarations = fullBlock.split(/(?=\nexport)/)
+        declarations.forEach((declaration) => {
+          const trimmed = declaration.trim()
+          if (trimmed) {
+            if (currentComments.length > 0) {
+              processDeclarationBlock([...currentComments], [], state)
+            }
+            processDeclarationBlock([declaration], [], state)
+          }
+        })
       }
-      continue
+      else {
+        processDeclarationBlock([...currentComments, ...currentBlock], [], state)
+      }
+
+      currentBlock = []
+      currentComments = []
+      isInMultilineDeclaration = false
     }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmedLine = line.trim()
 
     // Handle comments
     if (isCommentLine(trimmedLine)) {
       if (!isInMultilineDeclaration) {
-        if (trimmedLine.startsWith('/**')) {
-          currentComments = []
-        }
         currentComments.push(line)
+        continue
       }
-      else {
-        currentBlock.push(line)
-      }
+    }
+
+    // Check for declaration start
+    if (!isInMultilineDeclaration && isDeclarationStart(trimmedLine)) {
+      flushBlock()
+      currentBlock.push(line)
+      isInMultilineDeclaration = true
       continue
     }
 
-    // Track multiline declarations
-    if (!isInMultilineDeclaration && (trimmedLine.includes('{') || trimmedLine.includes('('))) {
-      isInMultilineDeclaration = true
-    }
-
-    currentBlock.push(line)
-
-    if (isInMultilineDeclaration) {
-      const openCount = (line.match(/[{(]/g) || []).length
-      const closeCount = (line.match(/[})]/g) || []).length
-      state.bracketCount += openCount - closeCount
-
-      if (state.bracketCount === 0) {
-        isInMultilineDeclaration = false
-        processDeclarationBlock(currentBlock, currentComments, state)
-        currentBlock = []
-        currentComments = []
-        state.dtsLines.push('') // Add line break after each declaration
+    // Handle empty lines
+    if (!trimmedLine) {
+      if (!isInMultilineDeclaration) {
+        flushBlock()
+        continue
       }
     }
-    else if (!trimmedLine.endsWith(',')) {
-      processDeclarationBlock(currentBlock, currentComments, state)
-      currentBlock = []
-      currentComments = []
-      state.dtsLines.push('') // Add line break after each declaration
+
+    if (isInMultilineDeclaration) {
+      currentBlock.push(line)
+
+      // Check if declaration is complete
+      const currentContent = currentBlock.join('\n')
+      if (isDeclarationComplete(currentContent)) {
+        flushBlock()
+      }
     }
   }
 
   // Process any remaining block
-  if (currentBlock.length > 0) {
-    processDeclarationBlock(currentBlock, currentComments, state)
-    state.dtsLines.push('')
-  }
-
-  // Add export * statements with proper spacing
-  if (exportStarLines.length > 0) {
-    if (state.dtsLines[state.dtsLines.length - 1] !== '') {
-      state.dtsLines.push('')
-    }
-    state.dtsLines.push(...exportStarLines)
-  }
-
-  // Add export default at the end with proper spacing
-  if (exportDefaultLines.length > 0) {
-    if (state.dtsLines[state.dtsLines.length - 1] !== '') {
-      state.dtsLines.push('')
-    }
-    state.dtsLines.push(...exportDefaultLines)
-  }
+  flushBlock()
 }
 
 /**

@@ -2,12 +2,13 @@ import type { BunPlugin } from 'bun'
 import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx'
 import { generate } from '@stacksjs/dtsx'
 
-
 /**
  * Example of const declaration
  */
-export declare const conf: { [key: string]: string };
-
+export const conf: { [key: string]: string } = {
+  apiUrl: 'https://api.stacksjs.org',
+  timeout: '5000', // as string
+}
 export declare const someObject: {
   someString: 'Stacks';
   someNumber: 1000;
@@ -37,91 +38,93 @@ export declare const someObject: {
   someInlineCall2: (...args: any[]) => void;
   someInlineCall3: (...args: any[]) => void;
 };
-
 /**
  * Example of interface declaration
  * with another comment in an extra line
  */
-export declare interface User {
+export interface User {
   id: number
   name: string
   email: string
 }
-
 /**
  * Example of type declaration
  *
  * with multiple lines of comments, including an empty line
  */
-export declare interface ResponseData {
+export interface ResponseData {
   success: boolean
   data: User[]
 }
-
 /**
  * Example of function declaration
  *
  *
  * with multiple empty lines, including an empty lines
  */
-export declare function fetchUsers(): Promise<ResponseData>;
-
+export function fetchUsers(): Promise<ResponseData> {
+  return fetch(conf.apiUrl)
+    .then(response => response.json()) as Promise<ResponseData>
+}
 export declare interface ApiResponse<T> {
   status: number
   message: string
   data: T
 }
-
 /**
  * Example of another const declaration
     *
 * with multiple empty lines, including being poorly formatted
  */
-declare const settings: { [key: string]: any };
-
+const settings: { [key: string]: any } = {
+  theme: 'dark',
+  language: 'en',
+}
 export declare interface Product {
   id: number
   name: string
   price: number
 }
-
 /**
  * Example of function declaration
  */
-export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
-
+export function getProduct(id: number): Promise<ApiResponse<Product>> {
+  return fetch(`${settings.apiUrl}/products/${id}`)
+    .then(response => response.json()) as Promise<ApiResponse<Product>>
+}
 export declare interface AuthResponse {
   token: string
   expiresIn: number
 }
-
-export declare type AuthStatus = 'authenticated' | 'unauthenticated';
-
-export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
-
+export declare type AuthStatus = 'authenticated' | 'unauthenticated'
+export function authenticate(user: string, password: string): Promise<AuthResponse> {
+  return fetch('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ user, password }),
+  }).then(response => response.json()) as Promise<AuthResponse>
+}
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
-
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
-
 declare interface Options<T> {
   name: string
   cwd?: string
   defaultConfig: T
 }
-
 export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
-
-
 declare const dtsConfig: DtsGenerationConfig;
 
 export { generate, dtsConfig }
-
 export type { DtsGenerationOption }
 
 export { config } from './config'
 
+export * from './extract'
+export * from './generate'
+
+export * from './types'
+export * from './utils'
 
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
   data: T
@@ -130,21 +133,10 @@ export declare interface ComplexGeneric<T extends Record<string, unknown>, K ext
   transform: (input: T[K]) => string
   nested: Array<Partial<T>>
 }
-
-
 export declare type ComplexUnionIntersection = 
-
   | (User & { role: 'admin' })
-
   | (Product & { category: string })
-
   & {
     metadata: Record<string, unknown>
   }
-
-export * from './extract'
-export * from './generate'
-export * from './types'
-export * from './utils'
-
 export default dts
