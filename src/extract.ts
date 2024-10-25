@@ -320,6 +320,48 @@ export function processLine(line: string, state: ProcessingState): void {
   }
 }
 
+function processValue(value: string): { type: string, nested?: PropertyInfo[] } {
+  const trimmed = value.trim()
+
+  if (trimmed.startsWith('{')) {
+    const nestedProperties = extractObjectProperties(trimmed)
+    return {
+      type: `{ ${nestedProperties.map(p => `${p.key}: ${p.type}`).join('; ')} }`,
+      nested: nestedProperties,
+    }
+  }
+
+  if (trimmed.startsWith('[')) {
+    const elementTypes = inferArrayType(trimmed)
+    return { type: elementTypes }
+  }
+
+  if (trimmed.startsWith('(') || trimmed.startsWith('function') || trimmed.includes('=>')) {
+    return { type: '(...args: any[]) => unknown' }
+  }
+
+  // Handle literals and primitive types
+  if (/^['"`]/.test(trimmed)) {
+    return { type: trimmed }
+  }
+
+  if (!Number.isNaN(Number(trimmed))) {
+    return { type: trimmed }
+  }
+
+  if (trimmed === 'true' || trimmed === 'false') {
+    return { type: trimmed }
+  }
+
+  // For identifiers or expressions, return 'unknown' or function type
+  if (/^[a-z_$][\w$]*$/i.test(trimmed)) {
+    // Could be a function or variable
+    return { type: 'unknown' }
+  }
+
+  return { type: 'unknown' }
+}
+
 /**
  * Process import statements and tracks dependencies
  */
@@ -520,68 +562,98 @@ export function processDeclarationBuffer(
   }
 }
 
-export function processDeclarationBlock(lines: string[], comments: string[], state: ProcessingState): void {
-  const declaration = lines.join('\n')
-  const trimmed = declaration.trim()
+export function processDeclarationBlock(
+  lines: string[],
+  comments: string[],
+  state: ProcessingState,
+): void {
+  const declaration = lines.join('\n').trim()
 
-  if (!trimmed || trimmed.startsWith('//'))
+  if (!declaration)
     return
 
-  // Keep original indentation
-  // const indentMatch = lines[0].match(/^(\s*)/)
-  // const baseIndent = indentMatch ? indentMatch[1] : ''
-
+  // Combine comments with the declaration
   if (comments.length > 0) {
     state.dtsLines.push(...comments)
   }
 
-  if (trimmed.startsWith('import')) {
+  // Remove leading comments and whitespace from the declaration when checking its type
+  const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
+
+  // Ignore lines that are just closing braces
+  if (declarationWithoutComments === '}') {
+    return
+  }
+
+  if (declarationWithoutComments.startsWith('import')) {
     // Imports are handled separately in the first pass
     return
   }
 
-  if (trimmed.startsWith('export * from')) {
+  if (
+    declarationWithoutComments.startsWith('export const')
+    || declarationWithoutComments.startsWith('const')
+  ) {
+    const isExported = declarationWithoutComments.trimStart().startsWith('export')
+    const processed = processConstDeclaration(
+      declaration,
+      isExported,
+    )
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('interface')
+    || declarationWithoutComments.startsWith('export interface')
+  ) {
+    const processed = processInterfaceDeclaration(
+      declaration,
+      declarationWithoutComments.startsWith('export'),
+    )
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('type')
+    || declarationWithoutComments.startsWith('export type')
+  ) {
+    const processed = processTypeDeclaration(
+      declaration,
+      declarationWithoutComments.startsWith('export'),
+    )
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('function')
+    || declarationWithoutComments.startsWith('export function')
+    || declarationWithoutComments.startsWith('async function')
+    || declarationWithoutComments.startsWith('export async function')
+  ) {
+    const processed = processFunctionDeclaration(
+      declaration,
+      state.usedTypes,
+      declarationWithoutComments.startsWith('export'),
+    )
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('export {')
+    || declarationWithoutComments.startsWith('export *')
+  ) {
     state.dtsLines.push(declaration)
     return
   }
 
-  if (trimmed.startsWith('export type {')) {
-    state.dtsLines.push(declaration)
-    return
-  }
+  // If we reach here, it's an unhandled declaration type.
+  // We can choose to skip it, or log a warning.
 
-  if (trimmed.startsWith('export {')) {
-    state.dtsLines.push(declaration)
-    return
-  }
-
-  if (trimmed.startsWith('interface') || trimmed.startsWith('export interface')) {
-    const processed = processInterfaceDeclaration(declaration, trimmed.startsWith('export'))
-    state.dtsLines.push(processed)
-    return
-  }
-
-  if (trimmed.startsWith('type') || trimmed.startsWith('export type')) {
-    const processed = processTypeDeclaration(declaration, trimmed.startsWith('export'))
-    state.dtsLines.push(processed)
-    return
-  }
-
-  if (trimmed.startsWith('const') || trimmed.startsWith('export const')) {
-    const processed = processConstDeclaration(declaration, trimmed.startsWith('export'))
-    state.dtsLines.push(processed)
-    return
-  }
-
-  if (trimmed.startsWith('function') || trimmed.startsWith('export function')
-    || trimmed.startsWith('async function') || trimmed.startsWith('export async function')) {
-    const processed = processFunctionDeclaration(declaration, state.usedTypes, trimmed.startsWith('export'))
-    state.dtsLines.push(processed)
-    return
-  }
-
-  // Default case: preserve the declaration as-is
-  state.dtsLines.push(declaration)
+  console.warn('Unhandled declaration type:', declarationWithoutComments.split('\n')[0])
 }
 
 /**
@@ -589,18 +661,18 @@ export function processDeclarationBlock(lines: string[], comments: string[], sta
  */
 function processConstDeclaration(declaration: string, isExported = true): string {
   console.log('Processing const declaration:', { declaration })
-  const lines = declaration.split('\n')
-  const firstLine = lines[0]
+  const firstLineEndIndex = declaration.indexOf('\n')
+  const firstLine = declaration.slice(0, firstLineEndIndex !== -1 ? firstLineEndIndex : undefined)
 
-  // Check for type annotation
-  const typeMatch = firstLine.match(/const\s+([^:]+):\s*([^=]+)\s*=/)
+  // Adjusted regex to handle 'export const'
+  const typeMatch = firstLine.match(/^\s*(?:export\s+)?const\s+([^:]+):\s*([^=]+)\s*=/)
   if (typeMatch) {
     const [, name, type] = typeMatch
     return `${isExported ? 'export ' : ''}declare const ${name.trim()}: ${type.trim()};`
   }
 
-  // No type annotation, extract name and infer type
-  const nameMatch = firstLine.match(/const\s+([^=\s]+)\s*=/)
+  // Adjusted regex to handle 'export const' without type annotation
+  const nameMatch = firstLine.match(/^\s*(?:export\s+)?const\s+([^=\s]+)\s*=/)
   if (!nameMatch) {
     console.log('No const declaration found:', firstLine)
     return declaration
@@ -609,11 +681,14 @@ function processConstDeclaration(declaration: string, isExported = true): string
   const name = nameMatch[1].trim()
   console.log('Processing const without type annotation:', name)
 
-  // For declarations without a type annotation, use type inference
-  const properties = extractObjectProperties(lines.slice(1, -1))
-  if (properties.length > 0) {
-    const propertyStrings = formatProperties(properties)
-    return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
+  // Extract the object literal
+  const objectLiteral = extractObjectLiteral(declaration)
+  if (objectLiteral) {
+    const properties = extractObjectProperties(objectLiteral)
+    if (properties.length > 0) {
+      const propertyStrings = formatProperties(properties)
+      return `${isExported ? 'export ' : ''}declare const ${name}: {\n${propertyStrings}\n};`
+    }
   }
 
   // Handle simple value assignments
@@ -625,6 +700,27 @@ function processConstDeclaration(declaration: string, isExported = true): string
   }
 
   return declaration
+}
+
+function removeLeadingComments(code: string): string {
+  const lines = code.split('\n')
+  let index = 0
+  while (index < lines.length) {
+    const line = lines[index].trim()
+    if (
+      line.startsWith('//')
+      || line.startsWith('/*')
+      || line.startsWith('*')
+      || line.startsWith('/**')
+      || line === ''
+    ) {
+      index++
+    }
+    else {
+      break
+    }
+  }
+  return lines.slice(index).join('\n')
 }
 
 function inferValueType(value: string): string {
@@ -649,53 +745,99 @@ function inferValueType(value: string): string {
 function formatProperties(properties: PropertyInfo[], indent = 2): string {
   return properties.map((prop) => {
     const spaces = ' '.repeat(indent)
+    let key = prop.key
+
+    // Check if the key is a valid identifier; if not, quote it
+    if (!/^[_$a-z][\w$]*$/i.test(key)) {
+      key = `'${key}'`
+    }
+
     if (prop.nested && prop.nested.length > 0) {
       const nestedProps = formatProperties(prop.nested, indent + 2)
-      return `${spaces}${prop.key}: {\n${nestedProps}\n${spaces}};`
+      return `${spaces}${key}: {\n${nestedProps}\n${spaces}};`
     }
-    return `${spaces}${prop.key}: ${prop.type};`
+    return `${spaces}${key}: ${prop.type};`
   }).join('\n')
 }
 
 /**
  * Extract and process object properties
  */
-export function extractObjectProperties(lines: string[]): PropertyInfo[] {
+function extractObjectProperties(objectLiteral: string): PropertyInfo[] {
   const properties: PropertyInfo[] = []
-  let currentProperty: { key?: string, content: string[] } = { content: [] }
-  let depth = 0
 
-  for (const line of lines) {
-    const trimmed = line.trim()
+  // Remove the outer braces
+  const content = objectLiteral.trim().slice(1, -1).trim()
+  if (!content)
+    return properties
 
-    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*'))
+  // Split properties by commas, considering nested structures
+  const elements = splitObjectProperties(content)
+
+  for (const element of elements) {
+    const colonIndex = element.indexOf(':')
+    if (colonIndex === -1)
       continue
 
-    const openCount = (trimmed.match(REGEX.bracketOpen) || []).length
-    const closeCount = (trimmed.match(REGEX.bracketClose) || []).length
+    const keyPart = element.slice(0, colonIndex).trim()
+    const valuePart = element.slice(colonIndex + 1).trim()
+    if (!keyPart || !valuePart)
+      continue
 
-    if (depth === 0 && trimmed.includes(':')) {
-      const [key] = trimmed.split(':')
-      currentProperty = {
-        key: key.trim(),
-        content: [trimmed],
-      }
-    }
-    else if (depth > 0 || openCount > 0) {
-      currentProperty.content.push(trimmed)
-    }
+    const key = keyPart.replace(/^['"]|['"]$/g, '') // Remove quotes from key if any
 
-    depth += openCount - closeCount
-
-    if (depth === 0 && currentProperty.key) {
-      const propertyInfo = processCompleteProperty(currentProperty)
-      if (propertyInfo)
-        properties.push(propertyInfo)
-      currentProperty = { content: [] }
-    }
+    const propertyInfo = processValue(valuePart)
+    properties.push({
+      key,
+      value: valuePart,
+      type: propertyInfo.type,
+      nested: propertyInfo.nested,
+    })
   }
 
   return properties
+}
+
+function extractObjectLiteral(declaration: string): string | null {
+  const objectStartIndex = declaration.indexOf('{')
+  if (objectStartIndex === -1)
+    return null
+
+  let braceCount = 0
+  let inString = false
+  let stringChar = ''
+  let objectLiteral = ''
+  const chars = declaration.slice(objectStartIndex)
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'') && (i === 0 || chars[i - 1] !== '\\')) {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === '{')
+        braceCount++
+      if (char === '}')
+        braceCount--
+    }
+
+    objectLiteral += char
+
+    if (braceCount === 0 && !inString) {
+      break
+    }
+  }
+
+  return objectLiteral
 }
 
 /**
@@ -732,7 +874,7 @@ export function processCompleteProperty({ key, content }: { key?: string, conten
   if (valueContent.startsWith('{')) {
     const nestedContent = extractNestedContent(valueContent, '{', '}')
     if (nestedContent) {
-      const nestedProps = extractObjectProperties(nestedContent.split(',').map(line => line.trim()))
+      const nestedProps = extractObjectProperties(nestedContent)
       return {
         key,
         value: valueContent,
@@ -818,21 +960,46 @@ function processTypeExpression(expression: string): string {
 /**
  * Extract nested content between delimiters
  */
-export function extractNestedContent(content: string, openChar: string, closeChar: string): string | null {
+function extractNestedContent(content: string, openChar: string, closeChar: string): string | null {
   let depth = 0
-  let start = -1
+  let inString = false
+  let stringChar = ''
+  let result = ''
+  let started = false
 
   for (let i = 0; i < content.length; i++) {
-    if (content[i] === openChar) {
-      if (depth === 0)
-        start = i
-      depth++
-    }
-    else if (content[i] === closeChar) {
-      depth--
-      if (depth === 0 && start !== -1) {
-        return content.substring(start + 1, i)
+    const char = content[i]
+    const prevChar = content[i - 1]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
       }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === openChar) {
+        depth++
+        if (!started) {
+          started = true
+          continue // Skip the opening character
+        }
+      }
+      else if (char === closeChar) {
+        depth--
+        if (depth === 0) {
+          return result
+        }
+      }
+    }
+
+    if (started && depth > 0) {
+      result += char
     }
   }
 
@@ -890,85 +1057,35 @@ function isDeclarationStart(line: string): boolean {
 }
 
 function isDeclarationComplete(content: string): boolean {
-  // Split into lines while preserving empty lines
-  const lines = content.split('\n')
-  let bracketCount = 0
-  let inString = false
-  let stringChar = ''
-  let lastNonEmptyLine = ''
+  // Remove comments and leading/trailing whitespace
+  const trimmedContent = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
 
-  for (const line of lines) {
-    if (line.trim())
-      lastNonEmptyLine = line.trim()
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i]
-
-      // Handle strings
-      if ((char === '"' || char === '\'') && (i === 0 || line[i - 1] !== '\\')) {
-        if (!inString) {
-          inString = true
-          stringChar = char
-        }
-        else if (char === stringChar) {
-          inString = false
-        }
-        continue
-      }
-
-      if (!inString) {
-        if (char === '{' || char === '(')
-          bracketCount++
-        if (char === '}' || char === ')')
-          bracketCount--
-      }
-    }
-  }
-
-  // Consider a declaration complete if:
-  return (
-    bracketCount === 0 && (
-      // Ends with semicolon or closing brace
-      lastNonEmptyLine.endsWith(';')
-      || lastNonEmptyLine.endsWith('}')
-      // Is a type export
-      || lastNonEmptyLine.startsWith('export type {')
-      // Is a module export
-      || lastNonEmptyLine.startsWith('export * from')
-    )
-  )
+  // Check if content ends with a semicolon or a closing brace
+  return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
 }
 
 /**
- * Infer array type from array literal with support for nested arrays
+ * Infer array type from array literal with support for nested arrays and mixed elements
  */
 function inferArrayType(value: string): string {
   const content = extractNestedContent(value, '[', ']')
-  if (!content)
+  if (content === null) {
     return 'never[]'
+  }
 
   const elements = splitArrayElements(content)
-  if (elements.length === 0)
+  if (elements.length === 0) {
     return 'never[]'
-
-  if (elements.some(el => el.trim().startsWith('['))) {
-    const nestedTypes = elements.map((element) => {
-      const trimmed = element.trim()
-      if (trimmed.startsWith('[')) {
-        const nestedContent = extractNestedContent(trimmed, '[', ']')
-        if (nestedContent) {
-          const nestedElements = splitArrayElements(nestedContent)
-          return `Array<${nestedElements.map(ne => inferElementType(ne.trim())).join(' | ')}>`
-        }
-      }
-      return inferElementType(trimmed)
-    })
-
-    return `Array<${nestedTypes.join(' | ')}>`
   }
 
   const elementTypes = elements.map(element => inferElementType(element.trim()))
   const uniqueTypes = [...new Set(elementTypes)]
+
+  // Handle nested arrays
+  if (uniqueTypes.every(type => type.startsWith('Array<'))) {
+    return `Array<${uniqueTypes.join(' | ')}>`
+  }
+
   return `Array<${uniqueTypes.join(' | ')}>`
 }
 
@@ -1005,42 +1122,41 @@ export function inferComplexType(value: string): string {
 /**
  * Infer element type with improved type detection
  */
-export function inferElementType(element: string): string {
+function inferElementType(element: string): string {
   const trimmed = element.trim()
 
-  if (trimmed.startsWith('\'') || trimmed.startsWith('"')) {
-    const cleanValue = trimmed.slice(1, -1).replace(/'+$/, '')
-    return `'${cleanValue}'`
-  }
-
-  if (!Number.isNaN(Number(trimmed))) {
-    return trimmed
+  if (trimmed.startsWith('[')) {
+    // Nested array
+    return inferArrayType(trimmed)
   }
 
   if (trimmed.startsWith('{')) {
-    return formatObjectType(parseObjectLiteral(trimmed))
+    // Object literal
+    const properties = extractObjectProperties(trimmed)
+    return `{ ${properties.map(p => `${p.key}: ${p.type}`).join('; ')} }`
   }
 
-  if (trimmed === 'console.log' || trimmed.endsWith('.log')) {
-    return '((...args: any[]) => void)'
+  if (trimmed.startsWith('(') || trimmed.startsWith('function') || trimmed.includes('=>')) {
+    // Function type
+    return '(...args: any[]) => unknown'
   }
 
-  if (trimmed.includes('=>')) {
-    return '((...args: any[]) => void)'
+  if (/^['"`]/.test(trimmed)) {
+    // String literal
+    return trimmed
   }
 
-  if (trimmed.endsWith('()')) {
-    return 'unknown'
+  if (!Number.isNaN(Number(trimmed))) {
+    // Number literal
+    return trimmed
   }
 
-  if (trimmed.includes('.')) {
-    return 'unknown'
+  if (trimmed === 'true' || trimmed === 'false') {
+    // Boolean literal
+    return trimmed
   }
 
-  if (/^[a-z_]\w*$/i.test(trimmed)) {
-    return 'unknown'
-  }
-
+  // Identifier or unknown value
   return 'unknown'
 }
 
@@ -1117,8 +1233,10 @@ function splitArrayElements(content: string): string[] {
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i]
+    const prevChar = content[i - 1]
 
-    if ((char === '"' || char === '\'') && (i === 0 || content[i - 1] !== '\\')) {
+    // Handle string literals
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
       if (!inString) {
         inString = true
         stringChar = char
@@ -1129,28 +1247,75 @@ function splitArrayElements(content: string): string[] {
     }
 
     if (!inString) {
-      if (char === '[' || char === '{')
+      if (char === '[' || char === '{' || char === '(') {
         depth++
-      else if (char === ']' || char === '}')
+      }
+      else if (char === ']' || char === '}' || char === ')') {
         depth--
+      }
+
+      if (char === ',' && depth === 0) {
+        elements.push(current.trim())
+        current = ''
+        continue
+      }
     }
 
-    if (char === ',' && depth === 0 && !inString) {
-      if (current.trim()) {
-        elements.push(current.trim())
-      }
-      current = ''
-    }
-    else {
-      current += char
-    }
+    current += char
   }
 
   if (current.trim()) {
     elements.push(current.trim())
   }
 
-  return elements.filter(Boolean)
+  return elements
+}
+
+function splitObjectProperties(content: string): string[] {
+  const properties: string[] = []
+  let current = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    const prevChar = content[i - 1]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
+      }
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+      }
+
+      if (char === ',' && depth === 0) {
+        properties.push(current.trim())
+        current = ''
+        continue
+      }
+    }
+
+    current += char
+  }
+
+  if (current.trim()) {
+    properties.push(current.trim())
+  }
+
+  return properties
 }
 
 /**
@@ -1158,14 +1323,14 @@ function splitArrayElements(content: string): string[] {
  */
 export function parseObjectLiteral(objStr: string): PropertyInfo[] {
   const content = objStr.slice(1, -1).trim()
-  return extractObjectProperties([content])
+  return extractObjectProperties(content)
 }
 
 /**
  * Process object type literals
  */
 function processObjectLiteral(obj: string): string {
-  const properties = extractObjectProperties([obj])
+  const properties = extractObjectProperties(obj)
   return formatObjectType(properties)
 }
 
@@ -1257,28 +1422,11 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
+  let braceLevel = 0
 
   function flushBlock() {
-    if (currentBlock.length > 0) {
-      const fullBlock = currentBlock.join('\n')
-
-      // If we have multiple declarations in one block, split them
-      if (!fullBlock.includes('type ') && fullBlock.includes('\nexport')) {
-        const declarations = fullBlock.split(/(?=\nexport)/)
-        declarations.forEach((declaration) => {
-          const trimmed = declaration.trim()
-          if (trimmed) {
-            if (currentComments.length > 0) {
-              processDeclarationBlock([...currentComments], [], state)
-            }
-            processDeclarationBlock([declaration], [], state)
-          }
-        })
-      }
-      else {
-        processDeclarationBlock([...currentComments, ...currentBlock], [], state)
-      }
-
+    if (currentBlock.length > 0 || currentComments.length > 0) {
+      processDeclarationBlock([...currentBlock], [...currentComments], state)
       currentBlock = []
       currentComments = []
       isInMultilineDeclaration = false
@@ -1291,74 +1439,133 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
     // Handle comments
     if (isCommentLine(trimmedLine)) {
-      if (!isInMultilineDeclaration) {
-        currentComments.push(line)
-        continue
-      }
-    }
-
-    // Check for declaration start
-    if (!isInMultilineDeclaration && isDeclarationStart(trimmedLine)) {
-      flushBlock()
-      currentBlock.push(line)
-      isInMultilineDeclaration = true
+      currentComments.push(line)
       continue
     }
 
-    // Handle empty lines
+    // Skip empty lines
     if (!trimmedLine) {
-      if (!isInMultilineDeclaration) {
-        flushBlock()
-        continue
-      }
+      continue
     }
 
-    if (isInMultilineDeclaration) {
+    // Check for declaration start only at top level
+    if (braceLevel === 0 && isDeclarationStart(trimmedLine)) {
+      flushBlock()
       currentBlock.push(line)
-
+      isInMultilineDeclaration = !isDeclarationComplete(trimmedLine)
+    }
+    else if (isInMultilineDeclaration) {
+      currentBlock.push(line)
       // Check if declaration is complete
       const currentContent = currentBlock.join('\n')
       if (isDeclarationComplete(currentContent)) {
         flushBlock()
       }
     }
+    else if (braceLevel === 0 && shouldProcessLine(trimmedLine)) {
+      flushBlock()
+      currentBlock.push(line)
+      flushBlock()
+    }
+
+    // Update brace level to track scope, considering strings
+    braceLevel += netBraceCount(line)
   }
 
   // Process any remaining block
   flushBlock()
 }
 
+function netBraceCount(line: string): number {
+  let netCount = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    const prevChar = line[i - 1]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        netCount++
+      }
+      else if (char === '}') {
+        netCount--
+      }
+    }
+  }
+
+  return netCount
+}
+
 /**
  * Extract complete function signature
  */
 export function extractFunctionSignature(declaration: string): FunctionSignature {
-  const isAsync = REGEX.asyncFunction.test(declaration)
+  // Remove comments from the declaration
+  const cleanDeclaration = removeLeadingComments(declaration).trim()
 
-  const cleanDeclaration = declaration
+  // Check if the function is async
+  const isAsync = /^async\s+/.test(cleanDeclaration)
+
+  // Remove 'export' and 'async' keywords
+  let declarationWithoutKeywords = cleanDeclaration
     .replace(/^export\s+/, '')
     .replace(/^async\s+/, '')
-    .replace(/^function\s+/, '')
     .trim()
 
-  const genericsMatch = cleanDeclaration.match(REGEX.genericParams)
+  // Remove 'function' keyword
+  declarationWithoutKeywords = declarationWithoutKeywords.replace(/^function\s+/, '').trim()
 
-  let generics = ''
-  let nameFromGenerics = ''
-  if (genericsMatch) {
-    nameFromGenerics = genericsMatch[1]
-    generics = genericsMatch[2]
+  // Extract the function name
+  const nameMatch = declarationWithoutKeywords.match(/^([a-z_$][\w$]*)/i)
+  const name = nameMatch ? nameMatch[1] : ''
+
+  if (!name) {
+    console.error('Function name could not be extracted from declaration:', declaration)
+    return {
+      name: '',
+      params: '',
+      returnType: 'void',
+      isAsync: false,
+      generics: '',
+    }
   }
 
-  const withoutGenerics = cleanDeclaration.replace(REGEX.genericParams, nameFromGenerics)
-  const name = nameFromGenerics || withoutGenerics.match(REGEX.functionName)?.[1] || ''
+  // Remove the function name from the declaration
+  let afterName = declarationWithoutKeywords.slice(name.length).trim()
 
-  const paramsMatch = withoutGenerics.match(REGEX.functionParams)
-  let params = paramsMatch ? paramsMatch[1].trim() : ''
+  // Extract generics if present
+  let generics = ''
+  const genericsMatch = afterName.match(/^<[^>]+>/)
+  if (genericsMatch) {
+    generics = genericsMatch[0]
+    afterName = afterName.slice(generics.length).trim()
+  }
+
+  // Extract parameters
+  const paramsMatch = afterName.match(/^\(([^)]*)\)/)
+  let params = ''
+  if (paramsMatch) {
+    params = paramsMatch[1].trim()
+    afterName = afterName.slice(paramsMatch[0].length).trim()
+  }
 
   params = cleanParameters(params)
 
   // Extract return type
-  const returnTypeMatch = withoutGenerics.match(REGEX.functionReturnType)
+  const returnTypeMatch = afterName.match(/^:\s*([^;{]+)/)
   let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
 
   returnType = normalizeType(returnType)
@@ -1383,13 +1590,19 @@ export function processFunctionDeclaration(
   usedTypes?: Set<string>,
   isExported = true,
 ): string {
+  // Remove comments from the declaration for parsing
+  const cleanDeclaration = removeLeadingComments(declaration).trim()
+
+  // Strip out the function body by removing everything after the parameter list and return type
+  const functionSignature = cleanDeclaration.replace(/\{[\s\S]*$/, '').trim()
+
   const {
     name,
     params,
     returnType,
-    isAsync, // it should be unused
+    isAsync,
     generics,
-  } = extractFunctionSignature(declaration)
+  } = extractFunctionSignature(functionSignature)
 
   // Track used types if provided
   if (usedTypes) {
@@ -1769,12 +1982,7 @@ function needsExport(line: string): boolean {
   )
 }
 
-function shouldTrackDeclaration(line: string): boolean {
-  return line.includes(':')
-    || line.includes('extends')
-    || line.includes('implements')
-    || line.includes('=')
-    || line.includes('(')
-    || line.includes(')')
-    || line.includes('export') // Added export tracking
+function shouldProcessLine(line: string): boolean {
+  // Lines that should be processed even if they don't start with a declaration keyword
+  return line.startsWith('export {') || line.startsWith('export *')
 }
