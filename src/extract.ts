@@ -50,6 +50,13 @@ export interface RegexPatterns {
   readonly functionOverload: RegExp
 }
 
+interface ImportTrackingState {
+  typeImports: Map<string, Set<string>> // module -> Set of type names
+  valueImports: Map<string, Set<string>> // module -> Set of value names
+  usedTypes: Set<string> // All used type names
+  usedValues: Set<string> // All used value names
+}
+
 /**
  * Regular expression patterns used throughout the module
  * @remarks These patterns are optimized for performance and reliability
@@ -139,6 +146,7 @@ interface ProcessingState {
     lines: string[]
     comments: string[]
   } | null
+  importTracking: ImportTrackingState
 }
 
 /**
@@ -209,6 +217,19 @@ export function createProcessingState(): ProcessingState {
     availableValues: new Map(),
     currentIndentation: '',
     declarationBuffer: null,
+    importTracking: createImportTrackingState(),
+  }
+}
+
+/**
+ * Creates initial import tracking state
+ */
+function createImportTrackingState(): ImportTrackingState {
+  return {
+    typeImports: new Map(),
+    valueImports: new Map(),
+    usedTypes: new Set(),
+    usedValues: new Set(),
   }
 }
 
@@ -234,8 +255,33 @@ export async function extract(filePath: string): Promise<string> {
 export function extractDtsTypes(sourceCode: string): string {
   const state = createProcessingState()
 
-  // Process the entire source file
+  // Process imports first
+  sourceCode.split('\n').forEach((line) => {
+    if (line.includes('import ')) {
+      processImports(line, state.importTracking)
+    }
+  })
+
+  // Process declarations
   processSourceFile(sourceCode, state)
+
+  // Final pass to track what actually made it to the output
+  state.dtsLines.forEach((line) => {
+    if (line.trim() && !line.startsWith('import')) {
+      trackTypeUsage(line, state.importTracking)
+      trackValueUsage(line, state.importTracking, state.dtsLines)
+    }
+  })
+
+  // Generate optimized imports based on actual output
+  const optimizedImports = generateOptimizedImports(state.importTracking, state.dtsLines)
+
+  // Replace existing imports with optimized ones
+  state.dtsLines = [
+    ...optimizedImports,
+    '', // Add blank line after imports
+    ...state.dtsLines.filter(line => !line.trim().startsWith('import')),
+  ]
 
   return formatOutput(state)
 }
@@ -371,119 +417,77 @@ export function generateImports(state: ProcessingState): string[] {
 }
 
 /**
- * Process imports while preserving their original sources
+ * Generate optimized imports based on usage
  */
-export function processImports(imports: string[], usedTypes: Set<string>): string[] {
-  const importMap = new Map<string, Set<string>>()
-  const reExportedTypes = new Set<string>()
+export function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]): string[] {
+  const imports: string[] = []
 
-  for (const line of imports) {
-    const typeImportMatch = line.match(REGEX.typeImport)
-    const regularImportMatch = line.match(REGEX.regularImport)
-    const match = typeImportMatch || regularImportMatch
+  // Generate type imports
+  for (const [module, types] of state.typeImports) {
+    const usedTypes = Array.from(types)
+      .filter(t => state.usedTypes.has(t))
+      .sort()
 
-    if (match) {
-      const types = match[1]
-        .split(',')
-        .map((t) => {
-          const [type, alias] = t.trim().split(/\s+as\s+/)
-          return alias || type.trim()
-        })
-      const module = match[2]
-
-      if (!importMap.has(module))
-        importMap.set(module, new Set())
-
-      types.forEach((type) => {
-        importMap.get(module)!.add(type)
-        if (usedTypes.has(type))
-          reExportedTypes.add(type)
-      })
+    if (usedTypes.length > 0) {
+      imports.push(`import type { ${usedTypes.join(', ')} } from '${module}'`)
     }
   }
 
-  return Array.from(importMap.entries())
-    .map(([module, types]) => {
-      const relevantTypes = Array.from(types).filter(type =>
-        usedTypes.has(type) || reExportedTypes.has(type))
+  // Generate value imports
+  for (const [module, values] of state.valueImports) {
+    const usedValues = Array.from(values)
+      .filter(v => state.usedValues.has(v))
+      // Only include values that appear in actual declarations
+      .filter(v => dtsLines.some(line =>
+        line.includes(`declare ${v}`)
+        || line.includes(`export declare ${v}`)
+        || line.includes(`export { ${v}`)
+        || line.includes(`, ${v}`)
+        || line.includes(`${v} }`),
+      ))
+      .sort()
 
-      if (relevantTypes.length === 0)
-        return ''
+    if (usedValues.length > 0) {
+      imports.push(`import { ${usedValues.join(', ')} } from '${module}'`)
+    }
+  }
 
-      return `import type { ${relevantTypes.sort().join(', ')} } from '${module}';`
-    })
-    .filter(Boolean)
-    .sort()
+  return imports.sort()
 }
 
 /**
- * Process declarations
+ * Process imports and track their usage
  */
-export function processDeclaration(declaration: string, state: ProcessingState): string {
-  console.log('Processing declaration:', { declaration, type: 'START' })
-
-  const trimmed = declaration.trim()
-
-  // Handle different types of declarations
-  if (trimmed.startsWith('export type') || trimmed.startsWith('type')) {
-    console.log('Handling type declaration')
-    return processTypeDeclaration(trimmed, trimmed.startsWith('export'))
+export function processImports(line: string, state: ImportTrackingState): void {
+  // Handle type imports
+  const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+  if (typeImportMatch) {
+    const [, names, module] = typeImportMatch
+    if (!state.typeImports.has(module)) {
+      state.typeImports.set(module, new Set())
+    }
+    names.split(',').forEach((name) => {
+      const cleanName = name.trim().split(/\s+as\s+/).shift()! // Use shift() to get original name before 'as'
+      state.typeImports.get(module)!.add(cleanName)
+    })
+    return
   }
 
-  if (trimmed.startsWith('export interface') || trimmed.startsWith('interface')) {
-    console.log('Handling interface declaration')
-    return processInterfaceDeclaration(trimmed, trimmed.startsWith('export'))
+  // Handle value imports
+  const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+  if (valueImportMatch) {
+    const [, names, module] = valueImportMatch
+    if (!state.valueImports.has(module)) {
+      state.valueImports.set(module, new Set())
+    }
+    names.split(',').forEach((name) => {
+      const cleanName = name.trim().split(/\s+as\s+/).shift()! // Use shift() to get original name before 'as'
+      state.valueImports.get(module)!.add(cleanName)
+    })
   }
-
-  if (trimmed.startsWith('export const')) {
-    console.log('Handling exported const declaration')
-    return processConstDeclaration(trimmed)
-  }
-
-  if (trimmed.startsWith('export interface')) {
-    return processInterfaceDeclaration(trimmed)
-  }
-
-  if (trimmed.startsWith('interface')) {
-    return processInterfaceDeclaration(trimmed, false)
-  }
-
-  if (trimmed.startsWith('export type {')) {
-    return trimmed
-  }
-
-  if (trimmed.startsWith('export type')) {
-    return processTypeDeclaration(trimmed)
-  }
-
-  if (trimmed.startsWith('type')) {
-    return processTypeDeclaration(trimmed, false)
-  }
-
-  if (trimmed.startsWith('export function') || trimmed.startsWith('export async function')) {
-    const processed = trimmed.replace(/\basync\s+/, '')
-    return processFunctionDeclaration(processed, state.usedTypes, true)
-  }
-
-  if (trimmed.startsWith('function') || trimmed.startsWith('async function')) {
-    const processed = trimmed.replace(/\basync\s+/, '')
-    return processFunctionDeclaration(processed, state.usedTypes, false)
-  }
-
-  if (trimmed.startsWith('export default')) {
-    return `${trimmed};`
-  }
-
-  if (trimmed.startsWith('export')) {
-    return trimmed
-  }
-
-  console.log('Processing declaration:', { declaration, type: 'END' })
-
-  return `declare ${trimmed}`
 }
 
-function processDeclarationBuffer(
+export function processDeclarationBuffer(
   buffer: NonNullable<ProcessingState['declarationBuffer']>,
   state: ProcessingState,
   isExported: boolean,
@@ -516,7 +520,7 @@ function processDeclarationBuffer(
   }
 }
 
-function processDeclarationBlock(lines: string[], comments: string[], state: ProcessingState): void {
+export function processDeclarationBlock(lines: string[], comments: string[], state: ProcessingState): void {
   const declaration = lines.join('\n')
   const trimmed = declaration.trim()
 
@@ -524,8 +528,8 @@ function processDeclarationBlock(lines: string[], comments: string[], state: Pro
     return
 
   // Keep original indentation
-  const indentMatch = lines[0].match(/^(\s*)/)
-  const baseIndent = indentMatch ? indentMatch[1] : ''
+  // const indentMatch = lines[0].match(/^(\s*)/)
+  // const baseIndent = indentMatch ? indentMatch[1] : ''
 
   if (comments.length > 0) {
     state.dtsLines.push(...comments)
@@ -1524,6 +1528,59 @@ export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
 }
 
 /**
+ * Track type usage in declarations
+ */
+function trackTypeUsage(content: string, state: ImportTrackingState): void {
+  // Only look for capitalized type references that are actually used in declarations
+  const typePattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
+  let match
+  while ((match = typePattern.exec(content)) !== null) {
+    const typeName = match[1].split('<')[0] // Handle generic types
+    state.usedTypes.add(typeName)
+  }
+}
+
+/**
+ * Track value usage in declarations
+ */
+function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?: string[]): void {
+  // Track values in declarations
+  const patterns = [
+    // Export statements in declarations
+    /export\s+declare\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
+    // Declared exports
+    /export\s+declare\s+(?:const|function|class)\s+([a-zA-Z_$][\w$]*)/g,
+    // Direct exports
+    /export\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
+  ]
+
+  for (const pattern of patterns) {
+    let match
+    while ((match = pattern.exec(content)) !== null) {
+      const values = match[1].split(',').map(v => v.trim())
+      for (const value of values) {
+        if (!['type', 'interface', 'declare', 'extends', 'implements', 'function', 'const', 'let', 'var'].includes(value)) {
+          state.usedValues.add(value)
+        }
+      }
+    }
+  }
+
+  // Track values in the final output lines if provided
+  if (dtsLines) {
+    dtsLines.forEach((line) => {
+      if (line.includes('declare') || line.includes('export')) {
+        // Look for exported values
+        const exportMatch = line.match(/(?:export|declare)\s+(?:const|function|class)\s+([a-zA-Z_$][\w$]*)/)
+        if (exportMatch) {
+          state.usedValues.add(exportMatch[1])
+        }
+      }
+    })
+  }
+}
+
+/**
  * Process simple value types
  */
 export function processSimpleValue(key: string, value: string): PropertyInfo {
@@ -1633,6 +1690,12 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
     return
   }
 
+  // Track type and value usage in declarations
+  if (line.includes('declare') || line.includes('export')) {
+    trackTypeUsage(line, state.importTracking)
+    trackValueUsage(line, state.importTracking, state.dtsLines)
+  }
+
   // Process declaration start
   if (isDeclarationStart(trimmedLine)) {
     // Clean up any existing declaration first
@@ -1728,4 +1791,14 @@ function needsExport(line: string): boolean {
     || trimmed.startsWith('export type ')
     || trimmed.startsWith('export interface ')
   )
+}
+
+function shouldTrackDeclaration(line: string): boolean {
+  return line.includes(':')
+    || line.includes('extends')
+    || line.includes('implements')
+    || line.includes('=')
+    || line.includes('(')
+    || line.includes(')')
+    || line.includes('export') // Added export tracking
 }

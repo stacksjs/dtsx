@@ -1,9 +1,7 @@
 import type { BunPlugin } from 'bun'
 import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx'
-import { existsSync } from 'node:fs'
-import { generate, deepMerge } from '@stacksjs/dtsx'
-import { resolve } from 'node:path'
-import process from 'node:process'
+import { generate } from '@stacksjs/dtsx'
+
 
 /**
  * Example of const declaration
