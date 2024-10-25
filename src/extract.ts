@@ -1410,7 +1410,7 @@ export function processFunctionDeclaration(
     name,
     params,
     returnType,
-    isAsync,
+    isAsync, // it should be unused
     generics,
   } = extractFunctionSignature(declaration)
 
@@ -1422,7 +1422,6 @@ export function processFunctionDeclaration(
   const parts = [
     isExported ? 'export' : '',
     'declare',
-    isAsync ? 'async' : '',
     'function',
     name,
     generics,

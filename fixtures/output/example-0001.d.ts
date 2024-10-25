@@ -111,7 +111,7 @@ declare interface Options<T> {
   defaultConfig: T
 }
 
-export declare async function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
+export declare function loadConfig<T extends Record<string, unknown>>(options: Options<T>): Promise<T>;
 
 
 declare const dtsConfig: DtsGenerationConfig;
