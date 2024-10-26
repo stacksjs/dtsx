@@ -1,7 +1,4 @@
-/* eslint-disable no-console */
-// ===========================
-// Type Definitions
-// ===========================
+/* eslint-disable no-console,regexp/no-super-linear-backtracking */
 
 /**
  * Regular expression patterns used throughout the module
@@ -41,12 +38,17 @@ export interface RegexPatterns {
   readonly exportCleanup: RegExp
   /** Default export */
   readonly defaultExport: RegExp
-
+  /** Named export */
   readonly complexType: RegExp
+  /** Union and intersection types */
   readonly unionIntersection: RegExp
+  /** Conditional types */
   readonly mappedType: RegExp
+  /** Conditional types */
   readonly conditionalType: RegExp
+  /** Generic constraints */
   readonly genericConstraints: RegExp
+  /** Function overload */
   readonly functionOverload: RegExp
 }
 
@@ -67,7 +69,6 @@ export const REGEX: RegexPatterns = {
   regularImport: /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
 
   // Type and return patterns
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   typeAnnotation: /:\s*(\{[^=]+\}|\[[^\]]+\]|[^=]+?)\s*=/,
 
   // Bracket matching
@@ -79,7 +80,6 @@ export const REGEX: RegexPatterns = {
   asyncFunction: /^(?:export\s+)?async\s+function/,
   genericParams: /^([a-z_$][\w$]*)\s*(<[^(]+>)/i,
   functionParams: /\(([\s\S]*?)\)(?=\s*:)/,
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   functionReturnType: /\)\s*:\s*([\s\S]+?)(?=\{|$)/,
   functionName: /^([^(<\s]+)/,
 
@@ -96,13 +96,9 @@ export const REGEX: RegexPatterns = {
   defaultExport: /export\s+default\s+/,
 
   // New patterns for complex types
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   complexType: /type\s+([^=<]+)(?:<[^>]+>)?\s*=\s*([^;]+)/,
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   unionIntersection: /([^|&]+)(?:\s*[|&]\s*([^|&]+))+/,
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   mappedType: /\{\s*\[\s*([^\]]+)in\s*([^\]]+)\]:/,
-  // eslint-disable-next-line regexp/no-super-linear-backtracking
   conditionalType: /([^extnds]+)\s+extends\s+([^?]+)\?\s*([^:]+):\s*([^;]+)/,
   genericConstraints: /<([^>]+)>/,
   functionOverload: /^(?:export\s+)?(?:declare\s+)?function\s+([^(<\s]+)/,
@@ -1903,6 +1899,7 @@ function trackTypeUsage(content: string, state: ImportTrackingState): void {
   // Only look for capitalized type references that are actually used in declarations
   const typePattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
   let match
+  // eslint-disable-next-line no-cond-assign
   while ((match = typePattern.exec(content)) !== null) {
     const typeName = match[1].split('<')[0] // Handle generic types
     state.usedTypes.add(typeName)
@@ -1925,6 +1922,7 @@ function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?:
 
   for (const pattern of patterns) {
     let match
+    // eslint-disable-next-line no-cond-assign
     while ((match = pattern.exec(content)) !== null) {
       const values = match[1].split(',').map(v => v.trim())
       for (const value of values) {
