@@ -85,7 +85,9 @@ export declare function loadConfig<T extends Record<string, unknown>>({ name, cw
 declare const dtsConfig: DtsGenerationConfig;
 
 export { generate, dtsConfig }
+
 export type { DtsGenerationOption }
+
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
   data: T
   key: K

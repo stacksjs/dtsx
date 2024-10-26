@@ -2133,7 +2133,8 @@ function formatOutput(state: ProcessingState): string {
   // Process imports
   const imports = state.imports.join('\n').trim()
   if (imports) {
-    sections.push(`${imports}\n`) // Add extra newline after imports
+    sections.push(imports)
+    sections.push('') // Add empty line after imports
   }
 
   // Process declarations with proper spacing
@@ -2145,10 +2146,12 @@ function formatOutput(state: ProcessingState): string {
     .reduce((acc: string[], line: string) => {
       if (line.trim()) {
         acc.push(line)
-        // Add newline after declaration statements
+        // Add newline after declaration statements and direct exports
         if (
           line.match(/^export\s+declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
           || line.match(/^declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
+          || line.match(/^export\s+\{/) // Match direct exports like "export { generate, dtsConfig }"
+          || line.match(/^export\s+type\s+\{/) // Match type exports like "export type { DtsGenerationOption }"
         ) {
           acc.push('')
         }
