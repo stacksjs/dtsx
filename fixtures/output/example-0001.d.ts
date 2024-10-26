@@ -70,12 +70,6 @@ export declare function loadConfig<T extends Record<string, unknown>>({ name, cw
 declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export type { DtsGenerationOption }
-export { config } from './config'
-export * from './extract'
-export * from './generate'
-export * from './types'
-export * from './utils'
-// 1. Complex Generic Types
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
   data: T
   key: K
@@ -89,5 +83,11 @@ export declare type ComplexUnionIntersection =
   & {
     metadata: Record<string, unknown>
   }
+
+export { config } from './config'
+export * from './extract'
+export * from './generate'
+export * from './types'
+export * from './utils'
 
 export default dts;

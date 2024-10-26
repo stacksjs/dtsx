@@ -131,7 +131,8 @@ interface ProcessingState {
   imports: string[]
   usedTypes: Set<string>
   typeSources: Map<string, string>
-  defaultExport: string
+  defaultExport: string | null
+  exportAllStatements: string[]
   currentDeclaration: string
   lastCommentBlock: string
   bracketCount: number
@@ -207,7 +208,8 @@ export function createProcessingState(): ProcessingState {
     imports: [],
     usedTypes: new Set(),
     typeSources: new Map(),
-    defaultExport: '',
+    defaultExport: null,
+    exportAllStatements: [],
     currentDeclaration: '',
     lastCommentBlock: '',
     bracketCount: 0,
@@ -358,32 +360,50 @@ function extractFunctionName(declaration: string): { name: string, rest: string 
  */
 export function processLine(line: string, state: ProcessingState): void {
   const indent = getIndentation(line)
-  console.log('Processing line with indent:', { line, indent })
-
   state.currentIndentation = indent
 
   const trimmedLine = line.trim()
   if (!trimmedLine)
     return
 
+  console.log('Processing line:', trimmedLine)
+
   if (isCommentLine(trimmedLine)) {
     processCommentLine(trimmedLine, state)
     return
   }
 
-  if (trimmedLine.startsWith('import')) {
-    state.imports.push(processImport(line, state))
+  if (/^import\b/.test(trimmedLine)) {
+    const importLine = processImport(line)
+    // const importLine = processImport(line, state)
+    state.imports.push(importLine)
+    console.log('Collected import:', importLine)
     return
   }
 
   if (trimmedLine.startsWith('export default')) {
     state.defaultExport = trimmedLine.endsWith(';') ? trimmedLine : `${trimmedLine};`
+    console.log('Collected default export:', state.defaultExport)
+    return
+  }
+
+  if (
+    trimmedLine.startsWith('export *')
+    || trimmedLine.startsWith('export {')
+    || trimmedLine.startsWith('export type {')
+  ) {
+    const exportStatement = trimmedLine.endsWith(';') ? trimmedLine : `${trimmedLine};`
+    state.exportAllStatements.push(exportStatement)
+    console.log('Collected export statement:', exportStatement)
     return
   }
 
   if (isDeclarationLine(trimmedLine) || state.isMultiLineDeclaration) {
     processDeclarationLine(trimmedLine, state)
+    return
   }
+
+  console.log('Unprocessed line:', trimmedLine)
 }
 
 function processValue(value: string): { type: string, nested?: PropertyInfo[] } {
@@ -431,46 +451,8 @@ function processValue(value: string): { type: string, nested?: PropertyInfo[] } 
 /**
  * Process import statements and tracks dependencies
  */
-export function processImport(line: string, state: ProcessingState): string {
-  const typeImportMatch = line.match(REGEX.typeImport)
-  const valueImportMatch = line.match(REGEX.regularImport)
-
-  if (typeImportMatch || valueImportMatch) {
-    const match = typeImportMatch || valueImportMatch
-    const isTypeImport = Boolean(typeImportMatch)
-    const [, items, source] = match!
-
-    if (!state.moduleImports.has(source)) {
-      state.moduleImports.set(source, {
-        kind: isTypeImport ? 'type' : 'value',
-        usedTypes: new Set(),
-        usedValues: new Set(),
-        source,
-      })
-    }
-
-    const moduleInfo = state.moduleImports.get(source)!
-
-    items.split(',').forEach((item) => {
-      const [name, alias] = item.trim().split(/\s+as\s+/).map(s => s.trim())
-      const importedName = alias || name
-
-      if (isTypeImport) {
-        state.availableTypes.set(importedName, source)
-        moduleInfo.kind = moduleInfo.kind === 'value' ? 'mixed' : 'type'
-      }
-      else {
-        state.availableValues.set(importedName, source)
-        moduleInfo.kind = moduleInfo.kind === 'type' ? 'mixed' : 'value'
-
-        if (state.currentDeclaration?.includes(importedName)) {
-          moduleInfo.usedValues.add(importedName)
-        }
-      }
-    })
-  }
-
-  return line
+export function processImport(line: string): string {
+  return line.trim().endsWith(';') ? line.trim() : `${line.trim()};`
 }
 
 /**
@@ -633,14 +615,22 @@ export function processDeclarationBlock(
   comments: string[],
   state: ProcessingState,
 ): void {
-  const declaration = lines.join('\n').trim()
+  // Remove any non-JSDoc comments that might have slipped through
+  const cleanedLines = lines.map((line) => {
+    const commentIndex = line.indexOf('//')
+    return commentIndex !== -1 ? line.substring(0, commentIndex).trim() : line
+  }).filter(Boolean)
 
-  if (!declaration)
+  const declaration = cleanedLines.join('\n').trim()
+
+  if (!declaration) {
     return
+  }
 
-  // Combine comments with the declaration
-  if (comments.length > 0) {
-    state.dtsLines.push(...comments)
+  // Only include JSDoc comments
+  const jsdocComments = comments.filter(isJSDocComment)
+  if (jsdocComments.length > 0) {
+    state.dtsLines.push(...jsdocComments)
   }
 
   // Remove leading comments and whitespace from the declaration when checking its type
@@ -737,8 +727,9 @@ export function processDeclarationBlock(
  */
 function processConstDeclaration(declaration: string, isExported = true): string {
   console.log('Processing const declaration:', { declaration })
-  const firstLineEndIndex = declaration.indexOf('\n')
-  const firstLine = declaration.slice(0, firstLineEndIndex !== -1 ? firstLineEndIndex : undefined)
+  const cleanDeclaration = cleanComments(declaration)
+  const firstLineEndIndex = cleanDeclaration.indexOf('\n')
+  const firstLine = cleanDeclaration.slice(0, firstLineEndIndex !== -1 ? firstLineEndIndex : undefined)
 
   // Adjusted regex to handle 'export const'
   const typeMatch = firstLine.match(/^\s*(?:export\s+)?const\s+([^:]+):\s*([^=]+)\s*=/)
@@ -757,8 +748,8 @@ function processConstDeclaration(declaration: string, isExported = true): string
   const name = nameMatch[1].trim()
   console.log('Processing const without type annotation:', name)
 
-  // Extract the object literal
-  const objectLiteral = extractObjectLiteral(declaration)
+  // Extract the object literal after removing comments
+  const objectLiteral = extractCleanObjectLiteral(cleanDeclaration)
   if (objectLiteral) {
     const properties = extractObjectProperties(objectLiteral)
     if (properties.length > 0) {
@@ -834,6 +825,53 @@ function formatProperties(properties: PropertyInfo[], indent = 2): string {
     }
     return `${spaces}${key}: ${prop.type};`
   }).join('\n')
+}
+
+/**
+ * Extract object literal after cleaning comments
+ */
+function extractCleanObjectLiteral(declaration: string): string | null {
+  const cleanedDeclaration = cleanComments(declaration)
+  const objectStartIndex = cleanedDeclaration.indexOf('{')
+  if (objectStartIndex === -1)
+    return null
+
+  let braceCount = 0
+  let inString = false
+  let stringChar = ''
+  let objectLiteral = ''
+  const chars = cleanedDeclaration.slice(objectStartIndex)
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i]
+    const prevChar = chars[i - 1]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'') && (i === 0 || prevChar !== '\\')) {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === '{')
+        braceCount++
+      if (char === '}')
+        braceCount--
+    }
+
+    objectLiteral += char
+
+    if (braceCount === 0 && !inString) {
+      break
+    }
+  }
+
+  return objectLiteral
 }
 
 /**
@@ -922,14 +960,22 @@ function extractObjectLiteral(declaration: string): string | null {
  * @param state - Current processing state
  */
 function processCommentLine(line: string, state: ProcessingState): void {
+  // Skip single-line comments
+  if (line.trim().startsWith('//')) {
+    state.lastCommentBlock = ''
+    return
+  }
+
   const indentedLine = line.startsWith('*')
     ? ` ${line}` // Add indentation for content lines
     : line.startsWith('/**') || line.startsWith('*/')
       ? line // Keep delimiters at original indentation
       : ` ${line}` // Add indentation for other lines
 
-  if (line.startsWith('/**'))
+  if (line.startsWith('/**')) {
     state.lastCommentBlock = ''
+  }
+
   state.lastCommentBlock += `${indentedLine}\n`
 }
 
@@ -1102,6 +1148,14 @@ function isFunctionType(type: string): boolean {
 }
 
 /**
+ * Check if a line is a JSDoc comment
+ */
+function isJSDocComment(line: string): boolean {
+  const trimmed = line.trim()
+  return trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
+}
+
+/**
  * Combine types into a union or intersection, wrapping function types in parentheses
  */
 function combineTypes(types: string[], operator: '|' | '&' = '|'): string {
@@ -1113,10 +1167,10 @@ function combineTypes(types: string[], operator: '|' | '&' = '|'): string {
 /**
  * Determines if a line is a comment
  * @param line - Source code line to check
- * @returns True if the line is a comment
+ * @returns True if the line is a JSDoc comment
  */
-export function isCommentLine(line: string): boolean {
-  return line.startsWith('/**') || line.startsWith('*') || line.startsWith('*/')
+function isCommentLine(line: string): boolean {
+  return isJSDocComment(line.trim())
 }
 
 /**
@@ -1125,12 +1179,22 @@ export function isCommentLine(line: string): boolean {
  * @param line - Source code line to check
  * @returns True if the line contains a declaration
  */
-export function isDeclarationLine(line: string): boolean {
-  return line.startsWith('export')
-    || line.startsWith('const')
-    || line.startsWith('interface')
-    || line.startsWith('type')
-    || line.startsWith('function')
+/**
+ * Determine if a line is the start of a declaration
+ */
+function isDeclarationLine(line: string): boolean {
+  return (
+    line.startsWith('export ')
+    || line.startsWith('declare ')
+    || line.startsWith('interface ')
+    || line.startsWith('type ')
+    || line.startsWith('function ')
+    || line.startsWith('const ')
+    || line.startsWith('let ')
+    || line.startsWith('var ')
+    || line.startsWith('class ')
+    || line.startsWith('enum ')
+  )
 }
 
 function isDeclarationStart(line: string): boolean {
@@ -1150,9 +1214,16 @@ function isDeclarationStart(line: string): boolean {
   )
 }
 
-function isDeclarationComplete(content: string): boolean {
+/**
+ * Check if a declaration is complete by examining its content
+ * @param content - Content to check, either as a string or array of lines
+ */
+function isDeclarationComplete(content: string | string[]): boolean {
+  // Convert array to string if necessary
+  const fullContent = Array.isArray(content) ? content.join('\n') : content
+
   // Remove comments and leading/trailing whitespace
-  const trimmedContent = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
+  const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
 
   // Check if content ends with a semicolon or a closing brace
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
@@ -1507,7 +1578,10 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
-  const lines = content.split('\n')
+  // Clean the source content first
+  const cleanedContent = cleanSource(content)
+  const lines = cleanedContent.split('\n')
+
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
@@ -1515,7 +1589,14 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
   function flushBlock() {
     if (currentBlock.length > 0 || currentComments.length > 0) {
-      processDeclarationBlock([...currentBlock], [...currentComments], state)
+      // Only include JSDoc comments in currentComments
+      const jsdocComments = currentComments.filter(comment =>
+        comment.trim().startsWith('/**')
+        || comment.trim().startsWith('*')
+        || comment.trim().startsWith('*/'),
+      )
+
+      processDeclarationBlock([...currentBlock], [...jsdocComments], state)
       currentBlock = []
       currentComments = []
       isInMultilineDeclaration = false
@@ -1524,16 +1605,15 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    const trimmedLine = line.trim()
+    const trimmedLine = line.trim().replace(/^\uFEFF/, '') // Remove BOM if present
 
-    // Handle comments
-    if (isCommentLine(trimmedLine)) {
-      currentComments.push(line)
+    if (!trimmedLine) {
       continue
     }
 
-    // Skip empty lines
-    if (!trimmedLine) {
+    // Handle comments
+    if (isJSDocComment(trimmedLine)) {
+      currentComments.push(line)
       continue
     }
 
@@ -1557,7 +1637,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       flushBlock()
     }
 
-    // Update brace level to track scope, considering strings
+    // Update brace level to track scope
     braceLevel += netBraceCount(line)
   }
 
@@ -1729,6 +1809,40 @@ export function processFunctionDeclaration(
     .replace(/([<>(),;:])\s+/g, '$1 ')
     .replace(/\s{2,}/g, ' ')
     .trim()
+}
+
+/**
+ * Clean source code by removing single-line comments and normalizing content
+ */
+function cleanSource(content: string): string {
+  return content
+    .split('\n')
+    .map((line) => {
+      // Remove single line comments
+      const commentIndex = line.indexOf('//')
+      if (commentIndex !== -1) {
+        // Keep the line if there's content before the comment
+        const beforeComment = line.substring(0, commentIndex).trim()
+        return beforeComment || ''
+      }
+      return line
+    })
+    .filter(Boolean) // Remove empty lines
+    .join('\n')
+}
+
+/**
+ * Clean single line comments and whitespace from a string
+ */
+function cleanComments(input: string): string {
+  return input
+    // Remove single line comments
+    .replace(/\/\/[^\n]*/g, '')
+    // Clean up empty lines that may be left after comment removal
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n')
 }
 
 function cleanDeclaration(text: string): string {
@@ -1929,15 +2043,15 @@ export function formatTypeParameters(params: string): string {
  */
 function processDeclarationLine(line: string, state: ProcessingState): void {
   const indent = getIndentation(line)
-  const trimmedLine = line.trim()
+  const trimmedLine = cleanComments(line).trim()
 
   if (!trimmedLine) {
     state.dtsLines.push('')
     return
   }
 
-  // Handle comments
-  if (isCommentLine(trimmedLine)) {
+  // Handle JSDoc comments
+  if (isJSDocComment(trimmedLine)) {
     if (trimmedLine.startsWith('/**')) {
       state.lastCommentBlock = ''
     }
@@ -1945,17 +2059,17 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
     return
   }
 
-  // Track type and value usage in declarations
-  if (line.includes('declare') || line.includes('export')) {
-    trackTypeUsage(line, state.importTracking)
-    trackValueUsage(line, state.importTracking, state.dtsLines)
+  // If we have a pending comment block and this is a declaration,
+  // add the comment block before the declaration
+  if (state.lastCommentBlock && isDeclarationLine(trimmedLine)) {
+    state.dtsLines.push(state.lastCommentBlock.trimEnd())
+    state.lastCommentBlock = ''
   }
 
-  // Process declaration start
+  // Rest of the existing processDeclarationLine logic...
   if (isDeclarationStart(trimmedLine)) {
-    // Clean up any existing declaration first
     if (state.declarationBuffer) {
-      const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
+      const cleaned = cleanDeclaration(cleanComments(state.declarationBuffer.lines.join('\n')))
       const processed = processDeclarationBuffer(
         state.declarationBuffer,
         state,
@@ -1970,7 +2084,6 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
       }
     }
 
-    // Start new declaration buffer
     state.declarationBuffer = {
       type: getDeclarationType(trimmedLine),
       indent,
@@ -1981,13 +2094,11 @@ function processDeclarationLine(line: string, state: ProcessingState): void {
     return
   }
 
-  // Add to existing buffer
   if (state.declarationBuffer) {
     state.declarationBuffer.lines.push(line)
 
-    // Check for completion
     if (isDeclarationComplete(state.declarationBuffer.lines)) {
-      const cleaned = cleanDeclaration(state.declarationBuffer.lines.join('\n'))
+      const cleaned = cleanDeclaration(cleanComments(state.declarationBuffer.lines.join('\n')))
       const processed = processDeclarationBuffer(
         state.declarationBuffer,
         state,
@@ -2019,24 +2130,49 @@ function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'fun
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
-  const outputLines = state.dtsLines
-    // Remove more than two consecutive empty lines
-    .reduce((acc, line, index, arr) => {
-      if (line === '' && arr[index - 1] === '' && arr[index - 2] === '') {
-        return acc
-      }
-      return [...acc, line]
-    }, [] as string[])
+  const sections: string[] = []
 
-  // Ensure file ends with a single newline
-  let output = outputLines.join('\n').trim()
-
-  // Append default export at the end if it exists
-  if (state.defaultExport) {
-    output += `\n\n${state.defaultExport.trim()}`
+  // Process imports
+  const imports = state.imports.join('\n').trim()
+  if (imports) {
+    sections.push(imports)
   }
 
-  return `${output}\n`
+  // Process declarations (excluding exports)
+  const declarations = state.dtsLines
+    .filter(line => !line.startsWith('export *') && !line.startsWith('export { config }'))
+    .join('\n')
+    .trim()
+  if (declarations) {
+    sections.push(declarations)
+  }
+
+  // Group all export * and export { config } statements
+  const exportStatements = [
+    ...state.dtsLines.filter(line => line.startsWith('export *') || line.startsWith('export { config }')),
+    ...state.exportAllStatements,
+  ].join('\n').trim()
+
+  // Add default export if it exists
+  const defaultExport = state.defaultExport?.trim()
+
+  // Combine sections with appropriate spacing
+  let output = sections.join('\n\n')
+
+  // Add export statements group before default export
+  if (exportStatements) {
+    output += output ? '\n\n' : ''
+    output += exportStatements
+  }
+
+  // Add default export with spacing
+  if (defaultExport) {
+    output += output ? '\n\n' : ''
+    output += defaultExport
+  }
+
+  // Ensure output ends with a single newline
+  return `${output.trimEnd()}\n`
 }
 
 function getIndentation(line: string): string {
