@@ -311,7 +311,7 @@ export function processLine(line: string, state: ProcessingState): void {
   }
 
   if (trimmedLine.startsWith('export default')) {
-    state.defaultExport = `\n${trimmedLine};`
+    state.defaultExport = trimmedLine.endsWith(';') ? trimmedLine : `${trimmedLine};`
     return
   }
 
@@ -587,6 +587,16 @@ export function processDeclarationBlock(
 
   if (declarationWithoutComments.startsWith('import')) {
     // Imports are handled separately in the first pass
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('export default')
+  ) {
+    // Handle export default statements
+    state.defaultExport = declarationWithoutComments.endsWith(';')
+      ? declarationWithoutComments
+      : `${declarationWithoutComments};`
     return
   }
 
@@ -1964,7 +1974,7 @@ function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'fun
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
-  const output = state.dtsLines
+  const outputLines = state.dtsLines
     // Remove more than two consecutive empty lines
     .reduce((acc, line, index, arr) => {
       if (line === '' && arr[index - 1] === '' && arr[index - 2] === '') {
@@ -1972,10 +1982,16 @@ function formatOutput(state: ProcessingState): string {
       }
       return [...acc, line]
     }, [] as string[])
-    .join('\n')
 
-  // Ensure file ends with single newline
-  return `${output.trim()}\n`
+  // Ensure file ends with a single newline
+  let output = outputLines.join('\n').trim()
+
+  // Append default export at the end if it exists
+  if (state.defaultExport) {
+    output += `\n\n${state.defaultExport.trim()}`
+  }
+
+  return `${output}\n`
 }
 
 function getIndentation(line: string): string {

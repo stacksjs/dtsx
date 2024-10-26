@@ -89,3 +89,5 @@ export declare type ComplexUnionIntersection =
   & {
     metadata: Record<string, unknown>
   }
+
+export default dts;
