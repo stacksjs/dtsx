@@ -66,7 +66,7 @@ declare interface Options<T> {
   cwd?: string
   defaultConfig: T
 }
-export declare function loadConfig<T extends Record<string, unknown>(): void;
+export declare function loadConfig<T extends Record<string, unknown>>({ name, cwd, defaultConfig }: Options<T>): Promise<T>;
 declare const dtsConfig: DtsGenerationConfig;
 export { generate, dtsConfig }
 export type { DtsGenerationOption }

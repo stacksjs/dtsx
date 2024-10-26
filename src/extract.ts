@@ -179,7 +179,7 @@ export interface FunctionSignature {
   name: string
   params: string
   returnType: string
-  isAsync: boolean
+  // isAsync: boolean
   generics: string
 }
 
@@ -284,6 +284,72 @@ export function extractDtsTypes(sourceCode: string): string {
   ]
 
   return formatOutput(state)
+}
+
+/**
+ * Extracts a substring that contains balanced opening and closing symbols, handling nested structures.
+ * @param text - The text to extract from.
+ * @param openSymbol - The opening symbol (e.g., '<', '(', '{').
+ * @param closeSymbol - The closing symbol (e.g., '>', ')', '}').
+ * @returns An object containing the content and the rest of the string.
+ */
+function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: string): { content: string, rest: string } | null {
+  if (!text.startsWith(openSymbol)) {
+    return null
+  }
+
+  const stack: string[] = []
+  let inString = false
+  let stringChar = ''
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const prevChar = text[i - 1]
+
+    // Handle string literals
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === openSymbol) {
+        stack.push(char)
+      }
+      else if (char === closeSymbol) {
+        if (stack.length === 0) {
+          // Unbalanced closing symbol
+          return null
+        }
+        stack.pop()
+        if (stack.length === 0) {
+          // All symbols balanced, return substring
+          return {
+            content: text.slice(0, i + 1),
+            rest: text.slice(i + 1).trim(),
+          }
+        }
+      }
+    }
+  }
+
+  return null // Unbalanced symbols
+}
+
+function extractFunctionName(declaration: string): { name: string, rest: string } {
+  const match = declaration.match(/^([a-z_$][\w$]*)/i)
+  if (match) {
+    const name = match[1]
+    const rest = declaration.slice(match[0].length).trim()
+    return { name, rest }
+  }
+  else {
+    return { name: '', rest: declaration }
+  }
 }
 
 /**
@@ -1079,6 +1145,8 @@ function isDeclarationStart(line: string): boolean {
     || line.startsWith('declare ')
     // Handle possible export combinations
     || /^export\s+(interface|type|const|function|async\s+function)/.test(line)
+    // Handle 'export async function'
+    || line.startsWith('export async function')
   )
 }
 
@@ -1531,80 +1599,89 @@ function netBraceCount(line: string): number {
 }
 
 /**
- * Extract complete function signature
+ * Extract complete function signature using regex
  */
-export function extractFunctionSignature(declaration: string): FunctionSignature {
+function extractFunctionSignature(declaration: string): FunctionSignature {
   // Remove comments from the declaration
   const cleanDeclaration = removeLeadingComments(declaration).trim()
 
-  // Check if the function is async
-  const isAsync = /^async\s+/.test(cleanDeclaration)
+  // Remove leading 'export', 'async', 'function' keywords
+  const withoutKeywords = cleanDeclaration.replace(/^\s*(export\s+)?(async\s+)?function\s+/, '').trim()
 
-  // Remove 'export' and 'async' keywords
-  let declarationWithoutKeywords = cleanDeclaration
-    .replace(/^export\s+/, '')
-    .replace(/^async\s+/, '')
-    .trim()
-
-  // Remove 'function' keyword
-  declarationWithoutKeywords = declarationWithoutKeywords.replace(/^function\s+/, '').trim()
-
-  // Extract the function name
-  const nameMatch = declarationWithoutKeywords.match(/^([a-z_$][\w$]*)/i)
-  const name = nameMatch ? nameMatch[1] : ''
-
+  // Extract function name
+  const { name, rest: afterName } = extractFunctionName(withoutKeywords)
   if (!name) {
     console.error('Function name could not be extracted from declaration:', declaration)
     return {
       name: '',
       params: '',
       returnType: 'void',
-      isAsync: false,
       generics: '',
     }
   }
 
-  // Remove the function name from the declaration
-  let afterName = declarationWithoutKeywords.slice(name.length).trim()
+  let rest = afterName
 
-  // Extract generics if present
+  // Extract generics
   let generics = ''
-  const genericsMatch = afterName.match(/^<[^>]+>/)
-  if (genericsMatch) {
-    generics = genericsMatch[0]
-    afterName = afterName.slice(generics.length).trim()
+  if (rest.startsWith('<')) {
+    const genericsResult = extractBalancedSymbols(rest, '<', '>')
+    if (genericsResult) {
+      generics = genericsResult.content
+      rest = genericsResult.rest.trim()
+    }
+    else {
+      console.error('Generics could not be extracted from declaration:', declaration)
+    }
   }
 
   // Extract parameters
-  const paramsMatch = afterName.match(/^\(([^)]*)\)/)
   let params = ''
-  if (paramsMatch) {
-    params = paramsMatch[1].trim()
-    afterName = afterName.slice(paramsMatch[0].length).trim()
+  if (rest.startsWith('(')) {
+    const paramsResult = extractBalancedSymbols(rest, '(', ')')
+    if (paramsResult) {
+      params = paramsResult.content.slice(1, -1).trim() // Remove the surrounding parentheses
+      rest = paramsResult.rest.trim()
+    }
+    else {
+      console.error('Parameters could not be extracted from declaration:', declaration)
+      return {
+        name,
+        params: '',
+        returnType: 'void',
+        generics,
+      }
+    }
+  }
+  else {
+    console.error('Parameters could not be extracted from declaration:', declaration)
+    return {
+      name,
+      params: '',
+      returnType: 'void',
+      generics,
+    }
   }
 
-  params = cleanParameters(params)
-
   // Extract return type
-  const returnTypeMatch = afterName.match(/^:\s*([^;{]+)/)
-  let returnType = returnTypeMatch ? returnTypeMatch[1].trim() : 'void'
-
-  returnType = normalizeType(returnType)
+  let returnType = 'void'
+  if (rest.startsWith(':')) {
+    const match = rest.match(/^:\s*([^{]+)/)
+    if (match) {
+      returnType = match[1].trim()
+    }
+  }
 
   return {
     name,
     params,
-    returnType,
-    isAsync,
+    returnType: normalizeType(returnType),
     generics,
   }
 }
 
 /**
  * Process function declarations with overloads
- * @param declaration - Function declaration to process
- * @param usedTypes - Set of used types to track
- * @param isExported - Whether the function is exported
  */
 export function processFunctionDeclaration(
   declaration: string,
@@ -1614,16 +1691,18 @@ export function processFunctionDeclaration(
   // Remove comments from the declaration for parsing
   const cleanDeclaration = removeLeadingComments(declaration).trim()
 
-  // Strip out the function body by removing everything after the parameter list and return type
-  const functionSignature = cleanDeclaration.replace(/\{[\s\S]*$/, '').trim()
-
   const {
     name,
     params,
     returnType,
-    isAsync,
     generics,
-  } = extractFunctionSignature(functionSignature)
+  } = extractFunctionSignature(cleanDeclaration)
+
+  // Add logs to verify extracted components
+  console.log('Function Name:', name)
+  console.log('Generics:', generics)
+  console.log('Parameters:', params)
+  console.log('Return Type:', returnType)
 
   // Track used types if provided
   if (usedTypes) {
@@ -1645,6 +1724,7 @@ export function processFunctionDeclaration(
   return parts
     .filter(Boolean)
     .join(' ')
+    // Include ':' in the character classes to handle spacing around colons
     .replace(/\s+([<>(),;:])/g, '$1')
     .replace(/([<>(),;:])\s+/g, '$1 ')
     .replace(/\s{2,}/g, ' ')
@@ -1662,42 +1742,7 @@ function cleanDeclaration(text: string): string {
  * Clean and normalize parameters
  */
 export function cleanParameters(params: string): string {
-  if (!params.trim())
-    return ''
-
-  return params
-    .replace(REGEX.destructuredParams, (_, props, type) => {
-      const typeName = normalizeType(type.trim())
-      return `options: ${typeName}`
-    })
-    .replace(/\s*([,:])\s*/g, '$1 ')
-    .replace(/,(\S)/g, ', $1')
-    .replace(/\s*\?\s*:/g, '?: ')
-    .replace(/\s*([<[\]>])\s*/g, '$1')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-}
-
-function cleanImports(imports: string[]): string[] {
-  const seen = new Set<string>()
-  return imports
-    .filter((imp) => {
-      const normalized = imp.trim()
-      if (seen.has(normalized))
-        return false
-      seen.add(normalized)
-      return true
-    })
-    .sort((a, b) => {
-      // Sort type imports before regular imports
-      const aIsType = a.includes('import type')
-      const bIsType = b.includes('import type')
-      if (aIsType && !bIsType)
-        return -1
-      if (!aIsType && bIsType)
-        return 1
-      return a.localeCompare(b)
-    })
+  return params.trim()
 }
 
 /**
