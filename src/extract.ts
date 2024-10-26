@@ -611,6 +611,17 @@ export function processDeclarationBlock(
   comments: string[],
   state: ProcessingState,
 ): void {
+  console.log('Processing declaration block:', { lines, comments })
+
+  // Only include JSDoc comments
+  const jsdocComments = comments.filter(isJSDocComment)
+  console.log('Filtered JSDoc comments:', jsdocComments)
+
+  if (jsdocComments.length > 0) {
+    console.log('Adding JSDoc comments to dtsLines:', jsdocComments)
+    state.dtsLines.push(...jsdocComments, '') // Add empty line after comments
+  }
+
   // Remove any non-JSDoc comments that might have slipped through
   const cleanedLines = lines.map((line) => {
     const commentIndex = line.indexOf('//')
@@ -620,35 +631,37 @@ export function processDeclarationBlock(
   const declaration = cleanedLines.join('\n').trim()
 
   if (!declaration) {
+    console.log('Empty declaration, skipping')
     return
   }
 
-  // Only include JSDoc comments
-  const jsdocComments = comments.filter(isJSDocComment)
-  if (jsdocComments.length > 0) {
-    state.dtsLines.push(...jsdocComments)
-  }
-
-  // Remove leading comments and whitespace from the declaration when checking its type
+  // Remove leading comments and whitespace when checking its type
   const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
 
-  // Ignore lines that are just closing braces
-  if (declarationWithoutComments === '}') {
-    return
-  }
+  console.log('Processing declaration:', {
+    original: declaration,
+    withoutComments: declarationWithoutComments,
+  })
 
-  if (declarationWithoutComments.startsWith('import')) {
-    // Imports are handled separately in the first pass
-    return
-  }
+  // Process the declaration
+  processSpecificDeclaration(declarationWithoutComments, declaration, state)
+}
 
-  if (
-    declarationWithoutComments.startsWith('export default')
-  ) {
-    // Handle export default statements
+function processSpecificDeclaration(
+  declarationWithoutComments: string,
+  fullDeclaration: string,
+  state: ProcessingState,
+) {
+  console.log('Processing specific declaration:', {
+    declarationWithoutComments,
+    fullDeclaration,
+  })
+
+  if (declarationWithoutComments.startsWith('export default')) {
     state.defaultExport = declarationWithoutComments.endsWith(';')
       ? declarationWithoutComments
       : `${declarationWithoutComments};`
+    console.log('Added default export:', state.defaultExport)
     return
   }
 
@@ -658,9 +671,10 @@ export function processDeclarationBlock(
   ) {
     const isExported = declarationWithoutComments.trimStart().startsWith('export')
     const processed = processConstDeclaration(
-      declaration,
+      fullDeclaration,
       isExported,
     )
+    console.log('Added const declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -670,9 +684,10 @@ export function processDeclarationBlock(
     || declarationWithoutComments.startsWith('export interface')
   ) {
     const processed = processInterfaceDeclaration(
-      declaration,
+      fullDeclaration,
       declarationWithoutComments.startsWith('export'),
     )
+    console.log('Added interface declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -682,9 +697,10 @@ export function processDeclarationBlock(
     || declarationWithoutComments.startsWith('export type')
   ) {
     const processed = processTypeDeclaration(
-      declaration,
+      fullDeclaration,
       declarationWithoutComments.startsWith('export'),
     )
+    console.log('Added type declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -696,10 +712,11 @@ export function processDeclarationBlock(
     || declarationWithoutComments.startsWith('export async function')
   ) {
     const processed = processFunctionDeclaration(
-      declaration,
+      fullDeclaration,
       state.usedTypes,
       declarationWithoutComments.startsWith('export'),
     )
+    console.log('Added function declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -708,13 +725,71 @@ export function processDeclarationBlock(
     declarationWithoutComments.startsWith('export {')
     || declarationWithoutComments.startsWith('export *')
   ) {
-    state.dtsLines.push(declaration)
+    console.log('Added export statement:', fullDeclaration)
+    state.dtsLines.push(fullDeclaration)
     return
   }
 
-  // If we reach here, it's an unhandled declaration type.
-  // We can choose to skip it, or log a warning.
+  if (declarationWithoutComments.startsWith('export type {')) {
+    console.log('Added type export statement:', fullDeclaration)
+    state.dtsLines.push(fullDeclaration)
+    return
+  }
 
+  // Handle class declarations
+  if (
+    declarationWithoutComments.startsWith('class')
+    || declarationWithoutComments.startsWith('export class')
+    || declarationWithoutComments.startsWith('abstract class')
+    || declarationWithoutComments.startsWith('export abstract class')
+  ) {
+    const isExported = declarationWithoutComments.startsWith('export')
+    const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
+    console.log('Added class declaration:', processed)
+    state.dtsLines.push(processed)
+    return
+  }
+
+  // Handle enum declarations
+  if (
+    declarationWithoutComments.startsWith('enum')
+    || declarationWithoutComments.startsWith('export enum')
+    || declarationWithoutComments.startsWith('const enum')
+    || declarationWithoutComments.startsWith('export const enum')
+  ) {
+    const isExported = declarationWithoutComments.startsWith('export')
+    const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
+    console.log('Added enum declaration:', processed)
+    state.dtsLines.push(processed)
+    return
+  }
+
+  // Handle namespace declarations
+  if (
+    declarationWithoutComments.startsWith('namespace')
+    || declarationWithoutComments.startsWith('export namespace')
+  ) {
+    const isExported = declarationWithoutComments.startsWith('export')
+    const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
+    console.log('Added namespace declaration:', processed)
+    state.dtsLines.push(processed)
+    return
+  }
+
+  if (
+    declarationWithoutComments.startsWith('let')
+    || declarationWithoutComments.startsWith('export let')
+    || declarationWithoutComments.startsWith('var')
+    || declarationWithoutComments.startsWith('export var')
+  ) {
+    const isExported = declarationWithoutComments.startsWith('export')
+    const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
+    console.log('Added variable declaration:', processed)
+    state.dtsLines.push(processed)
+    return
+  }
+
+  // If we reach here, it's an unhandled declaration type
   console.warn('Unhandled declaration type:', declarationWithoutComments.split('\n')[0])
 }
 
@@ -1148,9 +1223,10 @@ function isFunctionType(type: string): boolean {
  */
 function isJSDocComment(line: string): boolean {
   const trimmed = line.trim()
-  return trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
+  const isJsDoc = trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
+  console.log('Checking JSDoc:', { line, isJsDoc })
+  return isJsDoc
 }
-
 /**
  * Combine types into a union or intersection, wrapping function types in parentheses
  */
@@ -1578,6 +1654,8 @@ function processSourceFile(content: string, state: ProcessingState): void {
   const cleanedContent = cleanSource(content)
   const lines = cleanedContent.split('\n')
 
+  console.log('Processing source file:', { totalLines: lines.length })
+
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
@@ -1585,6 +1663,11 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
   function flushBlock() {
     if (currentBlock.length > 0 || currentComments.length > 0) {
+      console.log('Flushing block:', {
+        blockLines: currentBlock,
+        comments: currentComments,
+      })
+
       // Only include JSDoc comments in currentComments
       const jsdocComments = currentComments.filter(comment =>
         comment.trim().startsWith('/**')
@@ -1607,14 +1690,23 @@ function processSourceFile(content: string, state: ProcessingState): void {
       continue
     }
 
+    console.log('Processing line:', {
+      line,
+      isComment: isJSDocComment(trimmedLine),
+      braceLevel,
+      isMultiline: isInMultilineDeclaration,
+    })
+
     // Handle comments
     if (isJSDocComment(trimmedLine)) {
       currentComments.push(line)
+      console.log('Added comment to current block')
       continue
     }
 
     // Check for declaration start only at top level
     if (braceLevel === 0 && isDeclarationStart(trimmedLine)) {
+      console.log('Found declaration start:', trimmedLine)
       flushBlock()
       currentBlock.push(line)
       isInMultilineDeclaration = !isDeclarationComplete(trimmedLine)
@@ -1624,10 +1716,12 @@ function processSourceFile(content: string, state: ProcessingState): void {
       // Check if declaration is complete
       const currentContent = currentBlock.join('\n')
       if (isDeclarationComplete(currentContent)) {
+        console.log('Completed multiline declaration')
         flushBlock()
       }
     }
     else if (braceLevel === 0 && shouldProcessLine(trimmedLine)) {
+      console.log('Processing standalone line:', trimmedLine)
       flushBlock()
       currentBlock.push(line)
       flushBlock()
@@ -2128,13 +2222,20 @@ function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'fun
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
+  console.log('Formatting output. Initial state:', {
+    importCount: state.imports.length,
+    dtsLineCount: state.dtsLines.length,
+    hasDefaultExport: !!state.defaultExport,
+  })
+
   const sections: string[] = []
 
   // Process imports
-  const imports = state.imports.join('\n').trim()
-  if (imports) {
+  if (state.imports.length > 0) {
+    const imports = state.imports.join('\n')
     sections.push(imports)
     sections.push('') // Add empty line after imports
+    console.log('Added imports section with trailing newline')
   }
 
   // Process declarations with proper spacing
@@ -2143,26 +2244,54 @@ function formatOutput(state: ProcessingState): string {
 
   // Group declarations and add spacing
   const declarations = declarationLines
-    .reduce((acc: string[], line: string) => {
+    .reduce((acc: string[], line: string, index: number, lines: string[]) => {
       if (line.trim()) {
-        acc.push(line)
-        // Add newline after declaration statements and direct exports
-        if (
-          line.match(/^export\s+declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
-          || line.match(/^declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
-          || line.match(/^export\s+\{/) // Match direct exports like "export { generate, dtsConfig }"
-          || line.match(/^export\s+type\s+\{/) // Match type exports like "export type { DtsGenerationOption }"
-        ) {
-          acc.push('')
+        // If current line is a JSDoc comment start, include all JSDoc lines
+        if (line.trim().startsWith('/**')) {
+          console.log('Found JSDoc start:', line)
+          const jsdocBlock = [line]
+          let j = index + 1
+          // Collect all lines until we find the end of the JSDoc block
+          while (j < lines.length && !lines[j].includes('*/')) {
+            jsdocBlock.push(lines[j])
+            console.log('Added JSDoc line:', lines[j])
+            j++
+          }
+          if (j < lines.length) {
+            jsdocBlock.push(lines[j]) // Include the closing */
+            console.log('Added JSDoc end:', lines[j])
+          }
+          acc.push(...jsdocBlock)
+          // Don't add empty line after JSDoc block since it should be attached to the declaration
+        }
+        // If not part of a JSDoc block already processed, add the line
+        else if (!line.trim().startsWith('*') && !line.includes('*/')) {
+          acc.push(line)
+          // Add newline after declarations, but not after type union/intersection lines
+          if (
+            (line.match(/^export\s+declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
+              || line.match(/^declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
+              || line.match(/^export\s+\{/) // Match direct exports like "export { generate, dtsConfig }"
+              || line.match(/^export\s+type\s+\{/) // Match type exports like "export type { DtsGenerationOption }"
+              || line.endsWith('}') // Add newline after closing braces of interfaces/types
+              || line.endsWith(';')) // Add newline after semicolons
+              && !line.match(/^\s*[|&]\s+/) // Don't add newline for union/intersection type lines
+              && !line.match(/^\s*extends\s+/) // Don't add newline for extends clauses
+              && !lines[index + 1]?.match(/^\s*[|&]\s+/) // Don't add newline if next line is a union/intersection
+              && !lines[index + 1]?.match(/^\s*extends\s+/) // Don't add newline if next line is an extends clause
+          ) {
+            acc.push('')
+            console.log('Added empty line after:', line)
+          }
         }
       }
       return acc
     }, [])
     .join('\n')
-    .trim()
 
   if (declarations) {
     sections.push(declarations)
+    console.log('Added declarations section')
   }
 
   // Group all export * and export { config } statements
@@ -2176,17 +2305,20 @@ function formatOutput(state: ProcessingState): string {
 
   // Combine sections with appropriate spacing
   let output = sections.join('\n\n')
+  console.log('Combined sections')
 
   // Add export statements group before default export
   if (exportStatements) {
     output += output ? '\n\n' : ''
     output += exportStatements
+    console.log('Added export statements')
   }
 
   // Add default export with spacing
   if (defaultExport) {
     output += output ? '\n\n' : ''
     output += defaultExport
+    console.log('Added default export')
   }
 
   // Ensure output ends with a single newline
