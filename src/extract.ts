@@ -2133,14 +2133,31 @@ function formatOutput(state: ProcessingState): string {
   // Process imports
   const imports = state.imports.join('\n').trim()
   if (imports) {
-    sections.push(imports)
+    sections.push(`${imports}\n`) // Add extra newline after imports
   }
 
-  // Process declarations (excluding exports)
-  const declarations = state.dtsLines
+  // Process declarations with proper spacing
+  const declarationLines = state.dtsLines
     .filter(line => !line.startsWith('export *') && !line.startsWith('export { config }'))
+
+  // Group declarations and add spacing
+  const declarations = declarationLines
+    .reduce((acc: string[], line: string) => {
+      if (line.trim()) {
+        acc.push(line)
+        // Add newline after declaration statements
+        if (
+          line.match(/^export\s+declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
+          || line.match(/^declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
+        ) {
+          acc.push('')
+        }
+      }
+      return acc
+    }, [])
     .join('\n')
     .trim()
+
   if (declarations) {
     sections.push(declarations)
   }
