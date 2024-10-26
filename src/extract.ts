@@ -909,11 +909,10 @@ export function processCompleteProperty({ key, content }: { key?: string, conten
 function processComplexTypeDeclaration(declaration: string): string {
   // Handle union and intersection types
   if (declaration.includes('|') || declaration.includes('&')) {
-    const match = declaration.match(REGEX.unionIntersection)
-    if (match) {
-      const types = declaration.split(/\s*[|&]\s*/)
-      return types.join(declaration.includes('|') ? ' | ' : ' & ')
-    }
+    const operator = declaration.includes('|') ? '|' : '&'
+    const types = declaration.split(new RegExp(`\\s*\\${operator}\\s*`)).map(type => type.trim())
+    const combinedTypes = combineTypes(types, operator as '|' | '&')
+    return combinedTypes
   }
 
   // Handle mapped types
@@ -1019,6 +1018,23 @@ export function isFunction(value: string): boolean {
 }
 
 /**
+ * Check if a given type string represents a function type
+ */
+function isFunctionType(type: string): boolean {
+  const functionTypeRegex = /^\s*\(.*\)\s*=>\s*(?:\S.*|[\t\v\f \xA0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/
+  return functionTypeRegex.test(type.trim())
+}
+
+/**
+ * Combine types into a union or intersection, wrapping function types in parentheses
+ */
+function combineTypes(types: string[], operator: '|' | '&' = '|'): string {
+  const uniqueTypes = [...new Set(types)]
+  const normalizedTypes = uniqueTypes.map(type => isFunctionType(type) ? `(${type})` : type)
+  return normalizedTypes.join(` ${operator} `)
+}
+
+/**
  * Determines if a line is a comment
  * @param line - Source code line to check
  * @returns True if the line is a comment
@@ -1079,14 +1095,8 @@ function inferArrayType(value: string): string {
   }
 
   const elementTypes = elements.map(element => inferElementType(element.trim()))
-  const uniqueTypes = [...new Set(elementTypes)]
-
-  // Handle nested arrays
-  if (uniqueTypes.every(type => type.startsWith('Array<'))) {
-    return `Array<${uniqueTypes.join(' | ')}>`
-  }
-
-  return `Array<${uniqueTypes.join(' | ')}>`
+  const combinedTypes = combineTypes(elementTypes)
+  return `Array<${combinedTypes}>`
 }
 
 /**
@@ -1172,7 +1182,8 @@ export function processNestedArray(elements: string[]): string {
       if (nestedContent) {
         const nestedElements = splitArrayElements(nestedContent)
         const nestedTypes = nestedElements.map(ne => inferElementType(ne.trim()))
-        return `Array<${nestedTypes.join(' | ')}>`
+        const combinedNestedTypes = combineTypes(nestedTypes)
+        return `Array<${combinedNestedTypes}>`
       }
       return 'never'
     }
@@ -1180,7 +1191,7 @@ export function processNestedArray(elements: string[]): string {
     return inferElementType(trimmed)
   }).filter(type => type !== 'never')
 
-  return processedTypes.join(' | ')
+  return combineTypes(processedTypes)
 }
 
 /**
