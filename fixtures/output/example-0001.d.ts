@@ -1,11 +1,12 @@
-import type { BunPlugin } from 'bun'
-import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx'
-import { generate } from '@stacksjs/dtsx'
+import type { BunPlugin } from 'bun';
+import type { DtsGenerationConfig, DtsGenerationOption } from '@stacksjs/dtsx';
+import { generate } from '@stacksjs/dtsx';
+
 /**
  * Example of const declaration
  */
-export declare const conf: { [key: string]: string };
 
+export declare const conf: { [key: string]: string };
 export declare const someObject: {
   someString: 'Stacks';
   someNumber: 1000;
@@ -32,88 +33,73 @@ export declare const someObject: {
     };
   };
 };
-
 /**
  * Example of interface declaration
  * with another comment in an extra line
  */
+
 export declare interface User {
   id: number
   name: string
   email: string
 }
-
 /**
  * Example of type declaration
  *
  * with multiple lines of comments, including an empty line
  */
+
 export declare interface ResponseData {
   success: boolean
   data: User[]
 }
-
 /**
  * Example of function declaration
  *
  *
  * with multiple empty lines, including an empty lines
  */
-export declare function fetchUsers(): Promise<ResponseData>;
 
+export declare function fetchUsers(): Promise<ResponseData>;
 export declare interface ApiResponse<T> {
   status: number
   message: string
   data: T
 }
-
 /**
  * Example of another const declaration
     *
 * with multiple empty lines, including being poorly formatted
  */
-declare const settings: { [key: string]: any };
 
+declare const settings: { [key: string]: any };
 export declare interface Product {
   id: number
   name: string
   price: number
 }
-
 /**
  * Example of function declaration
  */
-export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 
+export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 export declare interface AuthResponse {
   token: string
   expiresIn: number
 }
-
 export declare type AuthStatus = 'authenticated' | 'unauthenticated';
-
 export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
-
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
 };
-
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
-
 declare interface Options<T> {
   name: string
   cwd?: string
   defaultConfig: T
 }
-
 export declare function loadConfig<T extends Record<string, unknown>>({ name, cwd, defaultConfig }: Options<T>): Promise<T>;
-
 declare const dtsConfig: DtsGenerationConfig;
-
-export { generate, dtsConfig }
-
-export type { DtsGenerationOption }
-
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
   data: T
   key: K
@@ -121,7 +107,6 @@ export declare interface ComplexGeneric<T extends Record<string, unknown>, K ext
   transform: (input: T[K]) => string
   nested: Array<Partial<T>>
 }
-
 export declare type ComplexUnionIntersection = 
   | (User & { role: 'admin' })
   | (Product & { category: string })
@@ -129,7 +114,8 @@ export declare type ComplexUnionIntersection =
     metadata: Record<string, unknown>
   }
 
-
+export { generate, dtsConfig }
+export type { DtsGenerationOption }
 export { config } from './config'
 export * from './extract'
 export * from './generate'

@@ -274,10 +274,10 @@ export function extractDtsTypes(sourceCode: string): string {
   // Generate optimized imports based on actual output
   const optimizedImports = generateOptimizedImports(state.importTracking, state.dtsLines)
 
-  // Replace existing imports with optimized ones
+  // Clear any existing imports and set up dtsLines with optimized imports
   state.dtsLines = [
-    ...optimizedImports,
-    '', // Add blank line after imports
+    ...optimizedImports.map(imp => `${imp};`), // Ensure semicolons
+    '', // Single empty line after imports
     ...state.dtsLines.filter(line => !line.trim().startsWith('import')),
   ]
 
@@ -2228,101 +2228,62 @@ function formatOutput(state: ProcessingState): string {
     hasDefaultExport: !!state.defaultExport,
   })
 
-  const sections: string[] = []
+  const parts: string[] = []
 
-  // Process imports
-  if (state.imports.length > 0) {
-    const imports = state.imports.join('\n')
-    sections.push(imports)
-    sections.push('') // Add empty line after imports
-    console.log('Added imports section with trailing newline')
+  // Group lines by type
+  const isExportStatement = (line: string) => {
+    const trimmed = line.trim()
+    return trimmed.startsWith('export *')
+      || (trimmed.startsWith('export {') && !trimmed.startsWith('export declare'))
+      || (trimmed.startsWith('export type {') && !trimmed.startsWith('export declare type'))
   }
 
-  // Process declarations with proper spacing
-  const declarationLines = state.dtsLines
-    .filter(line => !line.startsWith('export *') && !line.startsWith('export { config }'))
+  // Get declarations (everything except bare exports)
+  const declarations = state.dtsLines.filter(line => !isExportStatement(line))
 
-  // Group declarations and add spacing
-  const declarations = declarationLines
-    .reduce((acc: string[], line: string, index: number, lines: string[]) => {
-      if (line.trim()) {
-        // If current line is a JSDoc comment start, include all JSDoc lines
-        if (line.trim().startsWith('/**')) {
-          console.log('Found JSDoc start:', line)
-          const jsdocBlock = [line]
-          let j = index + 1
-          // Collect all lines until we find the end of the JSDoc block
-          while (j < lines.length && !lines[j].includes('*/')) {
-            jsdocBlock.push(lines[j])
-            console.log('Added JSDoc line:', lines[j])
-            j++
-          }
-          if (j < lines.length) {
-            jsdocBlock.push(lines[j]) // Include the closing */
-            console.log('Added JSDoc end:', lines[j])
-          }
-          acc.push(...jsdocBlock)
-          // Don't add empty line after JSDoc block since it should be attached to the declaration
-        }
-        // If not part of a JSDoc block already processed, add the line
-        else if (!line.trim().startsWith('*') && !line.includes('*/')) {
-          acc.push(line)
-          // Add newline after declarations, but not after type union/intersection lines
-          if (
-            (line.match(/^export\s+declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
-              || line.match(/^declare\s+(const|interface|function|type|class|enum|namespace|module|global|abstract\s+class)/)
-              || line.match(/^export\s+\{/) // Match direct exports like "export { generate, dtsConfig }"
-              || line.match(/^export\s+type\s+\{/) // Match type exports like "export type { DtsGenerationOption }"
-              || line.endsWith('}') // Add newline after closing braces of interfaces/types
-              || line.endsWith(';')) // Add newline after semicolons
-              && !line.match(/^\s*[|&]\s+/) // Don't add newline for union/intersection type lines
-              && !line.match(/^\s*extends\s+/) // Don't add newline for extends clauses
-              && !lines[index + 1]?.match(/^\s*[|&]\s+/) // Don't add newline if next line is a union/intersection
-              && !lines[index + 1]?.match(/^\s*extends\s+/) // Don't add newline if next line is an extends clause
-          ) {
-            acc.push('')
-            console.log('Added empty line after:', line)
-          }
-        }
+  // Process declarations preserving empty lines
+  const currentSection: string[] = []
+  let lastLineWasEmpty = false
+
+  for (const line of declarations) {
+    const trimmedLine = line.trim()
+
+    if (!trimmedLine) {
+      if (!lastLineWasEmpty) {
+        currentSection.push('')
       }
-      return acc
-    }, [])
-    .join('\n')
-
-  if (declarations) {
-    sections.push(declarations)
-    console.log('Added declarations section')
+      lastLineWasEmpty = true
+      continue
+    }
+    lastLineWasEmpty = false
+    currentSection.push(line)
   }
 
-  // Group all export * and export { config } statements
-  const exportStatements = [
-    ...state.dtsLines.filter(line => line.startsWith('export *') || line.startsWith('export { config }')),
+  // Add declarations
+  if (currentSection.length > 0) {
+    parts.push(currentSection.join('\n'))
+  }
+
+  // Deduplicate and add export statements
+  const exportLines = new Set([
+    ...state.dtsLines.filter(isExportStatement),
     ...state.exportAllStatements,
-  ].join('\n').trim()
+  ])
 
-  // Add default export if it exists
-  const defaultExport = state.defaultExport?.trim()
-
-  // Combine sections with appropriate spacing
-  let output = sections.join('\n\n')
-  console.log('Combined sections')
-
-  // Add export statements group before default export
-  if (exportStatements) {
-    output += output ? '\n\n' : ''
-    output += exportStatements
-    console.log('Added export statements')
+  if (exportLines.size > 0) {
+    if (parts.length > 0)
+      parts.push('')
+    parts.push([...exportLines].join('\n'))
   }
 
-  // Add default export with spacing
-  if (defaultExport) {
-    output += output ? '\n\n' : ''
-    output += defaultExport
-    console.log('Added default export')
+  // Add default export
+  if (state.defaultExport) {
+    if (parts.length > 0)
+      parts.push('')
+    parts.push(state.defaultExport)
   }
 
-  // Ensure output ends with a single newline
-  return `${output.trimEnd()}\n`
+  return `${parts.join('\n')}\n`
 }
 
 function getIndentation(line: string): string {
