@@ -120,6 +120,12 @@ export declare function processData(data: number): number;
 export declare function processData(data: boolean): boolean;
 export declare function processData<T extends object>(data: T): T;
 export declare function processData(data: unknown): unknown;
+export declare const complexObject: {
+  handlers: {
+    'async onSuccess<T>(data': unknown;
+    'onError(error': unknown;
+  };
+};
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }

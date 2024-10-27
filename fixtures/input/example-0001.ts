@@ -277,4 +277,23 @@ export function processData(data: unknown): unknown {
   return data
 }
 
+// 5. Nested Object Types with Methods
+export const complexObject = {
+  handlers: {
+    async onSuccess<T>(data: T): Promise<void> {
+      console.log(data)
+    },
+    onError(error: Error & { code?: number }): never {
+      throw error
+    }
+  },
+  utils: {
+    formatters: {
+      date: (input: Date) => input.toISOString(),
+      currency: (amount: number, currency = 'USD') =>
+        new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
+    }
+  }
+}
+
 export default dts
