@@ -27,7 +27,7 @@ export declare const someObject: {
       nestedKey: 'value';
     };
     otherKey: {
-      nestedKey: unknown;
+      nestedKey: () => void;
       nestedKey2: (...args: any[]) => unknown;
     };
   };
@@ -121,10 +121,11 @@ export declare function processData(data: boolean): boolean;
 export declare function processData<T extends object>(data: T): T;
 export declare function processData(data: unknown): unknown;
 export declare const complexObject: {
-  handlers: {
-    'async onSuccess<T>(data': unknown;
-    'onError(error': unknown;
-  };
+  handlers: <T>(data: T) => Promise<void> {
+console.log(data)
+},
+onError(error: Error & { code?: number }): never {
+throw error;
 };
 
 export { generate, dtsConfig }

@@ -59,6 +59,14 @@ interface ImportTrackingState {
   usedValues: Set<string> // All used value names
 }
 
+interface MethodSignature {
+  name: string
+  async: boolean
+  generics: string
+  params: string
+  returnType: string
+}
+
 /**
  * Regular expression patterns used throughout the module
  * @remarks These patterns are optimized for performance and reliability
@@ -116,6 +124,7 @@ export interface PropertyInfo {
   type: string
   /** Nested property definitions */
   nested?: PropertyInfo[]
+  method?: MethodSignature
 }
 
 /**
@@ -402,9 +411,22 @@ export function processLine(line: string, state: ProcessingState): void {
   console.log('Unprocessed line:', trimmedLine)
 }
 
-function processValue(value: string): { type: string, nested?: PropertyInfo[] } {
+function processValue(value: string): { type: string, nested?: PropertyInfo[], method?: MethodSignature } {
   const trimmed = value.trim()
 
+  // Handle method declarations
+  if (trimmed.includes('(') && !trimmed.startsWith('(')) {
+    const methodSig = parseMethodSignature(trimmed)
+    if (methodSig) {
+      const { async, generics, params, returnType } = methodSig
+      const genericPart = generics ? `<${generics}>` : ''
+      const returnTypePart = returnType || 'void'
+      const type = `${async ? 'async ' : ''}${genericPart}(${params}) => ${returnTypePart}`
+      return { type, method: methodSig }
+    }
+  }
+
+  // Rest of the existing processValue logic...
   if (trimmed.startsWith('{')) {
     const nestedProperties = extractObjectProperties(trimmed)
     return {
@@ -1554,6 +1576,36 @@ export function parseObjectLiteral(objStr: string): PropertyInfo[] {
   return extractObjectProperties(content)
 }
 
+function parseMethodSignature(value: string): MethodSignature | null {
+  // Match async methods
+  const asyncMatch = value.match(/^async\s+([^<(]+)(?:<([^>]+)>)?\s*\(([\s\S]*?)\)(?:\s*:\s*([\s\S]+))?$/)
+  if (asyncMatch) {
+    const [, name, generics, params, returnType] = asyncMatch
+    return {
+      name,
+      async: true,
+      generics: generics || '',
+      params,
+      returnType: returnType || 'Promise<void>',
+    }
+  }
+
+  // Match regular methods
+  const methodMatch = value.match(/^([^<(]+)(?:<([^>]+)>)?\s*\(([\s\S]*?)\)(?:\s*:\s*([\s\S]+))?$/)
+  if (methodMatch) {
+    const [, name, generics, params, returnType] = methodMatch
+    return {
+      name,
+      async: false,
+      generics: generics || '',
+      params,
+      returnType: returnType || 'void',
+    }
+  }
+
+  return null
+}
+
 /**
  * Process object type literals
  */
@@ -2105,6 +2157,12 @@ export function formatObjectType(properties: PropertyInfo[]): string {
 
   const formattedProps = properties
     .map((prop) => {
+      if (prop.method) {
+        const { async, generics, params, returnType } = prop.method
+        const genericPart = generics ? `<${generics}>` : ''
+        return `${prop.key}${genericPart}(${params})${returnType ? `: ${returnType}` : ''}`
+      }
+
       const type = prop.nested ? formatNestedType(prop.nested) : prop.type
       return `${prop.key}: ${type}`
     })
