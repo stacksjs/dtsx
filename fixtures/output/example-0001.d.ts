@@ -107,6 +107,9 @@ export declare type ComplexUnionIntersection =
   & {
     metadata: Record<string, unknown>
   }
+export declare type ReadonlyDeep<T> = {
+  readonly [P in keyof T]: T[P] extends object ? ReadonlyDeep<T[P]> : T[P]
+}
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }

@@ -257,4 +257,9 @@ export type ComplexUnionIntersection =
     metadata: Record<string, unknown>
   }
 
+// 3. Mapped and Conditional Types
+export type ReadonlyDeep<T> = {
+  readonly [P in keyof T]: T[P] extends object ? ReadonlyDeep<T[P]> : T[P]
+}
+
 export default dts
