@@ -268,4 +268,13 @@ export type ConditionalResponse<T> = T extends Array<infer U>
     ? ApiResponse<T>
     : ApiResponse<string>
 
+// 4. Complex Function Overloads
+export function processData(data: string): string
+export function processData(data: number): number
+export function processData(data: boolean): boolean
+export function processData<T extends object>(data: T): T
+export function processData(data: unknown): unknown {
+  return data
+}
+
 export default dts

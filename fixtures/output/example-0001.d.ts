@@ -115,6 +115,11 @@ export declare type ConditionalResponse<T> = T extends Array<infer U>
   : T extends object
     ? ApiResponse<T>
     : ApiResponse<string>
+export declare function processData(data: string): string;
+export declare function processData(data: number): number;
+export declare function processData(data: boolean): boolean;
+export declare function processData<T extends object>(data: T): T;
+export declare function processData(data: unknown): unknown;
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }
