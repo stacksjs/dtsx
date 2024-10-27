@@ -617,9 +617,10 @@ export function processDeclarationBlock(
   const jsdocComments = comments.filter(isJSDocComment)
   console.log('Filtered JSDoc comments:', jsdocComments)
 
+  // Add JSDoc comments directly before the declaration
   if (jsdocComments.length > 0) {
-    console.log('Adding JSDoc comments to dtsLines:', jsdocComments)
-    state.dtsLines.push(...jsdocComments, '') // Add empty line after comments
+    // Directly add the comments without the extra newline
+    state.dtsLines.push(...jsdocComments.map(comment => comment.trimEnd()))
   }
 
   // Remove any non-JSDoc comments that might have slipped through
@@ -638,12 +639,7 @@ export function processDeclarationBlock(
   // Remove leading comments and whitespace when checking its type
   const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
 
-  console.log('Processing declaration:', {
-    original: declaration,
-    withoutComments: declarationWithoutComments,
-  })
-
-  // Process the declaration
+  // Process the declaration as before
   processSpecificDeclaration(declarationWithoutComments, declaration, state)
 }
 
