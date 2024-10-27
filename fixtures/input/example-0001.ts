@@ -262,4 +262,10 @@ export type ReadonlyDeep<T> = {
   readonly [P in keyof T]: T[P] extends object ? ReadonlyDeep<T[P]> : T[P]
 }
 
+export type ConditionalResponse<T> = T extends Array<infer U>
+  ? ApiResponse<U[]>
+  : T extends object
+    ? ApiResponse<T>
+    : ApiResponse<string>
+
 export default dts

@@ -110,6 +110,11 @@ export declare type ComplexUnionIntersection =
 export declare type ReadonlyDeep<T> = {
   readonly [P in keyof T]: T[P] extends object ? ReadonlyDeep<T[P]> : T[P]
 }
+export declare type ConditionalResponse<T> = T extends Array<infer U>
+  ? ApiResponse<U[]>
+  : T extends object
+    ? ApiResponse<T>
+    : ApiResponse<string>
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }
