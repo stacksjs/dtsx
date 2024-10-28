@@ -367,14 +367,14 @@ export const complexArrays = {
 // }
 
 // Type Assertions and Guards
-// export function isUser(value: unknown): value is User {
-//   return (
-//     typeof value === 'object'
-//     && value !== null
-//     && 'id' in value
-//     && 'email' in value
-//   )
-// }
+export function isUser(value: unknown): value is User {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'email' in value
+  )
+}
 
 // Branded Types
 export type UserId = string & { readonly __brand: unique symbol }
