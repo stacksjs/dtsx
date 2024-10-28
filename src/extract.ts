@@ -3,7 +3,7 @@
 /**
  * Regular expression patterns used throughout the module
  */
-export interface RegexPatterns {
+interface RegexPatterns {
   /** Import type declarations */
   readonly typeImport: RegExp
   /** Regular import declarations */
@@ -71,7 +71,7 @@ interface MethodSignature {
  * Regular expression patterns used throughout the module
  * @remarks These patterns are optimized for performance and reliability
  */
-export const REGEX: RegexPatterns = {
+const REGEX: RegexPatterns = {
   // Import patterns
   typeImport: /import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
   regularImport: /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/,
@@ -115,7 +115,7 @@ export const REGEX: RegexPatterns = {
 /**
  * Represents property type information with support for nested structures
  */
-export interface PropertyInfo {
+interface PropertyInfo {
   /** Property identifier */
   key: string
   /** Original source value */
@@ -158,7 +158,7 @@ interface ProcessingState {
 /**
  * Import statement metadata and tracking
  */
-export interface ImportInfo {
+interface ImportInfo {
   /** Import kind: type, value, or mixed */
   kind: 'type' | 'value' | 'mixed'
   /** Set of used type imports */
@@ -170,34 +170,14 @@ export interface ImportInfo {
 }
 
 /**
- * Represents a tracked type reference
- */
-export interface TypeReference {
-  name: string
-  generics: string[]
-  isExternal: boolean
-}
-
-/**
  * Function signature components
  */
-export interface FunctionSignature {
+interface FunctionSignature {
   name: string
   params: string
   returnType: string
   // isAsync: boolean
   generics: string
-}
-
-/**
- * Function parsing state
- */
-export interface FunctionParseState {
-  genericParams: string
-  functionName: string
-  parameters: string
-  returnType: string
-  isAsync: boolean
 }
 
 // ===========================
@@ -207,7 +187,7 @@ export interface FunctionParseState {
 /**
  * Creates initial processing state with empty collections
  */
-export function createProcessingState(): ProcessingState {
+function createProcessingState(): ProcessingState {
   return {
     dtsLines: [],
     imports: [],
@@ -359,58 +339,6 @@ function extractFunctionName(declaration: string): { name: string, rest: string 
   }
 }
 
-/**
- * Main line processing function
- * Handles different types of content and maintains state
- */
-export function processLine(line: string, state: ProcessingState): void {
-  const indent = getIndentation(line)
-  state.currentIndentation = indent
-
-  const trimmedLine = line.trim()
-  if (!trimmedLine)
-    return
-
-  console.log('Processing line:', trimmedLine)
-
-  if (isCommentLine(trimmedLine)) {
-    processCommentLine(trimmedLine, state)
-    return
-  }
-
-  if (/^import\b/.test(trimmedLine)) {
-    const importLine = processImport(line)
-    // const importLine = processImport(line, state)
-    state.imports.push(importLine)
-    console.log('Collected import:', importLine)
-    return
-  }
-
-  if (trimmedLine.startsWith('export default')) {
-    state.defaultExport = trimmedLine.endsWith(';') ? trimmedLine : `${trimmedLine};`
-    console.log('Collected default export:', state.defaultExport)
-    return
-  }
-
-  if (
-    trimmedLine.startsWith('export *')
-    || trimmedLine.startsWith('export {')
-    || trimmedLine.startsWith('export type {')
-  ) {
-    const exportStatement = trimmedLine.endsWith(';') ? trimmedLine : `${trimmedLine};`
-    state.exportAllStatements.push(exportStatement)
-    console.log('Collected export statement:', exportStatement)
-    return
-  }
-
-  if (isDeclarationLine(trimmedLine) || state.isMultiLineDeclaration) {
-    processDeclarationLine(trimmedLine, state)
-    return
-  }
-
-  console.log('Unprocessed line:', trimmedLine)
-}
-
 function processValue(value: string): { type: string, nested?: PropertyInfo[], method?: MethodSignature } {
   const trimmed = value.trim()
 
@@ -467,67 +395,9 @@ function processValue(value: string): { type: string, nested?: PropertyInfo[], m
 }
 
 /**
- * Process import statements and tracks dependencies
- */
-export function processImport(line: string): string {
-  return line.trim().endsWith(';') ? line.trim() : `${line.trim()};`
-}
-
-/**
- * Generate optimized import statements
- */
-export function generateImports(state: ProcessingState): string[] {
-  const processContent = (content: string) => {
-    let match: any
-    // eslint-disable-next-line no-cond-assign
-    while ((match = REGEX.valueReference.exec(content)) !== null) {
-      const [, value] = match
-      if (state.availableValues.has(value)) {
-        const source = state.availableValues.get(value)!
-        state.moduleImports.get(source)!.usedValues.add(value)
-      }
-    }
-
-    const typeMatches = content.matchAll(REGEX.typeReference)
-    for (const [, type] of typeMatches) {
-      if (state.availableTypes.has(type)) {
-        const source = state.availableTypes.get(type)!
-        state.moduleImports.get(source)!.usedTypes.add(type)
-      }
-    }
-  }
-
-  state.dtsLines.forEach(processContent)
-  if (state.currentDeclaration) {
-    processContent(state.currentDeclaration)
-  }
-
-  const imports: string[] = []
-
-  for (const [source, info] of state.moduleImports) {
-    const { usedTypes, usedValues } = info
-
-    if (usedTypes.size === 0 && usedValues.size === 0)
-      continue
-
-    if (usedTypes.size > 0) {
-      const types = Array.from(usedTypes).sort()
-      imports.push(`import type { ${types.join(', ')} } from '${source}';`)
-    }
-
-    if (usedValues.size > 0) {
-      const values = Array.from(usedValues).sort()
-      imports.push(`import { ${values.join(', ')} } from '${source}';`)
-    }
-  }
-
-  return imports.sort()
-}
-
-/**
  * Generate optimized imports based on usage
  */
-export function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]): string[] {
+function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]): string[] {
   const imports: string[] = []
 
   // Generate type imports
@@ -566,7 +436,7 @@ export function generateOptimizedImports(state: ImportTrackingState, dtsLines: s
 /**
  * Process imports and track their usage
  */
-export function processImports(line: string, state: ImportTrackingState): void {
+function processImports(line: string, state: ImportTrackingState): void {
   // Handle type imports
   const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (typeImportMatch) {
@@ -595,40 +465,7 @@ export function processImports(line: string, state: ImportTrackingState): void {
   }
 }
 
-export function processDeclarationBuffer(
-  buffer: NonNullable<ProcessingState['declarationBuffer']>,
-  state: ProcessingState,
-  isExported: boolean,
-): string {
-  const content = buffer.lines.join('\n')
-
-  // Skip processing for export * statements
-  if (content.trim().startsWith('export *')) {
-    return content
-  }
-
-  // Skip processing for export type {} statements
-  if (content.trim().startsWith('export type {')) {
-    return content
-  }
-
-  // Process regular declarations
-  const cleaned = cleanDeclaration(content)
-  switch (buffer.type) {
-    case 'interface':
-      return processInterfaceDeclaration(cleaned, isExported)
-    case 'type':
-      return processTypeDeclaration(cleaned, isExported)
-    case 'const':
-      return processConstDeclaration(cleaned, isExported)
-    case 'function':
-      return processFunctionDeclaration(cleaned, state.usedTypes, isExported)
-    default:
-      return content
-  }
-}
-
-export function processDeclarationBlock(
+function processDeclarationBlock(
   lines: string[],
   comments: string[],
   state: ProcessingState,
@@ -1001,172 +838,6 @@ function extractObjectProperties(objectLiteral: string): PropertyInfo[] {
   return properties
 }
 
-function extractObjectLiteral(declaration: string): string | null {
-  const objectStartIndex = declaration.indexOf('{')
-  if (objectStartIndex === -1)
-    return null
-
-  let braceCount = 0
-  let inString = false
-  let stringChar = ''
-  let objectLiteral = ''
-  const chars = declaration.slice(objectStartIndex)
-
-  for (let i = 0; i < chars.length; i++) {
-    const char = chars[i]
-
-    // Handle string literals
-    if ((char === '"' || char === '\'') && (i === 0 || chars[i - 1] !== '\\')) {
-      if (!inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (char === stringChar) {
-        inString = false
-      }
-    }
-
-    if (!inString) {
-      if (char === '{')
-        braceCount++
-      if (char === '}')
-        braceCount--
-    }
-
-    objectLiteral += char
-
-    if (braceCount === 0 && !inString) {
-      break
-    }
-  }
-
-  return objectLiteral
-}
-
-/**
- * Process comment lines with proper indentation handling
- * @param line - Comment line to process
- * @param state - Current processing state
- */
-function processCommentLine(line: string, state: ProcessingState): void {
-  // Skip single-line comments
-  if (line.trim().startsWith('//')) {
-    state.lastCommentBlock = ''
-    return
-  }
-
-  const indentedLine = line.startsWith('*')
-    ? ` ${line}` // Add indentation for content lines
-    : line.startsWith('/**') || line.startsWith('*/')
-      ? line // Keep delimiters at original indentation
-      : ` ${line}` // Add indentation for other lines
-
-  if (line.startsWith('/**')) {
-    state.lastCommentBlock = ''
-  }
-
-  state.lastCommentBlock += `${indentedLine}\n`
-}
-
-/**
- * Process a complete property with nested content
- */
-export function processCompleteProperty({ key, content }: { key?: string, content: string[] }): PropertyInfo | null {
-  if (!key)
-    return null
-
-  const fullContent = content.join(' ').trim()
-  const colonIndex = fullContent.indexOf(':')
-  if (colonIndex === -1)
-    return null
-
-  const valueContent = fullContent.substring(colonIndex + 1).trim()
-
-  if (valueContent.startsWith('{')) {
-    const nestedContent = extractNestedContent(valueContent, '{', '}')
-    if (nestedContent) {
-      const nestedProps = extractObjectProperties(nestedContent)
-      return {
-        key,
-        value: valueContent,
-        type: formatNestedType(nestedProps),
-        nested: nestedProps,
-      }
-    }
-  }
-
-  if (valueContent.startsWith('[')) {
-    return {
-      key,
-      value: valueContent,
-      type: inferArrayType(valueContent).replace(/'+$/, ''),
-    }
-  }
-
-  if (isFunction(valueContent)) {
-    return {
-      key,
-      value: valueContent,
-      type: inferFunctionType(valueContent),
-    }
-  }
-
-  return processSimpleValue(key, valueContent)
-}
-
-/**
- * Process complex type declarations
- */
-function processComplexTypeDeclaration(declaration: string): string {
-  // Handle union and intersection types
-  if (declaration.includes('|') || declaration.includes('&')) {
-    const operator = declaration.includes('|') ? '|' : '&'
-    const types = declaration.split(new RegExp(`\\s*\\${operator}\\s*`)).map(type => type.trim())
-    const combinedTypes = combineTypes(types, operator as '|' | '&')
-    return combinedTypes
-  }
-
-  // Handle mapped types
-  if (declaration.includes('[') && declaration.includes('in')) {
-    const match = declaration.match(REGEX.mappedType)
-    if (match) {
-      const [, keyType, valueType] = match
-      return `{ [${keyType} in ${valueType}]: ${processTypeExpression(valueType)} }`
-    }
-  }
-
-  // Handle conditional types
-  if (declaration.includes('extends') && declaration.includes('?')) {
-    const match = declaration.match(REGEX.conditionalType)
-    if (match) {
-      const [, condition, constraint, trueType, falseType] = match
-      return `${condition} extends ${constraint} ? ${trueType} : ${falseType}`
-    }
-  }
-
-  return declaration
-}
-
-/**
- * Process type expressions
- */
-function processTypeExpression(expression: string): string {
-  // Handle generics
-  if (expression.includes('<')) {
-    const match = expression.match(REGEX.genericConstraints)
-    if (match) {
-      const [fullMatch, constraints] = match
-      const processedConstraints = constraints.split(',').map((c) => {
-        const [name, constraint] = c.split('extends').map(s => s.trim())
-        return constraint ? `${name} extends ${constraint}` : name
-      })
-      return expression.replace(fullMatch, `<${processedConstraints.join(', ')}>`)
-    }
-  }
-
-  return expression
-}
-
 /**
  * Extract nested content between delimiters
  */
@@ -1217,18 +888,6 @@ function extractNestedContent(content: string, openChar: string, closeChar: stri
 }
 
 /**
- * Determine if a value represents a function
- */
-export function isFunction(value: string): boolean {
-  return (
-    value.includes('=>')
-    || value.startsWith('function')
-    || value === 'console.log'
-    || (value.endsWith('.log') && !value.includes('[') && !value.includes('{'))
-  )
-}
-
-/**
  * Check if a given type string represents a function type
  */
 function isFunctionType(type: string): boolean {
@@ -1252,39 +911,6 @@ function combineTypes(types: string[], operator: '|' | '&' = '|'): string {
   const uniqueTypes = [...new Set(types)]
   const normalizedTypes = uniqueTypes.map(type => isFunctionType(type) ? `(${type})` : type)
   return normalizedTypes.join(` ${operator} `)
-}
-
-/**
- * Determines if a line is a comment
- * @param line - Source code line to check
- * @returns True if the line is a JSDoc comment
- */
-function isCommentLine(line: string): boolean {
-  return isJSDocComment(line.trim())
-}
-
-/**
- * Checks if a line contains a TypeScript declaration
- * Covers exports, constants, interfaces, types, and functions
- * @param line - Source code line to check
- * @returns True if the line contains a declaration
- */
-/**
- * Determine if a line is the start of a declaration
- */
-function isDeclarationLine(line: string): boolean {
-  return (
-    line.startsWith('export ')
-    || line.startsWith('declare ')
-    || line.startsWith('interface ')
-    || line.startsWith('type ')
-    || line.startsWith('function ')
-    || line.startsWith('const ')
-    || line.startsWith('let ')
-    || line.startsWith('var ')
-    || line.startsWith('class ')
-    || line.startsWith('enum ')
-  )
 }
 
 function isDeclarationStart(line: string): boolean {
@@ -1339,36 +965,6 @@ function inferArrayType(value: string): string {
 }
 
 /**
- * Enhanced type inference for complex cases
- */
-export function inferComplexType(value: string): string {
-  const trimmed = value.trim()
-
-  if (trimmed.includes('=>')) {
-    return inferFunctionType(trimmed)
-  }
-
-  if (trimmed.startsWith('[')) {
-    return inferArrayType(trimmed)
-  }
-
-  if (trimmed.startsWith('{')) {
-    return processObjectLiteral(trimmed)
-  }
-
-  if (trimmed.includes('extends')) {
-    return processComplexTypeDeclaration(trimmed)
-  }
-
-  if (trimmed.includes('|') || trimmed.includes('&')) {
-    return processComplexTypeDeclaration(trimmed)
-  }
-
-  // Pass through direct type references and primitives
-  return trimmed
-}
-
-/**
  * Infer element type with improved type detection
  */
 function inferElementType(element: string): string {
@@ -1406,68 +1002,6 @@ function inferElementType(element: string): string {
   }
 
   // Identifier or unknown value
-  return 'unknown'
-}
-
-/**
- * Process nested array structures
- */
-export function processNestedArray(elements: string[]): string {
-  const processedTypes = elements.map((element) => {
-    const trimmed = element.trim()
-
-    if (trimmed.startsWith('[')) {
-      const nestedContent = extractNestedContent(trimmed, '[', ']')
-      if (nestedContent) {
-        const nestedElements = splitArrayElements(nestedContent)
-        const nestedTypes = nestedElements.map(ne => inferElementType(ne.trim()))
-        const combinedNestedTypes = combineTypes(nestedTypes)
-        return `Array<${combinedNestedTypes}>`
-      }
-      return 'never'
-    }
-
-    return inferElementType(trimmed)
-  }).filter(type => type !== 'never')
-
-  return combineTypes(processedTypes)
-}
-
-/**
- * Infer function type with return type analysis
- */
-export function inferFunctionType(func: string): string {
-  const isAsync = func.startsWith('async')
-  let returnType = 'unknown'
-
-  if (func.includes('console.log')) {
-    returnType = 'void'
-  }
-  else if (func.includes('return')) {
-    const returnStatement = func.match(REGEX.functionReturn)?.[1]
-    if (returnStatement) {
-      returnType = inferReturnType(returnStatement)
-    }
-  }
-
-  return `${isAsync ? 'async ' : ''}(...args: any[]) => ${returnType}`
-}
-
-/**
- * Infer return type from return statement
- */
-export function inferReturnType(returnStatement: string): string {
-  if (returnStatement.startsWith('\'') || returnStatement.startsWith('"'))
-    return 'string'
-  if (!Number.isNaN(Number(returnStatement)))
-    return 'number'
-  if (returnStatement === 'true' || returnStatement === 'false')
-    return 'boolean'
-  if (returnStatement.includes('??')) {
-    const [, fallback] = returnStatement.split('??').map(s => s.trim())
-    if (fallback.startsWith('\'') || fallback.startsWith('"'))
-      return 'string'
-  }
   return 'unknown'
 }
 
@@ -1568,14 +1102,6 @@ function splitObjectProperties(content: string): string[] {
   return properties
 }
 
-/**
- * Parse object literal into properties
- */
-export function parseObjectLiteral(objStr: string): PropertyInfo[] {
-  const content = objStr.slice(1, -1).trim()
-  return extractObjectProperties(content)
-}
-
 function parseMethodSignature(value: string): MethodSignature | null {
   // Match async methods
   const asyncMatch = value.match(/^async\s+([^<(]+)(?:<([^>]+)>)?\s*\(([\s\S]*?)\)(?:\s*:\s*([\s\S]+))?$/)
@@ -1604,14 +1130,6 @@ function parseMethodSignature(value: string): MethodSignature | null {
   }
 
   return null
-}
-
-/**
- * Process object type literals
- */
-function processObjectLiteral(obj: string): string {
-  const properties = extractObjectProperties(obj)
-  return formatObjectType(properties)
 }
 
 /**
@@ -1901,7 +1419,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
 /**
  * Process function declarations with overloads
  */
-export function processFunctionDeclaration(
+function processFunctionDeclaration(
   declaration: string,
   usedTypes?: Set<string>,
   isExported = true,
@@ -1983,20 +1501,6 @@ function cleanComments(input: string): string {
     .join('\n')
 }
 
-function cleanDeclaration(text: string): string {
-  return text
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([{};,])\s*/g, '$1')
-    .trim()
-}
-
-/**
- * Clean and normalize parameters
- */
-export function cleanParameters(params: string): string {
-  return params.trim()
-}
-
 /**
  * Normalize type references
  */
@@ -2011,7 +1515,7 @@ function normalizeType(type: string): string {
 /**
  * Track used types in declarations
  */
-export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
+function trackUsedTypes(content: string, usedTypes: Set<string>): void {
   let match: any
   // eslint-disable-next-line no-cond-assign
   while ((match = REGEX.typePattern.exec(content)) !== null) {
@@ -2090,189 +1594,6 @@ function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?:
 }
 
 /**
- * Process simple value types
- */
-export function processSimpleValue(key: string, value: string): PropertyInfo {
-  const cleanValue = value.replace(/,\s*$/, '').trim()
-
-  if (cleanValue.startsWith('\'') || cleanValue.startsWith('"')) {
-    return {
-      key,
-      value: cleanValue,
-      type: `'${cleanValue.slice(1, -1)}'`,
-    }
-  }
-
-  if (!Number.isNaN(Number(cleanValue))) {
-    return {
-      key,
-      value: cleanValue,
-      type: cleanValue,
-    }
-  }
-
-  if (cleanValue === 'true' || cleanValue === 'false') {
-    return {
-      key,
-      value: cleanValue,
-      type: cleanValue,
-    }
-  }
-
-  if (cleanValue.endsWith('()') || cleanValue === 'console.log') {
-    return {
-      key,
-      value: cleanValue,
-      type: '(...args: any[]) => void',
-    }
-  }
-
-  return {
-    key,
-    value: cleanValue,
-    type: 'unknown',
-  }
-}
-
-/**
- * Format nested type structure
- */
-export function formatNestedType(properties: PropertyInfo[]): string {
-  if (properties.length === 0)
-    return 'Object'
-
-  const formattedProps = properties
-    .map(prop => `${prop.key}: ${prop.nested ? formatNestedType(prop.nested) : prop.type}`)
-    .join('; ')
-
-  return `{ ${formattedProps} }`
-}
-
-/**
- * Format object type from properties
- */
-export function formatObjectType(properties: PropertyInfo[]): string {
-  if (properties.length === 0)
-    return 'Object'
-
-  const formattedProps = properties
-    .map((prop) => {
-      if (prop.method) {
-        const { async, generics, params, returnType } = prop.method
-        const genericPart = generics ? `<${generics}>` : ''
-        return `${prop.key}${genericPart}(${params})${returnType ? `: ${returnType}` : ''}`
-      }
-
-      const type = prop.nested ? formatNestedType(prop.nested) : prop.type
-      return `${prop.key}: ${type}`
-    })
-    .join('; ')
-
-  return `{ ${formattedProps} }`
-}
-
-/**
- * Format type parameters with constraints
- */
-export function formatTypeParameters(params: string): string {
-  return params
-    .split(',')
-    .map((param) => {
-      const [name, constraint] = param.split('extends').map(p => p.trim())
-      return constraint ? `${name} extends ${constraint}` : name
-    })
-    .join(', ')
-}
-
-/**
- * Process declarations with improved structure
- */
-function processDeclarationLine(line: string, state: ProcessingState): void {
-  const indent = getIndentation(line)
-  const trimmedLine = cleanComments(line).trim()
-
-  if (!trimmedLine) {
-    state.dtsLines.push('')
-    return
-  }
-
-  // Handle JSDoc comments
-  if (isJSDocComment(trimmedLine)) {
-    if (trimmedLine.startsWith('/**')) {
-      state.lastCommentBlock = ''
-    }
-    state.lastCommentBlock += `${line}\n`
-    return
-  }
-
-  // If we have a pending comment block and this is a declaration,
-  // add the comment block before the declaration
-  if (state.lastCommentBlock && isDeclarationLine(trimmedLine)) {
-    state.dtsLines.push(state.lastCommentBlock.trimEnd())
-    state.lastCommentBlock = ''
-  }
-
-  // Rest of the existing processDeclarationLine logic...
-  if (isDeclarationStart(trimmedLine)) {
-    if (state.declarationBuffer) {
-      const cleaned = cleanDeclaration(cleanComments(state.declarationBuffer.lines.join('\n')))
-      const processed = processDeclarationBuffer(
-        state.declarationBuffer,
-        state,
-        needsExport(cleaned),
-      )
-
-      if (processed) {
-        if (state.declarationBuffer.comments.length > 0) {
-          state.dtsLines.push(...state.declarationBuffer.comments)
-        }
-        state.dtsLines.push(processed)
-      }
-    }
-
-    state.declarationBuffer = {
-      type: getDeclarationType(trimmedLine),
-      indent,
-      lines: [line],
-      comments: state.lastCommentBlock ? [state.lastCommentBlock] : [],
-    }
-    state.lastCommentBlock = ''
-    return
-  }
-
-  if (state.declarationBuffer) {
-    state.declarationBuffer.lines.push(line)
-
-    if (isDeclarationComplete(state.declarationBuffer.lines)) {
-      const cleaned = cleanDeclaration(cleanComments(state.declarationBuffer.lines.join('\n')))
-      const processed = processDeclarationBuffer(
-        state.declarationBuffer,
-        state,
-        needsExport(cleaned),
-      )
-
-      if (processed) {
-        if (state.declarationBuffer.comments.length > 0) {
-          state.dtsLines.push(...state.declarationBuffer.comments)
-        }
-        state.dtsLines.push(processed)
-      }
-      state.declarationBuffer = null
-    }
-  }
-}
-
-function getDeclarationType(line: string): 'interface' | 'type' | 'const' | 'function' {
-  if (line.includes('interface'))
-    return 'interface'
-  if (line.includes('type'))
-    return 'type'
-  if (line.includes('const'))
-    return 'const'
-  return 'function'
-}
-
-/**
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
@@ -2343,16 +1664,6 @@ function formatOutput(state: ProcessingState): string {
 function getIndentation(line: string): string {
   const match = line.match(/^(\s+)/)
   return match ? match[1] : ''
-}
-
-function needsExport(line: string): boolean {
-  const trimmed = line.trim()
-  return (
-    trimmed.startsWith('export ')
-    || trimmed.startsWith('export default ')
-    || trimmed.startsWith('export type ')
-    || trimmed.startsWith('export interface ')
-  )
 }
 
 function shouldProcessLine(line: string): boolean {
