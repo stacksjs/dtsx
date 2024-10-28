@@ -81,7 +81,7 @@ export declare interface AuthResponse {
   token: string
   expiresIn: number
 }
-export declare type AuthStatus = 'authenticated' | 'unauthenticated';
+export declare type AuthStatus = 'authenticated' | 'unauthenticated'
 export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
 export declare const defaultHeaders: {
   'Content-Type': 'application/json';
@@ -101,7 +101,7 @@ export declare interface ComplexGeneric<T extends Record<string, unknown>, K ext
   transform: (input: T[K]) => string
   nested: Array<Partial<T>>
 }
-export declare type ComplexUnionIntersection = 
+export declare type ComplexUnionIntersection =
   | (User & { role: 'admin' })
   | (Product & { category: string })
   & {
@@ -120,9 +120,9 @@ export declare function processData(data: number): number;
 export declare function processData(data: boolean): boolean;
 export declare function processData<T extends object>(data: T): T;
 export declare function processData(data: unknown): unknown;
-export declare type EventType = 'click' | 'focus' | 'blur';
-export declare type ElementType = 'button' | 'input' | 'form';
-export declare type EventHandler = `on${Capitalize<EventType>}${Capitalize<ElementType>}`;
+export declare type EventType = 'click' | 'focus' | 'blur'
+export declare type ElementType = 'button' | 'input' | 'form'
+export declare type EventHandler = `on${Capitalize<EventType>}${Capitalize<ElementType>}`
 export declare type RecursiveObject = {
   id: string
   children?: RecursiveObject[]
@@ -133,9 +133,18 @@ export declare const complexArrays: {
   matrix: Array<Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> | Array<'a' | 'b' | Array<'c' | 'd'>> | Array<true | Array<false | Array<true>>>>;
   tuples: Array<Array<1 | 'string' | true> | Array<'literal' | 42 | false>>;
 };
+export declare interface DefaultGeneric<
+  T = string,
+  K extends keyof any = string,
+  V extends Record<K, T> = Record<K, T>
+> {
+  key: K
+  value: T
+  record: V
+}
 export declare function complexAsyncGenerator(): any;
 export declare function isUser(value: unknown): value is User;
-export declare type UserId = string & { readonly __brand: unique symbol };
+export declare type UserId = string & { readonly __brand: unique symbol }
 export declare type ProductId = number & {
   readonly __brand: unique symbol
 }
@@ -158,7 +167,7 @@ export declare type PolymorphicComponent<P = {}> = {
     props: { as?: C } & Omit<React.ComponentPropsWithRef<C>, keyof P> & P
   ): React.ReactElement | null
 }
-export type DynamicRecord<K extends PropertyKey> = {
+export declare type DynamicRecord<K extends PropertyKey> = {
   [P in K]: P extends number
     ? Array<unknown>
     : P extends string

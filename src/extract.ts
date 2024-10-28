@@ -906,41 +906,19 @@ function processFunctionDeclaration(
  */
 function processInterfaceDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
-  const baseIndent = getIndentation(lines[0])
-  const memberIndent = `${baseIndent}  `
 
-  // Process the interface header
-  const firstLine = lines[0].trim()
-  const match = firstLine.match(/^(?:export\s+)?interface\s+([^<\s{]+)(<[^{]+>)?/)
-  if (!match)
-    return declaration
-
-  const [, name, generics = ''] = match
+  // Only modify the first line to add 'declare' if needed
+  const firstLine = lines[0]
   const prefix = isExported ? 'export declare' : 'declare'
 
-  // Process interface members maintaining original indentation
-  const processedLines = [
-    `${baseIndent}${prefix} interface ${name}${generics} {`,
-  ]
+  // Replace 'export interface' or 'interface' with the correct prefix
+  const modifiedFirstLine = firstLine.replace(
+    /^(\s*)(?:export\s+)?interface/,
+    `$1${prefix} interface`,
+  )
 
-  // Add members with preserved indentation
-  let seenContent = false
-  for (let i = 1; i < lines.length - 1; i++) {
-    const line = lines[i]
-    const content = line.trim()
-    if (content) {
-      seenContent = true
-      processedLines.push(`${memberIndent}${content}`)
-    }
-  }
-
-  // If no content was found, add a newline for better formatting
-  if (!seenContent) {
-    processedLines.push('')
-  }
-
-  processedLines.push(`${baseIndent}}`)
-  return processedLines.join('\n')
+  // Return the modified first line with all other lines unchanged
+  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
 }
 
 /**
@@ -948,40 +926,24 @@ function processInterfaceDeclaration(declaration: string, isExported = true): st
  */
 function processTypeDeclaration(declaration: string, isExported = true): string {
   const lines = declaration.split('\n')
-  const baseIndent = getIndentation(lines[0])
+  const firstLine = lines[0].trim()
 
-  // Handle type exports
-  if (lines[0].includes('type {')) {
+  // Preserve direct type exports (export type { X })
+  if (firstLine.startsWith('export type {')) {
     return declaration
   }
 
-  // Extract type name and initial content
-  const typeMatch = lines[0].match(/^(?:export\s+)?type\s+([^=\s]+)\s*=\s*(.*)/)
-  if (!typeMatch)
-    return declaration
-
-  const [, name, initialContent] = typeMatch
+  // Only modify the first line to add 'declare' if needed
   const prefix = isExported ? 'export declare' : 'declare'
 
-  // If it's a simple single-line type
-  if (lines.length === 1) {
-    return `${baseIndent}${prefix} type ${name} = ${initialContent};`
-  }
+  // Replace 'export type' or 'type' with the correct prefix
+  const modifiedFirstLine = lines[0].replace(
+    /^(\s*)(?:export\s+)?type(?!\s*\{)/,
+    `$1${prefix} type`,
+  )
 
-  // For multi-line types, properly format with line breaks
-  const processedLines = [`${baseIndent}${prefix} type ${name} = ${initialContent.trim()}`]
-  const remainingLines = lines.slice(1)
-
-  for (const line of remainingLines) {
-    const trimmed = line.trim()
-    if (trimmed) {
-      // Keep original indentation for the line
-      const lineIndent = getIndentation(line)
-      processedLines.push(`${lineIndent}${trimmed}`)
-    }
-  }
-
-  return processedLines.join('\n')
+  // Return the modified first line with all other lines unchanged
+  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
@@ -1445,11 +1407,6 @@ function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]
   }
 
   return imports.sort()
-}
-
-function getIndentation(line: string): string {
-  const match = line.match(/^(\s+)/)
-  return match ? match[1] : ''
 }
 
 /**
