@@ -455,4 +455,25 @@ export type DynamicRecord<K extends PropertyKey> = {
       : never
 }
 
+// Comments variations
+/**
+ * Regular expression patterns used throughout the module
+ */
+interface RegexPatterns {
+  /** Import type declarations */
+  readonly typeImport: RegExp
+  /** Regular import declarations */
+  readonly regularImport: RegExp
+  /** Async function declarations */
+  readonly asyncFunction: RegExp
+  /** Generic type parameters */
+  readonly functionOverload: RegExp
+  /** Module declaration pattern */
+  readonly moduleDeclaration: RegExp
+  /**
+   * Module augmentation pattern
+   */
+  readonly moduleAugmentation: RegExp
+}
+
 export default dts

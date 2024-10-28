@@ -174,6 +174,25 @@ export declare type DynamicRecord<K extends PropertyKey> = {
       ? Record<string, unknown>
       : never
 }
+/**
+ * Regular expression patterns used throughout the module
+ */
+  /** Import type declarations */
+  /** Regular import declarations */
+  /** Async function declarations */
+  /** Generic type parameters */
+  /** Module declaration pattern */
+  /**
+   * Module augmentation pattern
+   */
+declare interface RegexPatterns {
+  readonly typeImport: RegExp
+  readonly regularImport: RegExp
+  readonly asyncFunction: RegExp
+  readonly functionOverload: RegExp
+  readonly moduleDeclaration: RegExp
+  readonly moduleAugmentation: RegExp
+}
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }
