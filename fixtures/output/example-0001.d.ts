@@ -177,14 +177,6 @@ export declare type DynamicRecord<K extends PropertyKey> = {
 /**
  * Regular expression patterns used throughout the module
  */
-  /** Import type declarations */
-  /** Regular import declarations */
-  /** Async function declarations */
-  /** Generic type parameters */
-  /** Module declaration pattern */
-  /**
-   * Module augmentation pattern
-   */
 declare interface RegexPatterns {
   readonly typeImport: RegExp
   readonly regularImport: RegExp

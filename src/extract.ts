@@ -622,41 +622,24 @@ function processImports(line: string, state: ImportTrackingState): void {
   }
 }
 
-function processDeclarationBlock(
-  lines: string[],
-  comments: string[],
-  state: ProcessingState,
-): void {
-  console.log('Processing declaration block:', { lines, comments })
+function processTypeDeclaration(declaration: string, isExported = true): string {
+  const lines = declaration.split('\n')
+  const firstLine = lines[0].trim()
 
-  // Only include JSDoc comments
-  const jsdocComments = comments.filter(isJSDocComment)
-  console.log('Filtered JSDoc comments:', jsdocComments)
-
-  // Add JSDoc comments directly before the declaration
-  if (jsdocComments.length > 0) {
-    // Directly add the comments without the extra newline
-    state.dtsLines.push(...jsdocComments.map(comment => comment.trimEnd()))
+  // Preserve direct type exports
+  if (firstLine.startsWith('export type {')) {
+    return declaration
   }
 
-  // Remove any non-JSDoc comments that might have slipped through
-  const cleanedLines = lines.map((line) => {
-    const commentIndex = line.indexOf('//')
-    return commentIndex !== -1 ? line.substring(0, commentIndex).trim() : line
-  }).filter(Boolean)
+  // Only modify the first line
+  const prefix = isExported ? 'export declare' : 'declare'
+  const modifiedFirstLine = lines[0].replace(
+    /^(\s*)(?:export\s+)?type(?!\s*\{)/,
+    `$1${prefix} type`,
+  )
 
-  const declaration = cleanedLines.join('\n').trim()
-
-  if (!declaration) {
-    console.log('Empty declaration, skipping')
-    return
-  }
-
-  // Remove leading comments and whitespace when checking its type
-  const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
-
-  // Process the declaration as before
-  processSpecificDeclaration(declarationWithoutComments, declaration, state)
+  // Return original declaration with only the first line modified
+  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
 }
 
 function processSpecificDeclaration(
@@ -905,45 +888,70 @@ function processFunctionDeclaration(
  * Process interface declarations
  */
 function processInterfaceDeclaration(declaration: string, isExported = true): string {
+  // Split into lines while preserving all formatting and comments
   const lines = declaration.split('\n')
 
-  // Only modify the first line to add 'declare' if needed
+  // Only modify the first line to add necessary keywords
   const firstLine = lines[0]
   const prefix = isExported ? 'export declare' : 'declare'
 
-  // Replace 'export interface' or 'interface' with the correct prefix
+  // Replace only the 'interface' or 'export interface' part
   const modifiedFirstLine = firstLine.replace(
     /^(\s*)(?:export\s+)?interface/,
     `$1${prefix} interface`,
   )
 
-  // Return the modified first line with all other lines unchanged
+  // Return original declaration with only the first line modified
   return [modifiedFirstLine, ...lines.slice(1)].join('\n')
 }
 
 /**
  * Process type declarations
  */
-function processTypeDeclaration(declaration: string, isExported = true): string {
-  const lines = declaration.split('\n')
-  const firstLine = lines[0].trim()
+function processDeclarationBlock(
+  lines: string[],
+  comments: string[],
+  state: ProcessingState,
+): void {
+  const declarationText = lines.join('\n')
+  const cleanedDeclaration = removeLeadingComments(declarationText).trimStart()
 
-  // Preserve direct type exports (export type { X })
-  if (firstLine.startsWith('export type {')) {
-    return declaration
+  if (
+    cleanedDeclaration.startsWith('interface')
+    || cleanedDeclaration.startsWith('export interface')
+    || cleanedDeclaration.startsWith('type')
+    || cleanedDeclaration.startsWith('export type')
+  ) {
+    // Process the declaration while preserving all formatting and comments
+    const isInterface = cleanedDeclaration.startsWith('interface') || cleanedDeclaration.startsWith('export interface')
+    const isExported = declarationText.trimStart().startsWith('export')
+
+    const processed = isInterface
+      ? processInterfaceDeclaration(declarationText, isExported)
+      : processTypeDeclaration(declarationText, isExported)
+
+    state.dtsLines.push(processed)
+    return
   }
 
-  // Only modify the first line to add 'declare' if needed
-  const prefix = isExported ? 'export declare' : 'declare'
+  // Handle other declarations as before...
+  const jsdocComments = comments.filter(isJSDocComment)
+  if (jsdocComments.length > 0) {
+    state.dtsLines.push(...jsdocComments.map(comment => comment.trimEnd()))
+  }
 
-  // Replace 'export type' or 'type' with the correct prefix
-  const modifiedFirstLine = lines[0].replace(
-    /^(\s*)(?:export\s+)?type(?!\s*\{)/,
-    `$1${prefix} type`,
-  )
+  const cleanedLines = lines.map((line) => {
+    const commentIndex = line.indexOf('//')
+    return commentIndex !== -1 ? line.substring(0, commentIndex).trim() : line
+  }).filter(Boolean)
 
-  // Return the modified first line with all other lines unchanged
-  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
+  const declaration = cleanedLines.join('\n').trim()
+  if (!declaration) {
+    return
+  }
+
+  const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
+  processSpecificDeclaration(declarationWithoutComments, declaration, state)
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
