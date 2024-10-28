@@ -185,6 +185,10 @@ declare interface RegexPatterns {
   readonly moduleDeclaration: RegExp
   readonly moduleAugmentation: RegExp
 }
+/**
+ * Extract complete function signature using regex
+ */
+export declare function extractFunctionSignature(declaration: string): FunctionSignature;
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }

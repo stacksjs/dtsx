@@ -1,4 +1,4 @@
-/* eslint-disable no-console,regexp/no-super-linear-backtracking */
+/* eslint-disable regexp/no-super-linear-backtracking */
 
 /**
  * Regular expression patterns used throughout the module
@@ -85,6 +85,16 @@ interface ProcessingState {
     comments: string[]
   } | null
   importTracking: ImportTrackingState
+  defaultExports: Set<string>
+  debug: {
+    exports: {
+      default: string[]
+      named: string[]
+      all: string[]
+    }
+    declarations: string[]
+    currentProcessing: string
+  }
 }
 
 interface MethodSignature {
@@ -174,11 +184,10 @@ interface ImportInfo {
 /**
  * Function signature components
  */
-interface FunctionSignature {
+export interface FunctionSignature {
   name: string
   params: string
   returnType: string
-  // isAsync: boolean
   generics: string
 }
 
@@ -207,6 +216,16 @@ function createProcessingState(): ProcessingState {
     currentIndentation: '',
     declarationBuffer: null,
     importTracking: createImportTrackingState(),
+    defaultExports: new Set(),
+    debug: {
+      exports: {
+        default: [],
+        named: [],
+        all: [],
+      },
+      declarations: [],
+      currentProcessing: '',
+    },
   }
 }
 
@@ -243,16 +262,22 @@ export async function extract(filePath: string): Promise<string> {
  */
 export function extractDtsTypes(sourceCode: string): string {
   const state = createProcessingState()
+  debugLog(state, 'init', 'Starting DTS extraction')
 
   // Process imports first
   sourceCode.split('\n').forEach((line) => {
     if (line.includes('import ')) {
       processImports(line, state.importTracking)
+      debugLog(state, 'import', `Processed import: ${line.trim()}`)
     }
   })
 
   // Process declarations
   processSourceFile(sourceCode, state)
+
+  // Log the state of exports before formatting
+  debugLog(state, 'export-summary', `Found ${state.defaultExports.size} default exports`)
+  debugLog(state, 'export-summary', `Found ${state.exportAllStatements.length} export * statements`)
 
   // Final pass to track what actually made it to the output
   state.dtsLines.forEach((line) => {
@@ -264,11 +289,12 @@ export function extractDtsTypes(sourceCode: string): string {
 
   // Generate optimized imports based on actual output
   const optimizedImports = generateOptimizedImports(state.importTracking, state.dtsLines)
+  debugLog(state, 'import-summary', `Generated ${optimizedImports.length} optimized imports`)
 
   // Clear any existing imports and set up dtsLines with optimized imports
   state.dtsLines = [
-    ...optimizedImports.map(imp => `${imp};`), // Ensure semicolons
-    '', // Single empty line after imports
+    ...optimizedImports.map(imp => `${imp};`),
+    '',
     ...state.dtsLines.filter(line => !line.trim().startsWith('import')),
   ]
 
@@ -287,64 +313,32 @@ function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: s
     return null
   }
 
-  const stack: string[] = []
-  let inString = false
-  let stringChar = ''
+  let depth = 0
+  let result = ''
+
   for (let i = 0; i < text.length; i++) {
     const char = text[i]
-    const prevChar = text[i - 1]
-
-    // Handle string literals
-    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (char === stringChar) {
-        inString = false
-      }
+    if (char === openSymbol) {
+      depth++
     }
-
-    if (!inString) {
-      if (char === openSymbol) {
-        stack.push(char)
-      }
-      else if (char === closeSymbol) {
-        if (stack.length === 0) {
-          // Unbalanced closing symbol
-          return null
-        }
-        stack.pop()
-        if (stack.length === 0) {
-          // All symbols balanced, return substring
-          return {
-            content: text.slice(0, i + 1),
-            rest: text.slice(i + 1).trim(),
-          }
+    else if (char === closeSymbol) {
+      depth--
+      if (depth === 0) {
+        return {
+          content: text.slice(0, i + 1),
+          rest: text.slice(i + 1).trim(),
         }
       }
     }
+    result += char
   }
-
-  return null // Unbalanced symbols
-}
-
-function extractFunctionName(declaration: string): { name: string, rest: string } {
-  const match = declaration.match(/^([a-z_$][\w$]*)/i)
-  if (match) {
-    const name = match[1]
-    const rest = declaration.slice(match[0].length).trim()
-    return { name, rest }
-  }
-  else {
-    return { name: '', rest: declaration }
-  }
+  return null
 }
 
 /**
  * Extract complete function signature using regex
  */
-function extractFunctionSignature(declaration: string): FunctionSignature {
+export function extractFunctionSignature(declaration: string): FunctionSignature {
   // Remove comments and clean up the declaration
   const cleanDeclaration = removeLeadingComments(declaration).trim()
 
@@ -647,23 +641,25 @@ function processSpecificDeclaration(
   fullDeclaration: string,
   state: ProcessingState,
 ) {
-  console.log('Processing specific declaration:', {
-    declarationWithoutComments,
-    fullDeclaration,
-  })
+  state.debug.currentProcessing = declarationWithoutComments
+  debugLog(state, 'processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
 
-  if (declarationWithoutComments.startsWith('declare module')) {
-    const processed = processModuleDeclaration(fullDeclaration)
-    console.log('Added module declaration:', processed)
-    state.dtsLines.push(processed)
+  if (declarationWithoutComments.startsWith('export default')) {
+    debugLog(state, 'default-export', `Found default export: ${declarationWithoutComments}`)
+
+    // Store the complete default export statement
+    const defaultExport = declarationWithoutComments.endsWith(';')
+      ? declarationWithoutComments
+      : `${declarationWithoutComments};`
+
+    state.defaultExports.add(defaultExport)
+    debugLog(state, 'default-export', `Added to default exports: ${defaultExport}`)
     return
   }
 
-  if (declarationWithoutComments.startsWith('export default')) {
-    state.defaultExport = declarationWithoutComments.endsWith(';')
-      ? declarationWithoutComments
-      : `${declarationWithoutComments};`
-    console.log('Added default export:', state.defaultExport)
+  if (declarationWithoutComments.startsWith('declare module')) {
+    const processed = processModuleDeclaration(fullDeclaration)
+    state.dtsLines.push(processed)
     return
   }
 
@@ -676,7 +672,6 @@ function processSpecificDeclaration(
       fullDeclaration,
       isExported,
     )
-    console.log('Added const declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -689,7 +684,6 @@ function processSpecificDeclaration(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
     )
-    console.log('Added interface declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -702,7 +696,6 @@ function processSpecificDeclaration(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
     )
-    console.log('Added type declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -718,7 +711,6 @@ function processSpecificDeclaration(
       state.usedTypes,
       declarationWithoutComments.startsWith('export'),
     )
-    console.log('Added function declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -727,13 +719,11 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('export {')
     || declarationWithoutComments.startsWith('export *')
   ) {
-    console.log('Added export statement:', fullDeclaration)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export type {')) {
-    console.log('Added type export statement:', fullDeclaration)
     state.dtsLines.push(fullDeclaration)
     return
   }
@@ -746,7 +736,6 @@ function processSpecificDeclaration(
   ) {
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
-    console.log('Added class declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -759,7 +748,6 @@ function processSpecificDeclaration(
   ) {
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
-    console.log('Added enum declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -770,7 +758,6 @@ function processSpecificDeclaration(
   ) {
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
-    console.log('Added namespace declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -783,7 +770,6 @@ function processSpecificDeclaration(
   ) {
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
-    console.log('Added variable declaration:', processed)
     state.dtsLines.push(processed)
     return
   }
@@ -795,7 +781,6 @@ function processSpecificDeclaration(
  * Process constant declarations with type inference
  */
 function processConstDeclaration(declaration: string, isExported = true): string {
-  console.log('Processing const declaration:', { declaration })
   const cleanDeclaration = cleanComments(declaration)
   const firstLineEndIndex = cleanDeclaration.indexOf('\n')
   const firstLine = cleanDeclaration.slice(0, firstLineEndIndex !== -1 ? firstLineEndIndex : undefined)
@@ -810,12 +795,10 @@ function processConstDeclaration(declaration: string, isExported = true): string
   // Adjusted regex to handle 'export const' without type annotation
   const nameMatch = firstLine.match(/^\s*(?:export\s+)?const\s+([^=\s]+)\s*=/)
   if (!nameMatch) {
-    console.log('No const declaration found:', firstLine)
     return declaration
   }
 
   const name = nameMatch[1].trim()
-  console.log('Processing const without type annotation:', name)
 
   // Extract the object literal after removing comments
   const objectLiteral = extractCleanObjectLiteral(cleanDeclaration)
@@ -955,31 +938,37 @@ function processDeclarationBlock(
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
+  debugLog(state, 'source', 'Starting source file processing')
   const cleanedContent = cleanSource(content)
   const lines = cleanedContent.split('\n')
-
-  console.log('Processing source file:', { totalLines: lines.length })
 
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
   let braceLevel = 0
   let isInModuleDeclaration = false
+  let isCapturingDefaultExport = false
 
   function flushBlock() {
     if (currentBlock.length > 0 || currentComments.length > 0) {
-      console.log('Flushing block:', {
-        blockLines: currentBlock,
-        comments: currentComments,
-      })
+      const fullDeclaration = currentBlock.join('\n')
+      debugLog(state, 'flush', `Flushing block: ${fullDeclaration.substring(0, 50)}...`)
 
-      const jsdocComments = currentComments.filter(comment =>
-        comment.trim().startsWith('/**')
-        || comment.trim().startsWith('*')
-        || comment.trim().startsWith('*/'),
-      )
+      if (isCapturingDefaultExport) {
+        debugLog(state, 'default-export', `Processing default export: ${fullDeclaration}`)
+        const defaultExport = `export default ${fullDeclaration.replace(/^export\s+default\s+/, '')}`
+        state.defaultExports.add(defaultExport.endsWith(';') ? defaultExport : `${defaultExport};`)
+        isCapturingDefaultExport = false
+      }
+      else {
+        const jsdocComments = currentComments.filter(comment =>
+          comment.trim().startsWith('/**')
+          || comment.trim().startsWith('*')
+          || comment.trim().startsWith('*/'),
+        )
+        processDeclarationBlock([...currentBlock], [...jsdocComments], state)
+      }
 
-      processDeclarationBlock([...currentBlock], [...jsdocComments], state)
       currentBlock = []
       currentComments = []
       isInMultilineDeclaration = false
@@ -989,33 +978,49 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    const trimmedLine = line.trim().replace(/^\uFEFF/, '')
+    const trimmedLine = line.trim()
 
+    // Skip empty lines unless we're in a multi-line declaration
     if (!trimmedLine) {
-      if (isInModuleDeclaration || isInMultilineDeclaration) {
+      if (isInMultilineDeclaration || isInModuleDeclaration || isCapturingDefaultExport) {
         currentBlock.push(line)
       }
       continue
     }
 
-    console.log('Processing line:', {
-      line,
-      isComment: isJSDocComment(trimmedLine),
-      braceLevel,
-      isMultiline: isInMultilineDeclaration,
-      isInModule: isInModuleDeclaration,
-    })
+    // Handle default exports
+    if (isDefaultExport(trimmedLine)) {
+      debugLog(state, 'default-export', `Found default export line: ${trimmedLine}`)
+      flushBlock() // Flush any existing block
+      isCapturingDefaultExport = true
+      currentBlock.push(line)
+
+      // If it's a single-line default export
+      if (trimmedLine.endsWith(';')) {
+        flushBlock()
+      }
+      continue
+    }
+
+    // If we're capturing a default export, keep adding lines until we complete the expression
+    if (isCapturingDefaultExport) {
+      currentBlock.push(line)
+      // Check if we've completed the default export
+      const currentContent = currentBlock.join('\n')
+      if (isDeclarationComplete(currentContent)) {
+        flushBlock()
+      }
+      continue
+    }
 
     // Handle comments
     if (isJSDocComment(trimmedLine)) {
       currentComments.push(line)
-      console.log('Added comment to current block')
       continue
     }
 
     // Check for module declaration start
     if (braceLevel === 0 && trimmedLine.startsWith('declare module')) {
-      console.log('Found module declaration start:', trimmedLine)
       flushBlock()
       currentBlock.push(line)
       isInModuleDeclaration = true
@@ -1029,9 +1034,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       currentBlock.push(line)
       braceLevel += netBraceCount(line)
 
-      // Check if module declaration is complete
       if (braceLevel === 0) {
-        console.log('Completed module declaration')
         flushBlock()
       }
       continue
@@ -1039,22 +1042,18 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
     // Handle regular declarations
     if (braceLevel === 0 && isDeclarationStart(trimmedLine)) {
-      console.log('Found declaration start:', trimmedLine)
       flushBlock()
       currentBlock.push(line)
       isInMultilineDeclaration = !isDeclarationComplete(trimmedLine)
     }
     else if (isInMultilineDeclaration) {
       currentBlock.push(line)
-      // Check if declaration is complete
       const currentContent = currentBlock.join('\n')
       if (isDeclarationComplete(currentContent)) {
-        console.log('Completed multiline declaration')
         flushBlock()
       }
     }
     else if (braceLevel === 0 && shouldProcessLine(trimmedLine)) {
-      console.log('Processing standalone line:', trimmedLine)
       flushBlock()
       currentBlock.push(line)
       flushBlock()
@@ -1070,18 +1069,15 @@ function processSourceFile(content: string, state: ProcessingState): void {
   flushBlock()
 }
 
+/**
+ * Removes leading comments from code
+ */
 function removeLeadingComments(code: string): string {
   const lines = code.split('\n')
   let index = 0
   while (index < lines.length) {
     const line = lines[index].trim()
-    if (
-      line.startsWith('//')
-      || line.startsWith('/*')
-      || line.startsWith('*')
-      || line.startsWith('/**')
-      || line === ''
-    ) {
+    if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*') || line === '') {
       index++
     }
     else {
@@ -1107,6 +1103,11 @@ function inferValueType(value: string): string {
   return 'unknown'
 }
 
+function isDefaultExport(line: string): boolean {
+  // Handle both inline and multi-line default exports
+  return line.trim().startsWith('export default')
+}
+
 /**
  * Check if a given type string represents a function type
  */
@@ -1121,7 +1122,6 @@ function isFunctionType(type: string): boolean {
 function isJSDocComment(line: string): boolean {
   const trimmed = line.trim()
   const isJsDoc = trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
-  console.log('Checking JSDoc:', { line, isJsDoc })
   return isJsDoc
 }
 
@@ -1418,7 +1418,7 @@ function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]
 }
 
 /**
- * Normalize type references
+ * Normalizes type references by cleaning up whitespace
  */
 function normalizeType(type: string): string {
   return type
@@ -1610,12 +1610,7 @@ function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?:
  * Format the final output with proper spacing and organization
  */
 function formatOutput(state: ProcessingState): string {
-  console.log('Formatting output. Initial state:', {
-    importCount: state.imports.length,
-    dtsLineCount: state.dtsLines.length,
-    hasDefaultExport: !!state.defaultExport,
-  })
-
+  debugLog(state, 'output', 'Starting output formatting')
   const parts: string[] = []
 
   // Group lines by type
@@ -1649,6 +1644,7 @@ function formatOutput(state: ProcessingState): string {
 
   // Add declarations
   if (currentSection.length > 0) {
+    debugLog(state, 'output', `Adding ${currentSection.length} declarations`)
     parts.push(currentSection.join('\n'))
   }
 
@@ -1659,21 +1655,43 @@ function formatOutput(state: ProcessingState): string {
   ])
 
   if (exportLines.size > 0) {
+    debugLog(state, 'output', `Adding ${exportLines.size} export statements`)
     if (parts.length > 0)
       parts.push('')
     parts.push([...exportLines].join('\n'))
   }
 
-  // Add default export
-  if (state.defaultExport) {
+  // Add default exports at the very end
+  if (state.defaultExports.size > 0) {
+    debugLog(state, 'output', `Adding ${state.defaultExports.size} default exports`)
     if (parts.length > 0)
       parts.push('')
-    parts.push(state.defaultExport)
+    state.defaultExports.forEach((defaultExport) => {
+      debugLog(state, 'default-export', `Adding to output: ${defaultExport}`)
+      parts.push(defaultExport)
+    })
   }
 
-  return `${parts.join('\n')}\n`
+  const finalOutput = `${parts.join('\n')}\n`
+  debugLog(state, 'output', `Final output length: ${finalOutput.length}`)
+  return finalOutput
 }
 
 function shouldProcessLine(line: string): boolean {
   return line.startsWith('export {') || line.startsWith('export *')
+}
+
+function debugLog(state: ProcessingState, category: string, message: string) {
+  console.debug(`[dtsx:${category}] ${message}`)
+
+  // Track in debug state
+  if (category === 'default-export') {
+    state.debug.exports.default.push(message)
+  }
+  else if (category === 'named-export') {
+    state.debug.exports.named.push(message)
+  }
+  else if (category === 'declaration') {
+    state.debug.declarations.push(message)
+  }
 }

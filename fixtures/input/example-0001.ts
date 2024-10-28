@@ -476,4 +476,71 @@ interface RegexPatterns {
   readonly moduleAugmentation: RegExp
 }
 
+/**
+ * Extract complete function signature using regex
+ */
+export function extractFunctionSignature(declaration: string): FunctionSignature {
+  // Remove comments and clean up the declaration
+  const cleanDeclaration = removeLeadingComments(declaration).trim()
+
+  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(\*)?\s*([^(<\s]+)/
+  const functionMatch = cleanDeclaration.match(functionPattern)
+
+  if (!functionMatch) {
+    console.error('Function name could not be extracted from declaration:', declaration)
+    return {
+      name: '',
+      params: '',
+      returnType: 'void',
+      generics: '',
+    }
+  }
+
+  const name = functionMatch[4]
+  let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
+
+  // Extract generics
+  let generics = ''
+  if (rest.startsWith('<')) {
+    const genericsResult = extractBalancedSymbols(rest, '<', '>')
+    if (genericsResult) {
+      generics = genericsResult.content
+      rest = genericsResult.rest.trim()
+    }
+  }
+
+  // Extract parameters
+  let params = ''
+  if (rest.startsWith('(')) {
+    const paramsResult = extractBalancedSymbols(rest, '(', ')')
+    if (paramsResult) {
+      params = paramsResult.content.slice(1, -1).trim()
+      rest = paramsResult.rest.trim()
+    }
+  }
+
+  // Extract return type - keep it exactly as specified
+  let returnType = 'void'
+  if (rest.startsWith(':')) {
+    const match = rest.match(/^:\s*([^{]+)/)
+    if (match) {
+      returnType = match[1].trim()
+    }
+  }
+
+  return {
+    name,
+    params,
+    returnType: normalizeType(returnType),
+    generics,
+  }
+}
+
+// export interface ImportTrackingState {
+//   typeImports: Map<string, Set<string>>
+//   valueImports: Map<string, Set<string>>
+//   usedTypes: Set<string>
+//   usedValues: Set<string>
+// }
+
 export default dts
