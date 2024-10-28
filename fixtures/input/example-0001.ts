@@ -394,15 +394,15 @@ export type ProductId = number & {
 //   }
 // }
 
-// TODO: Module Augmentation
-// declare module '@stacksjs/dtsx' {
-//   interface DtsGenerationConfig {
-//     customPlugins?: Array<{
-//       name: string
-//       transform: (code: string) => string
-//     }>
-//   }
-// }
+// Module Augmentation
+declare module '@stacksjs/some-module' {
+  interface DtsGenerationConfig {
+    customPlugins?: Array<{
+      name: string
+      transform: (code: string) => string
+    }>
+  }
+}
 
 // Utility Type Implementations
 export type DeepPartial<T> = T extends object ? {

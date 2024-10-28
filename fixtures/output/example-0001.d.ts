@@ -137,6 +137,14 @@ export declare type UserId = string & { readonly __brand: unique symbol };
 export declare type ProductId = number & {
   readonly __brand: unique symbol
 }
+declare module '@stacksjs/some-module' {
+  interface DtsGenerationConfig {
+    customPlugins?: Array<{
+      name: string
+      transform: (code: string) => string
+    }>
+  }
+}
 export declare type DeepPartial<T> = T extends object ? {
   [P in keyof T]?: DeepPartial<T[P]>
 } : T

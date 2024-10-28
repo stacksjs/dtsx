@@ -50,6 +50,10 @@ interface RegexPatterns {
   readonly genericConstraints: RegExp
   /** Function overload */
   readonly functionOverload: RegExp
+  /** Module declaration pattern */
+  readonly moduleDeclaration: RegExp
+  /** Module augmentation pattern */
+  readonly moduleAugmentation: RegExp
 }
 
 interface ImportTrackingState {
@@ -57,6 +61,30 @@ interface ImportTrackingState {
   valueImports: Map<string, Set<string>> // module -> Set of value names
   usedTypes: Set<string> // All used type names
   usedValues: Set<string> // All used value names
+}
+
+interface ProcessingState {
+  dtsLines: string[]
+  imports: string[]
+  usedTypes: Set<string>
+  typeSources: Map<string, string>
+  defaultExport: string | null
+  exportAllStatements: string[]
+  currentDeclaration: string
+  lastCommentBlock: string
+  bracketCount: number
+  isMultiLineDeclaration: boolean
+  moduleImports: Map<string, ImportInfo>
+  availableTypes: Map<string, string>
+  availableValues: Map<string, string>
+  currentIndentation: string
+  declarationBuffer: {
+    type: 'interface' | 'type' | 'const' | 'function' | 'import' | 'export'
+    indent: string
+    lines: string[]
+    comments: string[]
+  } | null
+  importTracking: ImportTrackingState
 }
 
 interface MethodSignature {
@@ -110,6 +138,8 @@ const REGEX: RegexPatterns = {
   conditionalType: /([^extnds]+)\s+extends\s+([^?]+)\?\s*([^:]+):\s*([^;]+)/,
   genericConstraints: /<([^>]+)>/,
   functionOverload: /^(?:export\s+)?(?:declare\s+)?function\s+([^(<\s]+)/,
+  moduleDeclaration: /^declare\s+module\s+['"]([^'"]+)['"]\s*\{/,
+  moduleAugmentation: /^declare\s+module\s+/,
 } as const satisfies RegexPatterns
 
 /**
@@ -125,34 +155,6 @@ interface PropertyInfo {
   /** Nested property definitions */
   nested?: PropertyInfo[]
   method?: MethodSignature
-}
-
-/**
- * Central state management for DTS processing
- * Tracks all aspects of the declaration file generation process
- */
-interface ProcessingState {
-  dtsLines: string[]
-  imports: string[]
-  usedTypes: Set<string>
-  typeSources: Map<string, string>
-  defaultExport: string | null
-  exportAllStatements: string[]
-  currentDeclaration: string
-  lastCommentBlock: string
-  bracketCount: number
-  isMultiLineDeclaration: boolean
-  moduleImports: Map<string, ImportInfo>
-  availableTypes: Map<string, string>
-  availableValues: Map<string, string>
-  currentIndentation: string
-  declarationBuffer: {
-    type: 'interface' | 'type' | 'const' | 'function' | 'import' | 'export'
-    indent: string
-    lines: string[]
-    comments: string[]
-  } | null
-  importTracking: ImportTrackingState
 }
 
 /**
@@ -689,6 +691,13 @@ function processSpecificDeclaration(
     fullDeclaration,
   })
 
+  if (declarationWithoutComments.startsWith('declare module')) {
+    const processed = processModuleDeclaration(fullDeclaration)
+    console.log('Added module declaration:', processed)
+    state.dtsLines.push(processed)
+    return
+  }
+
   if (declarationWithoutComments.startsWith('export default')) {
     state.defaultExport = declarationWithoutComments.endsWith(';')
       ? declarationWithoutComments
@@ -768,7 +777,6 @@ function processSpecificDeclaration(
     return
   }
 
-  // Handle class declarations
   if (
     declarationWithoutComments.startsWith('class')
     || declarationWithoutComments.startsWith('export class')
@@ -782,7 +790,6 @@ function processSpecificDeclaration(
     return
   }
 
-  // Handle enum declarations
   if (
     declarationWithoutComments.startsWith('enum')
     || declarationWithoutComments.startsWith('export enum')
@@ -796,7 +803,6 @@ function processSpecificDeclaration(
     return
   }
 
-  // Handle namespace declarations
   if (
     declarationWithoutComments.startsWith('namespace')
     || declarationWithoutComments.startsWith('export namespace')
@@ -821,7 +827,6 @@ function processSpecificDeclaration(
     return
   }
 
-  // If we reach here, it's an unhandled declaration type
   console.warn('Unhandled declaration type:', declarationWithoutComments.split('\n')[0])
 }
 
@@ -1007,7 +1012,6 @@ function processTypeDeclaration(declaration: string, isExported = true): string 
 }
 
 function processSourceFile(content: string, state: ProcessingState): void {
-  // Clean the source content first
   const cleanedContent = cleanSource(content)
   const lines = cleanedContent.split('\n')
 
@@ -1017,6 +1021,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let currentComments: string[] = []
   let isInMultilineDeclaration = false
   let braceLevel = 0
+  let isInModuleDeclaration = false
 
   function flushBlock() {
     if (currentBlock.length > 0 || currentComments.length > 0) {
@@ -1025,7 +1030,6 @@ function processSourceFile(content: string, state: ProcessingState): void {
         comments: currentComments,
       })
 
-      // Only include JSDoc comments in currentComments
       const jsdocComments = currentComments.filter(comment =>
         comment.trim().startsWith('/**')
         || comment.trim().startsWith('*')
@@ -1036,14 +1040,18 @@ function processSourceFile(content: string, state: ProcessingState): void {
       currentBlock = []
       currentComments = []
       isInMultilineDeclaration = false
+      isInModuleDeclaration = false
     }
   }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    const trimmedLine = line.trim().replace(/^\uFEFF/, '') // Remove BOM if present
+    const trimmedLine = line.trim().replace(/^\uFEFF/, '')
 
     if (!trimmedLine) {
+      if (isInModuleDeclaration || isInMultilineDeclaration) {
+        currentBlock.push(line)
+      }
       continue
     }
 
@@ -1052,6 +1060,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       isComment: isJSDocComment(trimmedLine),
       braceLevel,
       isMultiline: isInMultilineDeclaration,
+      isInModule: isInModuleDeclaration,
     })
 
     // Handle comments
@@ -1061,7 +1070,31 @@ function processSourceFile(content: string, state: ProcessingState): void {
       continue
     }
 
-    // Check for declaration start only at top level
+    // Check for module declaration start
+    if (braceLevel === 0 && trimmedLine.startsWith('declare module')) {
+      console.log('Found module declaration start:', trimmedLine)
+      flushBlock()
+      currentBlock.push(line)
+      isInModuleDeclaration = true
+      isInMultilineDeclaration = true
+      braceLevel++
+      continue
+    }
+
+    // Handle ongoing module declaration
+    if (isInModuleDeclaration) {
+      currentBlock.push(line)
+      braceLevel += netBraceCount(line)
+
+      // Check if module declaration is complete
+      if (braceLevel === 0) {
+        console.log('Completed module declaration')
+        flushBlock()
+      }
+      continue
+    }
+
+    // Handle regular declarations
     if (braceLevel === 0 && isDeclarationStart(trimmedLine)) {
       console.log('Found declaration start:', trimmedLine)
       flushBlock()
@@ -1084,8 +1117,10 @@ function processSourceFile(content: string, state: ProcessingState): void {
       flushBlock()
     }
 
-    // Update brace level to track scope
-    braceLevel += netBraceCount(line)
+    // Update brace level for non-module declarations
+    if (!isInModuleDeclaration) {
+      braceLevel += netBraceCount(line)
+    }
   }
 
   // Process any remaining block
@@ -1146,6 +1181,7 @@ function isJSDocComment(line: string): boolean {
   console.log('Checking JSDoc:', { line, isJsDoc })
   return isJsDoc
 }
+
 /**
  * Combine types into a union or intersection, wrapping function types in parentheses
  */
@@ -1163,11 +1199,9 @@ function isDeclarationStart(line: string): boolean {
     || line.startsWith('const ')
     || line.startsWith('function ')
     || line.startsWith('async function ')
-    // Handle possible declare keywords
     || line.startsWith('declare ')
-    // Handle possible export combinations
+    || line.startsWith('declare module')
     || /^export\s+(interface|type|const|function|async\s+function)/.test(line)
-    // Handle 'export async function'
     || line.startsWith('export async function')
   )
 }
@@ -1177,13 +1211,8 @@ function isDeclarationStart(line: string): boolean {
  * @param content - Content to check, either as a string or array of lines
  */
 function isDeclarationComplete(content: string | string[]): boolean {
-  // Convert array to string if necessary
   const fullContent = Array.isArray(content) ? content.join('\n') : content
-
-  // Remove comments and leading/trailing whitespace
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
-
-  // Check if content ends with a semicolon or a closing brace
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
 }
 
@@ -1277,6 +1306,47 @@ function parseMethodSignature(value: string): MethodSignature | null {
   return null
 }
 
+function processModuleDeclaration(declaration: string): string {
+  const lines = declaration.split('\n')
+  const indentUnit = '  '
+
+  // Track brace depth for proper indentation
+  let braceDepth = 0
+  const formattedLines = lines.map((line, index) => {
+    const trimmedLine = line.trim()
+    if (!trimmedLine)
+      return ''
+
+    // Handle closing braces before indentation
+    if (trimmedLine.startsWith('}')) {
+      braceDepth--
+    }
+
+    // Determine indentation
+    const currentIndent = indentUnit.repeat(Math.max(0, braceDepth))
+
+    // Format the line
+    const formattedLine = index === 0
+      ? trimmedLine // First line (declare module) has no indentation
+      : `${currentIndent}${trimmedLine}`
+
+    // Handle opening braces after indentation
+    if (trimmedLine.endsWith('{')) {
+      braceDepth++
+    }
+
+    // Special handling for lines containing both closing and opening braces
+    if (trimmedLine.includes('}') && trimmedLine.includes('{')) {
+      // Adjust depth for special cases like "} else {"
+      braceDepth = Math.max(0, braceDepth)
+    }
+
+    return formattedLine
+  })
+
+  return formattedLines.join('\n')
+}
+
 function netBraceCount(line: string): number {
   let netCount = 0
   let inString = false
@@ -1311,6 +1381,20 @@ function netBraceCount(line: string): number {
 }
 
 /**
+ * Clean single line comments and whitespace from a string
+ */
+function cleanComments(input: string): string {
+  return input
+    // Remove single line comments
+    .replace(/\/\/[^\n]*/g, '')
+    // Clean up empty lines that may be left after comment removal
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
+/**
  * Clean source code by removing single-line comments and normalizing content
  */
 function cleanSource(content: string): string {
@@ -1327,20 +1411,6 @@ function cleanSource(content: string): string {
       return line
     })
     .filter(Boolean) // Remove empty lines
-    .join('\n')
-}
-
-/**
- * Clean single line comments and whitespace from a string
- */
-function cleanComments(input: string): string {
-  return input
-    // Remove single line comments
-    .replace(/\/\/[^\n]*/g, '')
-    // Clean up empty lines that may be left after comment removal
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
     .join('\n')
 }
 
@@ -1667,6 +1737,5 @@ function formatOutput(state: ProcessingState): string {
 }
 
 function shouldProcessLine(line: string): boolean {
-  // Lines that should be processed even if they don't start with a declaration keyword
   return line.startsWith('export {') || line.startsWith('export *')
 }
