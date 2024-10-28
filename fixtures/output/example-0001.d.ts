@@ -133,6 +133,7 @@ export declare const complexArrays: {
   matrix: Array<Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> | Array<'a' | 'b' | Array<'c' | 'd'>> | Array<true | Array<false | Array<true>>>>;
   tuples: Array<Array<1 | 'string' | true> | Array<'literal' | 42 | false>>;
 };
+export declare function complexAsyncGenerator(): any;
 export declare function isUser(value: unknown): value is User;
 export declare type UserId = string & { readonly __brand: unique symbol };
 export declare type ProductId = number & {

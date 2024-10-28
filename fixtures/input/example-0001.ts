@@ -352,19 +352,18 @@ export const complexArrays = {
 //   }
 // }
 
-// Complex Async Patterns
-// due to isolatedDeclarations, we can assume the return type here
-// export async function* complexAsyncGenerator(): any {
-//   const results = await Promise.all([
-//     fetchUsers(),
-//     getProduct(1),
-//     authenticate('user', 'pass'),
-//   ])
+// Complex Async Patterns -> due to isolatedDeclarations, we can assume the return type here
+export async function* complexAsyncGenerator(): any {
+  const results = await Promise.all([
+    fetchUsers(),
+    getProduct(1),
+    authenticate('user', 'pass'),
+  ])
 
-//   for (const result of results) {
-//     yield result
-//   }
-// }
+  for (const result of results) {
+    yield result
+  }
+}
 
 // Type Assertions and Guards
 export function isUser(value: unknown): value is User {

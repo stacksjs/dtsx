@@ -345,15 +345,13 @@ function extractFunctionName(declaration: string): { name: string, rest: string 
  * Extract complete function signature using regex
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
-  // Remove comments from the declaration
+  // Remove comments and clean up the declaration
   const cleanDeclaration = removeLeadingComments(declaration).trim()
 
-  // Remove leading 'export', 'async', 'function' keywords
-  const withoutKeywords = cleanDeclaration.replace(/^\s*(export\s+)?(async\s+)?function\s+/, '').trim()
+  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(\*)?\s*([^(<\s]+)/
+  const functionMatch = cleanDeclaration.match(functionPattern)
 
-  // Extract function name
-  const { name, rest: afterName } = extractFunctionName(withoutKeywords)
-  if (!name) {
+  if (!functionMatch) {
     console.error('Function name could not be extracted from declaration:', declaration)
     return {
       name: '',
@@ -363,7 +361,8 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     }
   }
 
-  let rest = afterName
+  const name = functionMatch[4]
+  let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
 
   // Extract generics
   let generics = ''
@@ -373,9 +372,6 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
       generics = genericsResult.content
       rest = genericsResult.rest.trim()
     }
-    else {
-      console.error('Generics could not be extracted from declaration:', declaration)
-    }
   }
 
   // Extract parameters
@@ -383,30 +379,12 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
   if (rest.startsWith('(')) {
     const paramsResult = extractBalancedSymbols(rest, '(', ')')
     if (paramsResult) {
-      params = paramsResult.content.slice(1, -1).trim() // Remove the surrounding parentheses
+      params = paramsResult.content.slice(1, -1).trim()
       rest = paramsResult.rest.trim()
-    }
-    else {
-      console.error('Parameters could not be extracted from declaration:', declaration)
-      return {
-        name,
-        params: '',
-        returnType: 'void',
-        generics,
-      }
-    }
-  }
-  else {
-    console.error('Parameters could not be extracted from declaration:', declaration)
-    return {
-      name,
-      params: '',
-      returnType: 'void',
-      generics,
     }
   }
 
-  // Extract return type
+  // Extract return type - keep it exactly as specified
   let returnType = 'void'
   if (rest.startsWith(':')) {
     const match = rest.match(/^:\s*([^{]+)/)
@@ -895,17 +873,12 @@ function processFunctionDeclaration(
     generics,
   } = extractFunctionSignature(cleanDeclaration)
 
-  // Add logs to verify extracted components
-  console.log('Function Name:', name)
-  console.log('Generics:', generics)
-  console.log('Parameters:', params)
-  console.log('Return Type:', returnType)
-
   // Track used types if provided
   if (usedTypes) {
     trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
   }
 
+  // Build the declaration string
   const parts = [
     isExported ? 'export' : '',
     'declare',
