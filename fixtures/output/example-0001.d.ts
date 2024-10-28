@@ -120,13 +120,41 @@ export declare function processData(data: number): number;
 export declare function processData(data: boolean): boolean;
 export declare function processData<T extends object>(data: T): T;
 export declare function processData(data: unknown): unknown;
-export declare const complexObject: {
-  handlers: <T>(data: T) => Promise<void> {
-console.log(data)
-},
-onError(error: Error & { code?: number }): never {
-throw error;
+export declare type EventType = 'click' | 'focus' | 'blur';
+export declare type ElementType = 'button' | 'input' | 'form';
+export declare type EventHandler = `on${Capitalize<EventType>}${Capitalize<ElementType>}`;
+export declare type RecursiveObject = {
+  id: string
+  children?: RecursiveObject[]
+  parent?: RecursiveObject
+  metadata: Record<string, unknown>
+}
+export declare const complexArrays: {
+  matrix: Array<Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> | Array<'a' | 'b' | Array<'c' | 'd'>> | Array<true | Array<false | Array<true>>>>;
+  tuples: Array<Array<1 | 'string' | true> | Array<'literal' | 42 | false>>;
 };
+export declare type UserId = string & { readonly __brand: unique symbol };
+export declare type ProductId = number & {
+  readonly __brand: unique symbol
+}
+export declare type DeepPartial<T> = T extends object ? {
+  [P in keyof T]?: DeepPartial<T[P]>
+} : T
+export declare type DeepRequired<T> = T extends object ? {
+  [P in keyof T]-?: DeepRequired<T[P]>
+} : T
+export declare type PolymorphicComponent<P = {}> = {
+  <C extends React.ElementType>(
+    props: { as?: C } & Omit<React.ComponentPropsWithRef<C>, keyof P> & P
+  ): React.ReactElement | null
+}
+export type DynamicRecord<K extends PropertyKey> = {
+  [P in K]: P extends number
+    ? Array<unknown>
+    : P extends string
+      ? Record<string, unknown>
+      : never
+}
 
 export { generate, dtsConfig }
 export type { DtsGenerationOption }
