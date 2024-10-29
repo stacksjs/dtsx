@@ -717,10 +717,14 @@ function processSpecificDeclaration(
     return
   }
 
-  if (
-    declarationWithoutComments.startsWith('export {')
-    || declarationWithoutComments.startsWith('export *')
-  ) {
+  if (declarationWithoutComments.startsWith('export *')) {
+    state.exportAllStatements.push(declarationWithoutComments)
+    debugLog(state, 'export-all-declaration', `Found export all declaration: ${declarationWithoutComments}`)
+    state.dtsLines.push(fullDeclaration)
+    return
+  }
+
+  if (declarationWithoutComments.startsWith('export {')) {
     debugLog(state, 'export-declaration', `Found export declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
