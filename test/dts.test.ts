@@ -10,8 +10,8 @@ describe('dts-generation', () => {
   const outputDir = join(testDir, 'output')
   const generatedDir = join(testDir, 'generated')
 
-  it('should properly generate types for example-1', async () => {
-    const example = 'example-0001'
+  it('should properly generate types for variable example', async () => {
+    const example = 'variable'
 
     const config: DtsGenerationOption = {
       entrypoints: [join(inputDir, `${example}.ts`)],
