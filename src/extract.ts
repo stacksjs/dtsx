@@ -654,6 +654,7 @@ function processSpecificDeclaration(
   }
 
   if (declarationWithoutComments.startsWith('declare module')) {
+    debugLog(state, 'module-declaration', `Found module declaration: ${declarationWithoutComments}`)
     const processed = processModuleDeclaration(fullDeclaration)
     state.dtsLines.push(processed)
     return
@@ -663,6 +664,7 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('export const')
     || declarationWithoutComments.startsWith('const')
   ) {
+    debugLog(state, 'const-declaration', `Found const declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.trimStart().startsWith('export')
     const processed = processConstDeclaration(
       fullDeclaration,
@@ -676,6 +678,7 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('interface')
     || declarationWithoutComments.startsWith('export interface')
   ) {
+    debugLog(state, 'interface-declaration', `Found interface declaration: ${declarationWithoutComments}`)
     const processed = processInterfaceDeclaration(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -688,6 +691,7 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('type')
     || declarationWithoutComments.startsWith('export type')
   ) {
+    debugLog(state, 'type-declaration', `Found type declaration: ${declarationWithoutComments}`)
     const processed = processTypeDeclaration(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -702,6 +706,8 @@ function processSpecificDeclaration(
     || declarationWithoutComments.startsWith('async function')
     || declarationWithoutComments.startsWith('export async function')
   ) {
+    debugLog(state, 'function-declaration', `Found function declaration: ${declarationWithoutComments}`)
+
     const processed = processFunctionDeclaration(
       fullDeclaration,
       state.usedTypes,
@@ -715,11 +721,13 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('export {')
     || declarationWithoutComments.startsWith('export *')
   ) {
+    debugLog(state, 'export-declaration', `Found export declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export type {')) {
+    debugLog(state, 'export-type-declaration', `Found export type declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
@@ -730,6 +738,7 @@ function processSpecificDeclaration(
     || declarationWithoutComments.startsWith('abstract class')
     || declarationWithoutComments.startsWith('export abstract class')
   ) {
+    debugLog(state, 'class-declaration', `Found class declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -742,6 +751,7 @@ function processSpecificDeclaration(
     || declarationWithoutComments.startsWith('const enum')
     || declarationWithoutComments.startsWith('export const enum')
   ) {
+    debugLog(state, 'enum-declaration', `Found enum declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -752,6 +762,7 @@ function processSpecificDeclaration(
     declarationWithoutComments.startsWith('namespace')
     || declarationWithoutComments.startsWith('export namespace')
   ) {
+    debugLog(state, 'namespace-declaration', `Found namespace declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -764,6 +775,7 @@ function processSpecificDeclaration(
     || declarationWithoutComments.startsWith('var')
     || declarationWithoutComments.startsWith('export var')
   ) {
+    debugLog(state, 'variable-declaration', `Found variable declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -887,11 +899,7 @@ function processInterfaceDeclaration(declaration: string, isExported = true): st
 /**
  * Process type declarations
  */
-function processDeclarationBlock(
-  lines: string[],
-  comments: string[],
-  state: ProcessingState,
-): void {
+function processDeclarationBlock(lines: string[], comments: string[], state: ProcessingState): void {
   const declarationText = lines.join('\n')
   const cleanedDeclaration = removeLeadingComments(declarationText).trimStart()
 
@@ -913,7 +921,6 @@ function processDeclarationBlock(
     return
   }
 
-  // Handle other declarations as before...
   const jsdocComments = comments.filter(isJSDocComment)
   if (jsdocComments.length > 0) {
     state.dtsLines.push(...jsdocComments.map(comment => comment.trimEnd()))
