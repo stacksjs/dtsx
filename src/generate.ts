@@ -7,7 +7,6 @@ import { extract } from './extract'
 import { checkIsolatedDeclarations, getAllTypeScriptFiles, writeToFile } from './utils'
 
 export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
-  // console.log('Generating declaration files...', options)
   try {
     // Check for isolatedModules setting
     const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
@@ -17,7 +16,6 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
     }
 
     if (options?.clean) {
-      // console.log('Cleaning output directory...')
       await rm(options.outdir, { recursive: true, force: true })
     }
 
@@ -29,10 +27,7 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
       files = await getAllTypeScriptFiles(options?.root)
     }
 
-    // console.log('Found the following TypeScript files:', files)
-
     for (const file of files) {
-      // console.log(`Processing file: ${file}`)
       const fileDeclarations = await extract(file)
 
       if (fileDeclarations) {
@@ -45,15 +40,11 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
 
         // Write the declarations without additional formatting
         await writeToFile(outputPath, fileDeclarations)
-
-        // console.log(`Generated ${outputPath}`)
       }
       else {
         console.warn(`No declarations extracted for ${file}`)
       }
     }
-
-    // console.log('Declaration file generation complete')
   }
   catch (error) {
     console.error('Error generating declarations:', error)
