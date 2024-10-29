@@ -1,4 +1,4 @@
-/* eslint-disable regexp/no-super-linear-backtracking */
+/* eslint-disable regexp/no-super-linear-backtracking, no-console, no-cond-assign */
 
 /**
  * Regular expression patterns used throughout the module
@@ -190,10 +190,6 @@ export interface FunctionSignature {
   returnType: string
   generics: string
 }
-
-// ===========================
-// Core Functions
-// ===========================
 
 /**
  * Creates initial processing state with empty collections
@@ -1530,7 +1526,7 @@ function splitObjectProperties(content: string): string[] {
  */
 function trackUsedTypes(content: string, usedTypes: Set<string>): void {
   let match: any
-  // eslint-disable-next-line no-cond-assign
+
   while ((match = REGEX.typePattern.exec(content)) !== null) {
     const type = match[1] || match[2]
     if (type) {
@@ -1558,7 +1554,7 @@ function trackTypeUsage(content: string, state: ImportTrackingState): void {
   // Only look for capitalized type references that are actually used in declarations
   const typePattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
   let match
-  // eslint-disable-next-line no-cond-assign
+
   while ((match = typePattern.exec(content)) !== null) {
     const typeName = match[1].split('<')[0] // Handle generic types
     state.usedTypes.add(typeName)
@@ -1581,7 +1577,6 @@ function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?:
 
   for (const pattern of patterns) {
     let match
-    // eslint-disable-next-line no-cond-assign
     while ((match = pattern.exec(content)) !== null) {
       const values = match[1].split(',').map(v => v.trim())
       for (const value of values) {
@@ -1647,7 +1642,6 @@ function formatOutput(state: ProcessingState): string {
     debugLog(state, 'output', `Adding ${currentSection.length} declarations`)
     parts.push(currentSection.join('\n'))
   }
-
   // Deduplicate and add export statements
   const exportLines = new Set([
     ...state.dtsLines.filter(isExportStatement),
