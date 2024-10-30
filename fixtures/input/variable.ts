@@ -126,12 +126,12 @@ export const complexArrays = {
     ['literal', 42, false] as const,
   ],
   // TODO: get this part to generate correctly
-  // mixedArrays: [
-  //   new Date(),
-  //   Promise.resolve('async'),
-  //   async () => 'result',
-  //   function* generator() { yield 42 },
-  // ]
+  mixedArrays: [
+    new Date(),
+    Promise.resolve('async'),
+    async () => 'result',
+    function* generator() { yield 42 },
+  ]
 }
 
 // TODO: Nested Object Types with Methods
