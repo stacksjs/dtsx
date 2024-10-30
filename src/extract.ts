@@ -1,5 +1,5 @@
 /* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
-import type { FunctionSignature, ImportTrackingState, MethodSignature, ProcessingState, PropertyInfo } from './types'
+import type { FunctionSignature, ImportTrackingState, ProcessingState } from './types'
 
 /**
  * Extracts types from a TypeScript file and generates corresponding .d.ts content
@@ -61,37 +61,55 @@ export function extractDtsTypes(sourceCode: string): string {
   return formatOutput(state)
 }
 
-/**
- * Extracts a substring that contains balanced opening and closing symbols, handling nested structures.
- * @param text - The text to extract from.
- * @param openSymbol - The opening symbol (e.g., '<', '(', '{').
- * @param closeSymbol - The closing symbol (e.g., '>', ')', '}').
- * @returns An object containing the content and the rest of the string.
- */
-function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: string): { content: string, rest: string } | null {
-  if (!text.startsWith(openSymbol)) {
-    return null
-  }
+function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: string, state?: ProcessingState): { content: string, rest: string } | null {
+  debugLog(state, 'balance', `Extracting balanced ${openSymbol}${closeSymbol} from text length ${text.length}`)
 
   let depth = 0
-  let result = ''
+  let inString = false
+  let stringChar = ''
+  let start = -1
+  let buffer = ''
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i]
-    if (char === openSymbol) {
-      depth++
+    const prevChar = i > 0 ? text[i - 1] : ''
+
+    // Handle strings
+    if ((char === '"' || char === '\'') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+        debugLog(state, 'balance-detail', `String start at ${i}`)
+      }
+      else if (char === stringChar) {
+        inString = false
+        debugLog(state, 'balance-detail', `String end at ${i}`)
+      }
     }
-    else if (char === closeSymbol) {
-      depth--
-      if (depth === 0) {
-        return {
-          content: text.slice(0, i + 1),
-          rest: text.slice(i + 1).trim(),
+
+    // Track symbols only when not in strings
+    if (!inString) {
+      if (char === openSymbol) {
+        if (start === -1)
+          start = i
+        depth++
+        debugLog(state, 'balance-detail', `Depth increased to ${depth} at ${i}`)
+      }
+      else if (char === closeSymbol) {
+        depth--
+        debugLog(state, 'balance-detail', `Depth decreased to ${depth} at ${i}`)
+
+        if (depth === 0 && start !== -1) {
+          buffer = text.slice(start, i + 1)
+          const rest = text.slice(i + 1)
+          debugLog(state, 'balance', `Extracted balanced content length ${buffer.length}`)
+          return { content: buffer, rest }
         }
       }
     }
-    result += char
   }
+
+  debugLog(state, 'balance', `Failed to find balanced symbols, depth: ${depth}`)
   return null
 }
 
@@ -155,99 +173,6 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
 }
 
 /**
- * Extract and process object properties
- */
-function extractObjectProperties(objectLiteral: string, state?: ProcessingState): PropertyInfo[] {
-  debugLog(state, 'property-extraction-detail', `Processing object literal: ${objectLiteral}`)
-
-  const properties: PropertyInfo[] = []
-  const content = objectLiteral.slice(1, -1).trim()
-  const parts = splitObjectProperties(content, state)
-
-  debugLog(state, 'property-extraction-detail', `Split into ${parts.length} parts`)
-
-  for (const part of parts) {
-    const property = processProperty(part, state)
-    if (property) {
-      properties.push(property)
-      debugLog(state, 'property-extraction-detail', `Added property ${property.key} with type ${property.type}`)
-    }
-  }
-
-  debugLog(state, 'property-extraction-detail', `Final properties count: ${properties.length}`)
-  return properties
-}
-
-/**
- * Extract nested content between delimiters
- */
-function extractNestedContent(content: string, openChar: string, closeChar: string, state?: ProcessingState): string | null {
-  debugLog(state, 'content-extraction', `Extracting nested content with ${openChar}${closeChar}`)
-
-  const startIdx = content.indexOf(openChar)
-  if (startIdx === -1)
-    return null
-
-  let depth = 0
-  let inString = false
-  let stringChar = ''
-  let inTemplate = false
-  let result = ''
-  let contentStarted = false
-
-  for (let i = startIdx; i < content.length; i++) {
-    const char = content[i]
-    const prevChar = i > 0 ? content[i - 1] : ''
-
-    // Handle string literals
-    if (!inTemplate && (char === '"' || char === '\'') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-        debugLog(state, 'content-extraction', `String start at ${i}`)
-      }
-      else if (char === stringChar) {
-        inString = false
-        debugLog(state, 'content-extraction', `String end at ${i}`)
-      }
-    }
-
-    // Handle template literals
-    if (char === '`' && prevChar !== '\\') {
-      inTemplate = !inTemplate
-      debugLog(state, 'content-extraction', `Template ${inTemplate ? 'start' : 'end'} at ${i}`)
-    }
-
-    // Track depth for braces/brackets
-    if (!inString && !inTemplate) {
-      if (char === openChar) {
-        depth++
-        debugLog(state, 'content-extraction', `Opening at ${i}, depth: ${depth}`)
-        if (!contentStarted) {
-          contentStarted = true
-          continue
-        }
-      }
-      else if (char === closeChar) {
-        depth--
-        debugLog(state, 'content-extraction', `Closing at ${i}, depth: ${depth}`)
-        if (depth === 0) {
-          debugLog(state, 'content-extraction', `Complete content captured, length: ${result.length}`)
-          return result
-        }
-      }
-    }
-
-    if (contentStarted) {
-      result += char
-    }
-  }
-
-  debugLog(state, 'content-extraction', `Failed to extract complete content, depth: ${depth}`)
-  return null
-}
-
-/**
  * Generate optimized imports based on usage
  */
 function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]): string[] {
@@ -286,70 +211,57 @@ function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]
   return imports.sort()
 }
 
-function extractCompleteObject(value: string, state?: ProcessingState): string | null {
-  debugLog(state, 'extract-object', `Starting extraction of object with length ${value.length}`)
-  const bracketStack: string[] = []
-  let result = ''
+function getDeclarationType(declaration: string): string {
+  if (declaration.includes('const '))
+    return 'const'
+  if (declaration.includes('let '))
+    return 'let'
+  return 'var'
+}
+
+function extractCompleteObjectContent(value: string, state?: ProcessingState): string | null {
+  debugLog(state, 'extract-object', `Processing object of length ${value.length}`)
+  const fullContent = value.trim()
+
+  // Must start with an object
+  if (!fullContent.startsWith('{')) {
+    return null
+  }
+
+  let depth = 0
   let inString = false
   let stringChar = ''
-  let inTemplate = false
-  let startBrace = ''
 
-  for (let i = 0; i < value.length; i++) {
-    const char = value[i]
-    const prevChar = i > 0 ? value[i - 1] : ''
+  for (let i = 0; i < fullContent.length; i++) {
+    const char = fullContent[i]
+    const prevChar = i > 0 ? fullContent[i - 1] : ''
 
-    // Handle strings
-    if (!inTemplate && (char === '"' || char === '\'') && prevChar !== '\\') {
+    // Handle string boundaries
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
       if (!inString) {
         inString = true
         stringChar = char
-        debugLog(state, 'extract-detail', `String start at ${i}`)
       }
       else if (char === stringChar) {
         inString = false
-        debugLog(state, 'extract-detail', `String end at ${i}`)
       }
-    }
-    else if (char === '`' && prevChar !== '\\') {
-      inTemplate = !inTemplate
+      continue
     }
 
-    // Handle brackets only when not in string/template
-    if (!inString && !inTemplate) {
-      if (char === '{' || char === '[' || char === '(') {
-        if (bracketStack.length === 0) {
-          startBrace = char
-        }
-        bracketStack.push(char)
-        debugLog(state, 'extract-detail', `Push ${char}, stack: [${bracketStack.join(',')}]`)
+    // Track depth when not in string
+    if (!inString) {
+      if (char === '{') {
+        depth++
       }
-      else if (char === '}' || char === ']' || char === ')') {
-        const last = bracketStack[bracketStack.length - 1]
-        const isMatching = (
-          (char === '}' && last === '{')
-          || (char === ']' && last === '[')
-          || (char === ')' && last === '(')
-        )
-
-        if (isMatching) {
-          bracketStack.pop()
-          debugLog(state, 'extract-detail', `Pop ${char}, stack: [${bracketStack.join(',')}]`)
-
-          // If this completes our object
-          if (bracketStack.length === 0 && startBrace === '{' && char === '}') {
-            result += char
-            debugLog(state, 'extract-complete', `Complete object extracted, length ${result.length}`)
-            return result
-          }
+      else if (char === '}') {
+        depth--
+        if (depth === 0) {
+          return fullContent.slice(0, i + 1)
         }
       }
     }
-
-    result += char
   }
 
-  debugLog(state, 'extract-failed', `Failed with stack: [${bracketStack.join(',')}]`)
   return null
 }
 
@@ -441,191 +353,135 @@ function createImportTrackingState(): ImportTrackingState {
   }
 }
 
-function inferValueType(value: string, state?: ProcessingState): string {
-  debugLog(state, 'type-inference', `Inferring value type from: ${value.substring(0, 50)}...`)
+function inferValueType(value: string): string {
+  value = value.trim()
 
-  if (value.startsWith('{')) {
-    debugLog(state, 'type-inference', 'Value is an object literal')
-    return 'Record<string, unknown>'
+  // For string literals, return the literal itself as the type
+  if (/^['"`].*['"`]$/.test(value)) {
+    return value
   }
 
-  if (value.startsWith('[')) {
-    debugLog(state, 'type-inference', 'Value is an array literal')
-    return 'unknown[]'
-  }
-
-  if (value.startsWith('\'') || value.startsWith('"')) {
-    debugLog(state, 'type-inference', 'Value is a string literal')
-    return 'string'
-  }
-
+  // For numeric literals
   if (!Number.isNaN(Number(value))) {
-    debugLog(state, 'type-inference', 'Value is a number literal')
-    return 'number'
+    return value
   }
 
+  // For boolean literals
   if (value === 'true' || value === 'false') {
-    debugLog(state, 'type-inference', 'Value is a boolean literal')
-    return 'boolean'
+    return value
   }
 
+  // For function expressions
   if (value.includes('=>')) {
-    debugLog(state, 'type-inference', 'Value is a function')
     return '(...args: any[]) => unknown'
   }
 
-  debugLog(state, 'type-inference', 'Value is an unknown literal')
   return 'unknown'
 }
 
 /**
  * Infer array type from array literal with support for nested arrays and mixed elements
  */
-function inferArrayType(value: string, preserveLiterals = true, state?: ProcessingState): string {
-  const content = extractNestedContent(value, '[', ']')
+function inferArrayType(value: string, state?: ProcessingState): string {
+  debugLog(state, 'infer-array', `Inferring array type for: ${value}`)
+  const content = value.slice(1, -1).trim()
   if (!content)
     return 'unknown[]'
 
-  const elements = splitArrayElements(content)
-  if (!elements.length)
-    return 'unknown[]'
+  // Handle 'as const' arrays
+  if (content.includes('as const')) {
+    const beforeConst = content.split('as const')[0].trim()
+    return inferConstArrayType(beforeConst, state)
+  }
 
+  const elements = splitArrayElements(content, state)
   const types = elements.map((element) => {
     const trimmed = element.trim()
 
+    if (trimmed.endsWith('as const')) {
+      return inferConstArrayType(trimmed.slice(0, -8).trim(), state)
+    }
     if (trimmed.startsWith('[')) {
-      return inferArrayType(trimmed, preserveLiterals)
+      return inferArrayType(trimmed, state)
     }
-
     if (trimmed.startsWith('{')) {
-      return inferObjectType(trimmed, state)
+      return inferComplexObjectType(trimmed, state)
     }
+    if (/^['"`].*['"`]$/.test(trimmed))
+      return trimmed
+    if (!Number.isNaN(Number(trimmed)))
+      return trimmed
+    if (trimmed === 'true' || trimmed === 'false')
+      return trimmed
+    if (trimmed.includes('=>'))
+      return '(...args: any[]) => unknown'
 
-    if (preserveLiterals) {
-      if (trimmed.startsWith('\'') || trimmed.startsWith('"'))
-        return trimmed
-      if (!Number.isNaN(Number(trimmed)))
-        return trimmed
-      if (trimmed === 'true' || trimmed === 'false')
-        return trimmed
-    }
-
-    return inferValueType(trimmed)
-  })
+    return 'unknown'
+  }).filter(Boolean)
 
   const uniqueTypes = Array.from(new Set(types))
-  return uniqueTypes.length === 1 ? `${uniqueTypes[0]}[]` : `Array<${uniqueTypes.join(' | ')}>`
+  return uniqueTypes.length === 1
+    ? `Array<${uniqueTypes[0]}>`
+    : `Array<${uniqueTypes.join(' | ')}>`
 }
 
-/**
- * Enhanced object type inference
- */
-function inferObjectType(content: string, state?: ProcessingState): string {
-  const propertyRegex = /(\w+|'[^']+'|"[^"]+")\s*:\s*([^,}]+)/g
-  const properties = []
-  let match
+function inferComplexObjectType(value: string, state?: ProcessingState): string {
+  debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
 
-  debugLog(state, 'infer-detail', 'Starting property extraction')
-  while ((match = propertyRegex.exec(content)) !== null) {
-    const [, key, value] = match
-    debugLog(state, 'infer-detail', `Found property ${key}: ${value.trim()}`)
-    properties.push({ key, value: value.trim() })
+  const content = extractCompleteObjectContent(value, state)
+  if (!content) {
+    return 'Record<string, unknown>'
   }
 
-  const typeEntries = properties.map(({ key, value }) => {
-    const cleanKey = key.replace(/^['"]|['"]$/g, '')
-    const formattedKey = /^[a-z_$][\w$]*$/i.test(cleanKey) ? cleanKey : `'${cleanKey}'`
+  const props = processObjectProperties(content, state)
+  if (!props.length) {
+    return '{}'
+  }
 
-    let type = value
-    if (value.startsWith('['))
-      type = inferArrayType(value, true)
-    else if (value.startsWith('{'))
-      type = inferObjectType(value, state)
-    else if (value.includes('=>'))
-      type = '() => void'
-    else if (/^['"`]/.test(value))
-      type = value
-    else if (value === 'true' || value === 'false')
-      type = value
-    else if (!Number.isNaN(Number(value)))
-      type = value
-    else type = inferValueType(value)
-
-    debugLog(state, 'infer-detail', `Inferred ${formattedKey}: ${type}`)
-    return `${formattedKey}: ${type}`
+  const typeEntries = props.map(({ key, value }) => {
+    const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
+    return `${formattedKey}: ${value}`
   })
 
   return `{\n  ${typeEntries.join(';\n  ')}\n}`
 }
 
-function inferComplexObjectType(value: string, state?: ProcessingState): string {
-  debugLog(state, 'infer-object', `Starting type inference for object of length ${value.length}`)
-  const cleanValue = value.trim()
+function inferConstArrayType(value: string, state?: ProcessingState): string {
+  debugLog(state, 'infer-const', `Inferring const array type for: ${value}`)
 
-  if (cleanValue === '{}') {
-    debugLog(state, 'infer-object', 'Empty object detected')
-    return '{}'
+  // Handle nested array with const assertion
+  if (value.startsWith('[')) {
+    const content = value.slice(1, -1).trim()
+    const elements = splitArrayElements(content, state)
+
+    const literalTypes = elements.map((element) => {
+      const trimmed = element.trim()
+
+      // Handle nested arrays
+      if (trimmed.startsWith('[')) {
+        return inferConstArrayType(trimmed, state)
+      }
+
+      // Handle nested objects
+      if (trimmed.startsWith('{')) {
+        return inferComplexObjectType(trimmed, state)
+      }
+
+      // Preserve literals
+      if (/^['"`].*['"`]$/.test(trimmed))
+        return trimmed
+      if (!Number.isNaN(Number(trimmed)))
+        return trimmed
+      if (trimmed === 'true' || trimmed === 'false')
+        return trimmed
+
+      return 'unknown'
+    })
+
+    return `readonly [${literalTypes.join(', ')}]`
   }
 
-  const extracted = extractCompleteObject(cleanValue, state)
-  if (!extracted) {
-    debugLog(state, 'infer-object', 'Failed to extract complete object')
-    return 'Record<string, unknown>'
-  }
-
-  try {
-    debugLog(state, 'infer-object', 'Splitting object properties')
-    const properties = splitObjectProperties(extracted.slice(1, -1), state)
-    debugLog(state, 'infer-object', `Found ${properties.length} properties`)
-
-    const typeEntries = properties.map((prop, index) => {
-      const colonIndex = prop.indexOf(':')
-      if (colonIndex === -1)
-        return null
-
-      const key = prop.slice(0, colonIndex).trim()
-      const value = prop.slice(colonIndex + 1).trim()
-
-      const cleanKey = key.replace(/^['"]|['"]$/g, '')
-      const formattedKey = /^[a-z_$][\w$]*$/i.test(cleanKey) ? cleanKey : `'${cleanKey}'`
-
-      debugLog(state, 'infer-object-property', `Processing property ${index + 1}: ${formattedKey}`)
-      const cleanValue = value.replace(/,$/, '').trim()
-
-      let type: string
-      if (cleanValue.startsWith('[')) {
-        type = inferArrayType(cleanValue, true)
-      }
-      else if (cleanValue.startsWith('{')) {
-        type = inferComplexObjectType(cleanValue, state)
-      }
-      else if (cleanValue.includes('=>')) {
-        type = '() => void'
-      }
-      else if (/^['"`]/.test(cleanValue)) {
-        type = cleanValue
-      }
-      else if (!Number.isNaN(Number(cleanValue))) {
-        type = cleanValue
-      }
-      else if (cleanValue === 'true' || cleanValue === 'false') {
-        type = cleanValue
-      }
-      else {
-        type = inferValueType(cleanValue)
-      }
-
-      return `${formattedKey}: ${type}`
-    }).filter(Boolean)
-
-    const result = `{\n  ${typeEntries.join(';\n  ')}\n}`
-    debugLog(state, 'infer-object', `Type inference complete: ${result}`)
-    return result
-  }
-  catch (error) {
-    debugLog(state, 'infer-object-error', `Failed to infer complex object type: ${error}`)
-    return 'Record<string, unknown>'
-  }
+  return 'unknown'
 }
 
 /**
@@ -680,43 +536,53 @@ export function isDeclarationComplete(content: string | string[]): boolean {
  */
 export function processBlock(lines: string[], comments: string[], state: ProcessingState): void {
   const declarationText = lines.join('\n')
-  const cleanedDeclaration = removeLeadingComments(declarationText).trimStart()
+  const cleanDeclaration = removeLeadingComments(declarationText).trim()
 
-  if (
-    cleanedDeclaration.startsWith('interface')
-    || cleanedDeclaration.startsWith('export interface')
-    || cleanedDeclaration.startsWith('type')
-    || cleanedDeclaration.startsWith('export type')
-  ) {
-    // Process the declaration while preserving all formatting and comments
-    const isInterface = cleanedDeclaration.startsWith('interface') || cleanedDeclaration.startsWith('export interface')
-    const isExported = declarationText.trimStart().startsWith('export')
+  // Keep track of declaration for debugging
+  state.debug.currentProcessing = cleanDeclaration
+  debugLog(state, 'processing', `Processing block: ${cleanDeclaration.substring(0, 100)}...`)
 
-    const processed = isInterface
-      ? processInterface(declarationText, isExported)
-      : processType(declarationText, isExported)
-
-    state.dtsLines.push(processed)
+  if (!cleanDeclaration) {
+    debugLog(state, 'processing', 'Empty declaration block')
     return
   }
 
-  const jsdocComments = comments.filter(isJSDocComment)
-  if (jsdocComments.length > 0) {
-    state.dtsLines.push(...jsdocComments.map(comment => comment.trimEnd()))
+  // Handle export statements first
+  if (cleanDeclaration.startsWith('export')) {
+    const exportMatch = cleanDeclaration.match(/^export\s+(?:type\s+)?(\{[^}]+\})/)
+    if (exportMatch) {
+      state.dtsLines.push(declarationText)
+      return
+    }
   }
 
-  const cleanedLines = lines.map((line) => {
-    const commentIndex = line.indexOf('//')
-    return commentIndex !== -1 ? line.substring(0, commentIndex).trim() : line
-  }).filter(Boolean)
-
-  const declaration = cleanedLines.join('\n').trim()
-  if (!declaration) {
+  // Process by declaration type
+  if (cleanDeclaration.startsWith('const') || cleanDeclaration.startsWith('let') || cleanDeclaration.startsWith('var')
+    || cleanDeclaration.startsWith('export const') || cleanDeclaration.startsWith('export let') || cleanDeclaration.startsWith('export var')) {
+    const isExported = cleanDeclaration.startsWith('export')
+    state.dtsLines.push(processVariable(declarationText, isExported, state))
     return
   }
 
-  const declarationWithoutComments = removeLeadingComments(declaration).trimStart()
-  processSpecificDeclaration(declarationWithoutComments, declaration, state)
+  if (cleanDeclaration.startsWith('interface') || cleanDeclaration.startsWith('export interface')) {
+    const isExported = cleanDeclaration.startsWith('export')
+    state.dtsLines.push(processInterface(declarationText, isExported))
+    return
+  }
+
+  if (cleanDeclaration.startsWith('type') || cleanDeclaration.startsWith('export type')) {
+    const isExported = cleanDeclaration.startsWith('export')
+    state.dtsLines.push(processType(declarationText, isExported))
+    return
+  }
+
+  if (cleanDeclaration.startsWith('function') || cleanDeclaration.startsWith('export function')) {
+    const isExported = cleanDeclaration.startsWith('export')
+    state.dtsLines.push(processFunction(declarationText, state.usedTypes, isExported))
+    return
+  }
+
+  debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
 }
 
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
@@ -869,50 +735,65 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
   console.warn('Unhandled declaration type:', declarationWithoutComments.split('\n')[0])
 }
 
-// Modify processSourceFile to properly collect comments and match processBlock signature
 export function processSourceFile(content: string, state: ProcessingState): void {
   const lines = content.split('\n')
   let currentBlock: string[] = []
   let currentComments: string[] = []
-  let inComment = false
+  let bracketDepth = 0
+  let inDeclaration = false
+  // let declarationStart = -1
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+    const line = lines[i]
+    const trimmedLine = line.trim()
 
-    // Handle multi-line comments
-    if (line.startsWith('/*')) {
-      inComment = true
+    // Track comments
+    if (trimmedLine.startsWith('/*')) {
       currentComments.push(line)
       continue
     }
-    if (inComment) {
-      currentComments.push(line)
-      if (line.endsWith('*/')) {
-        inComment = false
-      }
-      continue
-    }
-
-    // Handle single line comments
-    if (line.startsWith('//')) {
+    if (trimmedLine.startsWith('//')) {
       currentComments.push(line)
       continue
     }
 
-    // Start a new block on exports/declarations
-    if (line.includes('export') || line.includes('const') || line.includes('let') || line.includes('var')) {
-      if (currentBlock.length > 0) {
+    // Track brackets for nesting depth
+    bracketDepth += (line.match(/\{/g) || []).length
+    bracketDepth -= (line.match(/\}/g) || []).length
+
+    // Handle declaration starts
+    if (isDeclarationStart(trimmedLine)) {
+      if (inDeclaration && currentBlock.length > 0) {
         processBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
       }
-      currentBlock.push(lines[i])
+      inDeclaration = true
+      // declarationStart = i
+      currentBlock = [line]
+      continue
     }
-    // Add to current block
-    else if (currentBlock.length > 0) {
-      // Only add non-empty lines
-      if (line) {
-        currentBlock.push(lines[i])
+
+    // Add line to current block if in declaration
+    if (inDeclaration) {
+      currentBlock.push(line)
+
+      // Check for declaration end
+      const isComplete = (
+        bracketDepth === 0 && (
+          trimmedLine.endsWith(';')
+          || trimmedLine.endsWith('}')
+          || trimmedLine.endsWith(',')
+          || trimmedLine.match(/\bas\s+const[,;]?$/)
+        )
+      )
+
+      if (isComplete) {
+        processBlock(currentBlock, currentComments, state)
+        currentBlock = []
+        currentComments = []
+        inDeclaration = false
+        // declarationStart = -1
       }
     }
   }
@@ -921,94 +802,6 @@ export function processSourceFile(content: string, state: ProcessingState): void
   if (currentBlock.length > 0) {
     processBlock(currentBlock, currentComments, state)
   }
-}
-
-export function processValue(value: string, state: ProcessingState): {
-  type: string
-  nested?: PropertyInfo[]
-  method?: MethodSignature
-} {
-  const trimmed = value.trim()
-  debugLog(state, 'value-processing', `Processing value: ${trimmed.substring(0, 50)}...`)
-
-  // Handle method declarations
-  if (trimmed.includes('(') && !trimmed.startsWith('(')) {
-    debugLog(state, 'value-processing', 'Attempting to parse method signature')
-    const methodSig = parseMethodSignature(trimmed)
-    if (methodSig) {
-      const { async, generics, params, returnType } = methodSig
-      const genericPart = generics ? `<${generics}>` : ''
-      const returnTypePart = returnType || 'void'
-      const type = `${async ? 'async ' : ''}${genericPart}(${params}) => ${returnTypePart}`
-      debugLog(state, 'value-processing', `Parsed method type: ${type}`)
-      return { type, method: methodSig }
-    }
-  }
-
-  // Handle object literals
-  if (trimmed.startsWith('{')) {
-    debugLog(state, 'value-processing', 'Processing object literal')
-    const nestedProperties = extractObjectProperties(trimmed, state)
-    const type = `{ ${nestedProperties.map(p => `${p.key}: ${p.type}`).join('; ')} }`
-    debugLog(state, 'value-processing', `Processed object type with ${nestedProperties.length} properties`)
-    return {
-      type,
-      nested: nestedProperties,
-    }
-  }
-
-  // Handle arrays
-  if (trimmed.startsWith('[')) {
-    debugLog(state, 'value-processing', 'Processing array type')
-    const elementTypes = inferArrayType(trimmed)
-    debugLog(state, 'value-processing', `Inferred array type: ${elementTypes}`)
-    return { type: elementTypes }
-  }
-
-  // Handle functions
-  if (trimmed.startsWith('(') || trimmed.startsWith('function') || trimmed.includes('=>')) {
-    debugLog(state, 'value-processing', 'Processing function type')
-    return { type: '(...args: any[]) => unknown' }
-  }
-
-  // Handle string literals
-  if (/^['"`]/.test(trimmed)) {
-    debugLog(state, 'value-processing', 'Processing string literal')
-    return { type: trimmed }
-  }
-
-  // Handle number literals
-  if (!Number.isNaN(Number(trimmed))) {
-    debugLog(state, 'value-processing', 'Processing number literal')
-    return { type: trimmed }
-  }
-
-  // Handle boolean literals
-  if (trimmed === 'true' || trimmed === 'false') {
-    debugLog(state, 'value-processing', 'Processing boolean literal')
-    return { type: trimmed }
-  }
-
-  // Handle method calls
-  if (trimmed.includes('.') && trimmed.includes('(')) {
-    debugLog(state, 'value-processing', 'Processing method call')
-    return { type: '() => void' }
-  }
-
-  // Handle property access
-  if (trimmed.includes('.')) {
-    debugLog(state, 'value-processing', 'Processing property access')
-    return { type: 'unknown' }
-  }
-
-  // Handle identifiers
-  if (/^[a-z_$][\w$]*$/i.test(trimmed)) {
-    debugLog(state, 'value-processing', 'Processing identifier')
-    return { type: 'unknown' }
-  }
-
-  debugLog(state, 'value-processing', 'Falling back to unknown type')
-  return { type: 'unknown' }
 }
 
 /**
@@ -1066,40 +859,46 @@ function processType(declaration: string, isExported = true): string {
 /**
  * Process variable (const, let, var)  declarations with type inference
  */
-export function processVariable(declaration: string, isExported: boolean, state: ProcessingState): string {
-  debugLog(state, 'process-variable', `Processing declaration: ${declaration.substring(0, 100)}...`)
-  const cleanDeclaration = removeLeadingComments(declaration).trim()
-
-  const typeMatch = cleanDeclaration.match(/(?:export\s+)?(?:const|let|var)\s+([^:\s]+)\s*:\s*([^=]+)=/)
-  if (typeMatch) {
-    const [, name, type] = typeMatch
+function processVariable(declaration: string, isExported: boolean, state: ProcessingState): string {
+  // Handle explicit type annotations first
+  const explicitTypeMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^:\s]+)\s*:\s*([^=]+)=/)
+  if (explicitTypeMatch) {
+    const [, name, type] = explicitTypeMatch
     debugLog(state, 'process-variable', `Found explicit type for ${name}: ${type}`)
     return `${isExported ? 'export ' : ''}declare const ${name}: ${type.trim()};`
   }
 
-  const nameMatch = cleanDeclaration.match(/(?:export\s+)?(?:const|let|var)\s+([^=\s]+)\s*=\s*(.+)$/s)
-  if (!nameMatch) {
+  // Handle value assignments
+  const valueMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^=\s]+)\s*=\s*(.+)$/s)
+  if (!valueMatch) {
     debugLog(state, 'process-variable', 'Failed to match variable declaration')
     return declaration
   }
 
-  const [, name, value] = nameMatch
-  const trimmedValue = value.trim()
+  const [, name, rawValue] = valueMatch
+  const declarationType = getDeclarationType(declaration)
+  const trimmedValue = rawValue.trim()
+
   debugLog(state, 'process-variable', `Processing ${name} with value length ${trimmedValue.length}`)
+
+  // Handle string literals
+  if (/^(['"`]).*\1$/.test(trimmedValue)) {
+    // For string literals, use type annotation instead of value assignment
+    return `${isExported ? 'export ' : ''}declare ${declarationType} ${name}: ${trimmedValue};`
+  }
 
   let type: string
   if (trimmedValue.startsWith('{')) {
-    debugLog(state, 'process-variable', `Inferring complex object type for ${name}`)
     type = inferComplexObjectType(trimmedValue, state)
   }
+  else if (trimmedValue.startsWith('[')) {
+    type = inferArrayType(trimmedValue, state)
+  }
   else {
-    debugLog(state, 'process-variable', `Inferring value type for ${name}`)
     type = inferValueType(trimmedValue)
   }
 
-  const result = `${isExported ? 'export ' : ''}declare const ${name}: ${type};`
-  debugLog(state, 'process-variable', `Generated declaration: ${result}`)
-  return result
+  return `${isExported ? 'export ' : ''}declare ${declarationType} ${name}: ${type};`
 }
 
 /**
@@ -1210,105 +1009,128 @@ function processModule(declaration: string): string {
   return formattedLines.join('\n')
 }
 
-export function processObjectProperties(declaration: string, state: ProcessingState): PropertyInfo[] {
-  debugLog(state, 'property-processing', `Processing object: ${declaration}`)
+function processObjectProperties(content: string, state?: ProcessingState): Array<{ key: string, value: string }> {
+  debugLog(state, 'process-props', `Processing properties from content length ${content.length}`)
+  const properties: Array<{ key: string, value: string }> = []
 
-  const content = declaration.slice(1, -1).trim()
-  debugLog(state, 'property-processing', `Content without braces: ${content}`)
+  // Remove the outer braces
+  const cleanContent = content.slice(1, -1).trim()
+  let buffer = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+  let currentKey = ''
+  // let parsingKey = true
 
-  const parts = splitObjectProperties(content, state)
-  const properties: PropertyInfo[] = []
+  for (let i = 0; i < cleanContent.length; i++) {
+    const char = cleanContent[i]
+    const prevChar = i > 0 ? cleanContent[i - 1] : ''
 
-  for (const part of parts) {
-    const colonIndex = part.indexOf(':')
-    if (colonIndex === -1)
+    // Handle strings
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+      buffer += char
       continue
-
-    let key = part.slice(0, colonIndex).trim()
-    const value = part.slice(colonIndex + 1).trim()
-
-    // Keep original quoting for key if it exists
-    const keyQuoted = /^['"].*['"]$/.test(key)
-    key = key.replace(/^['"]|['"]$/g, '')
-    const finalKey = keyQuoted ? `'${key}'` : key
-
-    debugLog(state, 'property-processing', `Processing "${key}" with value: ${value}`)
-
-    let type: string
-    if (value.startsWith('[')) {
-      type = inferArrayType(value, true)
-    }
-    else if (value.startsWith('{')) {
-      type = inferObjectType(value, state)
-    }
-    else if (value.includes('=>')) {
-      type = '(...args: unknown[]) => unknown'
-    }
-    else if (/^['"`]/.test(value)) {
-      type = value // Preserve string literals
-    }
-    else if (!Number.isNaN(Number(value))) {
-      type = value // Preserve number literals
-    }
-    else if (value === 'true' || value === 'false') {
-      type = value // Preserve boolean literals
-    }
-    else {
-      type = inferValueType(value)
     }
 
-    debugLog(state, 'property-processing', `Inferred type for "${key}": ${type}`)
-    properties.push({ key: finalKey, value, type })
+    // Track depth
+    if (!inString) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
+      }
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+      }
+      else if (char === ':' && depth === 0) {
+        currentKey = buffer.trim()
+        buffer = ''
+        // parsingKey = false
+        continue
+      }
+      else if (char === ',' && depth === 0) {
+        if (currentKey) {
+          const value = buffer.trim()
+          if (value) {
+            properties.push(processProperty(currentKey, value, state))
+          }
+        }
+        buffer = ''
+        currentKey = ''
+        // parsingKey = true
+        continue
+      }
+    }
+
+    buffer += char
+  }
+
+  // Handle final property
+  if (currentKey && buffer.trim()) {
+    properties.push(processProperty(currentKey, buffer.trim(), state))
   }
 
   return properties
 }
 
-export function processProperty(prop: string, state?: ProcessingState): PropertyInfo | null {
-  debugLog(state, 'property-processing-detail', `Processing raw property: ${prop}`)
+/**
+ * Process individual property with improved type inference
+ */
+function processProperty(key: string, value: string, state?: ProcessingState): { key: string, value: string } {
+  const cleanKey = key.replace(/^['"`]|['"`]$/g, '')
+  const cleanValue = value.trim()
 
-  const colonIndex = prop.indexOf(':')
-  if (colonIndex === -1) {
-    debugLog(state, 'property-processing-detail', 'No colon found in property')
-    return null
-  }
-
-  const key = prop.slice(0, colonIndex).trim().replace(/^['"]|['"]$/g, '')
-  const value = prop.slice(colonIndex + 1).trim()
-
-  debugLog(state, 'property-processing-detail', `Key: "${key}", Value: "${value.slice(0, 50)}..."`)
-
-  let type: string
-  if (value.startsWith('[')) {
-    type = inferArrayType(value, true)
-    debugLog(state, 'property-processing-detail', `Array type inferred: ${type}`)
-  }
-  else if (value.startsWith('{')) {
-    type = inferObjectType(value, state)
-    debugLog(state, 'property-processing-detail', `Object type inferred: ${type}`)
-  }
-  else if (value.includes('=>')) {
-    type = '(...args: unknown[]) => unknown'
-    debugLog(state, 'property-processing-detail', `Function type inferred`)
-  }
-  else if (/^['"`]/.test(value)) {
-    type = value
-    debugLog(state, 'property-processing-detail', `String literal preserved`)
-  }
-  else if (!Number.isNaN(Number(value))) {
-    type = value
-    debugLog(state, 'property-processing-detail', `Number literal preserved`)
-  }
-  else if (value === 'true' || value === 'false') {
-    type = value
-    debugLog(state, 'property-processing-detail', `Boolean literal preserved`)
-  }
-  else {
-    type = inferValueType(value)
-    debugLog(state, 'property-processing-detail', `Value type inferred: ${type}`)
+  // Handle 'as const' arrays
+  if (cleanValue.endsWith('as const')) {
+    const constValue = cleanValue.slice(0, -8).trim()
+    return {
+      key: cleanKey,
+      value: inferConstArrayType(constValue, state),
+    }
   }
 
-  return { key, value, type }
+  // Handle arrays
+  if (cleanValue.startsWith('[')) {
+    return {
+      key: cleanKey,
+      value: inferArrayType(cleanValue, state),
+    }
+  }
+
+  // Handle objects
+  if (cleanValue.startsWith('{')) {
+    return {
+      key: cleanKey,
+      value: inferComplexObjectType(cleanValue, state),
+    }
+  }
+
+  // Handle function expressions
+  if (cleanValue.includes('=>')) {
+    return {
+      key: cleanKey,
+      value: '(...args: any[]) => unknown',
+    }
+  }
+
+  // Handle literals
+  if (/^['"`].*['"`]$/.test(cleanValue)) {
+    return { key: cleanKey, value: cleanValue }
+  }
+  if (!Number.isNaN(Number(cleanValue))) {
+    return { key: cleanKey, value: cleanValue }
+  }
+  if (cleanValue === 'true' || cleanValue === 'false') {
+    return { key: cleanKey, value: cleanValue }
+  }
+
+  // Handle other expressions
+  return { key: cleanKey, value: 'unknown' }
 }
 
 const REGEX = {
@@ -1410,36 +1232,6 @@ function debugLog(state: ProcessingState | undefined, category: string, message:
   }
 }
 
-function parseMethodSignature(value: string): MethodSignature | null {
-  // Match async methods
-  const asyncMatch = value.match(/^async\s+([^<(]+)(?:<([^>]+)>)?\s*\(([\s\S]*?)\)(?:\s*:\s*([\s\S]+))?$/)
-  if (asyncMatch) {
-    const [, name, generics, params, returnType] = asyncMatch
-    return {
-      name,
-      async: true,
-      generics: generics || '',
-      params,
-      returnType: returnType || 'Promise<void>',
-    }
-  }
-
-  // Match regular methods
-  const methodMatch = value.match(/^([^<(]+)(?:<([^>]+)>)?\s*\(([\s\S]*?)\)(?:\s*:\s*([\s\S]+))?$/)
-  if (methodMatch) {
-    const [, name, generics, params, returnType] = methodMatch
-    return {
-      name,
-      async: false,
-      generics: generics || '',
-      params,
-      returnType: returnType || 'void',
-    }
-  }
-
-  return null
-}
-
 /**
  * Normalizes type references by cleaning up whitespace
  */
@@ -1460,80 +1252,49 @@ function splitArrayElements(content: string, state?: ProcessingState): string[] 
   let depth = 0
   let inString = false
   let stringChar = ''
-  let inTemplate = false
+  let inComment = false
+  let inMultilineComment = false
 
-  debugLog(state, 'array-split', `Splitting array elements of length ${content.length}`)
+  function addElement() {
+    const trimmed = current.trim()
+    if (trimmed) {
+      debugLog(state, 'array-split', `Found element: ${trimmed}`)
+      elements.push(trimmed)
+    }
+    current = ''
+  }
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i]
-    const prevChar = content[i - 1]
-
-    // Handle template literals
-    if (char === '`' && prevChar !== '\\') {
-      inTemplate = !inTemplate
-      current += char
-      continue
-    }
-
-    // Handle string literals
-    if (!inTemplate && (char === '"' || char === '\'') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-        debugLog(state, 'array-split', `String start at ${i}`)
-      }
-      else if (char === stringChar) {
-        inString = false
-        debugLog(state, 'array-split', `String end at ${i}`)
-      }
-    }
-
-    if (!inString && !inTemplate) {
-      if (char === '{' || char === '[' || char === '(') {
-        depth++
-        debugLog(state, 'array-split', `Nesting increased to ${depth}`)
-      }
-      else if (char === '}' || char === ']' || char === ')') {
-        depth--
-        debugLog(state, 'array-split', `Nesting decreased to ${depth}`)
-      }
-      else if (char === ',' && depth === 0) {
-        if (current.trim()) {
-          debugLog(state, 'array-split', `Found element: ${current.trim().substring(0, 50)}...`)
-          elements.push(current.trim())
-        }
-        current = ''
-        continue
-      }
-    }
-
-    current += char
-  }
-
-  if (current.trim()) {
-    debugLog(state, 'array-split', `Adding final element: ${current.trim().substring(0, 50)}...`)
-    elements.push(current.trim())
-  }
-
-  debugLog(state, 'array-split', `Split complete, found ${elements.length} elements`)
-  return elements
-}
-
-function splitObjectProperties(content: string, state?: ProcessingState): string[] {
-  debugLog(state, 'split-props', `Splitting properties of length ${content.length}`)
-  const properties: string[] = []
-  let current = ''
-  let depth = 0
-  let inString = false
-  let stringChar = ''
-  let inTemplate = false
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
+    const nextChar = content[i + 1] || ''
     const prevChar = i > 0 ? content[i - 1] : ''
 
+    // Handle comments
+    if (!inString) {
+      if (!inComment && !inMultilineComment && char === '/' && nextChar === '/') {
+        inComment = true
+        continue
+      }
+      if (!inComment && !inMultilineComment && char === '/' && nextChar === '*') {
+        inMultilineComment = true
+        continue
+      }
+      if (inMultilineComment && char === '*' && nextChar === '/') {
+        inMultilineComment = false
+        i++
+        continue
+      }
+      if (inComment && (char === '\n' || char === '\r')) {
+        inComment = false
+        continue
+      }
+    }
+
+    if (inComment || inMultilineComment)
+      continue
+
     // Handle strings
-    if (!inTemplate && (char === '"' || char === '\'') && prevChar !== '\\') {
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
       if (!inString) {
         inString = true
         stringChar = char
@@ -1541,30 +1302,18 @@ function splitObjectProperties(content: string, state?: ProcessingState): string
       else if (char === stringChar) {
         inString = false
       }
-      current += char
-      continue
     }
 
-    // Handle template literals
-    if (char === '`' && prevChar !== '\\') {
-      inTemplate = !inTemplate
-      current += char
-      continue
-    }
-
-    if (!inString && !inTemplate) {
-      if (char === '{' || char === '[' || char === '(') {
+    // Track nested structures when not in string
+    if (!inString) {
+      if (char === '[' || char === '{' || char === '(') {
         depth++
       }
-      else if (char === '}' || char === ']' || char === ')') {
+      else if (char === ']' || char === '}' || char === ')') {
         depth--
       }
       else if (char === ',' && depth === 0) {
-        if (current.trim()) {
-          properties.push(current.trim())
-          debugLog(state, 'split-props', `Found property: ${current.trim()}`)
-        }
-        current = ''
+        addElement()
         continue
       }
     }
@@ -1572,11 +1321,8 @@ function splitObjectProperties(content: string, state?: ProcessingState): string
     current += char
   }
 
-  if (current.trim()) {
-    properties.push(current.trim())
-    debugLog(state, 'split-props', `Found final property: ${current.trim()}`)
-  }
+  // Add final element
+  addElement()
 
-  debugLog(state, 'split-props', `Found ${properties.length} properties`)
-  return properties
+  return elements
 }
