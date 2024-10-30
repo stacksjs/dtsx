@@ -6,8 +6,6 @@ import { processImports, processSourceFile, processValue } from './process'
 import { trackTypeUsage, trackValueUsage } from './track'
 import { debugLog, normalizeType, splitObjectProperties } from './utils'
 
-/* eslint-disable regexp/no-super-linear-backtracking */
-
 /**
  * Extracts types from a TypeScript file and generates corresponding .d.ts content
  * @param filePath - Path to source TypeScript file
@@ -108,8 +106,7 @@ function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: s
 export function extractFunctionSignature(declaration: string): FunctionSignature {
   // Remove comments and clean up the declaration
   const cleanDeclaration = removeLeadingComments(declaration).trim()
-
-  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(\*)?\s*([^(<\s]+)/
+  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(?:(\*)\s*)?([^(<\s]+)/
   const functionMatch = cleanDeclaration.match(functionPattern)
 
   if (!functionMatch) {

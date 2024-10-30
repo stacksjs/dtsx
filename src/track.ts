@@ -1,7 +1,5 @@
-/**
- * Regular expression patterns used throughout the module
- * @remarks These patterns are optimized for performance and reliability
- */
+/* eslint-disable no-cond-assign, regexp/no-super-linear-backtracking, regexp/no-misleading-capturing-group */
+
 const REGEX = {
   typePattern: /(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)|extends\s+([A-Z]\w*(?:<[^>]+>)?)/g,
 } as const
@@ -11,7 +9,6 @@ const REGEX = {
  */
 export function trackUsedTypes(content: string, usedTypes: Set<string>): void {
   let match: any
-
   while ((match = REGEX.typePattern.exec(content)) !== null) {
     const type = match[1] || match[2]
     if (type) {

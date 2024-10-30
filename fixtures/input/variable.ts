@@ -1,3 +1,4 @@
+// @ts-nocheck
 import process from 'node:process'
 import type { DtsGenerationConfig } from '@stacksjs/dtsx'
 

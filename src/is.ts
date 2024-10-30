@@ -22,7 +22,7 @@ export function isDeclarationStart(line: string): boolean {
     || line.startsWith('async function ')
     || line.startsWith('declare ')
     || line.startsWith('declare module')
-    || /^export\s+(interface|type|const|function|async\s+function)/.test(line)
+    || /^export\s+(?:interface|type|const|function|async\s+function)/.test(line)
     || line.startsWith('export async function')
   )
 }

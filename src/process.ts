@@ -1,3 +1,4 @@
+/* eslint-disable regexp/no-super-linear-backtracking,regexp/optimal-quantifier-concatenation */
 import type { ProcessingState, PropertyInfo } from './types'
 import { cleanComments, removeLeadingComments } from './comments'
 import { extractCleanObjectLiteral, extractFunctionSignature, extractObjectProperties } from './extract'

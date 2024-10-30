@@ -1,3 +1,4 @@
+/* eslint-disable regexp/no-super-linear-backtracking */
 import type { DtsGenerationConfig, ProcessingState } from './types'
 import { readdir } from 'node:fs/promises'
 import { extname, join } from 'node:path'
