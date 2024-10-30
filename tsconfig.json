@@ -26,6 +26,7 @@
     "skipLibCheck": true
   },
   "exclude": [
-    "**/fixtures"
-  ]
+    "**/fixtures",
+    "**/dist"
+  ],
 }
