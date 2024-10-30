@@ -290,6 +290,194 @@ function formatOutput(state: ProcessingState): string {
 }
 
 /**
+ * Format a type value with proper indentation
+ */
+function formatTypeValue(value: string, indentLevel: number): string {
+  if (!value)
+    return 'unknown'
+
+  // Normalize whitespace first
+  const normalized = value.replace(/\s+/g, ' ').trim()
+
+  // For arrays, always inline
+  if (normalized.startsWith('Array<')) {
+    const content = normalized.slice(6, -1).trim()
+    // Replace any newlines and extra spaces in array content
+    const inlinedContent = content
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return `Array<${inlinedContent}>`
+  }
+
+  // For objects, maintain formatting
+  if (normalized.startsWith('{')) {
+    return formatObjectType(normalized, indentLevel)
+  }
+
+  return normalized
+}
+
+function formatObjectType(value: string, indentLevel: number): string {
+  const indent = '  '.repeat(indentLevel)
+  const baseIndent = '  '.repeat(Math.max(0, indentLevel - 1))
+
+  // Handle empty objects
+  if (value === '{}' || value === '{ }')
+    return '{}'
+
+  const content = value.slice(1, -1).trim()
+  const properties = parseObjectProperties(content)
+
+  if (properties.length === 0)
+    return '{}'
+
+  const propertyStrings = properties.map(({ key, value }) => {
+    const formattedKey = /^\w+$/.test(key.replace(/^['"`]|['"`]$/g, ''))
+      ? key.replace(/^['"`]|['"`]$/g, '')
+      : `'${key.replace(/^['"`]|['"`]$/g, '')}'`
+
+    // If the value is an object, format it
+    let formattedValue = value.trim()
+    if (formattedValue.startsWith('{')) {
+      formattedValue = formatObjectType(formattedValue, indentLevel + 1)
+    }
+    else {
+      // For non-objects, ensure they're inlined
+      formattedValue = formattedValue.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
+    }
+
+    return `${indent}${formattedKey}: ${formattedValue}`
+  })
+
+  return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
+}
+
+/**
+ * Parse object properties safely
+ */
+function parseObjectProperties(content: string): Array<{ key: string, value: string }> {
+  const properties: Array<{ key: string, value: string }> = []
+  let currentProp = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    const prevChar = i > 0 ? content[i - 1] : ''
+
+    // Handle strings
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    // Track nested structures
+    if (!inString) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
+      }
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+      }
+      else if (char === ';' && depth === 0) {
+        if (currentProp.trim()) {
+          const prop = parseProperty(currentProp.trim())
+          if (prop)
+            properties.push(prop)
+        }
+        currentProp = ''
+        continue
+      }
+    }
+
+    currentProp += char
+  }
+
+  // Handle final property
+  if (currentProp.trim()) {
+    const prop = parseProperty(currentProp.trim())
+    if (prop)
+      properties.push(prop)
+  }
+
+  return properties
+}
+
+/**
+ * Parse individual property safely
+ */
+function parseProperty(prop: string): { key: string, value: string } | null {
+  const colonIndex = prop.indexOf(':')
+  if (colonIndex === -1)
+    return null
+
+  const key = prop.slice(0, colonIndex).trim()
+  const value = prop.slice(colonIndex + 1).trim()
+
+  return { key, value }
+}
+
+/**
+ * Split union types safely
+ */
+function splitUnionTypes(content: string): string[] {
+  const types: string[] = []
+  let current = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    const prevChar = i > 0 ? content[i - 1] : ''
+
+    // Handle strings
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    // Track nested structures
+    if (!inString) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
+      }
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+      }
+      else if (char === '|' && depth === 0) {
+        if (current.trim()) {
+          types.push(current.trim())
+        }
+        current = ''
+        continue
+      }
+    }
+
+    current += char
+  }
+
+  // Handle final type
+  if (current.trim()) {
+    types.push(current.trim())
+  }
+
+  return types
+}
+
+/**
  * Removes leading comments from code
  */
 function removeLeadingComments(code: string): string {
@@ -388,7 +576,7 @@ function inferArrayType(value: string, state?: ProcessingState): string {
   if (!content)
     return 'unknown[]'
 
-  // Check if all elements are const tuples
+  // Check for const assertions first
   const elements = splitArrayElements(content, state)
   const allConstTuples = elements.every(el => el.trim().endsWith('as const'))
 
@@ -400,61 +588,59 @@ function inferArrayType(value: string, state?: ProcessingState): string {
     return `Array<${tuples.join(' | ')}>`
   }
 
-  // Handle individual const assertions
-  if (content.includes('as const')) {
-    const beforeConst = content.slice(0, content.indexOf('as const')).trim()
-    return inferConstArrayType(beforeConst, state)
-  }
-
-  const types = elements.map((element) => {
+  // Process each element
+  const elementTypes = elements.map((element) => {
     const trimmed = element.trim()
 
-    if (trimmed.endsWith('as const')) {
-      return inferConstArrayType(trimmed.slice(0, -8).trim(), state)
-    }
+    // Handle nested arrays
     if (trimmed.startsWith('[')) {
       return inferArrayType(trimmed, state)
     }
+
+    // Handle objects
     if (trimmed.startsWith('{')) {
-      return inferComplexObjectType(trimmed, state)
+      const objectType = inferComplexObjectType(trimmed, state)
+      return objectType.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
     }
-    if (/^['"`].*['"`]$/.test(trimmed))
-      return trimmed
-    if (!Number.isNaN(Number(trimmed)))
-      return trimmed
-    if (trimmed === 'true' || trimmed === 'false')
-      return trimmed
-    if (trimmed.includes('=>'))
-      return '(...args: any[]) => unknown'
 
-    return 'unknown'
-  }).filter(Boolean)
+    // Handle other types
+    return normalizeTypeReference(trimmed)
+  })
 
-  const uniqueTypes = Array.from(new Set(types))
-  return uniqueTypes.length === 1
-    ? `Array<${uniqueTypes[0]}>`
-    : `Array<${uniqueTypes.join(' | ')}>`
+  return `Array<${elementTypes.join(' | ')}>`
 }
 
+/**
+ * Process object properties with improved formatting
+ */
 function inferComplexObjectType(value: string, state?: ProcessingState): string {
   debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
 
   const content = extractCompleteObjectContent(value, state)
-  if (!content) {
+  if (!content)
     return 'Record<string, unknown>'
-  }
 
   const props = processObjectProperties(content, state)
-  if (!props.length) {
+  if (!props.length)
     return '{}'
-  }
 
-  const typeEntries = props.map(({ key, value }) => {
-    const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
-    return `${formattedKey}: ${value}`
+  const propertyStrings = props.map(({ key, value }) => {
+    const formattedKey = /^\w+$/.test(key.replace(/^['"`]|['"`]$/g, ''))
+      ? key.replace(/^['"`]|['"`]$/g, '')
+      : `'${key.replace(/^['"`]|['"`]$/g, '')}'`
+
+    let formattedValue = value.trim()
+    if (formattedValue.startsWith('{')) {
+      formattedValue = formatObjectType(formattedValue, 2)
+    }
+    else {
+      formattedValue = formattedValue.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
+    }
+
+    return `  ${formattedKey}: ${formattedValue}`
   })
 
-  return `{\n  ${typeEntries.join(';\n  ')}\n}`
+  return `{\n${propertyStrings.join(';\n')}\n}`
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
@@ -540,6 +726,39 @@ export function isDeclarationComplete(content: string | string[]): boolean {
   const fullContent = Array.isArray(content) ? content.join('\n') : content
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
+}
+
+function normalizeTypeReference(value: string): string {
+  // Handle arrow functions and regular functions
+  if (value.includes('=>') || value.match(/\bfunction\b/)) {
+    return '((...args: any[]) => unknown)'
+  }
+
+  // Handle function calls like someFunction()
+  if (value.match(/\w+\s*\([^)]*\)/)) {
+    return 'unknown'
+  }
+
+  // Handle constructor expressions like new Date()
+  if (value.startsWith('new ')) {
+    return 'unknown'
+  }
+
+  // Handle console.log and similar value references
+  if (value.includes('.')) {
+    return 'unknown'
+  }
+
+  // Handle identifier references that should be typeof
+  if (/^[a-z_$][\w$]*$/i.test(value)
+    && !['unknown', 'string', 'number', 'boolean', 'null', 'undefined', 'any', 'never', 'void'].includes(value)
+    && !/^['"`]|^\d/.test(value)
+    && value !== 'true'
+    && value !== 'false') {
+    return 'unknown'
+  }
+
+  return value
 }
 
 /**
@@ -1024,14 +1243,17 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
   debugLog(state, 'process-props', `Processing properties from content length ${content.length}`)
   const properties: Array<{ key: string, value: string }> = []
 
-  // Remove the outer braces
+  // Remove outer braces and trim
   const cleanContent = content.slice(1, -1).trim()
+  if (!cleanContent)
+    return properties
+
   let buffer = ''
   let depth = 0
   let inString = false
   let stringChar = ''
   let currentKey = ''
-  // let parsingKey = true
+  let isParsingKey = true
 
   for (let i = 0; i < cleanContent.length; i++) {
     const char = cleanContent[i]
@@ -1050,7 +1272,7 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
       continue
     }
 
-    // Track depth
+    // Track nested structures
     if (!inString) {
       if (char === '{' || char === '[' || char === '(') {
         depth++
@@ -1058,22 +1280,20 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
       else if (char === '}' || char === ']' || char === ')') {
         depth--
       }
-      else if (char === ':' && depth === 0) {
+      else if (char === ':' && depth === 0 && isParsingKey) {
         currentKey = buffer.trim()
         buffer = ''
-        // parsingKey = false
+        isParsingKey = false
         continue
       }
       else if (char === ',' && depth === 0) {
-        if (currentKey) {
-          const value = buffer.trim()
-          if (value) {
-            properties.push(processProperty(currentKey, value, state))
-          }
+        if (currentKey && !isParsingKey) {
+          const processedProperty = processProperty(currentKey, buffer.trim(), state)
+          properties.push(processedProperty)
         }
         buffer = ''
         currentKey = ''
-        // parsingKey = true
+        isParsingKey = true
         continue
       }
     }
@@ -1082,23 +1302,20 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
   }
 
   // Handle final property
-  if (currentKey && buffer.trim()) {
-    properties.push(processProperty(currentKey, buffer.trim(), state))
+  if (currentKey && !isParsingKey && buffer.trim()) {
+    const processedProperty = processProperty(currentKey, buffer.trim(), state)
+    properties.push(processedProperty)
   }
 
   return properties
 }
 
-/**
- * Process individual property with improved type inference
- */
 function processProperty(key: string, value: string, state?: ProcessingState): { key: string, value: string } {
   const cleanKey = key.replace(/^['"`]|['"`]$/g, '')
   const cleanValue = value.trim()
 
-  // Handle arrays with const assertions
+  // Handle arrays
   if (cleanValue.startsWith('[')) {
-    // Multiple const tuples
     if (cleanValue.includes('as const')) {
       const arrayElements = splitArrayElements(cleanValue.slice(1, -1), state)
       const isAllConst = arrayElements.every(el => el.trim().endsWith('as const'))
@@ -1108,7 +1325,10 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
           const tupleContent = el.slice(0, el.indexOf('as const')).trim()
           return inferConstArrayType(tupleContent, state)
         })
-        return { key: cleanKey, value: `Array<${tuples.join(' | ')}>` }
+        return {
+          key: cleanKey,
+          value: `Array<${tuples.join(' | ')}>`,
+        }
       }
     }
 
@@ -1120,31 +1340,37 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
 
   // Handle objects
   if (cleanValue.startsWith('{')) {
-    return {
-      key: cleanKey,
-      value: inferComplexObjectType(cleanValue, state),
-    }
+    const objectType = inferComplexObjectType(cleanValue, state)
+    return { key: cleanKey, value: objectType }
   }
 
-  // Handle function expressions
-  if (cleanValue.includes('=>')) {
-    return {
-      key: cleanKey,
-      value: '(...args: any[]) => unknown',
-    }
+  // Handle other types
+  return {
+    key: cleanKey,
+    value: normalizeTypeReference(cleanValue),
   }
-
-  // Handle literals
-  if (/^['"`].*['"`]$/.test(cleanValue))
-    return { key: cleanKey, value: cleanValue }
-  if (!Number.isNaN(Number(cleanValue)))
-    return { key: cleanKey, value: cleanValue }
-  if (cleanValue === 'true' || cleanValue === 'false')
-    return { key: cleanKey, value: cleanValue }
-
-  // Handle other expressions
-  return { key: cleanKey, value: 'unknown' }
 }
+
+// Improve complex object type inference
+// function inferComplexObjectType(value: string, state?: ProcessingState): string {
+//   debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
+
+//   const content = extractCompleteObjectContent(value, state)
+//   if (!content)
+//     return 'Record<string, unknown>'
+
+//   const props = processObjectProperties(content, state)
+//   if (!props.length)
+//     return '{}'
+
+//   const propertyStrings = props.map(({ key, value }) => {
+//     const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
+//     const indent = '  '
+//     return `${indent}${formattedKey}: ${value}`
+//   })
+
+//   return `{\n${propertyStrings.join(';\n')}\n}`
+// }
 
 const REGEX = {
   typePattern: /(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)|extends\s+([A-Z]\w*(?:<[^>]+>)?)/g,
@@ -1265,46 +1491,10 @@ function splitArrayElements(content: string, state?: ProcessingState): string[] 
   let depth = 0
   let inString = false
   let stringChar = ''
-  let inComment = false
-  let inMultilineComment = false
-
-  function addElement() {
-    const trimmed = current.trim()
-    if (trimmed) {
-      debugLog(state, 'array-split', `Found element: ${trimmed}`)
-      elements.push(trimmed)
-    }
-    current = ''
-  }
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i]
-    const nextChar = content[i + 1] || ''
     const prevChar = i > 0 ? content[i - 1] : ''
-
-    // Handle comments
-    if (!inString) {
-      if (!inComment && !inMultilineComment && char === '/' && nextChar === '/') {
-        inComment = true
-        continue
-      }
-      if (!inComment && !inMultilineComment && char === '/' && nextChar === '*') {
-        inMultilineComment = true
-        continue
-      }
-      if (inMultilineComment && char === '*' && nextChar === '/') {
-        inMultilineComment = false
-        i++
-        continue
-      }
-      if (inComment && (char === '\n' || char === '\r')) {
-        inComment = false
-        continue
-      }
-    }
-
-    if (inComment || inMultilineComment)
-      continue
 
     // Handle strings
     if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
@@ -1317,7 +1507,7 @@ function splitArrayElements(content: string, state?: ProcessingState): string[] 
       }
     }
 
-    // Track nested structures when not in string
+    // Track depth when not in string
     if (!inString) {
       if (char === '[' || char === '{' || char === '(') {
         depth++
@@ -1326,7 +1516,12 @@ function splitArrayElements(content: string, state?: ProcessingState): string[] 
         depth--
       }
       else if (char === ',' && depth === 0) {
-        addElement()
+        const trimmed = current.trim()
+        if (trimmed) {
+          debugLog(state, 'array-split', `Found element: ${trimmed}`)
+          elements.push(trimmed)
+        }
+        current = ''
         continue
       }
     }
@@ -1335,7 +1530,11 @@ function splitArrayElements(content: string, state?: ProcessingState): string[] 
   }
 
   // Add final element
-  addElement()
+  const trimmed = current.trim()
+  if (trimmed) {
+    debugLog(state, 'array-split', `Found element: ${trimmed}`)
+    elements.push(trimmed)
+  }
 
   return elements
 }
