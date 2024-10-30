@@ -388,13 +388,24 @@ function inferArrayType(value: string, state?: ProcessingState): string {
   if (!content)
     return 'unknown[]'
 
-  // Handle 'as const' arrays
+  // Check if all elements are const tuples
+  const elements = splitArrayElements(content, state)
+  const allConstTuples = elements.every(el => el.trim().endsWith('as const'))
+
+  if (allConstTuples) {
+    const tuples = elements.map((el) => {
+      const tupleContent = el.slice(0, el.indexOf('as const')).trim()
+      return inferConstArrayType(tupleContent, state)
+    })
+    return `Array<${tuples.join(' | ')}>`
+  }
+
+  // Handle individual const assertions
   if (content.includes('as const')) {
-    const beforeConst = content.split('as const')[0].trim()
+    const beforeConst = content.slice(0, content.indexOf('as const')).trim()
     return inferConstArrayType(beforeConst, state)
   }
 
-  const elements = splitArrayElements(content, state)
   const types = elements.map((element) => {
     const trimmed = element.trim()
 
@@ -449,7 +460,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState): string 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
   debugLog(state, 'infer-const', `Inferring const array type for: ${value}`)
 
-  // Handle nested array with const assertion
+  // Handle array literals
   if (value.startsWith('[')) {
     const content = value.slice(1, -1).trim()
     const elements = splitArrayElements(content, state)
@@ -1085,17 +1096,22 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
   const cleanKey = key.replace(/^['"`]|['"`]$/g, '')
   const cleanValue = value.trim()
 
-  // Handle 'as const' arrays
-  if (cleanValue.endsWith('as const')) {
-    const constValue = cleanValue.slice(0, -8).trim()
-    return {
-      key: cleanKey,
-      value: inferConstArrayType(constValue, state),
-    }
-  }
-
-  // Handle arrays
+  // Handle arrays with const assertions
   if (cleanValue.startsWith('[')) {
+    // Multiple const tuples
+    if (cleanValue.includes('as const')) {
+      const arrayElements = splitArrayElements(cleanValue.slice(1, -1), state)
+      const isAllConst = arrayElements.every(el => el.trim().endsWith('as const'))
+
+      if (isAllConst) {
+        const tuples = arrayElements.map((el) => {
+          const tupleContent = el.slice(0, el.indexOf('as const')).trim()
+          return inferConstArrayType(tupleContent, state)
+        })
+        return { key: cleanKey, value: `Array<${tuples.join(' | ')}>` }
+      }
+    }
+
     return {
       key: cleanKey,
       value: inferArrayType(cleanValue, state),
@@ -1119,15 +1135,12 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
   }
 
   // Handle literals
-  if (/^['"`].*['"`]$/.test(cleanValue)) {
+  if (/^['"`].*['"`]$/.test(cleanValue))
     return { key: cleanKey, value: cleanValue }
-  }
-  if (!Number.isNaN(Number(cleanValue))) {
+  if (!Number.isNaN(Number(cleanValue)))
     return { key: cleanKey, value: cleanValue }
-  }
-  if (cleanValue === 'true' || cleanValue === 'false') {
+  if (cleanValue === 'true' || cleanValue === 'false')
     return { key: cleanKey, value: cleanValue }
-  }
 
   // Handle other expressions
   return { key: cleanKey, value: 'unknown' }

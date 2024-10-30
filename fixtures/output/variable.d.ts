@@ -47,5 +47,5 @@ export declare const defaultHeaders: {
 declare const dtsConfig: DtsGenerationConfig;
 export declare const complexArrays: {
   matrix: Array<Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> | Array<'a' | 'b' | Array<'c' | 'd'>> | Array<true | Array<false | Array<true>>>>;
-  tuples: readonly [1, 'string', true]
+  tuples: Array<readonly [1, 'string', true] | readonly ['literal', 42, false]>
 };
