@@ -531,6 +531,21 @@ function createImportTrackingState(): ImportTrackingState {
   }
 }
 
+function indentMultilineType(type: string, baseIndent: string, isLast: boolean): string {
+  const lines = type.split('\n')
+  return lines
+    .map((line, i) => {
+      if (i === 0)
+        return `${baseIndent}${line}`
+      const trimmed = line.trim()
+      if (!trimmed)
+        return ''
+      return `${baseIndent}  ${trimmed}`
+    })
+    .filter(Boolean)
+    .join('\n') + (isLast ? '' : ' |')
+}
+
 function inferValueType(value: string): string {
   value = value.trim()
 
@@ -582,7 +597,7 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   }
 
   // Process each element
-  const elementTypes = elements.map((element, index) => {
+  const elementTypes = elements.map((element) => {
     const trimmed = element.trim()
 
     // Handle nested arrays
@@ -626,23 +641,14 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   if (needsMultiline) {
     const formattedTypes = types.map((type, index) => {
       const isLast = index === types.length - 1
-      // For types that contain newlines, ensure proper indentation
+      // For types that contain newlines
       if (type.includes('\n')) {
-        const lines = type.split('\n')
-        const formattedLines = lines.map((line, i) => {
-          // First line gets element indentation
-          if (i === 0)
-            return line
-          // Other lines get additional indentation
-          return `${elementIndent}${line.trimLeft()}`
-        }).join('\n')
-        return `${elementIndent}${formattedLines}${isLast ? '' : ' |'}`
+        return indentMultilineType(type, elementIndent, isLast)
       }
       // For single-line types
       return `${elementIndent}${type}${isLast ? '' : ' |'}`
     })
 
-    // Join lines and ensure closing bracket aligns with parent
     return `Array<\n${formattedTypes.join('\n')}\n${baseIndent}>`
   }
 
@@ -661,6 +667,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 
   const baseIndent = '  '.repeat(indentLevel)
   const propIndent = '  '.repeat(indentLevel + 1)
+  const innerIndent = '  '.repeat(indentLevel + 2)
 
   const props = processObjectProperties(content, state)
   if (!props.length)
@@ -669,12 +676,19 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
   const propertyStrings = props.map(({ key, value }) => {
     const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
 
-    // Handle multiline values (like objects and arrays)
     if (value.includes('\n')) {
-      // Add one level of indentation to each line after the first
+      // Indent nested multiline values
       const indentedValue = value
         .split('\n')
-        .map((line, i) => i === 0 ? line : `${propIndent}${line.trim()}`)
+        .map((line, i) => {
+          if (i === 0)
+            return line
+          const trimmed = line.trim()
+          if (!trimmed)
+            return ''
+          return `${innerIndent}${trimmed}`
+        })
+        .filter(Boolean)
         .join('\n')
       return `${propIndent}${formattedKey}: ${indentedValue}`
     }
@@ -682,7 +696,6 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
     return `${propIndent}${formattedKey}: ${value}`
   })
 
-  // Ensure closing brace aligns with parent
   return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
 }
 
@@ -1348,7 +1361,13 @@ function processObjectMethod(declaration: string, value: string, state?: Process
   else if (isAsync && !effectiveReturnType.includes('Promise')) {
     effectiveReturnType = `Promise<${effectiveReturnType}>`
   }
-  else if (value.includes('toISOString()') || (value.includes('Intl.NumberFormat') && value.includes('format'))) {
+  else if (value.includes('toISOString()') || value.includes('toString()')) {
+    effectiveReturnType = 'string'
+  }
+  else if (value.includes('console.log') || value.match(/void\s*[;{]/)) {
+    effectiveReturnType = 'void'
+  }
+  else if (value.includes('Intl.NumberFormat') && value.includes('format')) {
     effectiveReturnType = 'string'
   }
 
@@ -1452,8 +1471,6 @@ function processProperty(key: string, value: string, state?: ProcessingState, in
   const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1')
   const cleanValue = value.trim()
 
-  debugLog(state, 'process-property', `Processing property "${cleanKey}" with value: ${cleanValue}`)
-
   // Handle method declarations
   if (cleanKey.includes('(')) {
     const { name, signature } = processObjectMethod(cleanKey, cleanValue, state)
@@ -1462,13 +1479,14 @@ function processProperty(key: string, value: string, state?: ProcessingState, in
 
   // Handle arrays with proper indentation
   if (cleanValue.startsWith('[')) {
-    debugLog(state, 'process-array', `Processing array in property "${cleanKey}"`)
-    return { key: cleanKey, value: inferArrayType(cleanValue, state, indentLevel) }
+    return {
+      key: cleanKey,
+      value: inferArrayType(cleanValue, state, indentLevel),
+    }
   }
 
   // Handle object literals with proper indentation
   if (cleanValue.startsWith('{')) {
-    debugLog(state, 'process-object', `Processing nested object in property "${cleanKey}"`)
     return {
       key: cleanKey,
       value: inferComplexObjectType(cleanValue, state, indentLevel),
@@ -1477,7 +1495,6 @@ function processProperty(key: string, value: string, state?: ProcessingState, in
 
   // Handle function expressions
   if (cleanValue.includes('=>') || cleanValue.includes('function')) {
-    debugLog(state, 'process-property', 'Processing function expression')
     const funcType = extractFunctionType(cleanValue, state)
     return {
       key: cleanKey,
@@ -1491,12 +1508,11 @@ function processProperty(key: string, value: string, state?: ProcessingState, in
     return { key: cleanKey, value: cleanValue }
   }
 
-  // Handle references to global objects or function calls
+  // Handle references and function calls
   if (cleanValue.includes('.') || cleanValue.includes('(')) {
     return { key: cleanKey, value: 'unknown' }
   }
 
-  // Default case
   return { key: cleanKey, value: 'unknown' }
 }
 
