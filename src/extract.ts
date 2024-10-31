@@ -1,6 +1,49 @@
 /* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
 import type { FunctionSignature, ImportTrackingState, ProcessingState } from './types'
 
+interface MethodParsingResult {
+  name: string
+  isAsync: boolean
+  typeParams: string
+  params: string
+  returnType: string
+}
+
+interface ProcessedMethod {
+  name: string
+  signature: string
+}
+
+function cleanParameterTypes(params: string): string {
+  if (!params.trim())
+    return ''
+
+  // Split parameters by comma, handling nested structures
+  return params.split(',').map((param) => {
+    const trimmed = param.trim()
+    if (!trimmed)
+      return ''
+
+    // Handle parameters with type annotations
+    const typeMatch = trimmed.match(/^([^:]+):\s*([^=]+)(?:\s*=\s*.+)?$/)
+    if (typeMatch) {
+      const [, paramName, paramType] = typeMatch
+      return `${paramName.trim()}: ${paramType.trim()}`
+    }
+
+    // Handle parameters with default values but no explicit type
+    const defaultMatch = trimmed.match(/^([^=]+)\s*=\s*(.+)$/)
+    if (defaultMatch) {
+      const [, paramName, defaultValue] = defaultMatch
+      const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
+      return `${paramName.trim()}: ${inferredType}`
+    }
+
+    // For simple parameters with no type or default, just return the parameter name
+    return trimmed.replace(/\s*:\s*$/, '') // Remove any trailing colons
+  }).filter(Boolean).join(', ')
+}
+
 /**
  * Extracts types from a TypeScript file and generates corresponding .d.ts content
  * @param filePath - Path to source TypeScript file
@@ -172,6 +215,36 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
   }
 }
 
+function extractFunctionType(value: string, state?: ProcessingState): string | null {
+  debugLog(state, 'extract-function', `Extracting function type from: ${value}`)
+
+  // Handle arrow functions with explicit parameter types
+  const arrowMatch = value.match(/^\((.*?)\)\s*=>\s*(.*)/)
+  if (arrowMatch) {
+    const [, params, returnPart] = arrowMatch
+    const cleanParams = cleanParameterTypes(params || '')
+    const returnType = inferReturnType(returnPart)
+    // Always wrap in parentheses for union type safety
+    return `(${cleanParams}) => ${returnType}`
+  }
+
+  // Handle function keyword with explicit parameter types
+  const funcMatch = value.match(/^function\s*\w*\s*\((.*?)\)(?:\s*:\s*([^{]+))?/)
+  if (funcMatch) {
+    const [, params, returnType] = funcMatch
+    const cleanParams = cleanParameterTypes(params || '')
+    // If no parameters, don't add type annotation
+    return `(${cleanParams}) => ${normalizeType(returnType || 'unknown')}`
+  }
+
+  // Handle simple function references
+  if (value.match(/^\w+$/)) {
+    return '() => unknown'
+  }
+
+  return '(...args: any[]) => unknown'
+}
+
 /**
  * Generate optimized imports based on usage
  */
@@ -289,192 +362,56 @@ function formatOutput(state: ProcessingState): string {
     .join('\n')}\n`
 }
 
-/**
- * Format a type value with proper indentation
- */
-function formatTypeValue(value: string, indentLevel: number): string {
-  if (!value)
-    return 'unknown'
+function parseMethodSignature(declaration: string): MethodParsingResult | null {
+  debugLog(undefined, 'method-parse', `Parsing method signature: ${declaration}`)
 
-  // Normalize whitespace first
-  const normalized = value.replace(/\s+/g, ' ').trim()
+  // Handle async methods
+  const isAsync = declaration.startsWith('async ')
+  const cleanDeclaration = declaration.replace(/^async\s+/, '')
 
-  // For arrays, always inline
-  if (normalized.startsWith('Array<')) {
-    const content = normalized.slice(6, -1).trim()
-    // Replace any newlines and extra spaces in array content
-    const inlinedContent = content
-      .replace(/\s*\n\s*/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-    return `Array<${inlinedContent}>`
-  }
-
-  // For objects, maintain formatting
-  if (normalized.startsWith('{')) {
-    return formatObjectType(normalized, indentLevel)
-  }
-
-  return normalized
-}
-
-function formatObjectType(value: string, indentLevel: number): string {
-  const indent = '  '.repeat(indentLevel)
-  const baseIndent = '  '.repeat(Math.max(0, indentLevel - 1))
-
-  // Handle empty objects
-  if (value === '{}' || value === '{ }')
-    return '{}'
-
-  const content = value.slice(1, -1).trim()
-  const properties = parseObjectProperties(content)
-
-  if (properties.length === 0)
-    return '{}'
-
-  const propertyStrings = properties.map(({ key, value }) => {
-    const formattedKey = /^\w+$/.test(key.replace(/^['"`]|['"`]$/g, ''))
-      ? key.replace(/^['"`]|['"`]$/g, '')
-      : `'${key.replace(/^['"`]|['"`]$/g, '')}'`
-
-    // If the value is an object, format it
-    let formattedValue = value.trim()
-    if (formattedValue.startsWith('{')) {
-      formattedValue = formatObjectType(formattedValue, indentLevel + 1)
-    }
-    else {
-      // For non-objects, ensure they're inlined
-      formattedValue = formattedValue.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
-    }
-
-    return `${indent}${formattedKey}: ${formattedValue}`
-  })
-
-  return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
-}
-
-/**
- * Parse object properties safely
- */
-function parseObjectProperties(content: string): Array<{ key: string, value: string }> {
-  const properties: Array<{ key: string, value: string }> = []
-  let currentProp = ''
-  let depth = 0
-  let inString = false
-  let stringChar = ''
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-    const prevChar = i > 0 ? content[i - 1] : ''
-
-    // Handle strings
-    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (char === stringChar) {
-        inString = false
-      }
-    }
-
-    // Track nested structures
-    if (!inString) {
-      if (char === '{' || char === '[' || char === '(') {
-        depth++
-      }
-      else if (char === '}' || char === ']' || char === ')') {
-        depth--
-      }
-      else if (char === ';' && depth === 0) {
-        if (currentProp.trim()) {
-          const prop = parseProperty(currentProp.trim())
-          if (prop)
-            properties.push(prop)
-        }
-        currentProp = ''
-        continue
-      }
-    }
-
-    currentProp += char
-  }
-
-  // Handle final property
-  if (currentProp.trim()) {
-    const prop = parseProperty(currentProp.trim())
-    if (prop)
-      properties.push(prop)
-  }
-
-  return properties
-}
-
-/**
- * Parse individual property safely
- */
-function parseProperty(prop: string): { key: string, value: string } | null {
-  const colonIndex = prop.indexOf(':')
-  if (colonIndex === -1)
+  // Extract method name and type parameters
+  const nameMatch = cleanDeclaration.match(/^([^(<\s]+)/)
+  if (!nameMatch)
     return null
 
-  const key = prop.slice(0, colonIndex).trim()
-  const value = prop.slice(colonIndex + 1).trim()
+  const name = nameMatch[1]
+  let rest = cleanDeclaration.slice(name.length)
 
-  return { key, value }
-}
-
-/**
- * Split union types safely
- */
-function splitUnionTypes(content: string): string[] {
-  const types: string[] = []
-  let current = ''
-  let depth = 0
-  let inString = false
-  let stringChar = ''
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-    const prevChar = i > 0 ? content[i - 1] : ''
-
-    // Handle strings
-    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (char === stringChar) {
-        inString = false
-      }
+  // Extract type parameters if present
+  let typeParams = ''
+  if (rest.startsWith('<')) {
+    const genericsResult = extractBalancedSymbols(rest, '<', '>')
+    if (genericsResult) {
+      typeParams = genericsResult.content
+      rest = genericsResult.rest
     }
-
-    // Track nested structures
-    if (!inString) {
-      if (char === '{' || char === '[' || char === '(') {
-        depth++
-      }
-      else if (char === '}' || char === ']' || char === ')') {
-        depth--
-      }
-      else if (char === '|' && depth === 0) {
-        if (current.trim()) {
-          types.push(current.trim())
-        }
-        current = ''
-        continue
-      }
-    }
-
-    current += char
   }
 
-  // Handle final type
-  if (current.trim()) {
-    types.push(current.trim())
+  // Extract parameters with type preservation
+  const paramsResult = extractBalancedSymbols(rest, '(', ')')
+  if (!paramsResult)
+    return null
+
+  // Get raw parameters and clean them
+  const rawParams = paramsResult.content.slice(1, -1)
+  const params = cleanParameterTypes(rawParams)
+  rest = paramsResult.rest.trim()
+
+  // Extract return type
+  let returnType = 'void'
+  if (rest.startsWith(':')) {
+    const match = rest.match(/^:\s*([^{;]+)/)
+    if (match)
+      returnType = match[1].trim()
   }
 
-  return types
+  return {
+    name,
+    isAsync,
+    typeParams,
+    params,
+    returnType: normalizeType(returnType),
+  }
 }
 
 /**
@@ -576,7 +513,7 @@ function inferArrayType(value: string, state?: ProcessingState): string {
   if (!content)
     return 'unknown[]'
 
-  // Check for const assertions first
+  // Handle const assertions first
   const elements = splitArrayElements(content, state)
   const allConstTuples = elements.every(el => el.trim().endsWith('as const'))
 
@@ -599,11 +536,21 @@ function inferArrayType(value: string, state?: ProcessingState): string {
 
     // Handle objects
     if (trimmed.startsWith('{')) {
-      const objectType = inferComplexObjectType(trimmed, state)
-      return objectType.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
+      return inferComplexObjectType(trimmed, state)
     }
 
-    // Handle other types
+    // Handle function expressions - always parenthesize
+    if (trimmed.includes('=>') || trimmed.includes('function')) {
+      const funcType = extractFunctionType(trimmed, state)
+      return funcType ? `(${funcType})` : '((...args: any[]) => unknown)'
+    }
+
+    // Handle method/function references
+    if (trimmed.includes('.') || /\w+\(/.test(trimmed)) {
+      return 'unknown'
+    }
+
+    // Handle other literals
     return normalizeTypeReference(trimmed)
   })
 
@@ -624,23 +571,38 @@ function inferComplexObjectType(value: string, state?: ProcessingState): string 
   if (!props.length)
     return '{}'
 
-  const propertyStrings = props.map(({ key, value }) => {
-    const formattedKey = /^\w+$/.test(key.replace(/^['"`]|['"`]$/g, ''))
-      ? key.replace(/^['"`]|['"`]$/g, '')
-      : `'${key.replace(/^['"`]|['"`]$/g, '')}'`
+  // Group methods and regular properties
+  const methods: Array<{ key: string, value: string }> = []
+  const regularProps: Array<{ key: string, value: string }> = []
 
-    let formattedValue = value.trim()
-    if (formattedValue.startsWith('{')) {
-      formattedValue = formatObjectType(formattedValue, 2)
-    }
-    else {
-      formattedValue = formattedValue.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
-    }
-
-    return `  ${formattedKey}: ${formattedValue}`
+  props.forEach((prop) => {
+    if (prop.key.includes('('))
+      methods.push(prop)
+    else
+      regularProps.push(prop)
   })
 
-  return `{\n${propertyStrings.join(';\n')}\n}`
+  // Process methods and properties separately
+  const parts: string[] = []
+
+  if (methods.length > 0) {
+    const methodsStr = processObjectMethods(methods, state)
+    if (methodsStr !== '{}')
+      parts.push(methodsStr.slice(1, -1).trim()) // Remove outer braces
+  }
+
+  if (regularProps.length > 0) {
+    const propsStr = regularProps.map(({ key, value }) => {
+      const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
+      return `  ${formattedKey}: ${value}`
+    }).join(';\n')
+    parts.push(propsStr)
+  }
+
+  if (parts.length === 0)
+    return '{}'
+
+  return `{\n${parts.join(';\n')}\n}`
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
@@ -677,6 +639,69 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
 
     return `readonly [${literalTypes.join(', ')}]`
   }
+
+  return 'unknown'
+}
+
+function inferReturnType(value: string): string {
+  // Remove comments and whitespace
+  const cleanValue = value.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
+
+  // Handle Promise returns
+  if (cleanValue.includes('Promise.') || cleanValue.includes('async'))
+    return 'Promise<unknown>'
+
+  // Handle void returns
+  if (cleanValue.includes('console.') || cleanValue.includes('void'))
+    return 'void'
+
+  // Handle never returns
+  if (cleanValue.includes('throw '))
+    return 'never'
+
+  // Handle string returns
+  if (cleanValue.includes('.toString') || cleanValue.includes('.toISOString'))
+    return 'string'
+
+  // Handle specific known return types
+  if (cleanValue.includes('new Intl.NumberFormat'))
+    return 'string'
+
+  // Default to unknown
+  return 'unknown'
+}
+
+function inferTypeFromDefaultValue(defaultValue: string): string {
+  // Handle string literals
+  if (/^['"`].*['"`]$/.test(defaultValue)) {
+    return 'string'
+  }
+
+  // Handle numeric literals
+  if (!Number.isNaN(Number(defaultValue))) {
+    return 'number'
+  }
+
+  // Handle boolean literals
+  if (defaultValue === 'true' || defaultValue === 'false') {
+    return 'boolean'
+  }
+
+  // Handle array literals
+  if (defaultValue.startsWith('[')) {
+    return 'unknown[]'
+  }
+
+  // Handle object literals
+  if (defaultValue.startsWith('{')) {
+    return 'object'
+  }
+
+  // Handle specific known values
+  if (defaultValue === 'null')
+    return 'null'
+  if (defaultValue === 'undefined')
+    return 'undefined'
 
   return 'unknown'
 }
@@ -729,7 +754,7 @@ export function isDeclarationComplete(content: string | string[]): boolean {
 }
 
 function normalizeTypeReference(value: string): string {
-  // Handle arrow functions and regular functions
+  // Handle arrow functions and regular functions - always parenthesize
   if (value.includes('=>') || value.match(/\bfunction\b/)) {
     return '((...args: any[]) => unknown)'
   }
@@ -1239,6 +1264,74 @@ function processModule(declaration: string): string {
   return formattedLines.join('\n')
 }
 
+function processObjectMethod(declaration: string, value: string, state?: ProcessingState): ProcessedMethod {
+  debugLog(state, 'process-method', `Processing object method: ${declaration}`)
+
+  const methodResult = parseMethodSignature(declaration)
+  if (!methodResult) {
+    debugLog(state, 'process-method', 'Failed to parse method signature')
+    return {
+      name: declaration.split('(')[0].trim().replace(/^async\s+/, ''),
+      signature: '() => unknown',
+    }
+  }
+
+  const {
+    name,
+    isAsync,
+    typeParams,
+    params,
+    returnType,
+  } = methodResult
+
+  // Clean parameters while preserving type annotations
+  const cleanParams = cleanParameterTypes(params)
+  let effectiveReturnType = normalizeType(returnType)
+
+  // Improve return type inference
+  if (value.includes('throw') && !effectiveReturnType.includes('Promise')) {
+    effectiveReturnType = 'never'
+  }
+  else if (isAsync && !effectiveReturnType.includes('Promise')) {
+    effectiveReturnType = `Promise<${effectiveReturnType}>`
+  }
+  else if (value.includes('console.log')) {
+    effectiveReturnType = 'void'
+  }
+
+  // Build method type
+  const signature = [
+    typeParams ? typeParams.trim() : '',
+    `(${cleanParams})`,
+    '=>',
+    effectiveReturnType,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  debugLog(state, 'process-method', `Generated method signature: ${signature}`)
+  return { name, signature }
+}
+
+/**
+ * Process a collection of object methods
+ */
+function processObjectMethods(methods: Array<{ key: string, value: string }>, state?: ProcessingState): string {
+  debugLog(state, 'process-methods', `Processing ${methods.length} methods`)
+
+  const processedMethods = methods.map(({ key, value }) => {
+    const { name, signature } = processObjectMethod(key, value, state)
+    return `${name}: ${signature}`
+  })
+
+  if (processedMethods.length === 0)
+    return '{}'
+
+  return `{\n  ${processedMethods.join(';\n  ')}\n}`
+}
+
 function processObjectProperties(content: string, state?: ProcessingState): Array<{ key: string, value: string }> {
   debugLog(state, 'process-props', `Processing properties from content length ${content.length}`)
   const properties: Array<{ key: string, value: string }> = []
@@ -1311,44 +1404,54 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
 }
 
 function processProperty(key: string, value: string, state?: ProcessingState): { key: string, value: string } {
-  const cleanKey = key.replace(/^['"`]|['"`]$/g, '')
+  const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1') // Remove quotes from key
   const cleanValue = value.trim()
 
-  // Handle arrays
+  debugLog(state, 'process-property', `Processing property "${cleanKey}" with value: ${cleanValue}`)
+
+  // Handle method declarations
+  if (cleanKey.includes('(')) {
+    const { name, signature } = processObjectMethod(cleanKey, cleanValue, state)
+    return { key: name, value: signature }
+  }
+
+  // Handle arrays first to prevent misidentification as function expressions
   if (cleanValue.startsWith('[')) {
-    if (cleanValue.includes('as const')) {
-      const arrayElements = splitArrayElements(cleanValue.slice(1, -1), state)
-      const isAllConst = arrayElements.every(el => el.trim().endsWith('as const'))
+    debugLog(state, 'process-array', `Processing array in property "${cleanKey}"`)
+    return { key: cleanKey, value: inferArrayType(cleanValue, state) }
+  }
 
-      if (isAllConst) {
-        const tuples = arrayElements.map((el) => {
-          const tupleContent = el.slice(0, el.indexOf('as const')).trim()
-          return inferConstArrayType(tupleContent, state)
-        })
-        return {
-          key: cleanKey,
-          value: `Array<${tuples.join(' | ')}>`,
-        }
-      }
-    }
-
+  // Handle object literals
+  if (cleanValue.startsWith('{')) {
+    debugLog(state, 'process-object', `Processing nested object in property "${cleanKey}"`)
     return {
       key: cleanKey,
-      value: inferArrayType(cleanValue, state),
+      value: inferComplexObjectType(cleanValue, state),
     }
   }
 
-  // Handle objects
-  if (cleanValue.startsWith('{')) {
-    const objectType = inferComplexObjectType(cleanValue, state)
-    return { key: cleanKey, value: objectType }
+  // Handle function expressions after arrays and objects
+  if (cleanValue.includes('=>') || cleanValue.includes('function')) {
+    debugLog(state, 'process-property', 'Processing function expression')
+    return {
+      key: cleanKey,
+      value: extractFunctionType(cleanValue, state) || '(...args: any[]) => unknown',
+    }
   }
 
-  // Handle other types
-  return {
-    key: cleanKey,
-    value: normalizeTypeReference(cleanValue),
+  // Handle primitive values and literals
+  if (/^(['"`]).*\1$/.test(cleanValue) || !Number.isNaN(Number(cleanValue))
+    || cleanValue === 'true' || cleanValue === 'false') {
+    return { key: cleanKey, value: cleanValue }
   }
+
+  // Handle references to global objects or function calls
+  if (cleanValue.includes('.') || cleanValue.includes('(')) {
+    return { key: cleanKey, value: 'unknown' }
+  }
+
+  // Default case
+  return { key: cleanKey, value: 'unknown' }
 }
 
 // Improve complex object type inference

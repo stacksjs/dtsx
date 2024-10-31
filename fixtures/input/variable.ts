@@ -134,24 +134,27 @@ export const complexArrays = {
   ]
 }
 
-// TODO: Nested Object Types with Methods
-// export const complexObject = {
-//   handlers: {
-//     async onSuccess<T>(data: T): Promise<void> {
-//       console.log(data)
-//     },
-//     onError(error: Error & { code?: number }): never {
-//       throw error
-//     }
-//   },
-//   utils: {
-//     formatters: {
-//       date: (input: Date) => input.toISOString(),
-//       currency: (amount: number, currency = 'USD') =>
-//         new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
-//     }
-//   }
-// }
+// Nested Object Types with Methods
+export const complexObject = {
+  handlers: {
+    async onSuccess<T>(data: T): Promise<void> {
+      console.log(data)
+    },
+    onError(error: Error & { code?: number }): never {
+      throw error
+    },
+    someOtherMethod() {
+      // some body
+    }
+  },
+  utils: {
+    formatters: {
+      date: (input: Date) => input.toISOString(),
+      currency: (amount: number, currency = 'USD') =>
+        new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
+    }
+  }
+}
 
 // TODO: Method Decorators and Metadata
 // export const methodDecorator = (
