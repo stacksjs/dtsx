@@ -582,7 +582,7 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   }
 
   // Process each element
-  const elementTypes = elements.map((element) => {
+  const elementTypes = elements.map((element, index) => {
     const trimmed = element.trim()
 
     // Handle nested arrays
@@ -626,16 +626,15 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   if (needsMultiline) {
     const formattedTypes = types.map((type, index) => {
       const isLast = index === types.length - 1
-      // For types that contain newlines, maintain their internal formatting
+      // For types that contain newlines, ensure proper indentation
       if (type.includes('\n')) {
         const lines = type.split('\n')
         const formattedLines = lines.map((line, i) => {
+          // First line gets element indentation
           if (i === 0)
             return line
-          // Increment indentation for nested lines
-          const currentIndent = line.match(/^\s*/)[0]
-          const additionalIndent = '  '.repeat(indentLevel + 1)
-          return `${additionalIndent}${line.trimLeft()}`
+          // Other lines get additional indentation
+          return `${elementIndent}${line.trimLeft()}`
         }).join('\n')
         return `${elementIndent}${formattedLines}${isLast ? '' : ' |'}`
       }
@@ -643,6 +642,7 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
       return `${elementIndent}${type}${isLast ? '' : ' |'}`
     })
 
+    // Join lines and ensure closing bracket aligns with parent
     return `Array<\n${formattedTypes.join('\n')}\n${baseIndent}>`
   }
 
@@ -661,7 +661,6 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 
   const baseIndent = '  '.repeat(indentLevel)
   const propIndent = '  '.repeat(indentLevel + 1)
-  const innerIndent = '  '.repeat(indentLevel + 2)
 
   const props = processObjectProperties(content, state)
   if (!props.length)
@@ -672,9 +671,10 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 
     // Handle multiline values (like objects and arrays)
     if (value.includes('\n')) {
+      // Add one level of indentation to each line after the first
       const indentedValue = value
         .split('\n')
-        .map((line, i) => i === 0 ? line : `${innerIndent}${line.trimLeft()}`)
+        .map((line, i) => i === 0 ? line : `${propIndent}${line.trim()}`)
         .join('\n')
       return `${propIndent}${formattedKey}: ${indentedValue}`
     }
@@ -682,6 +682,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
     return `${propIndent}${formattedKey}: ${value}`
   })
 
+  // Ensure closing brace aligns with parent
   return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
 }
 
@@ -720,34 +721,6 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
     return `readonly [${literalTypes.join(', ')}]`
   }
 
-  return 'unknown'
-}
-
-function inferReturnType(value: string): string {
-  // Remove comments and whitespace
-  const cleanValue = value.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
-
-  // Handle Promise returns
-  if (cleanValue.includes('Promise.') || cleanValue.includes('async'))
-    return 'Promise<unknown>'
-
-  // Handle void returns
-  if (cleanValue.includes('console.') || cleanValue.includes('void'))
-    return 'void'
-
-  // Handle never returns
-  if (cleanValue.includes('throw '))
-    return 'never'
-
-  // Handle string returns
-  if (cleanValue.includes('.toString') || cleanValue.includes('.toISOString'))
-    return 'string'
-
-  // Handle specific known return types
-  if (cleanValue.includes('new Intl.NumberFormat'))
-    return 'string'
-
-  // Default to unknown
   return 'unknown'
 }
 
@@ -1393,24 +1366,6 @@ function processObjectMethod(declaration: string, value: string, state?: Process
 
   debugLog(state, 'process-method', `Generated method signature: ${signature}`)
   return { name, signature }
-}
-
-/**
- * Process a collection of object methods
- */
-function processObjectMethods(methods: Array<{ key: string, value: string }>, state?: ProcessingState, indentLevel = 0): string {
-  debugLog(state, 'process-methods', `Processing ${methods.length} methods`)
-
-  if (methods.length === 0)
-    return '{}'
-
-  const indent = '  '.repeat(indentLevel)
-  const processedMethods = methods.map(({ key, value }) => {
-    const { name, signature } = processObjectMethod(key, value, state)
-    return `${indent}${name}: ${signature}`
-  })
-
-  return `{\n${processedMethods.join(';\n')}\n${indent}}`
 }
 
 function processObjectProperties(content: string, state?: ProcessingState): Array<{ key: string, value: string }> {
