@@ -619,11 +619,24 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   const needsMultiline = types.some(type =>
     type.includes('\n')
     || type.includes('{')
-    || type.length > 40,
+    || type.length > 40
+    || types.join(' | ').length > 60,
   )
 
   if (needsMultiline) {
-    return `Array<\n${elementIndent}${types.join(` |\n${elementIndent}`)}\n${baseIndent}>`
+    const formattedTypes = types.map((type) => {
+      // Indent nested types that have newlines
+      if (type.includes('\n')) {
+        return type.replace(/\n/g, `\n${elementIndent}`)
+      }
+      return type
+    })
+
+    return [
+      'Array<',
+      ...formattedTypes.map(type => `${elementIndent}${type}`),
+      `${baseIndent}>`,
+    ].join('\n')
   }
 
   return `Array<${types.join(' | ')}>`
