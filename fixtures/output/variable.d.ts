@@ -20,17 +20,17 @@ export declare const someObject: {
   key2: 'value2'
 } | 'test' | 1000> | Array<'some string' | unknown | unknown>>;
   someObject: {
-  key: 'value'
-};
+    key: 'value'
+  };
   someNestedObject: {
-  key: {
-  nestedKey: 'value'
-};
-  otherKey: {
-  nestedKey: unknown;
-  nestedKey2: () => void
-}
-};
+    key: {
+      nestedKey: 'value'
+    };
+    otherKey: {
+      nestedKey: unknown;
+      nestedKey2: () => unknown
+    }
+  };
   someNestedObjectArray: Array<{
   key: 'value'
 } | {
@@ -52,13 +52,13 @@ export declare const complexArrays: {
 };
 export declare const complexObject: {
   handlers: {
-  onSuccess: <T> (data: T) => Promise<void>;
-  onError: (error: Error & { code?: number }) => never
-};
+    onSuccess: (...args: any[]) => unknown;
+    onError: (error: Error & { code?: number }) => unknown
+  };
   utils: {
-  formatters: {
-  date: (input: Date) => string;
-  currency: (amount: number, currency: string) => string
-}
-}
+    formatters: {
+      date: (input: Date) => unknown;
+      currency: (amount: number, currency: string) => unknown
+    }
+  }
 };

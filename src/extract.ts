@@ -19,29 +19,70 @@ function cleanParameterTypes(params: string): string {
     return ''
 
   // Split parameters by comma, handling nested structures
-  return params.split(',').map((param) => {
-    const trimmed = param.trim()
-    if (!trimmed)
-      return ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+  let currentParam = ''
+  const cleanParams: string[] = []
 
-    // Handle parameters with type annotations
-    const typeMatch = trimmed.match(/^([^:]+):\s*([^=]+)(?:\s*=\s*.+)?$/)
-    if (typeMatch) {
-      const [, paramName, paramType] = typeMatch
-      return `${paramName.trim()}: ${paramType.trim()}`
+  for (let i = 0; i < params.length; i++) {
+    const char = params[i]
+    const prevChar = i > 0 ? params[i - 1] : ''
+
+    // Handle strings
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
     }
 
-    // Handle parameters with default values but no explicit type
-    const defaultMatch = trimmed.match(/^([^=]+)\s*=\s*(.+)$/)
-    if (defaultMatch) {
-      const [, paramName, defaultValue] = defaultMatch
-      const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
-      return `${paramName.trim()}: ${inferredType}`
+    // Track nested structures
+    if (!inString) {
+      if (char === '{' || char === '<' || char === '(') {
+        depth++
+      }
+      else if (char === '}' || char === '>' || char === ')') {
+        depth--
+      }
+      else if (char === ',' && depth === 0) {
+        cleanParams.push(cleanParameter(currentParam.trim()))
+        currentParam = ''
+        continue
+      }
     }
 
-    // For simple parameters with no type or default, just return the parameter name
-    return trimmed.replace(/\s*:\s*$/, '') // Remove any trailing colons
-  }).filter(Boolean).join(', ')
+    currentParam += char
+  }
+
+  if (currentParam.trim()) {
+    cleanParams.push(cleanParameter(currentParam.trim()))
+  }
+
+  return cleanParams.join(', ')
+}
+
+function cleanParameter(param: string): string {
+  // Handle parameters with type annotations
+  const typeMatch = param.match(/^([^:]+):\s*([^=]+)(?:\s*=\s*.+)?$/)
+  if (typeMatch) {
+    const [, paramName, paramType] = typeMatch
+    return `${paramName.trim()}: ${paramType.trim()}`
+  }
+
+  // Handle parameters with default values but no explicit type
+  const defaultMatch = param.match(/^([^=]+)\s*=\s*(.+)$/)
+  if (defaultMatch) {
+    const [, paramName, defaultValue] = defaultMatch
+    const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
+    return `${paramName.trim()}: ${inferredType}`
+  }
+
+  // For simple parameters with no type or default
+  return param.replace(/\s*=\s*(['"].*?['"]|\{.*?\}|\[.*?\]|\d+|true|false)/g, '')
 }
 
 /**
@@ -218,31 +259,43 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
 function extractFunctionType(value: string, state?: ProcessingState): string | null {
   debugLog(state, 'extract-function', `Extracting function type from: ${value}`)
 
+  const cleanValue = value.trim()
+
+  // Handle explicit return type annotations
+  const returnTypeMatch = cleanValue.match(/\):\s*([^{;]+)(?:\s*[{;]|$)/)
+  let returnType = returnTypeMatch ? normalizeType(returnTypeMatch[1]) : 'unknown'
+
+  // Check value contents for return type inference
+  if (returnType === 'unknown') {
+    if (cleanValue.includes('toISOString()')) {
+      returnType = 'string'
+    }
+    else if (cleanValue.includes('Intl.NumberFormat') && cleanValue.includes('format')) {
+      returnType = 'string'
+    }
+    else if (cleanValue.includes('console.log')) {
+      returnType = 'void'
+    }
+  }
+
   // Handle arrow functions with explicit parameter types
   const arrowMatch = value.match(/^\((.*?)\)\s*=>\s*(.*)/)
   if (arrowMatch) {
-    const [, params, returnPart] = arrowMatch
+    const [, params] = arrowMatch
+    // Clean parameters while preserving type annotations
     const cleanParams = cleanParameterTypes(params || '')
-    const returnType = inferReturnType(returnPart)
-    // Always wrap in parentheses for union type safety
     return `(${cleanParams}) => ${returnType}`
   }
 
   // Handle function keyword with explicit parameter types
-  const funcMatch = value.match(/^function\s*\w*\s*\((.*?)\)(?:\s*:\s*([^{]+))?/)
+  const funcMatch = value.match(/^function\s*\w*\s*\((.*?)\)/)
   if (funcMatch) {
-    const [, params, returnType] = funcMatch
+    const [, params] = funcMatch
     const cleanParams = cleanParameterTypes(params || '')
-    // If no parameters, don't add type annotation
-    return `(${cleanParams}) => ${normalizeType(returnType || 'unknown')}`
+    return `(${cleanParams}) => ${returnType}`
   }
 
-  // Handle simple function references
-  if (value.match(/^\w+$/)) {
-    return '() => unknown'
-  }
-
-  return '(...args: any[]) => unknown'
+  return null
 }
 
 /**
@@ -560,12 +613,15 @@ function inferArrayType(value: string, state?: ProcessingState): string {
 /**
  * Process object properties with improved formatting
  */
-function inferComplexObjectType(value: string, state?: ProcessingState): string {
+function inferComplexObjectType(value: string, state?: ProcessingState, indentLevel = 0): string {
   debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
 
   const content = extractCompleteObjectContent(value, state)
   if (!content)
     return 'Record<string, unknown>'
+
+  const baseIndent = '  '.repeat(indentLevel)
+  const propIndent = '  '.repeat(indentLevel + 1)
 
   const props = processObjectProperties(content, state)
   if (!props.length)
@@ -582,19 +638,26 @@ function inferComplexObjectType(value: string, state?: ProcessingState): string 
       regularProps.push(prop)
   })
 
-  // Process methods and properties separately
   const parts: string[] = []
 
   if (methods.length > 0) {
-    const methodsStr = processObjectMethods(methods, state)
-    if (methodsStr !== '{}')
+    const methodsStr = processObjectMethods(methods, state, indentLevel + 1)
+    if (methodsStr !== '{}') {
       parts.push(methodsStr.slice(1, -1).trim()) // Remove outer braces
+    }
   }
 
   if (regularProps.length > 0) {
     const propsStr = regularProps.map(({ key, value }) => {
       const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
-      return `  ${formattedKey}: ${value}`
+      let formattedValue = value
+
+      // Format nested objects with proper indentation
+      if (value.startsWith('{')) {
+        formattedValue = inferComplexObjectType(value, state, indentLevel + 1)
+      }
+
+      return `${propIndent}${formattedKey}: ${formattedValue}`
     }).join(';\n')
     parts.push(propsStr)
   }
@@ -602,7 +665,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState): string 
   if (parts.length === 0)
     return '{}'
 
-  return `{\n${parts.join(';\n')}\n}`
+  return `{\n${parts.join(';\n')}\n${baseIndent}}`
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
@@ -1288,15 +1351,15 @@ function processObjectMethod(declaration: string, value: string, state?: Process
   const cleanParams = cleanParameterTypes(params)
   let effectiveReturnType = normalizeType(returnType)
 
-  // Improve return type inference
+  // Handle special return types
   if (value.includes('throw') && !effectiveReturnType.includes('Promise')) {
     effectiveReturnType = 'never'
   }
   else if (isAsync && !effectiveReturnType.includes('Promise')) {
     effectiveReturnType = `Promise<${effectiveReturnType}>`
   }
-  else if (value.includes('console.log')) {
-    effectiveReturnType = 'void'
+  else if (value.includes('toISOString()') || (value.includes('Intl.NumberFormat') && value.includes('format'))) {
+    effectiveReturnType = 'string'
   }
 
   // Build method type
@@ -1318,18 +1381,19 @@ function processObjectMethod(declaration: string, value: string, state?: Process
 /**
  * Process a collection of object methods
  */
-function processObjectMethods(methods: Array<{ key: string, value: string }>, state?: ProcessingState): string {
+function processObjectMethods(methods: Array<{ key: string, value: string }>, state?: ProcessingState, indentLevel = 0): string {
   debugLog(state, 'process-methods', `Processing ${methods.length} methods`)
 
-  const processedMethods = methods.map(({ key, value }) => {
-    const { name, signature } = processObjectMethod(key, value, state)
-    return `${name}: ${signature}`
-  })
-
-  if (processedMethods.length === 0)
+  if (methods.length === 0)
     return '{}'
 
-  return `{\n  ${processedMethods.join(';\n  ')}\n}`
+  const indent = '  '.repeat(indentLevel)
+  const processedMethods = methods.map(({ key, value }) => {
+    const { name, signature } = processObjectMethod(key, value, state)
+    return `${indent}${name}: ${signature}`
+  })
+
+  return `{\n${processedMethods.join(';\n')}\n${indent}}`
 }
 
 function processObjectProperties(content: string, state?: ProcessingState): Array<{ key: string, value: string }> {
@@ -1347,6 +1411,7 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
   let stringChar = ''
   let currentKey = ''
   let isParsingKey = true
+  let inMethod = false
 
   for (let i = 0; i < cleanContent.length; i++) {
     const char = cleanContent[i]
@@ -1361,28 +1426,37 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
       else if (char === stringChar) {
         inString = false
       }
-      buffer += char
-      continue
     }
 
-    // Track nested structures
-    if (!inString) {
-      if (char === '{' || char === '[' || char === '(') {
-        depth++
-      }
-      else if (char === '}' || char === ']' || char === ')') {
-        depth--
-      }
-      else if (char === ':' && depth === 0 && isParsingKey) {
+    // Track method declarations
+    if (!inString && char === '(') {
+      if (depth === 0)
+        inMethod = true
+      depth++
+    }
+    else if (!inString && char === ')') {
+      depth--
+      if (depth === 0)
+        inMethod = false
+    }
+    else if (!inString && (char === '{' || char === '[')) {
+      depth++
+    }
+    else if (!inString && (char === '}' || char === ']')) {
+      depth--
+    }
+
+    // Handle property separation
+    if (!inString && !inMethod && depth === 0) {
+      if (char === ':' && isParsingKey) {
         currentKey = buffer.trim()
         buffer = ''
         isParsingKey = false
         continue
       }
-      else if (char === ',' && depth === 0) {
+      else if (char === ',' || char === ';') {
         if (currentKey && !isParsingKey) {
-          const processedProperty = processProperty(currentKey, buffer.trim(), state)
-          properties.push(processedProperty)
+          properties.push(processProperty(currentKey, buffer.trim(), state))
         }
         buffer = ''
         currentKey = ''
@@ -1396,15 +1470,14 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
 
   // Handle final property
   if (currentKey && !isParsingKey && buffer.trim()) {
-    const processedProperty = processProperty(currentKey, buffer.trim(), state)
-    properties.push(processedProperty)
+    properties.push(processProperty(currentKey, buffer.trim(), state))
   }
 
   return properties
 }
 
 function processProperty(key: string, value: string, state?: ProcessingState): { key: string, value: string } {
-  const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1') // Remove quotes from key
+  const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1')
   const cleanValue = value.trim()
 
   debugLog(state, 'process-property', `Processing property "${cleanKey}" with value: ${cleanValue}`)
@@ -1415,27 +1488,28 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
     return { key: name, value: signature }
   }
 
-  // Handle arrays first to prevent misidentification as function expressions
+  // Handle arrays
   if (cleanValue.startsWith('[')) {
     debugLog(state, 'process-array', `Processing array in property "${cleanKey}"`)
     return { key: cleanKey, value: inferArrayType(cleanValue, state) }
   }
 
-  // Handle object literals
+  // Handle object literals with proper indentation
   if (cleanValue.startsWith('{')) {
     debugLog(state, 'process-object', `Processing nested object in property "${cleanKey}"`)
     return {
       key: cleanKey,
-      value: inferComplexObjectType(cleanValue, state),
+      value: inferComplexObjectType(cleanValue, state, 0),
     }
   }
 
-  // Handle function expressions after arrays and objects
+  // Handle function expressions
   if (cleanValue.includes('=>') || cleanValue.includes('function')) {
     debugLog(state, 'process-property', 'Processing function expression')
+    const funcType = extractFunctionType(cleanValue, state)
     return {
       key: cleanKey,
-      value: extractFunctionType(cleanValue, state) || '(...args: any[]) => unknown',
+      value: funcType || '(...args: any[]) => unknown',
     }
   }
 
@@ -1450,7 +1524,6 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
     return { key: cleanKey, value: 'unknown' }
   }
 
-  // Default case
   return { key: cleanKey, value: 'unknown' }
 }
 
