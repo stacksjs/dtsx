@@ -560,11 +560,14 @@ function inferValueType(value: string): string {
 /**
  * Infer array type from array literal with support for nested arrays and mixed elements
  */
-function inferArrayType(value: string, state?: ProcessingState): string {
+function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0): string {
   debugLog(state, 'infer-array', `Inferring array type for: ${value}`)
   const content = value.slice(1, -1).trim()
   if (!content)
     return 'unknown[]'
+
+  const baseIndent = '  '.repeat(indentLevel)
+  const elementIndent = '  '.repeat(indentLevel + 1)
 
   // Handle const assertions first
   const elements = splitArrayElements(content, state)
@@ -584,12 +587,12 @@ function inferArrayType(value: string, state?: ProcessingState): string {
 
     // Handle nested arrays
     if (trimmed.startsWith('[')) {
-      return inferArrayType(trimmed, state)
+      return inferArrayType(trimmed, state, indentLevel + 1)
     }
 
-    // Handle objects
+    // Handle objects with proper indentation
     if (trimmed.startsWith('{')) {
-      return inferComplexObjectType(trimmed, state)
+      return inferComplexObjectType(trimmed, state, indentLevel + 1)
     }
 
     // Handle function expressions - always parenthesize
@@ -607,7 +610,23 @@ function inferArrayType(value: string, state?: ProcessingState): string {
     return normalizeTypeReference(trimmed)
   })
 
-  return `Array<${elementTypes.join(' | ')}>`
+  // Format the array type with proper indentation
+  const types = elementTypes.filter(Boolean)
+  if (types.length === 0)
+    return 'unknown[]'
+
+  // Check if we need multiline formatting
+  const needsMultiline = types.some(type =>
+    type.includes('\n')
+    || type.includes('{')
+    || type.length > 40,
+  )
+
+  if (needsMultiline) {
+    return `Array<\n${elementIndent}${types.join(` |\n${elementIndent}`)}\n${baseIndent}>`
+  }
+
+  return `Array<${types.join(' | ')}>`
 }
 
 /**
@@ -655,6 +674,12 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
       // Format nested objects with proper indentation
       if (value.startsWith('{')) {
         formattedValue = inferComplexObjectType(value, state, indentLevel + 1)
+      }
+      // Format array types with proper indentation
+      else if (value.startsWith('Array<')) {
+        // Extract the array content and re-indent it
+        const arrayContent = value.slice(6, -1)
+        formattedValue = `Array<${arrayContent}>`
       }
 
       return `${propIndent}${formattedKey}: ${formattedValue}`
@@ -1476,7 +1501,7 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
   return properties
 }
 
-function processProperty(key: string, value: string, state?: ProcessingState): { key: string, value: string } {
+function processProperty(key: string, value: string, state?: ProcessingState, indentLevel = 0): { key: string, value: string } {
   const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1')
   const cleanValue = value.trim()
 
@@ -1488,10 +1513,10 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
     return { key: name, value: signature }
   }
 
-  // Handle arrays
+  // Handle arrays with proper indentation
   if (cleanValue.startsWith('[')) {
     debugLog(state, 'process-array', `Processing array in property "${cleanKey}"`)
-    return { key: cleanKey, value: inferArrayType(cleanValue, state) }
+    return { key: cleanKey, value: inferArrayType(cleanValue, state, indentLevel) }
   }
 
   // Handle object literals with proper indentation
@@ -1499,7 +1524,7 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
     debugLog(state, 'process-object', `Processing nested object in property "${cleanKey}"`)
     return {
       key: cleanKey,
-      value: inferComplexObjectType(cleanValue, state, 0),
+      value: inferComplexObjectType(cleanValue, state, indentLevel),
     }
   }
 
@@ -1524,6 +1549,7 @@ function processProperty(key: string, value: string, state?: ProcessingState): {
     return { key: cleanKey, value: 'unknown' }
   }
 
+  // Default case
   return { key: cleanKey, value: 'unknown' }
 }
 

@@ -13,12 +13,25 @@ export declare const someObject: {
   someNestedArray: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
   someNestedArray2: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value'>;
   someNestedArray3: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value' | Array<11 | 12 | 13>>;
-  someOtherNestedArray: Array<Array<'some text' | 2 | unknown | (() => void) | unknown> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
-  someComplexArray: Array<Array<{
-  key: 'value'
-}> | Array<{
-  key2: 'value2'
-} | 'test' | 1000> | Array<'some string' | unknown | unknown>>;
+  someOtherNestedArray: Array<
+  Array<'some text' | 2 | unknown | (() => void) | unknown> |
+  Array<4 | 5 | 6 | 7 | 8 | 9 | 10>
+>;
+  someComplexArray: Array<
+  Array<
+    {
+      key: 'value'
+    }
+  > |
+  Array<
+    {
+      key2: 'value2'
+    } |
+    'test' |
+    1000
+  > |
+  Array<'some string' | unknown | unknown>
+>;
   someObject: {
     key: 'value'
   };
@@ -31,11 +44,14 @@ export declare const someObject: {
       nestedKey2: () => unknown
     }
   };
-  someNestedObjectArray: Array<{
-  key: 'value'
-} | {
-  key2: 'value2'
-}>;
+  someNestedObjectArray: Array<
+  {
+    key: 'value'
+  } |
+  {
+    key2: 'value2'
+  }
+>;
   someOtherObject: unknown;
   someInlineCall2: unknown;
   someInlineCall3: unknown
@@ -46,7 +62,11 @@ export declare const defaultHeaders: {
 };
 declare const dtsConfig: DtsGenerationConfig;
 export declare const complexArrays: {
-  matrix: Array<Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> | Array<'a' | 'b' | Array<'c' | 'd'>> | Array<true | Array<false | Array<true>>>>;
+  matrix: Array<
+  Array<1 | 2 | Array<3 | 4 | Array<5 | 6>>> |
+  Array<'a' | 'b' | Array<'c' | 'd'>> |
+  Array<true | Array<false | Array<true>>>
+>;
   tuples: Array<readonly [1, 'string', true] | readonly ['literal', 42, false]>;
   mixedArrays: Array<unknown | unknown | ((...args: any[]) => unknown) | ((...args: any[]) => unknown)>
 };
