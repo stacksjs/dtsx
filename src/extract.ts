@@ -624,19 +624,26 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   )
 
   if (needsMultiline) {
-    const formattedTypes = types.map((type) => {
-      // Indent nested types that have newlines
+    const formattedTypes = types.map((type, index) => {
+      const isLast = index === types.length - 1
+      // For types that contain newlines, maintain their internal formatting
       if (type.includes('\n')) {
-        return type.replace(/\n/g, `\n${elementIndent}`)
+        const lines = type.split('\n')
+        const formattedLines = lines.map((line, i) => {
+          if (i === 0)
+            return line
+          // Increment indentation for nested lines
+          const currentIndent = line.match(/^\s*/)[0]
+          const additionalIndent = '  '.repeat(indentLevel + 1)
+          return `${additionalIndent}${line.trimLeft()}`
+        }).join('\n')
+        return `${elementIndent}${formattedLines}${isLast ? '' : ' |'}`
       }
-      return type
+      // For single-line types
+      return `${elementIndent}${type}${isLast ? '' : ' |'}`
     })
 
-    return [
-      'Array<',
-      ...formattedTypes.map(type => `${elementIndent}${type}`),
-      `${baseIndent}>`,
-    ].join('\n')
+    return `Array<\n${formattedTypes.join('\n')}\n${baseIndent}>`
   }
 
   return `Array<${types.join(' | ')}>`
@@ -654,56 +661,28 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 
   const baseIndent = '  '.repeat(indentLevel)
   const propIndent = '  '.repeat(indentLevel + 1)
+  const innerIndent = '  '.repeat(indentLevel + 2)
 
   const props = processObjectProperties(content, state)
   if (!props.length)
     return '{}'
 
-  // Group methods and regular properties
-  const methods: Array<{ key: string, value: string }> = []
-  const regularProps: Array<{ key: string, value: string }> = []
+  const propertyStrings = props.map(({ key, value }) => {
+    const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
 
-  props.forEach((prop) => {
-    if (prop.key.includes('('))
-      methods.push(prop)
-    else
-      regularProps.push(prop)
+    // Handle multiline values (like objects and arrays)
+    if (value.includes('\n')) {
+      const indentedValue = value
+        .split('\n')
+        .map((line, i) => i === 0 ? line : `${innerIndent}${line.trimLeft()}`)
+        .join('\n')
+      return `${propIndent}${formattedKey}: ${indentedValue}`
+    }
+
+    return `${propIndent}${formattedKey}: ${value}`
   })
 
-  const parts: string[] = []
-
-  if (methods.length > 0) {
-    const methodsStr = processObjectMethods(methods, state, indentLevel + 1)
-    if (methodsStr !== '{}') {
-      parts.push(methodsStr.slice(1, -1).trim()) // Remove outer braces
-    }
-  }
-
-  if (regularProps.length > 0) {
-    const propsStr = regularProps.map(({ key, value }) => {
-      const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
-      let formattedValue = value
-
-      // Format nested objects with proper indentation
-      if (value.startsWith('{')) {
-        formattedValue = inferComplexObjectType(value, state, indentLevel + 1)
-      }
-      // Format array types with proper indentation
-      else if (value.startsWith('Array<')) {
-        // Extract the array content and re-indent it
-        const arrayContent = value.slice(6, -1)
-        formattedValue = `Array<${arrayContent}>`
-      }
-
-      return `${propIndent}${formattedKey}: ${formattedValue}`
-    }).join(';\n')
-    parts.push(propsStr)
-  }
-
-  if (parts.length === 0)
-    return '{}'
-
-  return `{\n${parts.join(';\n')}\n${baseIndent}}`
+  return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
