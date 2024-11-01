@@ -180,22 +180,22 @@ export const methodDecoratorWithExplicitType = (
   }
 }
 
-// TODO: Complex Constants with Type Inference
-// export const CONFIG_MAP = {
-//   development: {
-//     features: {
-//       auth: {
-//         providers: ['google', 'github'] as const,
-//         settings: { timeout: 5000, retries: 3 }
-//       }
-//     }
-//   },
-//   production: {
-//     features: {
-//       auth: {
-//         providers: ['google', 'github', 'microsoft'] as const,
-//         settings: { timeout: 3000, retries: 5 }
-//       }
-//     }
-//   }
-// } as const
+// Complex Constants with Type Inference
+export const CONFIG_MAP = {
+  development: {
+    features: {
+      auth: {
+        providers: ['google', 'github'] as const,
+        settings: { timeout: 5000, retries: 3 }
+      }
+    }
+  },
+  production: {
+    features: {
+      auth: {
+        providers: ['google', 'github', 'microsoft'] as const,
+        settings: { timeout: 3000, retries: 5 }
+      }
+    }
+  }
+} as const

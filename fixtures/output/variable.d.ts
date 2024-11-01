@@ -101,3 +101,27 @@ export declare const complexObject: {
 };
 export declare const methodDecorator: (...args: any[]) => unknown;
 export declare const methodDecoratorWithExplicitType: SomeType;
+export declare const CONFIG_MAP: {
+  development: {
+    features: {
+      auth: {
+        providers: Array<'google' | 'github'] as cons>;
+        settings: {
+          timeout: 5000;
+          retries: 3
+        }
+      }
+    }
+  };
+  production: {
+    features: {
+      auth: {
+        providers: Array<'google' | 'github' | 'microsoft'] as cons>;
+        settings: {
+          timeout: 3000;
+          retries: 5
+        }
+      }
+    }
+  }
+};
