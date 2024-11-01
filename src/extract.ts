@@ -761,6 +761,67 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
   return 'unknown'
 }
 
+function inferReturnType(value: string, declaration: string): string {
+  debugLog(undefined, 'return-type', `Inferring return type from ${declaration ? 'declaration' : 'value'}`)
+
+  // First check if there's an explicit return type in the declaration
+  if (declaration) {
+    const explicitMatch = declaration.match(/\):\s*([^{;]+)/)
+    if (explicitMatch) {
+      const returnType = explicitMatch[1].trim()
+      debugLog(undefined, 'return-type', `Found explicit return type: ${returnType}`)
+      return returnType
+    }
+  }
+
+  // Check if it's an async method
+  const isAsync = declaration.startsWith('async ') || value.includes('async ') || (value.includes('=>') && value.includes('await'))
+  debugLog(undefined, 'return-type', `Is async method: ${isAsync}`)
+
+  let effectiveReturnType = 'void'
+
+  // Check for known return patterns
+  if (value.includes('throw')) {
+    effectiveReturnType = 'never'
+  }
+  else if (value.includes('toISOString()') || value.includes('toString()')) {
+    effectiveReturnType = 'string'
+  }
+  else if (value.includes('Intl.NumberFormat') && value.includes('format')) {
+    effectiveReturnType = 'string'
+  }
+  else if (value.match(/^\{\s*\/\/[^}]*\}$/) || value.match(/^\{\s*\}$/) || value.match(/^\{\s*\/\*[\s\S]*?\*\/\s*\}$/)) {
+    effectiveReturnType = 'void'
+  }
+  else {
+    // Check for return statements
+    const returnMatch = value.match(/return\s+([^;\s]+)/)
+    if (returnMatch) {
+      const returnValue = returnMatch[1]
+      if (/^['"`]/.test(returnValue))
+        effectiveReturnType = 'string'
+      else if (!Number.isNaN(Number(returnValue)))
+        effectiveReturnType = 'number'
+      else if (returnValue === 'true' || returnValue === 'false')
+        effectiveReturnType = 'boolean'
+      else if (returnValue === 'null')
+        effectiveReturnType = 'null'
+      else if (returnValue === 'undefined')
+        effectiveReturnType = 'undefined'
+      else effectiveReturnType = 'unknown'
+    }
+  }
+
+  // Wrap in Promise for async functions
+  if (isAsync && !effectiveReturnType.includes('Promise')) {
+    debugLog(undefined, 'return-type', `Wrapping ${effectiveReturnType} in Promise for async method`)
+    effectiveReturnType = `Promise<${effectiveReturnType}>`
+  }
+
+  debugLog(undefined, 'return-type', `Final inferred return type: ${effectiveReturnType}`)
+  return effectiveReturnType
+}
+
 function inferTypeFromDefaultValue(defaultValue: string): string {
   // Handle string literals
   if (/^['"`].*['"`]$/.test(defaultValue)) {
@@ -841,6 +902,12 @@ export function isDeclarationComplete(content: string | string[]): boolean {
   const fullContent = Array.isArray(content) ? content.join('\n') : content
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
+}
+
+function isMethodDeclaration(text: string): boolean {
+  debugLog(undefined, 'method-check', `Checking if method declaration: ${text}`)
+  // Simple check - either has parentheses in the key or starts with async
+  return text.includes('(') || text.startsWith('async')
 }
 
 function needsMultilineFormat(types: string[]): boolean {
@@ -1380,27 +1447,18 @@ function processObjectMethod(declaration: string, value: string, state?: Process
   const [, name, typeParams, params, returnType] = match
   debugLog(state, 'process-method-parsed', `Name: ${name}, TypeParams: ${typeParams}, Params: ${params}, ReturnType: ${returnType}`)
 
+  // Check if method is async
   const isAsync = declaration.startsWith('async ')
-  let effectiveReturnType = (returnType || 'void').trim()
+  debugLog(state, 'process-method-async', `Method ${name} async status: ${isAsync}`)
 
-  // Infer return types from implementation
-  if (value.includes('throw') && !effectiveReturnType.includes('Promise')) {
-    effectiveReturnType = 'never'
-  }
-  else if (isAsync && !effectiveReturnType.includes('Promise')) {
-    effectiveReturnType = `Promise<${effectiveReturnType}>`
-  }
-  else if (value.includes('toISOString()') || value.includes('toString()')) {
-    effectiveReturnType = 'string'
-  }
-  else if (value.includes('console.log') || value.match(/void\s*[;{]/)) {
-    effectiveReturnType = 'void'
-  }
-  else if (value.includes('Intl.NumberFormat') && value.includes('format')) {
-    effectiveReturnType = 'string'
-  }
+  // Use explicit return type if available, otherwise infer
+  const effectiveReturnType = returnType
+    ? returnType.trim()
+    : inferReturnType(value, declaration)
 
-  const cleanParams = cleanParameterTypes(params)
+  debugLog(state, 'process-method-return', `Return type for ${name}: ${effectiveReturnType}`)
+
+  const cleanParams = cleanParameterTypes(params || '')
   const signature = [
     typeParams ? `<${typeParams}>` : '',
     `(${cleanParams})`,
@@ -1411,7 +1469,7 @@ function processObjectMethod(declaration: string, value: string, state?: Process
     .join(' ')
     .trim()
 
-  debugLog(state, 'process-method-result', `Generated signature: ${signature}`)
+  debugLog(state, 'process-method-result', `Generated signature for ${name}: ${signature}`)
   return { name, signature }
 }
 
@@ -1433,7 +1491,6 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
   for (let i = 0; i < cleanContent.length; i++) {
     const char = cleanContent[i]
     const prevChar = i > 0 ? cleanContent[i - 1] : ''
-    const nextChar = i < cleanContent.length - 1 ? cleanContent[i + 1] : ''
 
     // Handle string boundaries
     if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
@@ -1464,13 +1521,15 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
           continue
         }
         else if ((char === ',' || char === ';') && !isParsingKey) {
-          if (currentKey && buffer.trim()) {
+          if (currentKey) {
             const trimmedBuffer = buffer.trim()
             debugLog(state, 'process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
 
-            // Check if this is a method declaration
-            if (currentKey.includes('(')) {
-              debugLog(state, 'process-props-method', `Detected method declaration: ${currentKey}`)
+            const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
+            debugLog(state, 'method-check', `Checking if method declaration: ${currentKey}`)
+
+            if (isMethodDecl) {
+              debugLog(state, 'process-props-method', `Detected method: ${currentKey} with body length: ${trimmedBuffer.length}`)
               const { name, signature } = processObjectMethod(currentKey, trimmedBuffer, state)
               properties.push({ key: name, value: signature })
             }
@@ -1494,10 +1553,9 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
   // Handle final property
   if (currentKey && !isParsingKey && buffer.trim()) {
     const trimmedBuffer = buffer.trim()
-    debugLog(state, 'process-props-final', `Processing final property ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
-
-    if (currentKey.includes('(')) {
-      debugLog(state, 'process-props-method', `Detected method declaration: ${currentKey}`)
+    const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
+    if (isMethodDecl) {
+      debugLog(state, 'process-props-method', `Detected final method: ${currentKey}`)
       const { name, signature } = processObjectMethod(currentKey, trimmedBuffer, state)
       properties.push({ key: name, value: signature })
     }
