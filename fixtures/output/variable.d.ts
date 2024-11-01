@@ -35,7 +35,7 @@ export declare const someObject: {
     Array<
       {
         key2: 'value2'
-        } |
+      } |
       'test' |
       1000
     > |

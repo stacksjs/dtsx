@@ -510,9 +510,8 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
       return ''
 
     // Track Array type specifically
-    // const isArrayStart = trimmed.startsWith('Array<')
-    const openBrackets = (trimmed.match(/[{<[]/g) || [])
-    const closeBrackets = (trimmed.match(/[}\]>]/g) || [])
+    const openBrackets = trimmed.match(/[{<[]/g) || []
+    const closeBrackets = trimmed.match(/[}\]>]/g) || []
 
     let currentIndent = baseIndent
     if (i > 0) {
@@ -520,7 +519,7 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
       currentIndent = baseIndent + '  '.repeat(stackDepth)
 
       // Dedent closing tokens
-      if ((trimmed === '}' || trimmed === '>' || trimmed.startsWith('> |')) && bracketStack.length > 0) {
+      if ((trimmed.startsWith('}') || trimmed.startsWith('>') || trimmed.startsWith('> |')) && bracketStack.length > 0) {
         currentIndent = baseIndent + '  '.repeat(Math.max(0, stackDepth - 1))
       }
     }
@@ -557,7 +556,6 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
     // Handle special cases for objects in arrays
     if (trimmed === '}') {
       const lastArray = [...bracketStack].reverse().find(info => info.isArray)
-      // Don't add union if this is the only element in the array
       if (lastArray?.isSingleElement) {
         needsUnion = false
       }
@@ -902,12 +900,6 @@ export function isDeclarationComplete(content: string | string[]): boolean {
   const fullContent = Array.isArray(content) ? content.join('\n') : content
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
-}
-
-function isMethodDeclaration(text: string): boolean {
-  debugLog(undefined, 'method-check', `Checking if method declaration: ${text}`)
-  // Simple check - either has parentheses in the key or starts with async
-  return text.includes('(') || text.startsWith('async')
 }
 
 function needsMultilineFormat(types: string[]): boolean {
