@@ -531,6 +531,89 @@ function createImportTrackingState(): ImportTrackingState {
   }
 }
 
+function indentMultilineType(type: string, baseIndent: string, isLast: boolean): string {
+  debugLog(undefined, 'indent-multiline', `Processing multiline type with baseIndent="${baseIndent}", isLast=${isLast}`)
+  debugLog(undefined, 'indent-input', `Input type:\n${type}`)
+
+  const lines = type.split('\n')
+  debugLog(undefined, 'indent-lines', `Split into ${lines.length} lines`)
+
+  if (lines.length === 1) {
+    const result = `${baseIndent}${type}${isLast ? '' : ' |'}`
+    debugLog(undefined, 'indent-single', `Single line result: ${result}`)
+    return result
+  }
+
+  interface BracketInfo {
+    char: string
+    indent: string
+    isArray: boolean
+  }
+  const bracketStack: BracketInfo[] = []
+  debugLog(undefined, 'indent-stack', 'Initializing bracket stack')
+
+  const formattedLines = lines.map((line, i) => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      debugLog(undefined, 'indent-empty', `Empty line at index ${i}`)
+      return ''
+    }
+
+    // Track Array type specifically
+    const isArrayStart = trimmed.startsWith('Array<')
+    const openBrackets = (trimmed.match(/[{<[]/g) || [])
+    const closeBrackets = (trimmed.match(/[}\]>]/g) || [])
+
+    debugLog(undefined, 'indent-brackets', `Line ${i}: opens=${openBrackets.length}, closes=${closeBrackets.length}, isArray=${isArrayStart}, content="${trimmed}"`)
+
+    let currentIndent = baseIndent
+    if (i > 0) {
+      // For closing brackets of Array types, use base indent
+      if (closeBrackets.length > 0 && bracketStack.length > 0 && bracketStack[bracketStack.length - 1].isArray) {
+        currentIndent = baseIndent
+        debugLog(undefined, 'indent-close-array', `Using base indent for Array closing: "${currentIndent}"`)
+      }
+      // For content and other closings, use indented level
+      else {
+        currentIndent = baseIndent + '  '.repeat(bracketStack.length)
+        debugLog(undefined, 'indent-content', `Using content indent at depth ${bracketStack.length}: "${currentIndent}"`)
+      }
+    }
+
+    // Handle opening brackets with Array context
+    if (openBrackets.length > 0) {
+      openBrackets.forEach((bracket) => {
+        const isArrayBracket = trimmed.startsWith('Array') && bracket === '<'
+        bracketStack.push({
+          char: bracket,
+          indent: currentIndent,
+          isArray: isArrayBracket,
+        })
+        debugLog(undefined, 'indent-open', `Pushed bracket "${bracket}" with indent "${currentIndent}", isArray=${isArrayBracket}`)
+      })
+    }
+
+    // Handle closing brackets
+    if (closeBrackets.length > 0) {
+      for (let j = 0; j < closeBrackets.length; j++) {
+        if (bracketStack.length > 0) {
+          bracketStack.pop()
+        }
+      }
+    }
+
+    // Add union operator for non-last lines that don't end with a closing bracket
+    if (!isLast && i === lines.length - 1 && !trimmed.endsWith(' |')) {
+      return `${currentIndent}${trimmed} |`
+    }
+    return `${currentIndent}${trimmed}`
+  }).filter(Boolean)
+
+  const result = formattedLines.join('\n')
+  debugLog(undefined, 'indent-result', `Final multiline result:\n${result}`)
+  return result
+}
+
 function inferValueType(value: string): string {
   value = value.trim()
 
@@ -571,8 +654,7 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   }
 
   const baseIndent = '  '.repeat(indentLevel)
-  const contentIndent = '  '.repeat(indentLevel + 1)
-  debugLog(state, 'infer-array-indent', `Base indent="${baseIndent}", Content indent="${contentIndent}"`)
+  debugLog(state, 'infer-array-indent', `Base indent="${baseIndent}"`)
 
   const elements = splitArrayElements(content, state)
   debugLog(state, 'array-split', `Elements after split: ${JSON.stringify(elements)}`)
@@ -626,31 +708,13 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   if (needsMultiline) {
     debugLog(state, 'multiline-start', `Starting multiline formatting with ${types.length} types`)
 
-    // Format types with proper indentation
-    const formattedTypes = types.map((type, index) => {
-      const isLast = index === types.length - 1
-      const lines = type.split('\n')
+    // Instead of manual formatting, use indentMultilineType
+    const formattedContent = types.map((type, i) => {
+      const isLast = i === types.length - 1
+      return indentMultilineType(type, `${baseIndent}  `, isLast)
+    }).join('\n')
 
-      if (lines.length === 1) {
-        return `${contentIndent}${type}${isLast ? '' : ' |'}`
-      }
-
-      // For multiline types, maintain their internal structure
-      return lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed)
-          return ''
-        // Indent content one more level than current
-        return i === 0 ? `${contentIndent}${trimmed}` : `${contentIndent}  ${trimmed}`
-      }).filter(Boolean).join('\n') + (isLast ? '' : ' |')
-    })
-
-    // Simple structure: opener, content, closer all aligned
-    return [
-      `${baseIndent}Array<`,
-      formattedTypes.join('\n'),
-      `${baseIndent}>`,
-    ].join('\n')
+    return `Array<\n${formattedContent}\n${baseIndent}>`
   }
 
   return `Array<${types.join(' | ')}>`
