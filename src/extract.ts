@@ -418,44 +418,41 @@ function formatOutput(state: ProcessingState): string {
 function parseMethodSignature(declaration: string): MethodParsingResult | null {
   debugLog(undefined, 'method-parse', `Parsing method signature: ${declaration}`)
 
-  // Handle async methods
-  const isAsync = declaration.startsWith('async ')
-  const cleanDeclaration = declaration.replace(/^async\s+/, '')
+  const asyncMatch = declaration.match(/^async\s+/)
+  const isAsync = Boolean(asyncMatch)
+  let rest = declaration.slice(asyncMatch?.[0].length || 0)
 
   // Extract method name and type parameters
-  const nameMatch = cleanDeclaration.match(/^([^(<\s]+)/)
+  const nameMatch = rest.match(/^(\w+)/)
   if (!nameMatch)
     return null
 
   const name = nameMatch[1]
-  let rest = cleanDeclaration.slice(name.length)
+  rest = rest.slice(name.length)
 
   // Extract type parameters if present
   let typeParams = ''
   if (rest.startsWith('<')) {
-    const genericsResult = extractBalancedSymbols(rest, '<', '>')
-    if (genericsResult) {
-      typeParams = genericsResult.content
-      rest = genericsResult.rest
+    const genericResult = extractBalancedSymbols(rest, '<', '>')
+    if (genericResult) {
+      typeParams = genericResult.content
+      rest = genericResult.rest
     }
   }
 
-  // Extract parameters with type preservation
-  const paramsResult = extractBalancedSymbols(rest, '(', ')')
-  if (!paramsResult)
+  // Extract parameters
+  const paramsMatch = rest.match(/^\s*\((.*?)\)/)
+  if (!paramsMatch)
     return null
 
-  // Get raw parameters and clean them
-  const rawParams = paramsResult.content.slice(1, -1)
-  const params = cleanParameterTypes(rawParams)
-  rest = paramsResult.rest.trim()
+  const params = paramsMatch[1]
+  rest = rest.slice(paramsMatch[0].length)
 
   // Extract return type
   let returnType = 'void'
-  if (rest.startsWith(':')) {
-    const match = rest.match(/^:\s*([^{;]+)/)
-    if (match)
-      returnType = match[1].trim()
+  const returnMatch = rest.match(/^\s*:\s*([^{;]+)/)
+  if (returnMatch) {
+    returnType = returnMatch[1].trim()
   }
 
   return {
@@ -463,7 +460,7 @@ function parseMethodSignature(declaration: string): MethodParsingResult | null {
     isAsync,
     typeParams,
     params,
-    returnType: normalizeType(returnType),
+    returnType,
   }
 }
 
@@ -533,51 +530,35 @@ function createImportTrackingState(): ImportTrackingState {
 
 function indentMultilineType(type: string, baseIndent: string, isLast: boolean): string {
   debugLog(undefined, 'indent-multiline', `Processing multiline type with baseIndent="${baseIndent}", isLast=${isLast}`)
-  debugLog(undefined, 'indent-input', `Input type:\n${type}`)
 
   const lines = type.split('\n')
-  debugLog(undefined, 'indent-lines', `Split into ${lines.length} lines`)
-
   if (lines.length === 1) {
-    const result = `${baseIndent}${type}${isLast ? '' : ' |'}`
-    debugLog(undefined, 'indent-single', `Single line result: ${result}`)
-    return result
+    return `${baseIndent}${type}${isLast ? '' : ' |'}`
   }
 
   interface BracketInfo {
     char: string
     indent: string
     isArray: boolean
+    depth: number
   }
   const bracketStack: BracketInfo[] = []
-  debugLog(undefined, 'indent-stack', 'Initializing bracket stack')
 
   const formattedLines = lines.map((line, i) => {
     const trimmed = line.trim()
-    if (!trimmed) {
-      debugLog(undefined, 'indent-empty', `Empty line at index ${i}`)
+    if (!trimmed)
       return ''
-    }
 
     // Track Array type specifically
     const isArrayStart = trimmed.startsWith('Array<')
     const openBrackets = (trimmed.match(/[{<[]/g) || [])
     const closeBrackets = (trimmed.match(/[}\]>]/g) || [])
 
-    debugLog(undefined, 'indent-brackets', `Line ${i}: opens=${openBrackets.length}, closes=${closeBrackets.length}, isArray=${isArrayStart}, content="${trimmed}"`)
-
     let currentIndent = baseIndent
     if (i > 0) {
-      // For closing brackets of Array types, use base indent
-      if (closeBrackets.length > 0 && bracketStack.length > 0 && bracketStack[bracketStack.length - 1].isArray) {
-        currentIndent = baseIndent
-        debugLog(undefined, 'indent-close-array', `Using base indent for Array closing: "${currentIndent}"`)
-      }
-      // For content and other closings, use indented level
-      else {
-        currentIndent = baseIndent + '  '.repeat(bracketStack.length)
-        debugLog(undefined, 'indent-content', `Using content indent at depth ${bracketStack.length}: "${currentIndent}"`)
-      }
+      // Calculate proper indentation based on nesting level
+      const stackDepth = bracketStack.reduce((depth, info) => depth + info.depth, 0)
+      currentIndent = baseIndent + '  '.repeat(stackDepth)
     }
 
     // Handle opening brackets with Array context
@@ -588,8 +569,8 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
           char: bracket,
           indent: currentIndent,
           isArray: isArrayBracket,
+          depth: 1,
         })
-        debugLog(undefined, 'indent-open', `Pushed bracket "${bracket}" with indent "${currentIndent}", isArray=${isArrayBracket}`)
       })
     }
 
@@ -602,16 +583,12 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
       }
     }
 
-    // Add union operator for non-last lines that don't end with a closing bracket
-    if (!isLast && i === lines.length - 1 && !trimmed.endsWith(' |')) {
-      return `${currentIndent}${trimmed} |`
-    }
-    return `${currentIndent}${trimmed}`
+    // Add union operator for non-last lines
+    const needsUnion = !isLast && i === lines.length - 1 && !trimmed.endsWith(' |') && !trimmed.endsWith(';')
+    return `${currentIndent}${trimmed}${needsUnion ? ' |' : ''}`
   }).filter(Boolean)
 
-  const result = formattedLines.join('\n')
-  debugLog(undefined, 'indent-result', `Final multiline result:\n${result}`)
-  return result
+  return formattedLines.join('\n')
 }
 
 function inferValueType(value: string): string {
@@ -731,34 +708,15 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
     return 'Record<string, unknown>'
 
   const baseIndent = '  '.repeat(indentLevel)
-  const propIndent = '  '.repeat(indentLevel + 1)
-  const innerIndent = '  '.repeat(indentLevel + 2)
+  debugLog(state, 'infer-complex-content', `Processing content: ${content.substring(0, 100)}...`)
 
-  const props = processObjectProperties(content, state)
+  const props = processObjectProperties(content, state, indentLevel)
   if (!props.length)
     return '{}'
 
   const propertyStrings = props.map(({ key, value }) => {
-    const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
-
-    if (value.includes('\n')) {
-      // Indent nested multiline values
-      const indentedValue = value
-        .split('\n')
-        .map((line, i) => {
-          if (i === 0)
-            return line
-          const trimmed = line.trim()
-          if (!trimmed)
-            return ''
-          return `${innerIndent}${trimmed}`
-        })
-        .filter(Boolean)
-        .join('\n')
-      return `${propIndent}${formattedKey}: ${indentedValue}`
-    }
-
-    return `${propIndent}${formattedKey}: ${value}`
+    debugLog(state, 'infer-complex-prop', `Processing property ${key}: ${value.substring(0, 50)}...`)
+    return `${baseIndent}  ${key}: ${value}`
   })
 
   return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
@@ -872,6 +830,12 @@ export function isDeclarationStart(line: string): boolean {
 export function isFunctionType(type: string): boolean {
   const functionTypeRegex = /^\s*\(.*\)\s*=>\s*(?:\S.*|[\t\v\f \xA0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/
   return functionTypeRegex.test(type.trim())
+}
+
+function isMethodDeclaration(text: string): boolean {
+  // Match async/non-async method declarations with or without generic parameters
+  const methodPattern = /^\s*(async\s+)?(\w+)\s*(?:<[^>]+>)?\s*\([^)]*\)\s*:/
+  return methodPattern.test(text)
 }
 
 /**
@@ -1396,30 +1360,26 @@ function processModule(declaration: string): string {
 }
 
 function processObjectMethod(declaration: string, value: string, state?: ProcessingState): ProcessedMethod {
-  debugLog(state, 'process-method', `Processing object method: ${declaration}`)
+  debugLog(state, 'process-method-start', `Processing method: ${declaration}`)
 
-  const methodResult = parseMethodSignature(declaration)
-  if (!methodResult) {
-    debugLog(state, 'process-method', 'Failed to parse method signature')
+  const methodPattern = /^(?:async\s+)?(\w+)\s*(?:<([^>]+)>)?\s*\((.*?)\)(?:\s*:\s*([^{]+))?/
+  const match = declaration.match(methodPattern)
+
+  if (!match) {
+    debugLog(state, 'process-method-error', `Failed to parse method declaration: ${declaration}`)
     return {
       name: declaration.split('(')[0].trim().replace(/^async\s+/, ''),
       signature: '() => unknown',
     }
   }
 
-  const {
-    name,
-    isAsync,
-    typeParams,
-    params,
-    returnType,
-  } = methodResult
+  const [, name, typeParams, params, returnType] = match
+  debugLog(state, 'process-method-parsed', `Name: ${name}, TypeParams: ${typeParams}, Params: ${params}, ReturnType: ${returnType}`)
 
-  // Clean parameters while preserving type annotations
-  const cleanParams = cleanParameterTypes(params)
-  let effectiveReturnType = normalizeType(returnType)
+  const isAsync = declaration.startsWith('async ')
+  let effectiveReturnType = (returnType || 'void').trim()
 
-  // Handle special return types
+  // Infer return types from implementation
   if (value.includes('throw') && !effectiveReturnType.includes('Promise')) {
     effectiveReturnType = 'never'
   }
@@ -1436,27 +1396,24 @@ function processObjectMethod(declaration: string, value: string, state?: Process
     effectiveReturnType = 'string'
   }
 
-  // Build method type
+  const cleanParams = cleanParameterTypes(params)
   const signature = [
-    typeParams ? typeParams.trim() : '',
+    typeParams ? `<${typeParams}>` : '',
     `(${cleanParams})`,
     '=>',
     effectiveReturnType,
   ]
     .filter(Boolean)
     .join(' ')
-    .replace(/\s+/g, ' ')
     .trim()
 
-  debugLog(state, 'process-method', `Generated method signature: ${signature}`)
+  debugLog(state, 'process-method-result', `Generated signature: ${signature}`)
   return { name, signature }
 }
 
-function processObjectProperties(content: string, state?: ProcessingState): Array<{ key: string, value: string }> {
-  debugLog(state, 'process-props', `Processing properties from content length ${content.length}`)
+function processObjectProperties(content: string, state?: ProcessingState, indentLevel = 0): Array<{ key: string, value: string }> {
+  debugLog(state, 'process-props', `Processing object properties at indent level ${indentLevel}`)
   const properties: Array<{ key: string, value: string }> = []
-
-  // Remove outer braces and trim
   const cleanContent = content.slice(1, -1).trim()
   if (!cleanContent)
     return properties
@@ -1467,13 +1424,14 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
   let stringChar = ''
   let currentKey = ''
   let isParsingKey = true
-  let inMethod = false
+  let colonFound = false
 
   for (let i = 0; i < cleanContent.length; i++) {
     const char = cleanContent[i]
     const prevChar = i > 0 ? cleanContent[i - 1] : ''
+    const nextChar = i < cleanContent.length - 1 ? cleanContent[i + 1] : ''
 
-    // Handle strings
+    // Handle string boundaries
     if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
       if (!inString) {
         inString = true
@@ -1484,40 +1442,45 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
       }
     }
 
-    // Track method declarations
-    if (!inString && char === '(') {
-      if (depth === 0)
-        inMethod = true
-      depth++
-    }
-    else if (!inString && char === ')') {
-      depth--
-      if (depth === 0)
-        inMethod = false
-    }
-    else if (!inString && (char === '{' || char === '[')) {
-      depth++
-    }
-    else if (!inString && (char === '}' || char === ']')) {
-      depth--
-    }
-
-    // Handle property separation
-    if (!inString && !inMethod && depth === 0) {
-      if (char === ':' && isParsingKey) {
-        currentKey = buffer.trim()
-        buffer = ''
-        isParsingKey = false
-        continue
+    // Track nested structures
+    if (!inString) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
       }
-      else if (char === ',' || char === ';') {
-        if (currentKey && !isParsingKey) {
-          properties.push(processProperty(currentKey, buffer.trim(), state))
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+      }
+      else if (depth === 0) {
+        if (char === ':' && !colonFound) {
+          colonFound = true
+          currentKey = buffer.trim()
+          debugLog(state, 'process-props-key', `Found key: ${currentKey}`)
+          buffer = ''
+          isParsingKey = false
+          continue
         }
-        buffer = ''
-        currentKey = ''
-        isParsingKey = true
-        continue
+        else if ((char === ',' || char === ';') && !isParsingKey) {
+          if (currentKey && buffer.trim()) {
+            const trimmedBuffer = buffer.trim()
+            debugLog(state, 'process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
+
+            // Check if this is a method declaration
+            if (currentKey.includes('(')) {
+              debugLog(state, 'process-props-method', `Detected method declaration: ${currentKey}`)
+              const { name, signature } = processObjectMethod(currentKey, trimmedBuffer, state)
+              properties.push({ key: name, value: signature })
+            }
+            else {
+              const processedValue = processPropertyValue(trimmedBuffer, indentLevel + 1, state)
+              properties.push({ key: normalizePropertyKey(currentKey), value: processedValue })
+            }
+          }
+          buffer = ''
+          currentKey = ''
+          isParsingKey = true
+          colonFound = false
+          continue
+        }
       }
     }
 
@@ -1526,81 +1489,61 @@ function processObjectProperties(content: string, state?: ProcessingState): Arra
 
   // Handle final property
   if (currentKey && !isParsingKey && buffer.trim()) {
-    properties.push(processProperty(currentKey, buffer.trim(), state))
+    const trimmedBuffer = buffer.trim()
+    debugLog(state, 'process-props-final', `Processing final property ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
+
+    if (currentKey.includes('(')) {
+      debugLog(state, 'process-props-method', `Detected method declaration: ${currentKey}`)
+      const { name, signature } = processObjectMethod(currentKey, trimmedBuffer, state)
+      properties.push({ key: name, value: signature })
+    }
+    else {
+      const processedValue = processPropertyValue(trimmedBuffer, indentLevel + 1, state)
+      properties.push({ key: normalizePropertyKey(currentKey), value: processedValue })
+    }
   }
 
+  debugLog(state, 'process-props', `Processed ${properties.length} properties`)
   return properties
 }
 
-function processProperty(key: string, value: string, state?: ProcessingState, indentLevel = 0): { key: string, value: string } {
-  const cleanKey = key.trim().replace(/^['"](.*)['"]$/, '$1')
-  const cleanValue = value.trim()
+function processPropertyValue(value: string, indentLevel: number, state?: ProcessingState): string {
+  const trimmed = value.trim()
+  debugLog(state, 'process-value', `Processing value: ${trimmed.substring(0, 100)}...`)
 
-  // Handle method declarations
-  if (cleanKey.includes('(')) {
-    const { name, signature } = processObjectMethod(cleanKey, cleanValue, state)
-    return { key: name, value: signature }
+  // Check if this is an object with method declarations first
+  if (trimmed.startsWith('{') && trimmed.includes('(') && trimmed.includes(')') && trimmed.includes(':')) {
+    debugLog(state, 'process-value', 'Detected potential object with methods')
+    return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
-  // Handle arrays with proper indentation
-  if (cleanValue.startsWith('[')) {
-    return {
-      key: cleanKey,
-      value: inferArrayType(cleanValue, state, indentLevel),
-    }
+  // Handle arrays before methods since they might contain method-like structures
+  if (trimmed.startsWith('[')) {
+    debugLog(state, 'process-value', 'Detected array')
+    return inferArrayType(trimmed, state, indentLevel)
   }
 
-  // Handle object literals with proper indentation
-  if (cleanValue.startsWith('{')) {
-    return {
-      key: cleanKey,
-      value: inferComplexObjectType(cleanValue, state, indentLevel),
-    }
+  // Handle regular objects
+  if (trimmed.startsWith('{')) {
+    debugLog(state, 'process-value', 'Detected object')
+    return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
   // Handle function expressions
-  if (cleanValue.includes('=>') || cleanValue.includes('function')) {
-    const funcType = extractFunctionType(cleanValue, state)
-    return {
-      key: cleanKey,
-      value: funcType || '(...args: any[]) => unknown',
-    }
+  if (trimmed.includes('=>') || trimmed.includes('function')) {
+    debugLog(state, 'process-value', 'Detected function expression')
+    const funcType = extractFunctionType(trimmed, state)
+    return funcType || '(...args: any[]) => unknown'
   }
 
   // Handle primitive values and literals
-  if (/^(['"`]).*\1$/.test(cleanValue) || !Number.isNaN(Number(cleanValue))
-    || cleanValue === 'true' || cleanValue === 'false') {
-    return { key: cleanKey, value: cleanValue }
+  if (/^(['"`]).*\1$/.test(trimmed) || !Number.isNaN(Number(trimmed))
+    || trimmed === 'true' || trimmed === 'false') {
+    return trimmed
   }
 
-  // Handle references and function calls
-  if (cleanValue.includes('.') || cleanValue.includes('(')) {
-    return { key: cleanKey, value: 'unknown' }
-  }
-
-  return { key: cleanKey, value: 'unknown' }
+  return 'unknown'
 }
-
-// Improve complex object type inference
-// function inferComplexObjectType(value: string, state?: ProcessingState): string {
-//   debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
-
-//   const content = extractCompleteObjectContent(value, state)
-//   if (!content)
-//     return 'Record<string, unknown>'
-
-//   const props = processObjectProperties(content, state)
-//   if (!props.length)
-//     return '{}'
-
-//   const propertyStrings = props.map(({ key, value }) => {
-//     const formattedKey = /^\w+$/.test(key) ? key : `'${key}'`
-//     const indent = '  '
-//     return `${indent}${formattedKey}: ${value}`
-//   })
-
-//   return `{\n${propertyStrings.join(';\n')}\n}`
-// }
 
 const REGEX = {
   typePattern: /(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)|extends\s+([A-Z]\w*(?:<[^>]+>)?)/g,
@@ -1710,6 +1653,18 @@ function normalizeType(type: string): string {
     .replace(/\s*([<>])\s*/g, '$1')
     .replace(/\s*,\s*/g, ', ')
     .trim()
+}
+
+function normalizePropertyKey(key: string): string {
+  // Remove any existing quotes
+  const cleanKey = key.replace(/^['"`]|['"`]$/g, '')
+
+  // Check if the key needs quotes (contains special characters or is not a valid identifier)
+  if (!/^[a-z_$][\w$]*$/i.test(cleanKey)) {
+    return `'${cleanKey}'`
+  }
+
+  return cleanKey
 }
 
 /**
