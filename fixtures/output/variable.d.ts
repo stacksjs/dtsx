@@ -99,3 +99,5 @@ export declare const complexObject: {
     }
   }
 };
+export declare const methodDecorator: (...args: any[]) => unknown;
+export declare const methodDecoratorWithExplicitType: SomeType;

@@ -6,6 +6,15 @@ interface ProcessedMethod {
   signature: string
 }
 
+function cleanDeclaration(declaration: string): string {
+  return declaration
+    .replace(/\r\n/g, '\n') // Normalize line endings
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+    .replace(/\/\/.*/g, '') // Remove single-line comments
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim()
+}
+
 function cleanParameterTypes(params: string): string {
   if (!params.trim())
     return ''
@@ -573,25 +582,31 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
 }
 
 function inferValueType(value: string): string {
-  value = value.trim()
+  const normalizedValue = value.split('\n').map(line => line.trim()).join(' ')
 
-  // For string literals, return the literal itself as the type
-  if (/^['"`].*['"`]$/.test(value)) {
-    return value
+  // For string literals
+  if (/^['"`].*['"`]$/.test(normalizedValue)) {
+    return normalizedValue
   }
 
   // For numeric literals
-  if (!Number.isNaN(Number(value))) {
-    return value
+  if (!Number.isNaN(Number(normalizedValue))) {
+    return normalizedValue
   }
 
   // For boolean literals
-  if (value === 'true' || value === 'false') {
-    return value
+  if (normalizedValue === 'true' || normalizedValue === 'false') {
+    return normalizedValue
+  }
+
+  // Check for explicit return type annotations with better multiline handling
+  const returnTypeMatch = normalizedValue.match(/\([^)]*\)\s*:\s*([^=>{]+)/)
+  if (returnTypeMatch) {
+    return returnTypeMatch[1].trim()
   }
 
   // For function expressions
-  if (value.includes('=>')) {
+  if (normalizedValue.includes('=>')) {
     return '(...args: any[]) => unknown'
   }
 
@@ -869,7 +884,7 @@ export function isDefaultExport(line: string): boolean {
   return line.trim().startsWith('export default')
 }
 
-export function isDeclarationStart(line: string): boolean {
+function isDeclarationStart(line: string): boolean {
   return (
     line.startsWith('export ')
     || line.startsWith('interface ')
@@ -953,10 +968,10 @@ export function processBlock(lines: string[], comments: string[], state: Process
 
   // Keep track of declaration for debugging
   state.debug.currentProcessing = cleanDeclaration
-  debugLog(state, 'processing', `Processing block: ${cleanDeclaration.substring(0, 100)}...`)
+  debugLog(state, 'block-processing', `Full block content:\n${cleanDeclaration}`)
 
   if (!cleanDeclaration) {
-    debugLog(state, 'processing', 'Empty declaration block')
+    debugLog(state, 'block-processing', 'Empty declaration block')
     return
   }
 
@@ -973,7 +988,11 @@ export function processBlock(lines: string[], comments: string[], state: Process
   if (cleanDeclaration.startsWith('const') || cleanDeclaration.startsWith('let') || cleanDeclaration.startsWith('var')
     || cleanDeclaration.startsWith('export const') || cleanDeclaration.startsWith('export let') || cleanDeclaration.startsWith('export var')) {
     const isExported = cleanDeclaration.startsWith('export')
-    state.dtsLines.push(processVariable(declarationText, isExported, state))
+
+    // For variable declarations, ensure we have the complete declaration
+    const fullDeclaration = lines.join('\n')
+    debugLog(state, 'block-processing', `Processing variable declaration:\n${fullDeclaration}`)
+    state.dtsLines.push(processVariable(fullDeclaration, isExported, state))
     return
   }
 
@@ -996,6 +1015,24 @@ export function processBlock(lines: string[], comments: string[], state: Process
   }
 
   debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
+}
+
+function processDeclaration(declaration: string): boolean {
+  let bracketDepth = 0
+  let parenDepth = 0
+
+  for (const char of declaration) {
+    if (char === '(')
+      parenDepth++
+    if (char === ')')
+      parenDepth--
+    if (char === '{')
+      bracketDepth++
+    if (char === '}')
+      bracketDepth--
+  }
+
+  return bracketDepth === 0 && parenDepth === 0
 }
 
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
@@ -1148,13 +1185,13 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
   console.warn('Unhandled declaration type:', declarationWithoutComments.split('\n')[0])
 }
 
-export function processSourceFile(content: string, state: ProcessingState): void {
+function processSourceFile(content: string, state: ProcessingState): void {
   const lines = content.split('\n')
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let bracketDepth = 0
+  let parenDepth = 0
   let inDeclaration = false
-  // let declarationStart = -1
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -1170,30 +1207,41 @@ export function processSourceFile(content: string, state: ProcessingState): void
       continue
     }
 
-    // Track brackets for nesting depth
-    bracketDepth += (line.match(/\{/g) || []).length
-    bracketDepth -= (line.match(/\}/g) || []).length
-
-    // Handle declaration starts
+    // Track brackets and parentheses for nesting depth
     if (isDeclarationStart(trimmedLine)) {
       if (inDeclaration && currentBlock.length > 0) {
         processBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
+        bracketDepth = 0
+        parenDepth = 0
       }
       inDeclaration = true
-      // declarationStart = i
       currentBlock = [line]
+
+      // Initialize depths for the first line
+      parenDepth += (line.match(/\(/g) || []).length
+      parenDepth -= (line.match(/\)/g) || []).length
+      bracketDepth += (line.match(/\{/g) || []).length
+      bracketDepth -= (line.match(/\}/g) || []).length
+
       continue
     }
 
-    // Add line to current block if in declaration
+    // If we're in a declaration, track the nesting
     if (inDeclaration) {
       currentBlock.push(line)
 
-      // Check for declaration end
+      // Update depths
+      parenDepth += (line.match(/\(/g) || []).length
+      parenDepth -= (line.match(/\)/g) || []).length
+      bracketDepth += (line.match(/\{/g) || []).length
+      bracketDepth -= (line.match(/\}/g) || []).length
+
+      // Check if the declaration is complete
       const isComplete = (
-        bracketDepth === 0 && (
+        parenDepth === 0
+        && bracketDepth === 0 && (
           trimmedLine.endsWith(';')
           || trimmedLine.endsWith('}')
           || trimmedLine.endsWith(',')
@@ -1201,12 +1249,15 @@ export function processSourceFile(content: string, state: ProcessingState): void
         )
       )
 
+      debugLog(state, 'source-processing', `Line "${trimmedLine}": parenDepth=${parenDepth}, bracketDepth=${bracketDepth}, complete=${isComplete}`)
+
       if (isComplete) {
         processBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
         inDeclaration = false
-        // declarationStart = -1
+        bracketDepth = 0
+        parenDepth = 0
       }
     }
   }
@@ -1273,7 +1324,17 @@ function processType(declaration: string, isExported = true): string {
  * Process variable (const, let, var)  declarations with type inference
  */
 function processVariable(declaration: string, isExported: boolean, state: ProcessingState): string {
-  // Handle explicit type annotations first
+  debugLog(state, 'process-variable', `Processing complete declaration:\n${declaration}`)
+
+  // First, try to match explicit return type for function declarations
+  const functionTypeMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^=\s]+)\s*=\s*\([^)]*\)\s*:\s*([^=>{]+)/)
+  if (functionTypeMatch) {
+    const [, name, returnType] = functionTypeMatch
+    debugLog(state, 'process-variable', `Found explicit return type for ${name}: ${returnType}`)
+    return `${isExported ? 'export ' : ''}declare const ${name}: ${returnType.trim()};`
+  }
+
+  // Handle explicit type annotations in the declaration
   const explicitTypeMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^:\s]+)\s*:\s*([^=]+)=/)
   if (explicitTypeMatch) {
     const [, name, type] = explicitTypeMatch
@@ -1282,7 +1343,7 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
   }
 
   // Handle value assignments
-  const valueMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^=\s]+)\s*=\s*(.+)$/s)
+  const valueMatch = declaration.match(/(?:export\s+)?(?:const|let|var)\s+([^=\s]+)\s*=\s*([\s\S]+)$/)
   if (!valueMatch) {
     debugLog(state, 'process-variable', 'Failed to match variable declaration')
     return declaration
@@ -1292,11 +1353,10 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
   const declarationType = getDeclarationType(declaration)
   const trimmedValue = rawValue.trim()
 
-  debugLog(state, 'process-variable', `Processing ${name} with value length ${trimmedValue.length}`)
+  debugLog(state, 'process-variable', `Processing ${name} with value:\n${trimmedValue}`)
 
   // Handle string literals
-  if (/^(['"`]).*\1$/.test(trimmedValue)) {
-    // For string literals, use type annotation instead of value assignment
+  if (/^['"`].*['"`]$/.test(trimmedValue)) {
     return `${isExported ? 'export ' : ''}declare ${declarationType} ${name}: ${trimmedValue};`
   }
 

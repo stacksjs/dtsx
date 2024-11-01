@@ -156,17 +156,29 @@ export const complexObject = {
   }
 }
 
-// TODO: Method Decorators and Metadata
-// export const methodDecorator = (
-//   target: any,
-//   propertyKey: string,
-//   descriptor: PropertyDescriptor
-// ) => {
-//   return {
-//     ...descriptor,
-//     enumerable: true,
-//   }
-// }
+// Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
+export const methodDecorator = (
+  target: any,
+  propertyKey: string,
+  descriptor: PropertyDescriptor
+) => {
+  return {
+    ...descriptor,
+    enumerable: true,
+  }
+}
+
+// declares as SomeType
+export const methodDecoratorWithExplicitType = (
+  target: any,
+  propertyKey: string,
+  descriptor: PropertyDescriptor
+): SomeType => {
+  return {
+    ...descriptor,
+    enumerable: true,
+  }
+}
 
 // TODO: Complex Constants with Type Inference
 // export const CONFIG_MAP = {
