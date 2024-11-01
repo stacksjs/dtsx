@@ -49,6 +49,7 @@ const options: DtsGenerationOptions = {
   outdir: './dist', // default: './dist'
   keepComments: true, // default: true
   clean: true, // default: false
+  verbose: true, // default: false
 }
 
 await generate(options)
@@ -68,6 +69,7 @@ export default {
   outdir: './dist',
   keepComments: true,
   clean: true,
+  verbose: true,
 }
 ```
 
@@ -114,6 +116,7 @@ _Available options:_
 - `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
 - `--clean`: Clean output directory before generation _(default: false)_
 - `--tsconfig <path>`: Specify the path to tsconfig.json _(default: 'tsconfig.json')_
+- `--verbose`: Enable verbose output _(default: false)_
 
 To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
 
