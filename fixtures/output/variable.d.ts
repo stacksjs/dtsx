@@ -30,7 +30,7 @@ export declare const someObject: {
     Array<
       {
         key: 'value'
-      } |
+      }
     > |
     Array<
       {
@@ -76,7 +76,10 @@ export declare const complexArrays: {
     Array<'a' | 'b' | Array<'c' | 'd'>> |
     Array<true | Array<false | Array<true>>>
   >;
-  tuples: Array<readonly [1, 'string', true] | readonly ['literal', 42, false]>;
+  tuples: Array<
+    readonly [1, 'string', true] |
+    readonly ['literal', 42, false]
+  >;
   mixedArrays: Array<
     unknown |
     unknown |

@@ -1,14 +1,6 @@
 /* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
 import type { FunctionSignature, ImportTrackingState, ProcessingState } from './types'
 
-interface MethodParsingResult {
-  name: string
-  isAsync: boolean
-  typeParams: string
-  params: string
-  returnType: string
-}
-
 interface ProcessedMethod {
   name: string
   signature: string
@@ -415,55 +407,6 @@ function formatOutput(state: ProcessingState): string {
     .join('\n')}\n`
 }
 
-function parseMethodSignature(declaration: string): MethodParsingResult | null {
-  debugLog(undefined, 'method-parse', `Parsing method signature: ${declaration}`)
-
-  const asyncMatch = declaration.match(/^async\s+/)
-  const isAsync = Boolean(asyncMatch)
-  let rest = declaration.slice(asyncMatch?.[0].length || 0)
-
-  // Extract method name and type parameters
-  const nameMatch = rest.match(/^(\w+)/)
-  if (!nameMatch)
-    return null
-
-  const name = nameMatch[1]
-  rest = rest.slice(name.length)
-
-  // Extract type parameters if present
-  let typeParams = ''
-  if (rest.startsWith('<')) {
-    const genericResult = extractBalancedSymbols(rest, '<', '>')
-    if (genericResult) {
-      typeParams = genericResult.content
-      rest = genericResult.rest
-    }
-  }
-
-  // Extract parameters
-  const paramsMatch = rest.match(/^\s*\((.*?)\)/)
-  if (!paramsMatch)
-    return null
-
-  const params = paramsMatch[1]
-  rest = rest.slice(paramsMatch[0].length)
-
-  // Extract return type
-  let returnType = 'void'
-  const returnMatch = rest.match(/^\s*:\s*([^{;]+)/)
-  if (returnMatch) {
-    returnType = returnMatch[1].trim()
-  }
-
-  return {
-    name,
-    isAsync,
-    typeParams,
-    params,
-    returnType,
-  }
-}
-
 /**
  * Removes leading comments from code
  */
@@ -541,8 +484,25 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
     indent: string
     isArray: boolean
     depth: number
+    isSingleElement?: boolean
   }
   const bracketStack: BracketInfo[] = []
+
+  // First pass: analyze structure
+  let isInSingleElementArray = false
+  let arrayElementCount = 0
+  lines.forEach((line) => {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('Array<')) {
+      arrayElementCount = 0
+    }
+    if (trimmed === '}' || trimmed.startsWith('> |') || trimmed === '>') {
+      isInSingleElementArray = arrayElementCount === 1
+    }
+    if (trimmed && !trimmed.startsWith('Array<') && !trimmed.endsWith('>') && !trimmed.startsWith('{') && !trimmed.endsWith('}')) {
+      arrayElementCount++
+    }
+  })
 
   const formattedLines = lines.map((line, i) => {
     const trimmed = line.trim()
@@ -550,28 +510,18 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
       return ''
 
     // Track Array type specifically
-    const isArrayStart = trimmed.startsWith('Array<')
+    // const isArrayStart = trimmed.startsWith('Array<')
     const openBrackets = (trimmed.match(/[{<[]/g) || [])
     const closeBrackets = (trimmed.match(/[}\]>]/g) || [])
 
     let currentIndent = baseIndent
     if (i > 0) {
-      // Calculate proper indentation based on nesting level
       const stackDepth = bracketStack.reduce((depth, info) => depth + info.depth, 0)
       currentIndent = baseIndent + '  '.repeat(stackDepth)
 
       // Dedent closing tokens
       if ((trimmed === '}' || trimmed === '>' || trimmed.startsWith('> |')) && bracketStack.length > 0) {
-        // For array closings (>), also dedent if it's part of a closing sequence
-        if (trimmed === '>' || trimmed.startsWith('> |')) {
-          const lastBracket = bracketStack[bracketStack.length - 1]
-          if (lastBracket?.isArray) {
-            currentIndent = baseIndent + '  '.repeat(Math.max(0, stackDepth - 1))
-          }
-        }
-        else {
-          currentIndent = baseIndent + '  '.repeat(Math.max(0, stackDepth - 1))
-        }
+        currentIndent = baseIndent + '  '.repeat(Math.max(0, stackDepth - 1))
       }
     }
 
@@ -584,6 +534,7 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
           indent: currentIndent,
           isArray: isArrayBracket,
           depth: 1,
+          isSingleElement: isInSingleElementArray,
         })
       })
     }
@@ -597,16 +548,27 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
       }
     }
 
-    // Add union operator for non-last lines
-    let needsUnion = !isLast && i === lines.length - 1 && !trimmed.endsWith(' |') && !trimmed.endsWith(';')
-    const hasUnion = (trimmed === '}' || trimmed === '>') && !isLast && i !== lines.length - 1
+    // Add union operator only when appropriate
+    let needsUnion = false
+    if (!isLast && i === lines.length - 1 && !trimmed.endsWith(' |') && !trimmed.endsWith(';')) {
+      needsUnion = true
+    }
 
-    // Don't add union if it's already part of the trimmed content (like '> |')
+    // Handle special cases for objects in arrays
+    if (trimmed === '}') {
+      const lastArray = [...bracketStack].reverse().find(info => info.isArray)
+      // Don't add union if this is the only element in the array
+      if (lastArray?.isSingleElement) {
+        needsUnion = false
+      }
+    }
+
+    // Don't add union if it's already part of the trimmed content
     if (trimmed.endsWith(' |')) {
       needsUnion = false
     }
 
-    return `${currentIndent}${trimmed}${needsUnion ? ' |' : hasUnion ? ' |' : ''}`
+    return `${currentIndent}${trimmed}${needsUnion ? ' |' : ''}`
   }).filter(Boolean)
 
   return formattedLines.join('\n')
@@ -661,9 +623,19 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   if (allConstTuples) {
     const tuples = elements.map((el) => {
       const tupleContent = el.slice(0, el.indexOf('as const')).trim()
+      debugLog(state, 'const-tuple', `Processing const tuple: ${tupleContent}`)
       return inferConstArrayType(tupleContent, state)
     })
     debugLog(state, 'const-tuple', `Tuples inferred: ${tuples}`)
+
+    if (needsMultilineFormat(tuples)) {
+      const formattedContent = tuples.map((type, i) => {
+        const isLast = i === tuples.length - 1
+        return indentMultilineType(type, `${baseIndent}  `, isLast)
+      }).join('\n')
+      return `Array<\n${formattedContent}\n${baseIndent}>`
+    }
+
     return `Array<${tuples.join(' | ')}>`
   }
 
@@ -749,8 +721,10 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
     const content = value.slice(1, -1).trim()
     const elements = splitArrayElements(content, state)
 
+    // Build tuple type
     const literalTypes = elements.map((element) => {
       const trimmed = element.trim()
+      debugLog(state, 'const-tuple-element', `Processing tuple element: ${trimmed}`)
 
       // Handle nested arrays
       if (trimmed.startsWith('[')) {
@@ -762,17 +736,25 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
         return inferComplexObjectType(trimmed, state)
       }
 
-      // Preserve literals
-      if (/^['"`].*['"`]$/.test(trimmed))
+      // Preserve string literals
+      if (/^['"`].*['"`]$/.test(trimmed)) {
         return trimmed
-      if (!Number.isNaN(Number(trimmed)))
+      }
+
+      // Preserve numeric literals
+      if (!Number.isNaN(Number(trimmed))) {
         return trimmed
-      if (trimmed === 'true' || trimmed === 'false')
+      }
+
+      // Preserve boolean literals
+      if (trimmed === 'true' || trimmed === 'false') {
         return trimmed
+      }
 
       return 'unknown'
     })
 
+    debugLog(state, 'const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
     return `readonly [${literalTypes.join(', ')}]`
   }
 
@@ -851,12 +833,6 @@ export function isFunctionType(type: string): boolean {
   return functionTypeRegex.test(type.trim())
 }
 
-function isMethodDeclaration(text: string): boolean {
-  // Match async/non-async method declarations with or without generic parameters
-  const methodPattern = /^\s*(async\s+)?(\w+)\s*(?:<[^>]+>)?\s*\([^)]*\)\s*:/
-  return methodPattern.test(text)
-}
-
 /**
  * Check if a declaration is complete by examining its content
  * @param content - Content to check, either as a string or array of lines
@@ -865,6 +841,15 @@ export function isDeclarationComplete(content: string | string[]): boolean {
   const fullContent = Array.isArray(content) ? content.join('\n') : content
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
+}
+
+function needsMultilineFormat(types: string[]): boolean {
+  return types.some(type =>
+    type.includes('\n')
+    || type.includes('{')
+    || type.length > 40
+    || types.join(' | ').length > 60,
+  )
 }
 
 function normalizeTypeReference(value: string): string {
