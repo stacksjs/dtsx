@@ -6,15 +6,6 @@ interface ProcessedMethod {
   signature: string
 }
 
-function cleanDeclaration(declaration: string): string {
-  return declaration
-    .replace(/\r\n/g, '\n') // Normalize line endings
-    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
-    .replace(/\/\/.*/g, '') // Remove single-line comments
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim()
-}
-
 function cleanParameterTypes(params: string): string {
   if (!params.trim())
     return ''
