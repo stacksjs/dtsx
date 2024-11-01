@@ -30,15 +30,15 @@ export declare const someObject: {
     Array<
       {
         key: 'value'
-        }
-      > |
+      } |
+    > |
     Array<
       {
         key2: 'value2'
         } |
       'test' |
       1000
-      > |
+    > |
     Array<'some string' | unknown | unknown>
   >;
   someObject: {
@@ -56,10 +56,10 @@ export declare const someObject: {
   someNestedObjectArray: Array<
     {
       key: 'value'
-      } |
+    } |
     {
       key2: 'value2'
-      }
+    }
   >;
   someOtherObject: unknown;
   someInlineCall2: unknown;
