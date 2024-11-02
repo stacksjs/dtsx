@@ -76,10 +76,10 @@ export declare const complexArrays: {
     Array<'a' | 'b' | Array<'c' | 'd'>> |
     Array<true | Array<false | Array<true>>>
   >;
-  tuples: Array<
+  tuples: readonly [
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
-  >;
+  ];
   mixedArrays: Array<
     unknown |
     unknown |
@@ -105,7 +105,7 @@ export declare const CONFIG_MAP: {
   development: {
     features: {
       auth: {
-        providers: Array<'google' | 'github'] as cons>;
+        providers: readonly ['google', unknown];
         settings: {
           timeout: 5000;
           retries: 3
@@ -116,7 +116,7 @@ export declare const CONFIG_MAP: {
   production: {
     features: {
       auth: {
-        providers: Array<'google' | 'github' | 'microsoft'] as cons>;
+        providers: readonly ['google', 'github', unknown];
         settings: {
           timeout: 3000;
           retries: 5

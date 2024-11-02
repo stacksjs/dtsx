@@ -41,6 +41,9 @@ function cleanParameterTypes(params: string): string {
         depth--
       }
       else if (char === ',' && depth === 0) {
+        if (currentParam.trim().endsWith('as const')) {
+          currentParam = currentParam.slice(0, currentParam.indexOf('as const')).trim()
+        }
         cleanParams.push(cleanParameter(currentParam.trim()))
         currentParam = ''
         continue
@@ -51,6 +54,9 @@ function cleanParameterTypes(params: string): string {
   }
 
   if (currentParam.trim()) {
+    if (currentParam.trim().endsWith('as const')) {
+      currentParam = currentParam.slice(0, currentParam.indexOf('as const')).trim()
+    }
     cleanParams.push(cleanParameter(currentParam.trim()))
   }
 
@@ -612,8 +618,10 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   debugLog(state, 'infer-array-value', `Input value:\n${value}`)
 
   const content = value.slice(1, -1).trim()
+  const isConstAssertion = value.trim().endsWith('as const')
+
   if (!content)
-    return 'unknown[]'
+    return isConstAssertion ? 'readonly unknown[]' : 'unknown[]'
 
   const baseIndent = '  '.repeat(indentLevel)
   debugLog(state, 'infer-array-indent', `Base indent="${baseIndent}"`)
@@ -624,11 +632,14 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
   const allConstTuples = elements.every(el => el.trim().endsWith('as const'))
   debugLog(state, 'array-tuples', `All const tuples: ${allConstTuples}`)
 
-  if (allConstTuples) {
+  // Handle const assertions
+  if (isConstAssertion || allConstTuples || content.includes('as const')) {
     const tuples = elements.map((el) => {
-      const tupleContent = el.slice(0, el.indexOf('as const')).trim()
-      debugLog(state, 'const-tuple', `Processing const tuple: ${tupleContent}`)
-      return inferConstArrayType(tupleContent, state)
+      const cleaned = el.trim().endsWith('as const')
+        ? el.slice(0, el.indexOf('as const')).trim()
+        : el.trim()
+      debugLog(state, 'const-tuple', `Processing const tuple: ${cleaned}`)
+      return inferConstArrayType(cleaned, state)
     })
     debugLog(state, 'const-tuple', `Tuples inferred: ${tuples}`)
 
@@ -637,10 +648,10 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
         const isLast = i === tuples.length - 1
         return indentMultilineType(type, `${baseIndent}  `, isLast)
       }).join('\n')
-      return `Array<\n${formattedContent}\n${baseIndent}>`
+      return `readonly [\n${formattedContent}\n${baseIndent}]`
     }
 
-    return `Array<${tuples.join(' | ')}>`
+    return `readonly [${tuples.join(', ')}]`
   }
 
   const elementTypes = elements.map((element, index) => {
@@ -720,6 +731,11 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 function inferConstArrayType(value: string, state?: ProcessingState): string {
   debugLog(state, 'infer-const', `Inferring const array type for: ${value}`)
 
+  // For string literals, return them directly
+  if (/^['"`].*['"`]$/.test(value)) {
+    return value // Return the literal directly
+  }
+
   // Handle array literals
   if (value.startsWith('[')) {
     const content = value.slice(1, -1).trim()
@@ -730,32 +746,44 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
       const trimmed = element.trim()
       debugLog(state, 'const-tuple-element', `Processing tuple element: ${trimmed}`)
 
+      // Remove '] as cons' artifact if present
+      if (trimmed.includes('] as cons')) {
+        const cleanTrimmed = trimmed.replace('] as cons', '').trim()
+        return cleanTrimmed.replace(/^['"`]|['"`]$/g, '\'')
+      }
+
       // Handle nested arrays
       if (trimmed.startsWith('[')) {
-        return inferConstArrayType(trimmed, state)
+        // Remove any 'as const' from nested arrays
+        const cleanTrimmed = trimmed.endsWith('as const')
+          ? trimmed.slice(0, trimmed.indexOf('as const')).trim()
+          : trimmed
+        return inferConstArrayType(cleanTrimmed, state)
       }
 
       // Handle nested objects
       if (trimmed.startsWith('{')) {
-        return inferComplexObjectType(trimmed, state)
+        const result = inferComplexObjectType(trimmed, state)
+        // Make object properties readonly for const assertions
+        return result.replace(/^\{/, '{ readonly').replace(/;\s+/g, '; readonly ')
       }
 
-      // Preserve string literals
+      // Handle string literals - ensure they're properly quoted
       if (/^['"`].*['"`]$/.test(trimmed)) {
-        return trimmed
+        return trimmed.replace(/^['"`]|['"`]$/g, '\'') // Normalize to single quotes
       }
 
-      // Preserve numeric literals
+      // Handle numeric literals
       if (!Number.isNaN(Number(trimmed))) {
         return trimmed
       }
 
-      // Preserve boolean literals
+      // Handle boolean literals
       if (trimmed === 'true' || trimmed === 'false') {
         return trimmed
       }
 
-      return 'unknown'
+      return trimmed.replace(/^['"`]|['"`]$/g, '\'') // Normalize any remaining string literals
     })
 
     debugLog(state, 'const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
@@ -1006,24 +1034,6 @@ export function processBlock(lines: string[], comments: string[], state: Process
   }
 
   debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
-}
-
-function processDeclaration(declaration: string): boolean {
-  let bracketDepth = 0
-  let parenDepth = 0
-
-  for (const char of declaration) {
-    if (char === '(')
-      parenDepth++
-    if (char === ')')
-      parenDepth--
-    if (char === '{')
-      bracketDepth++
-    if (char === '}')
-      bracketDepth--
-  }
-
-  return bracketDepth === 0 && parenDepth === 0
 }
 
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
