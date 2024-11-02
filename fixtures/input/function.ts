@@ -146,9 +146,9 @@ export function extractFunctionSignature(declaration: string): FunctionSignature
   }
 }
 
-// TODO: Type Inference in Functions
-// export function createApi<T extends Record<string, (...args: any[]) => any>>(
-//   endpoints: T
-// ): { [K in keyof T]: ReturnType<T[K]> extends Promise<infer R> ? R : ReturnType<T[K]> } {
-//   return {} as any
-// }
+// Type Inference in Functions
+export function createApi<T extends Record<string, (...args: any[]) => any>>(
+  endpoints: T
+): { [K in keyof T]: ReturnType<T[K]> extends Promise<infer R> ? R : ReturnType<T[K]> } {
+  return {} as any
+}

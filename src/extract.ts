@@ -199,9 +199,8 @@ function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: s
  * Extract complete function signature using regex
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
-  // Remove comments and clean up the declaration
   const cleanDeclaration = removeLeadingComments(declaration).trim()
-  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(?:(\*)\s*)?([^(<\s]+)/
+  const functionPattern = /^\s*(export\s+)?(async\s+)?function\s*(\*)?\s*([a-zA-Z_$][\w$]*)/
   const functionMatch = cleanDeclaration.match(functionPattern)
 
   if (!functionMatch) {
@@ -237,10 +236,10 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     }
   }
 
-  // Extract return type - keep it exactly as specified
+  // Extract return type
   let returnType = 'void'
   if (rest.startsWith(':')) {
-    const match = rest.match(/^:\s*([^{]+)/)
+    const match = rest.match(/^:\s*([^=>{]+)/)
     if (match) {
       returnType = match[1].trim()
     }
@@ -828,43 +827,65 @@ function inferReturnType(value: string, declaration: string): string {
   const isAsync = declaration.startsWith('async ') || value.includes('async ') || (value.includes('=>') && value.includes('await'))
   debugLog(undefined, 'return-type', `Is async method: ${isAsync}`)
 
-  let effectiveReturnType = 'void'
+  // Check for generator functions
+  const isGenerator = declaration.includes('function*') || value.includes('function*')
+
+  let effectiveReturnType = 'unknown'
 
   // Check for known return patterns
   if (value.includes('throw')) {
     effectiveReturnType = 'never'
   }
-  else if (value.includes('toISOString()') || value.includes('toString()')) {
+  else if (value.includes('toISOString()')) {
     effectiveReturnType = 'string'
   }
   else if (value.includes('Intl.NumberFormat') && value.includes('format')) {
     effectiveReturnType = 'string'
   }
-  else if (value.match(/^\{\s*\/\/[^}]*\}$/) || value.match(/^\{\s*\}$/) || value.match(/^\{\s*\/\*[\s\S]*?\*\/\s*\}$/)) {
-    effectiveReturnType = 'void'
+  else if (value.includes('Promise.all')) {
+    effectiveReturnType = 'Promise<unknown[]>'
+  }
+  else if (value.includes('fetch(')) {
+    effectiveReturnType = 'Promise<unknown>'
   }
   else {
     // Check for return statements
     const returnMatch = value.match(/return\s+([^;\s]+)/)
     if (returnMatch) {
       const returnValue = returnMatch[1]
-      if (/^['"`]/.test(returnValue))
+      if (returnValue.includes('as ')) {
+        const typeAssertionMatch = returnValue.match(/as\s+([^;\s]+)/)
+        if (typeAssertionMatch) {
+          effectiveReturnType = typeAssertionMatch[1]
+        }
+      }
+      else if (/^['"`]/.test(returnValue)) {
         effectiveReturnType = 'string'
-      else if (!Number.isNaN(Number(returnValue)))
+      }
+      else if (!Number.isNaN(Number(returnValue))) {
         effectiveReturnType = 'number'
-      else if (returnValue === 'true' || returnValue === 'false')
+      }
+      else if (returnValue === 'true' || returnValue === 'false') {
         effectiveReturnType = 'boolean'
-      else if (returnValue === 'null')
+      }
+      else if (returnValue === 'null') {
         effectiveReturnType = 'null'
-      else if (returnValue === 'undefined')
+      }
+      else if (returnValue === 'undefined') {
         effectiveReturnType = 'undefined'
-      else effectiveReturnType = 'unknown'
+      }
+      else {
+        effectiveReturnType = 'unknown'
+      }
     }
   }
 
-  // Wrap in Promise for async functions
-  if (isAsync && !effectiveReturnType.includes('Promise')) {
-    debugLog(undefined, 'return-type', `Wrapping ${effectiveReturnType} in Promise for async method`)
+  // Handle generators
+  if (isGenerator) {
+    effectiveReturnType = `Generator<unknown, ${effectiveReturnType}, unknown>`
+  }
+  // Handle async functions
+  else if (isAsync && !effectiveReturnType.includes('Promise')) {
     effectiveReturnType = `Promise<${effectiveReturnType}>`
   }
 
@@ -921,7 +942,7 @@ export function isDefaultExport(line: string): boolean {
   return line.trim().startsWith('export default')
 }
 
-function isDeclarationStart(line: string): boolean {
+export function isDeclarationStart(line: string): boolean {
   return (
     line.startsWith('export ')
     || line.startsWith('interface ')
@@ -933,6 +954,7 @@ function isDeclarationStart(line: string): boolean {
     || line.startsWith('declare module')
     || /^export\s+(?:interface|type|const|function|async\s+function)/.test(line)
     || line.startsWith('export async function')
+    || line.startsWith('export function') // Added this line
   )
 }
 
@@ -1045,7 +1067,7 @@ export function processBlock(lines: string[], comments: string[], state: Process
     return
   }
 
-  if (cleanDeclaration.startsWith('function') || cleanDeclaration.startsWith('export function')) {
+  if (/^(export\s+)?(async\s+)?function\s*(\*)?/.test(cleanDeclaration)) {
     const isExported = cleanDeclaration.startsWith('export')
     state.dtsLines.push(processFunction(declarationText, state.usedTypes, isExported))
     return
@@ -1217,16 +1239,12 @@ function processSourceFile(content: string, state: ProcessingState): void {
     const trimmedLine = line.trim()
 
     // Track comments
-    if (trimmedLine.startsWith('/*')) {
-      currentComments.push(line)
-      continue
-    }
-    if (trimmedLine.startsWith('//')) {
+    if (trimmedLine.startsWith('/*') || trimmedLine.startsWith('//')) {
       currentComments.push(line)
       continue
     }
 
-    // Track brackets and parentheses for nesting depth
+    // Start of a new declaration
     if (isDeclarationStart(trimmedLine)) {
       if (inDeclaration && currentBlock.length > 0) {
         processBlock(currentBlock, currentComments, state)
@@ -1238,7 +1256,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       inDeclaration = true
       currentBlock = [line]
 
-      // Initialize depths for the first line
+      // Update depths
       parenDepth += (line.match(/\(/g) || []).length
       parenDepth -= (line.match(/\)/g) || []).length
       bracketDepth += (line.match(/\{/g) || []).length
@@ -1247,7 +1265,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       continue
     }
 
-    // If we're in a declaration, track the nesting
+    // If in a declaration, collect lines
     if (inDeclaration) {
       currentBlock.push(line)
 
@@ -1260,15 +1278,13 @@ function processSourceFile(content: string, state: ProcessingState): void {
       // Check if the declaration is complete
       const isComplete = (
         parenDepth === 0
-        && bracketDepth === 0 && (
+        && bracketDepth === 0
+        && (
           trimmedLine.endsWith(';')
           || trimmedLine.endsWith('}')
-          || trimmedLine.endsWith(',')
-          || trimmedLine.match(/\bas\s+const[,;]?$/)
+          || (!trimmedLine.endsWith('{') && !trimmedLine.endsWith(',')) // Function overloads
         )
       )
-
-      debugLog(state, 'source-processing', `Line "${trimmedLine}": parenDepth=${parenDepth}, bracketDepth=${bracketDepth}, complete=${isComplete}`)
 
       if (isComplete) {
         processBlock(currentBlock, currentComments, state)
@@ -1401,17 +1417,13 @@ export function processFunction(
   usedTypes?: Set<string>,
   isExported = true,
 ): string {
-  // Remove comments from the declaration for parsing
   const cleanDeclaration = removeLeadingComments(declaration).trim()
 
-  const {
-    name,
-    params,
-    returnType,
-    generics,
-  } = extractFunctionSignature(cleanDeclaration)
+  // Determine if the function has a body
+  const hasBody = /\{[\s\S]*\}$/.test(cleanDeclaration)
 
-  // Track used types if provided
+  const { name, params, returnType, generics } = extractFunctionSignature(cleanDeclaration)
+
   if (usedTypes) {
     trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
   }
@@ -1424,15 +1436,17 @@ export function processFunction(
     name,
     generics,
     `(${params})`,
-    ':',
-    returnType,
-    ';',
   ]
+
+  if (returnType && returnType !== 'void') {
+    parts.push(':', returnType)
+  }
+
+  parts.push(';')
 
   return parts
     .filter(Boolean)
     .join(' ')
-    // Include ':' in the character classes to handle spacing around colons
     .replace(/\s+([<>(),;:])/g, '$1')
     .replace(/([<>(),;:])\s+/g, '$1 ')
     .replace(/\s{2,}/g, ' ')
