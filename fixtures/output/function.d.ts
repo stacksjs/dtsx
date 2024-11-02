@@ -1,11 +1,11 @@
 import type { BunPlugin } from 'bun';
 import type { DtsGenerationOption } from '@stacksjs/dtsx';
-export declare function fetchUsers(): Promise<ResponseData;
-export declare function getProduct(id: number): Promise<ApiResponse<Product;
-export declare function authenticate(user: string, password: string): Promise<AuthResponse;
+export declare function fetchUsers(): Promise<ResponseData>;
+export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
+export declare function authenticate(user: string, password: string): Promise<AuthResponse>;
 export declare function dts(options?: DtsGenerationOption): BunPlugin;
 declare const cwd: unknown;
-export declare function loadConfig<T extends Record<string, unknown>>({ name, cwd, defaultConfig }: Options<T>): Promise<T;
+export declare function loadConfig<T extends Record<string, unknown>>({ name, cwd, defaultConfig }: Options<T>): Promise<T>;
 declare const c: unknown;
 declare const configPath: unknown;
 declare const importedConfig: unknown;

@@ -239,9 +239,11 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
   // Extract return type
   let returnType = 'void'
   if (rest.startsWith(':')) {
-    const match = rest.match(/^:\s*([^=>{]+)/)
-    if (match) {
-      returnType = match[1].trim()
+    rest = rest.slice(1).trim()
+    const returnTypeResult = extractReturnType(rest)
+    if (returnTypeResult) {
+      returnType = returnTypeResult.returnType.trim()
+      rest = returnTypeResult.rest.trim()
     }
   }
 
@@ -293,6 +295,41 @@ function extractFunctionType(value: string, state?: ProcessingState): string | n
   }
 
   return null
+}
+
+function extractReturnType(text: string): { returnType: string, rest: string } | null {
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+  let i = 0
+  for (; i < text.length; i++) {
+    const char = text[i]
+    const prevChar = i > 0 ? text[i - 1] : ''
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+      continue
+    }
+    if (!inString) {
+      if (char === '<') {
+        depth++
+      }
+      else if (char === '>') {
+        depth--
+      }
+      else if ((char === '{' || char === ';') && depth === 0) {
+        break
+      }
+    }
+  }
+  const returnType = text.slice(0, i)
+  const rest = text.slice(i)
+  return { returnType, rest }
 }
 
 /**
@@ -815,7 +852,7 @@ function inferReturnType(value: string, declaration: string): string {
 
   // First check if there's an explicit return type in the declaration
   if (declaration) {
-    const explicitMatch = declaration.match(/\):\s*([^{;]+)/)
+    const explicitMatch = declaration.match(/:\s*([^{;]+)/)
     if (explicitMatch) {
       const returnType = explicitMatch[1].trim()
       debugLog(undefined, 'return-type', `Found explicit return type: ${returnType}`)
@@ -824,68 +861,23 @@ function inferReturnType(value: string, declaration: string): string {
   }
 
   // Check if it's an async method
-  const isAsync = declaration.startsWith('async ') || value.includes('async ') || (value.includes('=>') && value.includes('await'))
+  const isAsync = declaration.startsWith('async ') || value.includes('await')
+
   debugLog(undefined, 'return-type', `Is async method: ${isAsync}`)
 
-  // Check for generator functions
-  const isGenerator = declaration.includes('function*') || value.includes('function*')
-
-  let effectiveReturnType = 'unknown'
+  let effectiveReturnType = 'void'
 
   // Check for known return patterns
-  if (value.includes('throw')) {
+  if (/throw\s+/.test(value)) {
     effectiveReturnType = 'never'
   }
-  else if (value.includes('toISOString()')) {
-    effectiveReturnType = 'string'
-  }
-  else if (value.includes('Intl.NumberFormat') && value.includes('format')) {
-    effectiveReturnType = 'string'
-  }
-  else if (value.includes('Promise.all')) {
-    effectiveReturnType = 'Promise<unknown[]>'
-  }
-  else if (value.includes('fetch(')) {
-    effectiveReturnType = 'Promise<unknown>'
-  }
-  else {
-    // Check for return statements
-    const returnMatch = value.match(/return\s+([^;\s]+)/)
-    if (returnMatch) {
-      const returnValue = returnMatch[1]
-      if (returnValue.includes('as ')) {
-        const typeAssertionMatch = returnValue.match(/as\s+([^;\s]+)/)
-        if (typeAssertionMatch) {
-          effectiveReturnType = typeAssertionMatch[1]
-        }
-      }
-      else if (/^['"`]/.test(returnValue)) {
-        effectiveReturnType = 'string'
-      }
-      else if (!Number.isNaN(Number(returnValue))) {
-        effectiveReturnType = 'number'
-      }
-      else if (returnValue === 'true' || returnValue === 'false') {
-        effectiveReturnType = 'boolean'
-      }
-      else if (returnValue === 'null') {
-        effectiveReturnType = 'null'
-      }
-      else if (returnValue === 'undefined') {
-        effectiveReturnType = 'undefined'
-      }
-      else {
-        effectiveReturnType = 'unknown'
-      }
-    }
+  else if (/return\s+/.test(value)) {
+    effectiveReturnType = 'unknown' // We could improve this by parsing the return value
   }
 
-  // Handle generators
-  if (isGenerator) {
-    effectiveReturnType = `Generator<unknown, ${effectiveReturnType}, unknown>`
-  }
-  // Handle async functions
-  else if (isAsync && !effectiveReturnType.includes('Promise')) {
+  // Wrap in Promise for async functions
+  if (isAsync && !effectiveReturnType.includes('Promise')) {
+    debugLog(undefined, 'return-type', `Wrapping ${effectiveReturnType} in Promise for async method`)
     effectiveReturnType = `Promise<${effectiveReturnType}>`
   }
 
@@ -1034,45 +1026,129 @@ export function processBlock(lines: string[], comments: string[], state: Process
     return
   }
 
-  // Handle export statements first
-  if (cleanDeclaration.startsWith('export')) {
-    const exportMatch = cleanDeclaration.match(/^export\s+(?:type\s+)?(\{[^}]+\})/)
-    if (exportMatch) {
-      state.dtsLines.push(declarationText)
-      return
-    }
-  }
-
-  // Process by declaration type
-  if (cleanDeclaration.startsWith('const') || cleanDeclaration.startsWith('let') || cleanDeclaration.startsWith('var')
-    || cleanDeclaration.startsWith('export const') || cleanDeclaration.startsWith('export let') || cleanDeclaration.startsWith('export var')) {
+  // Handle variable declarations (both exported and non-exported)
+  if (
+    cleanDeclaration.startsWith('export const')
+    || cleanDeclaration.startsWith('export let')
+    || cleanDeclaration.startsWith('export var')
+    || cleanDeclaration.startsWith('const')
+    || cleanDeclaration.startsWith('let')
+    || cleanDeclaration.startsWith('var')
+  ) {
     const isExported = cleanDeclaration.startsWith('export')
-
-    // For variable declarations, ensure we have the complete declaration
     const fullDeclaration = lines.join('\n')
     debugLog(state, 'block-processing', `Processing variable declaration:\n${fullDeclaration}`)
     state.dtsLines.push(processVariable(fullDeclaration, isExported, state))
     return
   }
 
+  // Handle function declarations (both exported and non-exported)
+  if (/^(export\s+)?(async\s+)?function/.test(cleanDeclaration)) {
+    const isExported = cleanDeclaration.startsWith('export')
+    state.dtsLines.push(processFunction(declarationText, state.usedTypes, isExported))
+    return
+  }
+
+  // Handle interface declarations
   if (cleanDeclaration.startsWith('interface') || cleanDeclaration.startsWith('export interface')) {
     const isExported = cleanDeclaration.startsWith('export')
     state.dtsLines.push(processInterface(declarationText, isExported))
     return
   }
 
+  // Handle type declarations
   if (cleanDeclaration.startsWith('type') || cleanDeclaration.startsWith('export type')) {
     const isExported = cleanDeclaration.startsWith('export')
     state.dtsLines.push(processType(declarationText, isExported))
     return
   }
 
-  if (/^(export\s+)?(async\s+)?function\s*(\*)?/.test(cleanDeclaration)) {
-    const isExported = cleanDeclaration.startsWith('export')
-    state.dtsLines.push(processFunction(declarationText, state.usedTypes, isExported))
+  // Handle default exports
+  if (cleanDeclaration.startsWith('export default')) {
+    debugLog(state, 'default-export', `Found default export: ${cleanDeclaration}`)
+    // Store the complete default export statement
+    const defaultExport = cleanDeclaration.endsWith(';')
+      ? cleanDeclaration
+      : `${cleanDeclaration};`
+
+    state.defaultExports.add(defaultExport)
+    debugLog(state, 'default-export', `Added to default exports: ${defaultExport}`)
     return
   }
 
+  // Handle export all statements
+  if (cleanDeclaration.startsWith('export *')) {
+    state.exportAllStatements.push(cleanDeclaration)
+    debugLog(state, 'export-all-declaration', `Found export all declaration: ${cleanDeclaration}`)
+    state.dtsLines.push(declarationText)
+    return
+  }
+
+  // Handle export { ... } statements
+  if (cleanDeclaration.startsWith('export {')) {
+    debugLog(state, 'export-declaration', `Found export declaration: ${cleanDeclaration}`)
+    state.dtsLines.push(declarationText)
+    return
+  }
+
+  // Handle other exported declarations
+  if (cleanDeclaration.startsWith('export')) {
+    // Handle exported classes, enums, namespaces, etc.
+    const isExported = true
+    if (
+      cleanDeclaration.startsWith('export class')
+      || cleanDeclaration.startsWith('export abstract class')
+    ) {
+      debugLog(state, 'class-declaration', `Found class declaration: ${cleanDeclaration}`)
+      const processed = `${isExported ? 'export ' : ''}declare ${cleanDeclaration.replace(
+        /^export\s+/,
+        '',
+      )}`
+      state.dtsLines.push(processed)
+      return
+    }
+
+    if (
+      cleanDeclaration.startsWith('export enum')
+      || cleanDeclaration.startsWith('export const enum')
+    ) {
+      debugLog(state, 'enum-declaration', `Found enum declaration: ${cleanDeclaration}`)
+      const processed = `${isExported ? 'export ' : ''}declare ${cleanDeclaration.replace(
+        /^export\s+/,
+        '',
+      )}`
+      state.dtsLines.push(processed)
+      return
+    }
+
+    if (cleanDeclaration.startsWith('export namespace')) {
+      debugLog(state, 'namespace-declaration', `Found namespace declaration: ${cleanDeclaration}`)
+      const processed = `${isExported ? 'export ' : ''}declare ${cleanDeclaration.replace(
+        /^export\s+/,
+        '',
+      )}`
+      state.dtsLines.push(processed)
+      return
+    }
+
+    // If none of the above, log unhandled export
+    debugLog(
+      state,
+      'processing',
+      `Unhandled exported declaration type: ${cleanDeclaration.split('\n')[0]}`,
+    )
+    return
+  }
+
+  // Handle module declarations
+  if (cleanDeclaration.startsWith('declare module')) {
+    debugLog(state, 'module-declaration', `Found module declaration: ${cleanDeclaration}`)
+    const processed = processModule(declarationText)
+    state.dtsLines.push(processed)
+    return
+  }
+
+  // Log any unhandled declarations
   debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
 }
 
@@ -1518,7 +1594,7 @@ function processModule(declaration: string): string {
 function processObjectMethod(declaration: string, value: string, state?: ProcessingState): ProcessedMethod {
   debugLog(state, 'process-method-start', `Processing method: ${declaration}`)
 
-  const methodPattern = /^(?:async\s+)?(\w+)\s*(?:<([^>]+)>)?\s*\((.*?)\)(?:\s*:\s*([^{]+))?/
+  const methodPattern = /^(async\s+)?(\w+)\s*(?:<([^>]+)>)?\s*\(([^)]*)\)\s*(?::\s*([^ {]+))?/
   const match = declaration.match(methodPattern)
 
   if (!match) {
@@ -1529,30 +1605,27 @@ function processObjectMethod(declaration: string, value: string, state?: Process
     }
   }
 
-  const [, name, typeParams, params, returnType] = match
-  debugLog(state, 'process-method-parsed', `Name: ${name}, TypeParams: ${typeParams}, Params: ${params}, ReturnType: ${returnType}`)
+  const [, asyncKeyword, name, typeParams, params, returnTypeAnnotation] = match
+  const isAsync = !!asyncKeyword
 
-  // Check if method is async
-  const isAsync = declaration.startsWith('async ')
-  debugLog(state, 'process-method-async', `Method ${name} async status: ${isAsync}`)
+  // Infer return type if not explicitly provided
+  const returnType = returnTypeAnnotation || inferReturnType(value, declaration)
 
-  // Use explicit return type if available, otherwise infer
-  const effectiveReturnType = returnType
-    ? returnType.trim()
-    : inferReturnType(value, declaration)
+  // Handle generics
+  const generics = typeParams ? `<${typeParams}>` : ''
 
-  debugLog(state, 'process-method-return', `Return type for ${name}: ${effectiveReturnType}`)
+  debugLog(state, 'process-method-parsed', `Name: ${name}, TypeParams: ${generics}, Params: ${params}, ReturnType: ${returnType}`)
 
   const cleanParams = cleanParameterTypes(params || '')
-  const signature = [
-    typeParams ? `<${typeParams}>` : '',
+  const signatureParts = [
+    isAsync ? 'async' : '',
+    generics,
     `(${cleanParams})`,
     '=>',
-    effectiveReturnType,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .trim()
+    returnType,
+  ].filter(Boolean)
+
+  const signature = signatureParts.join(' ').trim()
 
   debugLog(state, 'process-method-result', `Generated signature for ${name}: ${signature}`)
   return { name, signature }

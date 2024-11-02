@@ -89,8 +89,8 @@ export declare const complexArrays: {
 };
 export declare const complexObject: {
   handlers: {
-    onSuccess: <T> (data: T) => Promise<unknown>;
-    onError: (error: Error & { code?: number }) => never
+    onSuccess: async <T> (data: T) => T);
+    onError: (error: Error & { code?: number }) => Error &
   };
   utils: {
     formatters: {
