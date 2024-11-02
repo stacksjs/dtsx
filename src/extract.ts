@@ -733,7 +733,11 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
 
   // For string literals, return them directly
   if (/^['"`].*['"`]$/.test(value)) {
-    return value // Return the literal directly
+    // Strip any potential 'as cons' suffix and quotes
+    const cleaned = value
+      .replace(/\]\s*as\s*cons.*$/, '')
+      .replace(/^['"`]|['"`]$/g, '')
+    return `'${cleaned}'`
   }
 
   // Handle array literals
@@ -743,34 +747,33 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
 
     // Build tuple type
     const literalTypes = elements.map((element) => {
-      const trimmed = element.trim()
+      let trimmed = element.trim()
       debugLog(state, 'const-tuple-element', `Processing tuple element: ${trimmed}`)
 
-      // Remove '] as cons' artifact if present
-      if (trimmed.includes('] as cons')) {
-        const cleanTrimmed = trimmed.replace('] as cons', '').trim()
-        return cleanTrimmed.replace(/^['"`]|['"`]$/g, '\'')
+      // Clean up any 'as cons' or 'as const' suffixes first
+      if (trimmed.includes('] as cons') || trimmed.includes('] as const')) {
+        trimmed = trimmed
+          .replace(/\]\s*as\s*cons.*$/, '')
+          .replace(/\]\s*as\s*const.*$/, '')
+          .trim()
       }
 
       // Handle nested arrays
       if (trimmed.startsWith('[')) {
-        // Remove any 'as const' from nested arrays
-        const cleanTrimmed = trimmed.endsWith('as const')
-          ? trimmed.slice(0, trimmed.indexOf('as const')).trim()
-          : trimmed
-        return inferConstArrayType(cleanTrimmed, state)
+        return inferConstArrayType(trimmed, state)
       }
 
       // Handle nested objects
       if (trimmed.startsWith('{')) {
         const result = inferComplexObjectType(trimmed, state)
-        // Make object properties readonly for const assertions
         return result.replace(/^\{/, '{ readonly').replace(/;\s+/g, '; readonly ')
       }
 
-      // Handle string literals - ensure they're properly quoted
+      // Handle string literals
       if (/^['"`].*['"`]$/.test(trimmed)) {
-        return trimmed.replace(/^['"`]|['"`]$/g, '\'') // Normalize to single quotes
+        // Clean up quotes and get the actual string value
+        const stringContent = trimmed.replace(/^['"`]|['"`]$/g, '')
+        return `'${stringContent}'`
       }
 
       // Handle numeric literals
@@ -783,14 +786,29 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
         return trimmed
       }
 
-      return trimmed.replace(/^['"`]|['"`]$/g, '\'') // Normalize any remaining string literals
+      // At this point, we probably have a string without quotes
+      // Clean up any remaining artifacts and quote it
+      const cleanString = trimmed
+        .replace(/\]\s*as\s*cons.*$/, '') // Remove '] as cons'
+        .replace(/\]\s*as\s*const.*$/, '') // Remove '] as const'
+        .replace(/^['"`]|['"`]$/g, '') // Remove any quotes
+        .trim()
+
+      return `'${cleanString}'`
     })
 
     debugLog(state, 'const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
     return `readonly [${literalTypes.join(', ')}]`
   }
 
-  return 'unknown'
+  // If it's a plain string (without quotes), quote it
+  const cleanString = value
+    .replace(/\]\s*as\s*cons.*$/, '')
+    .replace(/\]\s*as\s*const.*$/, '')
+    .replace(/^['"`]|['"`]$/g, '')
+    .trim()
+
+  return `'${cleanString}'`
 }
 
 function inferReturnType(value: string, declaration: string): string {

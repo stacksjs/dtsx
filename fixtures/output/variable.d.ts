@@ -105,7 +105,7 @@ export declare const CONFIG_MAP: {
   development: {
     features: {
       auth: {
-        providers: readonly ['google', unknown];
+        providers: readonly ['google', 'github'];
         settings: {
           timeout: 5000;
           retries: 3
@@ -116,7 +116,7 @@ export declare const CONFIG_MAP: {
   production: {
     features: {
       auth: {
-        providers: readonly ['google', 'github', unknown];
+        providers: readonly ['google', 'github', 'microsoft'];
         settings: {
           timeout: 3000;
           retries: 5
