@@ -200,14 +200,14 @@ function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: s
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
   // Remove comments and clean up the declaration
-  const cleanDeclaration = removeLeadingComments(declaration).trim()
+  const cleanDeclaration = removeLeadingComments(declaration).trim().replace(/^export\s+/, '') // Remove leading export if present
 
-  // Regex to match function declarations, including complex generics and export
-  const functionPattern = /^\s*(export\s+)?(?:declare\s+)?(?:async\s+)?function\s*(\*)?\s*([^\s(<]+)/
+  // Enhanced regex to capture async and generator functions
+  const functionPattern = /^(?:async\s+)?function\s*(\*)?\s*([a-zA-Z_$][\w$]*)(?:<([^>]*)>)?\s*\((.*?)\)(?:\s*:\s*([^{;]+))?/s
   const functionMatch = cleanDeclaration.match(functionPattern)
 
   if (!functionMatch) {
-    console.error('Function name could not be extracted from declaration:', declaration)
+    console.error('Function name could not be extracted from declaration:', cleanDeclaration)
     return {
       name: '',
       params: '',
@@ -216,46 +216,19 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     }
   }
 
-  const name = functionMatch[3]
-  let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
+  const [, isGenerator, name, generics = '', params = '', returnType = 'void'] = functionMatch
 
-  // Extract generics
-  let generics = ''
-  if (rest.startsWith('<')) {
-    const genericsResult = extractBalancedSymbols(rest, '<', '>')
-    if (genericsResult) {
-      generics = genericsResult.content // This includes the angle brackets
-      rest = genericsResult.rest.trim()
-    }
-  }
-
-  // Extract parameters
-  let params = ''
-  if (rest.startsWith('(')) {
-    const paramsResult = extractBalancedSymbols(rest, '(', ')')
-    if (paramsResult) {
-      params = paramsResult.content.slice(1, -1).trim()
-      rest = paramsResult.rest.trim()
-    }
-  }
-
-  // Extract return type
-  let returnType = 'void'
-  if (rest.startsWith(':')) {
-    rest = rest.slice(1).trim()
-    const returnTypeResult = extractReturnType(rest)
-    debugLog(undefined, 'return-type', `Extracted return type: ${returnTypeResult?.returnType}`)
-    if (returnTypeResult) {
-      returnType = returnTypeResult.returnType.trim()
-      rest = returnTypeResult.rest.trim()
-    }
+  // Handle async generator functions
+  let finalReturnType = returnType.trim()
+  if (isGenerator) {
+    finalReturnType = `AsyncGenerator<${finalReturnType}, void, unknown>`
   }
 
   return {
     name,
     params: cleanParameterTypes(params),
-    returnType: normalizeType(returnType),
-    generics,
+    returnType: normalizeType(finalReturnType),
+    generics: generics ? `<${generics}>` : '',
   }
 }
 
@@ -700,7 +673,7 @@ function inferArrayType(value: string, state?: ProcessingState, indentLevel = 0)
     return `readonly [${tuples.join(', ')}]`
   }
 
-  const elementTypes = elements.map((element, index) => {
+  const elementTypes = elements.map((element) => {
     const trimmed = element.trim()
     // debugLog(state, 'element-processing', `Processing element ${index}: "${trimmed}"`)
 
@@ -907,6 +880,24 @@ export function isDefaultExport(line: string): boolean {
 }
 
 function isDeclarationStart(line: string): boolean {
+  // Skip regex patterns
+  if (isRegexPattern(line))
+    return false
+
+  const validIdentifierRegex = /^[a-z_$][\w$]*$/i
+
+  // Handle function declarations
+  if (line.startsWith('function') || line.startsWith('async function')) {
+    const nameMatch = line.match(/function\s+([^(<\s]+)/)
+    return nameMatch ? validIdentifierRegex.test(nameMatch[1]) : false
+  }
+
+  if (line.startsWith('export function') || line.startsWith('export async function')) {
+    const nameMatch = line.match(/function\s+([^(<\s]+)/)
+    return nameMatch ? validIdentifierRegex.test(nameMatch[1]) : false
+  }
+
+  // Handle other declarations
   return (
     line.startsWith('export ')
     || line.startsWith('interface ')
@@ -919,6 +910,23 @@ function isDeclarationStart(line: string): boolean {
     || /^export\s+(?:interface|type|const|function|async\s+function)/.test(line)
     || line.startsWith('export async function')
     || line.startsWith('export function')
+  )
+}
+
+function isRegexPattern(line: string): boolean {
+  return (
+    line.includes('\\')
+    || line.includes('[^')
+    || line.includes('(?:')
+    || line.includes('(?=')
+    || line.includes('(?!')
+    || line.includes('\\s*')
+    || line.includes('\\w+')
+    || line.includes('\\d+')
+    || line.includes('(?<')
+    || line.includes('(?!')
+    || line.includes('(?<=')
+    || line.includes('(?<!')
   )
 }
 
@@ -938,6 +946,18 @@ export function isDeclarationComplete(content: string | string[]): boolean {
   const fullContent = Array.isArray(content) ? content.join('\n') : content
   const trimmedContent = fullContent.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '').trim()
   return /;\s*$/.test(trimmedContent) || /\}\s*$/.test(trimmedContent)
+}
+
+function isVariableInsideFunction(line: string, state: ProcessingState): boolean {
+  const trimmed = line.trim()
+  return (
+    state.currentScope === 'function'
+    && (trimmed.startsWith('const ')
+      || trimmed.startsWith('let ')
+      || trimmed.startsWith('var ')
+    // Handle multiline variable declarations
+      || /^(?:const|let|var)\s+[a-zA-Z_$][\w$]*\s*(?::|=)/.test(trimmed))
+  )
 }
 
 function needsMultilineFormat(types: string[]): boolean {
@@ -986,8 +1006,6 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   const declarationText = lines.join('\n')
   const cleanDeclaration = removeLeadingComments(declarationText).trim()
 
-  // Keep track of declaration for debugging
-  state.debug.currentProcessing = cleanDeclaration
   debugLog(state, 'block-processing', `Full block content:\n${cleanDeclaration}`)
 
   if (!cleanDeclaration) {
@@ -995,10 +1013,16 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     return
   }
 
-  // Try each processor in order
-  if (processVariableBlock(cleanDeclaration, lines, state))
+  // Early check for variables inside functions
+  if (isVariableInsideFunction(cleanDeclaration, state)) {
+    debugLog(state, 'block-processing', 'Skipping variable declaration inside function')
     return
+  }
+
+  // Try each processor in order
   if (processFunctionBlock(cleanDeclaration, state))
+    return
+  if (processVariableBlock(cleanDeclaration, lines, state))
     return
   if (processInterfaceBlock(cleanDeclaration, declarationText, state))
     return
@@ -1013,7 +1037,6 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   if (processModuleBlock(cleanDeclaration, declarationText, state))
     return
 
-  // Log any unhandled declarations
   debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
 }
 
@@ -1022,7 +1045,14 @@ function processVariableBlock(cleanDeclaration: string, lines: string[], state: 
   if (!variableMatch)
     return false
 
+  // Double-check we're not inside a function
+  if (isVariableInsideFunction(cleanDeclaration, state)) {
+    debugLog(state, 'variable-processing', 'Skipping variable inside function')
+    return true // Return true because we handled it (by skipping)
+  }
+
   const isExported = cleanDeclaration.startsWith('export')
+
   // Only process variables at the top level
   if (state.currentScope === 'top') {
     const fullDeclaration = lines.join('\n')
@@ -1035,26 +1065,33 @@ function processVariableBlock(cleanDeclaration: string, lines: string[], state: 
 }
 
 function processFunctionBlock(cleanDeclaration: string, state: ProcessingState): boolean {
-  if (!/^(export\s+)?(async\s+)?function/.test(cleanDeclaration))
+  // Check for function declarations including async and generator functions
+  if (!/^(?:export\s+)?(?:async\s+)?function\s*(\*)?\s*[a-zA-Z_$][\w$]*/.test(cleanDeclaration))
     return false
 
   debugLog(state, 'block-processing', 'Processing function declaration')
   const isExported = cleanDeclaration.startsWith('export')
 
-  // Split block into separate function declarations if multiple exist
-  const declarations = cleanDeclaration.split(/export function|function/)
+  // Split function declarations - handle export separately
+  const declarations = cleanDeclaration
+    .replace(/^export\s+/, '') // Remove leading export once
+    .split(/\nexport\s+function|\nfunction/)
     .filter(Boolean)
-    .map(d => (isExported ? `export function${d}` : `function${d}`))
+    .map(d => d.trim())
+    .filter(d => d.startsWith('function') || d.startsWith('async function'))
 
   for (const declaration of declarations) {
     // Process only the function signature for overloads and declarations
     const signature = declaration.split('{')[0].trim()
     if (signature) {
       const processed = processFunction(signature, state.usedTypes, isExported)
-      if (processed)
+      if (processed) {
+        debugLog(state, 'function-processing', `Processed function: ${processed}`)
         state.dtsLines.push(processed)
+      }
     }
   }
+
   return true
 }
 
@@ -1322,7 +1359,6 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let bracketDepth = 0
   let parenDepth = 0
   let inDeclaration = false
-  // Ensure currentScope is initialized
   state.currentScope = 'top'
 
   for (let i = 0; i < lines.length; i++) {
@@ -1353,9 +1389,8 @@ function processSourceFile(content: string, state: ProcessingState): void {
       bracketDepth += (line.match(/\{/g) || []).length
       bracketDepth -= (line.match(/\}/g) || []).length
 
-      // Check if we're entering a function scope
+      // Update scope
       if (/^(export\s+)?(async\s+)?function/.test(trimmedLine)) {
-        debugLog(state, 'function-scope', `Entering function scope: ${trimmedLine}`)
         state.currentScope = 'function'
       }
 
@@ -1372,28 +1407,26 @@ function processSourceFile(content: string, state: ProcessingState): void {
       bracketDepth += (line.match(/\{/g) || []).length
       bracketDepth -= (line.match(/\}/g) || []).length
 
-      // Check if the declaration is complete
-      const isComplete = (
-        parenDepth === 0
-        && bracketDepth === 0
-        && (
+      // Check if declaration is complete
+      if (parenDepth === 0 && bracketDepth === 0 && !trimmedLine.endsWith(',')) {
+        const isComplete = (
           trimmedLine.endsWith(';')
           || trimmedLine.endsWith('}')
           || (!trimmedLine.endsWith('{') && !trimmedLine.endsWith(','))
         )
-      )
 
-      if (isComplete) {
-        processBlock(currentBlock, currentComments, state)
-        currentBlock = []
-        currentComments = []
-        inDeclaration = false
-        bracketDepth = 0
-        parenDepth = 0
+        if (isComplete) {
+          processBlock(currentBlock, currentComments, state)
+          currentBlock = []
+          currentComments = []
+          inDeclaration = false
+          bracketDepth = 0
+          parenDepth = 0
 
-        // Reset scope after function ends
-        if (state.currentScope === 'function') {
-          state.currentScope = 'top' // Reset currentScope here
+          // Reset scope after function ends
+          if (state.currentScope === 'function') {
+            state.currentScope = 'top'
+          }
         }
       }
     }
@@ -1515,49 +1548,45 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
-  const cleanDeclaration = removeLeadingComments(declaration).trim()
-  const { name, params, returnType, generics } = extractFunctionSignature(cleanDeclaration)
-  debugLog(undefined, 'process-function', `Processing function declaration: ${name}(${params}): ${returnType}`)
+  // Clean up declaration first
+  const cleanDeclaration = removeLeadingComments(declaration).trim().replace(/^export\s+/, '') // Remove leading export if present
 
-  if (!name) {
-    console.error('Function name could not be extracted from declaration:', declaration)
+  const signature = extractFunctionSignature(cleanDeclaration)
+
+  if (!signature.name) {
+    debugLog(undefined, 'function-processing', `Failed to process function: ${cleanDeclaration}`)
     return ''
   }
 
-  if (usedTypes) {
-    trackUsedTypes(`${generics} ${params} ${returnType}`, usedTypes)
+  // Handle async functions
+  const isAsync = cleanDeclaration.includes('async function')
+  let returnType = signature.returnType
+  if (isAsync && !returnType.startsWith('Promise<') && !returnType.startsWith('AsyncGenerator<')) {
+    returnType = `Promise<${returnType}>`
   }
 
-  // Build the declaration string without function body
+  if (usedTypes) {
+    trackUsedTypes(`${signature.generics} ${signature.params} ${returnType}`, usedTypes)
+  }
+
   const parts = [
     isExported ? 'export' : '',
     'declare',
     'function',
-    name,
-    generics,
-    `(${params})`,
+    signature.name,
+    signature.generics,
+    `(${signature.params})`,
+    ':',
+    returnType,
   ]
 
-  if (returnType && returnType !== 'void') {
-    parts.push(':', returnType)
-  }
-
-  parts.push(';')
-
-  const ps = parts
+  return `${parts
     .filter(Boolean)
     .join(' ')
-  // Remove all spaces between name and parenthesis
     .replace(/(\w+)\s+\(/g, '$1(')
-  // Ensure no space before colon, one space after
     .replace(/\s*:\s*/g, ': ')
-  // Clean up spaces around semicolon
-    .replace(/\s*;/g, ';')
-    .trim()
-
-  debugLog(undefined, 'process-function', `Processed function declaration: ${ps}`)
-
-  return ps
+    .replace(/\s+;/g, ';')
+    .trim()};`
 }
 
 /**
