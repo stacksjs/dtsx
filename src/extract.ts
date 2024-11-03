@@ -327,14 +327,6 @@ function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]
   return imports.sort()
 }
 
-function getDeclarationType(declaration: string): string {
-  if (declaration.includes('const '))
-    return 'const'
-  if (declaration.includes('let '))
-    return 'let'
-  return 'var'
-}
-
 function extractCompleteObjectContent(value: string): string | null {
   // debugLog(state, 'extract-object', `Processing object of length ${value.length}`)
   const fullContent = value.trim()
@@ -471,12 +463,9 @@ function createImportTrackingState(): ImportTrackingState {
 }
 
 function indentMultilineType(type: string, baseIndent: string, isLast: boolean): string {
-  // debugLog(undefined, 'indent-multiline', `Processing multiline type with baseIndent="${baseIndent}", isLast=${isLast}`)
-
   const lines = type.split('\n')
-  if (lines.length === 1) {
+  if (lines.length === 1)
     return `${baseIndent}${type}${isLast ? '' : ' |'}`
-  }
 
   interface BracketInfo {
     char: string
@@ -508,45 +497,49 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
     if (!trimmed)
       return ''
 
-    // Track Array type specifically
-    const openBrackets = trimmed.match(/[{<[]/g) || []
-    const closeBrackets = trimmed.match(/[}\]>]/g) || []
-
+    // Calculate base indentation for this line
     let currentIndent = baseIndent
     if (i > 0) {
+      // Add additional indentation for nested structures
       const stackDepth = bracketStack.reduce((depth, info) => depth + info.depth, 0)
       currentIndent = baseIndent + '  '.repeat(stackDepth)
 
-      // Dedent closing tokens
+      // Handle object property indentation
+      if (trimmed.match(/^['"]/)) { // Property starts with a quote
+        currentIndent += '  '
+      }
+
+      // Adjust closing brace/bracket indentation
       if ((trimmed.startsWith('}') || trimmed.startsWith('>') || trimmed.startsWith('> |')) && bracketStack.length > 0) {
         currentIndent = baseIndent + '  '.repeat(Math.max(0, stackDepth - 1))
       }
     }
 
-    // Handle opening brackets with Array context
-    if (openBrackets.length > 0) {
-      openBrackets.forEach((bracket) => {
-        const isArrayBracket = trimmed.startsWith('Array') && bracket === '<'
-        bracketStack.push({
-          char: bracket,
-          indent: currentIndent,
-          isArray: isArrayBracket,
-          depth: 1,
-          isSingleElement: isInSingleElementArray,
-        })
+    // Track brackets for nested structures
+    const openBrackets = trimmed.match(/[{<[]/g) || []
+    const closeBrackets = trimmed.match(/[}\]>]/g) || []
+
+    // Handle opening brackets
+    openBrackets.forEach((bracket) => {
+      const isArrayBracket = trimmed.startsWith('Array') && bracket === '<'
+      bracketStack.push({
+        char: bracket,
+        indent: currentIndent,
+        isArray: isArrayBracket,
+        depth: 1,
+        isSingleElement: isInSingleElementArray,
       })
-    }
+    })
 
     // Handle closing brackets
     if (closeBrackets.length > 0) {
       for (let j = 0; j < closeBrackets.length; j++) {
-        if (bracketStack.length > 0) {
+        if (bracketStack.length > 0)
           bracketStack.pop()
-        }
       }
     }
 
-    // Add union operator only when appropriate
+    // Add union operator when needed
     let needsUnion = false
     if (!isLast && i === lines.length - 1 && !trimmed.endsWith(' |') && !trimmed.endsWith(';')) {
       needsUnion = true
@@ -555,15 +548,13 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
     // Handle special cases for objects in arrays
     if (trimmed === '}') {
       const lastArray = [...bracketStack].reverse().find(info => info.isArray)
-      if (lastArray?.isSingleElement) {
+      if (lastArray?.isSingleElement)
         needsUnion = false
-      }
     }
 
-    // Don't add union if it's already part of the trimmed content
-    if (trimmed.endsWith(' |')) {
+    // Don't add union if it's already there
+    if (trimmed.endsWith(' |'))
       needsUnion = false
-    }
 
     return `${currentIndent}${trimmed}${needsUnion ? ' |' : ''}`
   }).filter(Boolean)
@@ -623,10 +614,10 @@ function inferArrayType(value: string, state?: ProcessingState, preserveLineBrea
     })
 
     if (needsMultilineFormat(tuples)) {
-      const formattedContent = tuples.map((type, i) => {
-        const isLast = i === tuples.length - 1
-        return `    ${type}${isLast ? '' : ' |'}`
-      }).join('\n')
+      // Use indentMultilineType for tuple formatting
+      const formattedContent = tuples.map((type, i) =>
+        indentMultilineType(type, '    ', i === tuples.length - 1),
+      ).join('\n')
       return `readonly [\n${formattedContent}\n  ]`
     }
 
@@ -651,13 +642,18 @@ function inferArrayType(value: string, state?: ProcessingState, preserveLineBrea
   })
 
   const types = elementTypes.filter(Boolean)
-  const needsMultiline = types.some(type => type.includes('\n') || type.includes('{') || type.length > 40)
+  const needsMultiline = types.some(type =>
+    type.includes('\n')
+    || type.includes('{')
+    || type.length > 40
+    || types.join(' | ').length > 60,
+  )
 
   if (needsMultiline && preserveLineBreaks) {
-    const formattedContent = types.map((type, i) => {
-      const isLast = i === types.length - 1
-      return `    ${type}${isLast ? '' : ' |'}`
-    }).join('\n')
+    // Use indentMultilineType for array type formatting
+    const formattedContent = types.map((type, i) =>
+      indentMultilineType(type, '    ', i === types.length - 1),
+    ).join('\n')
     return `Array<\n${formattedContent}\n  >`
   }
 
@@ -668,27 +664,25 @@ function inferArrayType(value: string, state?: ProcessingState, preserveLineBrea
  * Process object properties with improved formatting
  */
 function inferComplexObjectType(value: string, state?: ProcessingState, indentLevel = 0): string {
-  // debugLog(state, 'infer-complex', `Inferring type for object of length ${value.length}`)
-
   const content = extractCompleteObjectContent(value)
   if (!content)
     return 'Record<string, unknown>'
 
+  // Calculate indentation based on nesting level
   const baseIndent = '  '.repeat(indentLevel)
   const propIndent = '  '.repeat(indentLevel + 1)
-
-  // debugLog(state, 'infer-complex-content', `Processing content with indent level ${indentLevel}`)
+  const closingIndent = baseIndent // Keep closing brace aligned with opening
 
   const props = processObjectProperties(content, state, indentLevel)
   if (!props.length)
     return '{}'
 
   const propertyStrings = props.map(({ key, value }) => {
-    // debugLog(state, 'infer-complex-prop', `Processing property ${key}`)
     return `${propIndent}${key}: ${value}`
   })
 
-  return `{\n${propertyStrings.join(';\n')}\n${baseIndent}}`
+  // Format the object with consistent indentation
+  return `{\n${propertyStrings.join(';\n')}\n${closingIndent}}`
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
