@@ -102,6 +102,28 @@ export async function extract(filePath: string): Promise<string> {
   }
 }
 
+function extractBalancedSymbols(text: string, open: string, close: string): { content: string, rest: string } | null {
+  let depth = 1
+  let index = 1 // Start after the opening symbol
+
+  while (index < text.length && depth > 0) {
+    if (text[index] === open)
+      depth++
+    if (text[index] === close)
+      depth--
+    index++
+  }
+
+  if (depth === 0) {
+    return {
+      content: text.slice(0, index),
+      rest: text.slice(index),
+    }
+  }
+
+  return null
+}
+
 /**
  * Processes TypeScript source code and generates declaration types
  * @param sourceCode - TypeScript source code
@@ -888,14 +910,23 @@ function isDeclarationStart(line: string): boolean {
 
   const validIdentifierRegex = /^[a-z_$][\w$]*$/i
 
+  // Handle generator function declarations explicitly
+  if (line.includes('function*') || line.includes('async function*')) {
+    const nameMatch = line.match(/function\*\s+([^(<\s]+)/)
+    return nameMatch ? validIdentifierRegex.test(nameMatch[1]) : false
+  }
+
   // Handle function declarations
   if (line.startsWith('function') || line.startsWith('async function')) {
     const nameMatch = line.match(/function\s+([^(<\s]+)/)
     return nameMatch ? validIdentifierRegex.test(nameMatch[1]) : false
   }
 
-  if (line.startsWith('export function') || line.startsWith('export async function')) {
-    const nameMatch = line.match(/function\s+([^(<\s]+)/)
+  if (line.startsWith('export function')
+    || line.startsWith('export async function')
+    || line.startsWith('export function*')
+    || line.startsWith('export async function*')) {
+    const nameMatch = line.match(/function\*?\s+([^(<\s]+)/)
     return nameMatch ? validIdentifierRegex.test(nameMatch[1]) : false
   }
 
@@ -909,9 +940,7 @@ function isDeclarationStart(line: string): boolean {
     || line.startsWith('async function ')
     || line.startsWith('declare ')
     || line.startsWith('declare module')
-    || /^export\s+(?:interface|type|const|function|async\s+function)/.test(line)
-    || line.startsWith('export async function')
-    || line.startsWith('export function')
+    || /^export\s+(?:interface|type|const|function\*?|async\s+function\*?)/.test(line)
   )
 }
 
@@ -1067,7 +1096,17 @@ function processVariableBlock(cleanDeclaration: string, lines: string[], state: 
 }
 
 function processFunctionBlock(cleanDeclaration: string, state: ProcessingState): boolean {
-  // Check for function declarations including async and generator functions
+  // Check for generator functions first
+  if (/^(?:export\s+)?(?:async\s+)?function\s*\*/.test(cleanDeclaration)) {
+    debugLog(state, 'block-processing', 'Processing generator function declaration')
+    const processed = processGeneratorFunction(cleanDeclaration, state)
+    if (processed) {
+      state.dtsLines.push(processed)
+      return true
+    }
+  }
+
+  // Rest of the existing function remains the same
   if (!/^(?:export\s+)?(?:async\s+)?function\s*(\*)?\s*[a-zA-Z_$][\w$]*/.test(cleanDeclaration))
     return false
 
@@ -1416,7 +1455,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       continue
     }
 
-    // Start of a new declaration
+    // Start of a new declaration - now includes generator functions
     if (isDeclarationStart(trimmedLine) && bracketDepth === 0) {
       if (inDeclaration && currentBlock.length > 0) {
         processBlock(currentBlock, currentComments, state)
@@ -1435,14 +1474,14 @@ function processSourceFile(content: string, state: ProcessingState): void {
       bracketDepth -= (line.match(/\}/g) || []).length
 
       // Update scope
-      if (/^(export\s+)?(async\s+)?function/.test(trimmedLine)) {
+      if (/^(?:export\s+)?(?:async\s+)?function\*?/.test(trimmedLine)) {
         state.currentScope = 'function'
       }
 
       continue
     }
 
-    // If in a declaration, collect lines
+    // Collecting declaration lines
     if (inDeclaration) {
       currentBlock.push(line)
 
@@ -1453,7 +1492,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
       bracketDepth -= (line.match(/\}/g) || []).length
 
       // Check if declaration is complete
-      if (parenDepth === 0 && bracketDepth === 0 && !trimmedLine.endsWith(',')) {
+      if (parenDepth === 0 && bracketDepth === 0) {
         const isComplete = (
           trimmedLine.endsWith(';')
           || trimmedLine.endsWith('}')
@@ -1468,7 +1507,6 @@ function processSourceFile(content: string, state: ProcessingState): void {
           bracketDepth = 0
           parenDepth = 0
 
-          // Reset scope after function ends
           if (state.currentScope === 'function') {
             state.currentScope = 'top'
           }
@@ -1628,6 +1666,79 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
 
   debugLog(state, 'declaration', `Generated declaration: ${result}`)
   return result
+}
+
+function processGeneratorFunction(declaration: string, state?: ProcessingState): string {
+  debugLog(state, 'generator-function', `Processing generator function: ${declaration}`)
+
+  // Clean up the declaration but keep info for processing
+  const cleanDeclaration = declaration
+    .replace(/^export\s+/, '')
+    .replace(/^async\s+/, '')
+    .trim()
+
+  // Extract function name
+  const nameMatch = cleanDeclaration.match(/function\*\s+([^(<\s]+)/)
+  if (!nameMatch) {
+    debugLog(state, 'generator-function', 'Failed to match generator function name')
+    return ''
+  }
+
+  const [, name] = nameMatch
+  let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
+
+  // Extract generics if present
+  let generics = ''
+  if (rest.startsWith('<')) {
+    let depth = 1
+    let pos = 1
+    for (; pos < rest.length && depth > 0; pos++) {
+      if (rest[pos] === '<')
+        depth++
+      if (rest[pos] === '>')
+        depth--
+    }
+    generics = rest.slice(0, pos)
+    rest = rest.slice(pos).trim()
+  }
+
+  // Extract parameters
+  let params = ''
+  if (rest.startsWith('(')) {
+    let depth = 1
+    let pos = 1
+    for (; pos < rest.length && depth > 0; pos++) {
+      if (rest[pos] === '(')
+        depth++
+      if (rest[pos] === ')')
+        depth--
+    }
+    params = rest.slice(1, pos - 1).trim()
+    rest = rest.slice(pos).trim()
+  }
+
+  // Extract return type - use exact return type if specified
+  let returnType = 'any' // Default to 'any' if no return type specified
+  if (rest.startsWith(':')) {
+    rest = rest.slice(1).trim()
+    const match = rest.match(/([^{;]+)/)
+    if (match) {
+      returnType = match[1].trim()
+    }
+  }
+
+  // Construct the declaration with proper spacing
+  return [
+    'export declare function ', // Added space after function
+    name,
+    generics ? `${generics}` : '',
+    `(${params})`,
+    ': ', // Added space after colon
+    returnType,
+  ]
+    .filter(Boolean)
+    .join('')
+    .concat(';')
 }
 
 /**

@@ -10,6 +10,6 @@ export declare function processData(data: number): number;
 export declare function processData(data: boolean): boolean;
 export declare function processData <T extends object> (data: T): T;
 export declare function processData(data: unknown): unknown;
-declare const results: unknown;
+export declare function complexAsyncGenerator(): any;
 export declare function isUser(value: unknown): value is User;
 export declare function extractFunctionSignature(declaration: string): FunctionSignature;
