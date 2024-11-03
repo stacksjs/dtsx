@@ -122,6 +122,7 @@ export interface ProcessingState {
     declarations: string[]
     currentProcessing: string
   }
+  currentScope: 'top' | 'function'
 }
 
 export interface MethodSignature {
