@@ -11,34 +11,19 @@ export declare const someObject: {
   anotherOne: () => unknown;
   someArray: Array<1 | 2 | 3>;
   someNestedArray: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
-  someNestedArray2: Array<
-    Array<1 | 2 | 3> |
-    Array<4 | 5 | 6 | 7 | 8 | 9 | 10> |
-    'dummy value'
-  >;
-  someNestedArray3: Array<
-    Array<1 | 2 | 3> |
-    Array<4 | 5 | 6 | 7 | 8 | 9 | 10> |
-    'dummy value' |
-    Array<11 | 12 | 13>
-  >;
+  someNestedArray2: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value'>;
+  someNestedArray3: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10> | 'dummy value' | Array<11 | 12 | 13>>;
   someOtherNestedArray: Array<
     Array<'some text' | 2 | unknown | (() => void) | unknown> |
     Array<4 | 5 | 6 | 7 | 8 | 9 | 10>
   >;
   someComplexArray: Array<
-    Array<
-      {
-        key: 'value'
-      }
-    > |
-    Array<
-      {
-        key2: 'value2'
-      } |
-      'test' |
-      1000
-    > |
+    Array<{
+  key: 'value'
+}> |
+    Array<{
+  key2: 'value2'
+} | 'test' | 1000> |
     Array<'some string' | unknown | unknown>
   >;
   someObject: {
@@ -55,11 +40,11 @@ export declare const someObject: {
   };
   someNestedObjectArray: Array<
     {
-      key: 'value'
-    } |
+  key: 'value'
+} |
     {
-      key2: 'value2'
-    }
+  key2: 'value2'
+}
   >;
   someOtherObject: unknown;
   someInlineCall2: unknown;
@@ -80,12 +65,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  mixedArrays: Array<
-    unknown |
-    unknown |
-    ((...args: any[]) => unknown) |
-    ((...args: any[]) => unknown)
-  >
+  mixedArrays: Array<unknown | unknown | ((...args: any[]) => unknown) | ((...args: any[]) => unknown)>
 };
 export declare const complexObject: {
   handlers: {
@@ -100,7 +80,7 @@ export declare const complexObject: {
   }
 };
 export declare const methodDecorator: (...args: any[]) => unknown;
-export declare const methodDecoratorWithExplicitType: SomeType;
+export declare const methodDecoratorWithExplicitType: (...args: any[]) => unknown;
 export declare const CONFIG_MAP: {
   development: {
     features: {
