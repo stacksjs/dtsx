@@ -6,6 +6,13 @@ interface ProcessedMethod {
   signature: string
 }
 
+interface BalancedSymbolResult {
+  /** The extracted content including the opening and closing symbols */
+  content: string
+  /** The remaining text after the closing symbol */
+  rest: string
+}
+
 function cleanParameterTypes(params: string): string {
   debugLog(undefined, 'params', `Cleaning parameters: ${params}`)
 
@@ -17,6 +24,7 @@ function cleanParameterTypes(params: string): string {
   let depth = 0
   let inString = false
   let stringChar = ''
+  let inDestructuring = false
 
   for (const char of params) {
     if ((char === '"' || char === '\'' || char === '`')) {
@@ -30,11 +38,20 @@ function cleanParameterTypes(params: string): string {
     }
 
     if (!inString) {
-      if (char === '{' || char === '<' || char === '(')
+      if (char === '{') {
+        inDestructuring = true
         depth++
-      if (char === '}' || char === '>' || char === ')')
+      }
+      if (char === '}') {
+        inDestructuring = false
         depth--
-      if (char === ',' && depth === 0) {
+      }
+      if (char === '<' || char === '(')
+        depth++
+      if (char === '>' || char === ')')
+        depth--
+
+      if (char === ',' && depth === 0 && !inDestructuring) {
         if (current.trim()) {
           parts.push(cleanSingleParameter(current))
         }
@@ -103,6 +120,73 @@ export async function extract(filePath: string): Promise<string> {
 }
 
 /**
+ * Extracts content between balanced opening and closing symbols, handling nested structures.
+ *
+ * @param text - The input text to process
+ * @param openSymbol - The opening symbol (e.g., '<', '{', '(')
+ * @param closeSymbol - The closing symbol (e.g., '>', '}', ')')
+ * @returns An object containing the extracted content and remaining text, or null if no match
+ *
+ * @example
+ * extractBalancedSymbols('(a, b) => void', '(', ')')
+ * // Returns: { content: '(a, b)', rest: ' => void' }
+ *
+ * @example
+ * extractBalancedSymbols('<T extends Record<K, V>>(arg: T)', '<', '>')
+ * // Returns: { content: '<T extends Record<K, V>>', rest: '(arg: T)' }
+ */
+function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: string): BalancedSymbolResult | null {
+  // Ensure text starts with opening symbol
+  if (!text.startsWith(openSymbol)) {
+    return null
+  }
+
+  let depth = 0
+  let pos = 0
+  let inString = false
+  let stringChar = ''
+  const content: string[] = []
+
+  while (pos < text.length) {
+    const char = text[pos]
+    content.push(char)
+
+    // Handle string boundaries
+    if ((char === '"' || char === '\'' || char === '`') && text[pos - 1] !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    // Only track symbols when not inside a string
+    if (!inString) {
+      if (char === openSymbol) {
+        depth++
+      }
+      else if (char === closeSymbol) {
+        depth--
+        // Found matching closing symbol
+        if (depth === 0) {
+          return {
+            content: content.join(''),
+            rest: text.slice(pos + 1),
+          }
+        }
+      }
+    }
+
+    pos++
+  }
+
+  // No balanced closing symbol found
+  return null
+}
+
+/**
  * Processes TypeScript source code and generates declaration types
  * @param sourceCode - TypeScript source code
  */
@@ -148,102 +232,165 @@ export function extractDtsTypes(sourceCode: string): string {
 }
 
 /**
- * Extract complete function signature using regex
+ * Extracts a complete function signature using balanced symbol tracking
+ *
+ * @param declaration - Full function declaration string
+ * @returns Parsed function signature with name, generics, params, and return type
+ *
+ * @example
+ * // Basic function
+ * extractFunctionSignature('function foo(x: number): string')
+ * // => { name: 'foo', generics: '', params: 'x: number', returnType: 'string' }
+ *
+ * @example
+ * // Generic function with complex return type
+ * extractFunctionSignature(`
+ *   function map<T, U>(arr: T[], fn: (item: T) => U): U[]
+ * `)
+ * // => {
+ * //   name: 'map',
+ * //   generics: '<T, U>',
+ * //   params: 'arr: T[], fn: (item: T) => U',
+ * //   returnType: 'U[]'
+ * // }
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
-  const cleanDeclaration = removeLeadingComments(declaration).trim()
-  const isExported = cleanDeclaration.startsWith('export')
-  const withoutExport = isExported ? cleanDeclaration.slice(7).trim() : cleanDeclaration
+  // Get full declaration without early trimming
+  const cleanDeclaration = getCleanDeclaration(declaration)
+  debugLog(undefined, 'signature-clean', `Clean declaration: ${cleanDeclaration}`)
 
-  // Get complete signature until function body
-  const signatureEndIndex = withoutExport.indexOf('{')
-  const fullSignature = signatureEndIndex === -1
-    ? withoutExport
-    : withoutExport.slice(0, signatureEndIndex).trim()
-
-  // Extract function name and full generics
-  const functionMatch = fullSignature.match(/function\s+([^<(\s]+)/)
-  if (!functionMatch)
-    return { name: '', params: '', returnType: 'unknown', generics: '' }
+  // Match function name and initial parts
+  const functionMatch = cleanDeclaration.match(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([^(<\s]+)/)
+  if (!functionMatch) {
+    throw new Error('Invalid function declaration')
+  }
 
   const name = functionMatch[1]
-  let rest = fullSignature.slice(fullSignature.indexOf(name) + name.length).trim()
+  const contentAfterName = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length)
 
-  // Extract complete generic signature
+  // Handle generics
   let generics = ''
+  let rest = contentAfterName.trim()
+
+  // Extract complete generic block if it exists
   if (rest.startsWith('<')) {
-    let depth = 1
-    let pos = 1
-    let inString = false
-    let stringChar = ''
+    let depth = 0
+    let pos = 0
+    const content = []
 
-    while (pos < rest.length) {
-      const char = rest[pos]
-      if ((char === '"' || char === '\'') && rest[pos - 1] !== '\\') {
-        if (!inString) {
-          inString = true
-          stringChar = char
-        }
-        else if (char === stringChar) {
-          inString = false
-        }
-      }
+    for (let i = 0; i < rest.length; i++) {
+      const char = rest[i]
+      if (char === '<')
+        depth++
+      if (char === '>')
+        depth--
+      content.push(char)
+      pos = i
 
-      if (!inString) {
-        if (char === '<')
-          depth++
-        if (char === '>')
-          depth--
-        if (depth === 0) {
-          generics = rest.slice(0, pos + 1)
-          rest = rest.slice(pos + 1).trim()
-          break
-        }
+      if (depth === 0 && content.length > 0) {
+        generics = content.join('')
+        rest = rest.slice(pos + 1).trim()
+        break
       }
-      pos++
     }
   }
 
   // Extract parameters
   let params = ''
   if (rest.startsWith('(')) {
-    let depth = 1
-    let pos = 1
-    while (pos < rest.length && depth > 0) {
-      if (rest[pos] === '(')
-        depth++
-      if (rest[pos] === ')')
-        depth--
-      pos++
-    }
-    params = rest.slice(1, pos - 1).trim()
-    rest = rest.slice(pos).trim()
-  }
-
-  // Extract complete return type
-  let returnType = 'unknown'
-  if (rest.startsWith(':')) {
-    rest = rest.slice(1).trim()
     let depth = 0
     let pos = 0
-    while (pos < rest.length) {
-      const char = rest[pos]
-      if (char === '{' || char === '<' || char === '(')
-        depth++
-      if (char === '}' || char === '>' || char === ')')
-        depth--
-      if (depth === 0 && (char === '{' || pos === rest.length)) {
-        returnType = rest.slice(0, pos).trim()
+    const content = []
+    let insideString = false
+    let stringChar = ''
+
+    for (let i = 0; i < rest.length; i++) {
+      const char = rest[i]
+      const prevChar = i > 0 ? rest[i - 1] : ''
+
+      // Handle string boundaries
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!insideString) {
+          insideString = true
+          stringChar = char
+        }
+        else if (char === stringChar) {
+          insideString = false
+        }
+      }
+
+      if (!insideString) {
+        if (char === '(' || char === '{' || char === '<')
+          depth++
+        if (char === ')' || char === '}' || char === '>')
+          depth--
+      }
+
+      content.push(char)
+      pos = i
+
+      if (depth === 0 && content[0] === '(') {
+        params = content.join('').slice(1, -1).trim() // Remove outer parentheses
+        rest = rest.slice(pos + 1).trim()
         break
       }
-      pos++
-    }
-    if (pos === rest.length) {
-      returnType = rest.trim()
     }
   }
 
-  return { name, params, returnType, generics }
+  // Extract return type
+  let returnType = 'void'
+  if (rest.startsWith(':')) {
+    let depth = 0
+    const content = []
+    let insideString = false
+    let stringChar = ''
+
+    // Skip the colon
+    for (let i = 1; i < rest.length; i++) {
+      const char = rest[i]
+      const prevChar = rest[i - 1]
+
+      // Handle string boundaries
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!insideString) {
+          insideString = true
+          stringChar = char
+        }
+        else if (char === stringChar) {
+          insideString = false
+        }
+      }
+
+      if (!insideString) {
+        if (char === '{' || char === '<' || char === '(')
+          depth++
+        if (char === '}' || char === '>' || char === ')')
+          depth--
+
+        // Break on function body start or end of declaration
+        if (depth === 0 && (char === '{' || char === ';'))
+          break
+      }
+
+      content.push(char)
+    }
+
+    returnType = content.join('').trim()
+  }
+
+  debugLog(undefined, 'signature-parts', `
+     Name: ${name}
+     Generics: ${generics}
+     Params: ${params}
+     Return Type: ${returnType}
+   `)
+
+  return {
+    name,
+    generics,
+    params,
+    returnType: normalizeType(returnType),
+  }
 }
 
 function extractFunctionType(value: string): string | null {
@@ -833,7 +980,7 @@ function isDeclarationStart(line: string): boolean {
     return false
 
   const trimmed = line.trim()
-  const validIdentifierRegex = /^[a-z_$][\w$]*$/i
+  // const validIdentifierRegex = /^[a-z_$][\w$]*$/i
 
   // Handle all function declaration types
   if (/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*[a-zA-Z_$][\w$]*/.test(trimmed))
@@ -1526,25 +1673,45 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
-  debugLog(undefined, 'declaration', `Processing function: ${declaration}`)
+  debugLog(undefined, 'process-function-start', `Starting to process: ${declaration}`)
 
   const signature = extractFunctionSignature(declaration)
-  if (!signature.name) {
-    debugLog(undefined, 'declaration', 'Failed to extract function signature')
-    return ''
+  debugLog(undefined, 'process-function-signature', JSON.stringify(signature, null, 2))
+
+  // Build the declaration
+  const parts = [
+    isExported ? 'export ' : '',
+    'declare function ',
+    signature.name,
+    signature.generics,
+    `(${signature.params})`,
+    `: ${signature.returnType}`,
+    ';',
+  ]
+
+  const result = parts.filter(Boolean).join('')
+  debugLog(undefined, 'process-function-final', `Final declaration: ${result}`)
+  return result
+}
+
+function getCleanDeclaration(declaration: string): string {
+  // Split on the first { that isn't inside a type definition
+  let depth = 0
+  let pos = 0
+
+  for (; pos < declaration.length; pos++) {
+    const char = declaration[pos]
+    if (char === '{') {
+      if (depth === 0 && declaration[pos - 1] !== ':') {
+        break
+      }
+      depth++
+    }
+    if (char === '}')
+      depth--
   }
 
-  if (usedTypes) {
-    trackUsedTypes(`${signature.generics} ${signature.params} ${signature.returnType}`, usedTypes)
-  }
-
-  // Ensure proper spacing around generics and closing tags
-  const generics = signature.generics ? `${signature.generics.replace(/\s+/g, ' ').trim()}` : ''
-  const params = `(${signature.params})`
-  const returnType = signature.returnType.includes('>') ? `${signature.returnType}` : signature.returnType
-
-  // Build the declaration ensuring closing tags
-  return `${isExported ? 'export ' : ''}declare function ${signature.name}${generics ? `${generics}` : ''}${params}: ${returnType};`
+  return declaration.slice(0, pos).trim()
 }
 
 function processGeneratorFunction(declaration: string, state?: ProcessingState): string {
@@ -1835,7 +2002,7 @@ function processPropertyValue(value: string, indentLevel: number, state?: Proces
   // Handle arrays before methods since they might contain method-like structures
   if (trimmed.startsWith('[')) {
     // debugLog(state, 'process-value', 'Detected array')
-    return inferArrayType(trimmed, state, indentLevel)
+    return inferArrayType(trimmed, state, true)
   }
 
   // Handle regular objects

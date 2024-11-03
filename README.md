@@ -8,7 +8,7 @@
 
 ## Features
 
-- Fast .d.ts generation _(via isolatedDeclaration)_
+- Fast .d.ts generation
 - Highly configurable
 - Lightweight library
 - Cross-platform binary
@@ -31,6 +31,16 @@ pkgx install dtsx # wip
 ## Get Started
 
 There are two ways of using this ".d.ts generation" tool: _as a library or as a CLI._
+
+_But before you get started, please ensure you enabled `isolatedDeclarations` in your `tsconfig.json` file._
+
+```json
+{
+  "compilerOptions": {
+    "isolatedDeclaration": true
+  }
+}
+```
 
 ## Library
 
