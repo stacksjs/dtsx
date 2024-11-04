@@ -120,4 +120,3 @@ export declare const CONFIG_MAP: {
     }
   }
 };
-

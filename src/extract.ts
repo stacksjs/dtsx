@@ -644,7 +644,7 @@ function formatOutput(state: ProcessingState): string {
     .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
     .filter(line => line.trim() || line === '') // Keep empty lines for spacing
     .join('\n')
-  }\n`
+  }`.trim()
 }
 
 /**
