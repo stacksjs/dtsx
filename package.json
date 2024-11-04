@@ -65,9 +65,9 @@
     "@stacksjs/cli": "^0.67.0",
     "@stacksjs/development": "^0.67.0",
     "@stacksjs/eslint-config": "^3.8.1-beta.2",
-    "@types/bun": "^1.1.12",
+    "@types/bun": "^1.1.13",
     "tinyglobby": "^0.2.10",
-    "vitepress": "^1.4.3"
+    "vitepress": "^1.4.5"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
