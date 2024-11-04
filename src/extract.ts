@@ -120,83 +120,6 @@ export async function extract(filePath: string): Promise<string> {
 }
 
 /**
- * Extracts content between balanced opening and closing symbols, handling nested structures.
- *
- * @param text - The input text to process
- * @param openSymbol - The opening symbol (e.g., '<', '{', '(')
- * @param closeSymbol - The closing symbol (e.g., '>', '}', ')')
- * @returns An object containing the extracted content and remaining text, or null if no match
- *
- * @example
- * extractBalancedSymbols('(a, b) => void', '(', ')')
- * // Returns: { content: '(a, b)', rest: ' => void' }
- *
- * @example
- * extractBalancedSymbols('<T extends Record<K, V>>(arg: T)', '<', '>')
- * // Returns: { content: '<T extends Record<K, V>>', rest: '(arg: T)' }
- */
-function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: string): BalancedSymbolResult | null {
-  if (!text.startsWith(openSymbol)) {
-    return null
-  }
-
-  let depth = 0
-  let pos = 0
-  let inString = false
-  let stringChar = ''
-  const content: string[] = []
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    const prevChar = i > 0 ? text[i - 1] : ''
-
-    // Handle string boundaries
-    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
-      if (!inString) {
-        inString = true
-        stringChar = char
-      }
-      else if (char === stringChar) {
-        inString = false
-      }
-    }
-
-    // Track depth when not in string
-    if (!inString) {
-      if (char === openSymbol || char === '{' || char === '<' || char === '(')
-        depth++
-      if (char === closeSymbol || char === '}' || char === '>' || char === ')')
-        depth--
-    }
-
-    content.push(char)
-    pos = i
-
-    // Found matching closing symbol at correct depth
-    if (depth === 0 && content.length > 0 && char === closeSymbol) {
-      return {
-        content: content.join(''),
-        rest: text.slice(pos + 1),
-      }
-    }
-  }
-
-  // If we reach here without finding a match, return the best effort match
-  if (content.length > 0) {
-    // Add closing symbol if missing
-    if (content[content.length - 1] !== closeSymbol) {
-      content.push(closeSymbol)
-    }
-    return {
-      content: content.join(''),
-      rest: text.slice(pos + 1),
-    }
-  }
-
-  return null
-}
-
-/**
  * Processes TypeScript source code and generates declaration types
  * @param sourceCode - TypeScript source code
  */
@@ -228,7 +151,7 @@ export function extractDtsTypes(sourceCode: string): string {
   })
 
   // Generate optimized imports based on actual output
-  const optimizedImports = generateOptimizedImports(state.importTracking, state.dtsLines)
+  const optimizedImports = generateOptimizedImports(state.importTracking)
   // debugLog(state, 'import-summary', `Generated ${optimizedImports.length} optimized imports`)
 
   // Clear any existing imports and set up dtsLines with optimized imports
@@ -354,7 +277,7 @@ function extractGenerics(rest: string): { generics: string, rest: string } {
           // If we hit zero depth and the next char is also '>', include both
           if (depth === 0 && nextChar === '>') {
             buffer += '>>' // Add both closing brackets
-            pos = i + 1   // Skip the next '>' since we've included it
+            pos = i + 1 // Skip the next '>' since we've included it
             debugLog(undefined, 'generics-complete', `Found double closing bracket at pos ${i}, final buffer: ${buffer}`)
             break
           }
@@ -419,7 +342,7 @@ function extractParams(rest: string): { params: string, rest: string } {
   return { params, rest }
 }
 
-function extractReturnType(rest: string, declaration: string): { returnType: string } {
+function extractReturnType(rest: string): { returnType: string } {
   let returnType = 'void'
   if (rest.startsWith(':')) {
     debugLog(undefined, 'return-start', `Starting return type extraction with: ${rest}`)
@@ -437,10 +360,9 @@ function extractReturnType(rest: string, declaration: string): { returnType: str
     while (i < rest.length && !foundEnd) {
       const char = rest[i]
       const prevChar = i > 0 ? rest[i - 1] : ''
-      const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
+      // const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
 
-      debugLog(undefined, 'return-char',
-        `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
+      debugLog(undefined, 'return-char', `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
 
       // Handle string boundaries
       if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
@@ -542,7 +464,7 @@ function extractFunctionType(value: string): string | null {
 /**
  * Generate optimized imports based on usage
  */
-function generateOptimizedImports(state: ImportTrackingState, dtsLines: string[]): string[] {
+function generateOptimizedImports(state: ImportTrackingState): string[] {
   const imports: string[] = []
 
   // Generate type imports
@@ -1291,7 +1213,7 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
   let signatureEnd = 0
   let parenDepth = 0
   let angleDepth = 0
-  const braceDepth = 0
+  // const braceDepth = 0
 
   for (let i = 0; i < cleanDeclaration.length; i++) {
     const char = cleanDeclaration[i]
