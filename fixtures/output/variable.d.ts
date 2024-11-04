@@ -1,4 +1,5 @@
 import type { DtsGenerationConfig } from '@stacksjs/dtsx';
+
 export declare const conf: { [key: string]: string };
 export declare let test: 'test';
 export declare var helloWorld: 'Hello World';
@@ -119,3 +120,4 @@ export declare const CONFIG_MAP: {
     }
   }
 };
+

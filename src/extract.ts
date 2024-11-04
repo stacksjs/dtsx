@@ -601,28 +601,48 @@ function formatOutput(state: ProcessingState): string {
     .filter(line => line.startsWith('import'))
     .forEach(imp => imports.add(imp.replace(/;+$/, ''))) // Remove any existing semicolons
 
-  // Get all non-import lines
+  // Get all non-import lines and clean up semicolons
   const declarations = state.dtsLines
     .filter(line => !line.startsWith('import'))
-    .map(line => line.replace(/;+$/, '')) // Clean up any multiple semicolons
+    .map((line) => {
+      // Clean up any multiple semicolons and ensure all declarations end with one
+      const trimmed = line.trim()
+      if (!trimmed)
+        return ''
+
+      // Don't add semicolons to export * statements or when one already exists
+      if (trimmed.startsWith('export *') || trimmed.endsWith(';')) {
+        return trimmed
+      }
+
+      // Add semicolon to type exports that don't have one
+      if (trimmed.startsWith('export type')) {
+        return `${trimmed};`
+      }
+
+      return trimmed.replace(/;+$/, ';')
+    })
 
   // Add default exports from state.defaultExports
   const defaultExports = Array.from(state.defaultExports)
-    .map(exp => exp.replace(/;+$/, '')) // Clean up any multiple semicolons
+    .map(exp => exp.trim().replace(/;+$/, ';')) // Ensure single semicolon
 
-  // Reconstruct the output with single semicolons where needed
+  // Reconstruct the output with proper line breaks and semicolons
   const output = [
+    // Add semicolons to imports
     ...Array.from(imports).map(imp => `${imp};`),
     '',
-    ...declarations.map(decl => decl.trim() !== '' ? `${decl};` : ''),
+    // Filter empty lines and join declarations
+    ...declarations.filter(Boolean),
     '',
-    ...defaultExports.map(exp => `${exp};`),
+    // Add default export
+    ...defaultExports,
   ]
 
-  // Remove comments and normalize whitespace
+  // Remove comments, normalize whitespace, and ensure single trailing newline
   return `${output
     .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
-    .filter(Boolean)
+    .filter(line => line.trim() || line === '') // Keep empty lines for spacing
     .join('\n')
   }\n`
 }

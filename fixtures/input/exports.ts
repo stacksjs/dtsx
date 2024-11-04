@@ -5,6 +5,7 @@ import type { BunPlugin } from 'bun';
 
 export { generate, dtsConfig, type BunPlugin }
 export type { SomeOtherType }
+export type { BunRegisterPlugin } from 'bun'
 
 export default dts
 
