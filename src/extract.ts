@@ -203,7 +203,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
   debugLog(undefined, 'signature-after-params', `Remaining content: ${rest}`)
 
   // Extract return type
-  const { returnType } = extractReturnType(rest, cleanDeclaration)
+  const { returnType } = extractReturnType(rest)
   debugLog(undefined, 'signature-return', `Extracted return type: ${returnType}`)
 
   const signature = {
@@ -710,8 +710,9 @@ function createImportTrackingState(): ImportTrackingState {
     valueAliases: new Map(),
     usedTypes: new Set(),
     usedValues: new Set(),
-    exportedValues: null,
-    defaultExportValue: null,
+    exportedValues: new Set(),
+    importSources: new Map(),
+    defaultExportValue: undefined,
   }
 }
 
