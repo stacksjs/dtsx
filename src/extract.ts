@@ -163,21 +163,33 @@ function extractBalancedSymbols(text: string, openSymbol: string, closeSymbol: s
 
     // Track depth when not in string
     if (!inString) {
-      if (char === openSymbol || char === '{' || char === '<')
+      if (char === openSymbol || char === '{' || char === '<' || char === '(')
         depth++
-      if (char === closeSymbol || char === '}' || char === '>')
+      if (char === closeSymbol || char === '}' || char === '>' || char === ')')
         depth--
     }
 
     content.push(char)
     pos = i
 
-    // Found matching closing symbol
+    // Found matching closing symbol at correct depth
     if (depth === 0 && content.length > 0 && char === closeSymbol) {
       return {
         content: content.join(''),
         rest: text.slice(pos + 1),
       }
+    }
+  }
+
+  // If we reach here without finding a match, return the best effort match
+  if (content.length > 0) {
+    // Add closing symbol if missing
+    if (content[content.length - 1] !== closeSymbol) {
+      content.push(closeSymbol)
+    }
+    return {
+      content: content.join(''),
+      rest: text.slice(pos + 1),
     }
   }
 
@@ -264,7 +276,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
   let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
   debugLog(undefined, 'signature-content', `Content after name: ${rest}`)
 
-  // Extract generics
+  // Extract generics with improved depth tracking
   const { generics, rest: restAfterGenerics } = extractGenerics(rest)
   rest = restAfterGenerics.trim()
   debugLog(undefined, 'signature-after-generics', `Remaining content: ${rest}`)
@@ -300,26 +312,75 @@ function extractFunctionName(declaration: string): string {
 function extractGenerics(rest: string): { generics: string, rest: string } {
   let generics = ''
   if (rest.startsWith('<')) {
-    let depth = 1
-    let pos = 1
-    let buffer = '<'
+    let depth = 1 // Start at 1 since we're starting with an opening bracket
+    let pos = 0
+    let buffer = '<' // Start buffer with opening bracket
+    let inString = false
+    let stringChar = ''
 
-    for (; pos < rest.length && depth > 0; pos++) {
-      const char = rest[pos]
-      if (char === '<')
-        depth++
-      if (char === '>')
-        depth--
-      buffer += char
+    debugLog(undefined, 'generics-input', `Starting generic extraction with: ${rest}`)
+
+    // Start from position 1 since we already handled the first '<'
+    for (let i = 1; i < rest.length; i++) {
+      const char = rest[i]
+      const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
+      const prevChar = i > 0 ? rest[i - 1] : ''
+
+      debugLog(undefined, 'generics-char', `Processing char: ${char}, next char: ${nextChar}, depth: ${depth}, pos: ${i}`)
+
+      // Handle string boundaries
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!inString) {
+          inString = true
+          stringChar = char
+          debugLog(undefined, 'generics-string', `Entering string with ${stringChar}`)
+        }
+        else if (char === stringChar) {
+          inString = false
+          debugLog(undefined, 'generics-string', 'Exiting string')
+        }
+      }
+
+      // Track depth when not in string
+      if (!inString) {
+        if (char === '<') {
+          depth++
+          debugLog(undefined, 'generics-depth', `Increasing depth to ${depth} at pos ${i}`)
+        }
+        else if (char === '>') {
+          depth--
+          debugLog(undefined, 'generics-depth', `Decreasing depth to ${depth} at pos ${i}`)
+
+          // If we hit zero depth and the next char is also '>', include both
+          if (depth === 0 && nextChar === '>') {
+            buffer += '>>' // Add both closing brackets
+            pos = i + 1   // Skip the next '>' since we've included it
+            debugLog(undefined, 'generics-complete', `Found double closing bracket at pos ${i}, final buffer: ${buffer}`)
+            break
+          }
+          else if (depth === 0) {
+            buffer += '>'
+            pos = i
+            debugLog(undefined, 'generics-complete', `Found single closing bracket at pos ${i}, final buffer: ${buffer}`)
+            break
+          }
+        }
+      }
+
+      if (depth > 0) { // Only add to buffer if we're still inside generic parameters
+        buffer += char
+        debugLog(undefined, 'generics-buffer', `Current buffer: ${buffer}`)
+      }
     }
 
-    if (depth === 0) {
+    if (buffer) {
       generics = buffer
-      rest = rest.slice(pos).trim()
-      debugLog(undefined, 'signature-generics', `Extracted generics: ${generics}`)
+      rest = rest.slice(pos + 1)
+      debugLog(undefined, 'generics-success', `Successfully extracted generics: ${generics}`)
+      debugLog(undefined, 'generics-rest', `Remaining text: ${rest}`)
     }
     else {
-      debugLog(undefined, 'signature-generics', `Unclosed generics in: ${rest}`)
+      debugLog(undefined, 'generics-fail', `Failed to extract generics from: ${rest}`)
     }
   }
   return { generics, rest }
@@ -373,17 +434,35 @@ function extractReturnType(rest: string, declaration: string): { returnType: str
     let depth = 0
     let buffer = ''
     let i = 0
+    let inString = false
+    let stringChar = ''
+
     while (i < rest.length) {
       const char = rest[i]
+      const prevChar = i > 0 ? rest[i - 1] : ''
 
-      if (char === '{' || char === '<' || char === '(')
-        depth++
-      else if (char === '}' || char === '>' || char === ')')
-        depth--
+      // Handle string literals
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!inString) {
+          inString = true
+          stringChar = char
+        }
+        else if (char === stringChar) {
+          inString = false
+        }
+      }
 
-      // Stop at function body start
-      if (depth === 0 && char === '{') {
-        break
+      // Track depth when not in string
+      if (!inString) {
+        if (char === '{' || char === '<' || char === '(')
+          depth++
+        else if (char === '}' || char === '>' || char === ')')
+          depth--
+
+        // Stop at function body start or when we hit a semicolon outside any depth
+        if ((depth === 0 && char === '{') || (depth === 0 && char === ';')) {
+          break
+        }
       }
 
       buffer += char
