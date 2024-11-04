@@ -13,4 +13,4 @@ export declare function processData(data: unknown): unknown;
 export declare function complexAsyncGenerator(): any;
 export declare function isUser(value: unknown): value is User;
 export declare function extractFunctionSignature(declaration: string): FunctionSignature;
-export declare function createApi<T extends Record<string, (...args: any[]) => any>(): void;
+export declare function createApi<T extends Record<string, (...args: any[]) => any>(endpoints: T): { [K in keyof T]: ReturnType<T[K]> extends Promise<infer R> ? R : ReturnType<T[K]> } { return {} as any };
