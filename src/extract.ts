@@ -422,55 +422,77 @@ function extractParams(rest: string): { params: string, rest: string } {
 function extractReturnType(rest: string, declaration: string): { returnType: string } {
   let returnType = 'void'
   if (rest.startsWith(':')) {
-    debugLog(undefined, 'signature-return-start', `Processing return type from: ${rest}`)
+    debugLog(undefined, 'return-start', `Starting return type extraction with: ${rest}`)
     rest = rest.slice(1).trim()
-
-    if (!rest) {
-      // If rest is empty, perhaps the return type is on the next line(s)
-      const indexOfColon = declaration.indexOf(':')
-      rest = declaration.slice(indexOfColon + 1).trim()
-    }
 
     let depth = 0
     let buffer = ''
     let i = 0
     let inString = false
     let stringChar = ''
+    let foundEnd = false
 
-    while (i < rest.length) {
+    debugLog(undefined, 'return-extraction', 'Starting character-by-character extraction')
+
+    while (i < rest.length && !foundEnd) {
       const char = rest[i]
       const prevChar = i > 0 ? rest[i - 1] : ''
+      const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
 
-      // Handle string literals
+      debugLog(undefined, 'return-char',
+        `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
+
+      // Handle string boundaries
       if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
         if (!inString) {
           inString = true
           stringChar = char
+          debugLog(undefined, 'return-string', `Entering string with ${stringChar}`)
         }
         else if (char === stringChar) {
           inString = false
+          debugLog(undefined, 'return-string', 'Exiting string')
         }
       }
 
       // Track depth when not in string
       if (!inString) {
-        if (char === '{' || char === '<' || char === '(')
+        if (char === '{' || char === '<' || char === '(') {
           depth++
-        else if (char === '}' || char === '>' || char === ')')
+          debugLog(undefined, 'return-depth', `Opening bracket, increasing depth to ${depth}`)
+        }
+        else if (char === '}' || char === '>' || char === ')') {
           depth--
+          debugLog(undefined, 'return-depth', `Closing bracket, decreasing depth to ${depth}`)
 
-        // Stop at function body start or when we hit a semicolon outside any depth
-        if ((depth === 0 && char === '{') || (depth === 0 && char === ';')) {
+          // If we hit depth 0 with a closing brace, this might be the end of our type
+          if (depth === 0 && char === '}') {
+            buffer += char
+            // Look ahead to see if this is followed by a function body
+            const nextNonWhitespace = rest.slice(i + 1).trim()[0]
+            if (nextNonWhitespace === '{') {
+              debugLog(undefined, 'return-end', `Found end of return type at pos ${i}, next char is function body`)
+              foundEnd = true
+              break
+            }
+          }
+        }
+
+        // Stop at semicolons at depth 0
+        if (depth === 0 && char === ';') {
+          debugLog(undefined, 'return-end', 'Found semicolon at depth 0')
+          foundEnd = true
           break
         }
       }
 
       buffer += char
+      debugLog(undefined, 'return-buffer', `Updated buffer: ${buffer}`)
       i++
     }
 
     returnType = buffer.trim()
-    debugLog(undefined, 'signature-return', `Extracted return type: ${returnType}`)
+    debugLog(undefined, 'return-final', `Final extracted return type: ${returnType}`)
   }
   return { returnType }
 }
