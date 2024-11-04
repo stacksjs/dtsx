@@ -1,7 +1,10 @@
 import { generate, something as dts } from './generate'
 import { dtsConfig } from './config'
+import type { SomeOtherType } from '@stacksjs/types';
+import type { BunPlugin } from 'bun';
 
-export { generate, dtsConfig }
+export { generate, dtsConfig, type BunPlugin }
+export type { SomeOtherType }
 
 export default dts
 

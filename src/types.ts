@@ -88,6 +88,10 @@ export interface ImportTrackingState {
   valueImports: Map<string, Set<string>> // module -> Set of value names
   usedTypes: Set<string> // All used type names
   usedValues: Set<string> // All used value names
+  exportedValues: Set<string> // Values that are exported
+  valueAliases: Map<string, string> // alias -> original name mapping
+  importSources: Map<string, string> // name -> module mapping
+  defaultExportValue?: string // The value being default exported
 }
 
 export interface ProcessingState {

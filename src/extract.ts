@@ -6,13 +6,6 @@ interface ProcessedMethod {
   signature: string
 }
 
-interface BalancedSymbolResult {
-  /** The extracted content including the opening and closing symbols */
-  content: string
-  /** The remaining text after the closing symbol */
-  rest: string
-}
-
 function cleanParameterTypes(params: string): string {
   debugLog(undefined, 'params', `Cleaning parameters: ${params}`)
 
@@ -146,7 +139,7 @@ export function extractDtsTypes(sourceCode: string): string {
   state.dtsLines.forEach((line) => {
     if (line.trim() && !line.startsWith('import')) {
       trackTypeUsage(line, state.importTracking)
-      trackValueUsage(line, state.importTracking, state.dtsLines)
+      trackValueUsage(line, state.importTracking)
     }
   })
 
@@ -466,34 +459,85 @@ function extractFunctionType(value: string): string | null {
  */
 function generateOptimizedImports(state: ImportTrackingState): string[] {
   const imports: string[] = []
+  const seenImports = new Set<string>()
 
-  // Generate type imports
+  debugLog(undefined, 'import-gen', `Generating optimized imports. Default export value: ${state.defaultExportValue}`)
+
+  // Handle type imports first
   for (const [module, types] of state.typeImports) {
-    const usedTypes = Array.from(types)
-      .filter(t => state.usedTypes.has(t))
+    const typeImports = Array.from(types)
+      .filter(t => state.usedTypes.has(t) || state.exportedValues?.has(t))
+      .map((t) => {
+        const alias = state.valueAliases.get(t)
+        return alias ? `${t} as ${alias}` : t
+      })
       .sort()
 
-    if (usedTypes.length > 0) {
-      imports.push(`import type { ${usedTypes.join(', ')} } from '${module}'`)
+    if (typeImports.length > 0) {
+      const importStatement = `import type { ${typeImports.join(', ')} } from '${module}'`
+      if (!seenImports.has(importStatement)) {
+        imports.push(importStatement)
+        seenImports.add(importStatement)
+        debugLog(undefined, 'import-add', `Added type import: ${importStatement}`)
+      }
     }
   }
 
-  // Generate value imports
+  // Group value imports by module
+  const moduleImports = new Map<string, Set<string>>()
+  const importAliases = new Map<string, string>()
+
+  // Handle default export
+  if (state.defaultExportValue) {
+    const originalName = Array.from(state.valueAliases.entries())
+      .find(([alias]) => alias === state.defaultExportValue)?.[1]
+
+    if (originalName) {
+      debugLog(undefined, 'import-default', `Found original name ${originalName} for default export alias ${state.defaultExportValue}`)
+      const module = state.importSources.get(originalName)
+      if (module) {
+        if (!moduleImports.has(module)) {
+          moduleImports.set(module, new Set())
+        }
+        moduleImports.get(module)!.add(originalName)
+        importAliases.set(originalName, state.defaultExportValue)
+      }
+    }
+  }
+
+  // Handle regular value imports
   for (const [module, values] of state.valueImports) {
     const usedValues = Array.from(values)
-      .filter(v => state.usedValues.has(v))
-      // Only include values that appear in actual declarations
-      .filter(v => dtsLines.some(line =>
-        line.includes(`declare ${v}`)
-        || line.includes(`export declare ${v}`)
-        || line.includes(`export { ${v}`)
-        || line.includes(`, ${v}`)
-        || line.includes(`${v} }`),
-      ))
-      .sort()
+      .filter((v) => {
+        const isUsed = state.usedValues.has(v)
+          || state.exportedValues?.has(v)
+          || v === state.defaultExportValue
+        debugLog(undefined, 'import-filter', `Checking ${v}: used=${isUsed}`)
+        return isUsed
+      })
 
     if (usedValues.length > 0) {
-      imports.push(`import { ${usedValues.join(', ')} } from '${module}'`)
+      if (!moduleImports.has(module)) {
+        moduleImports.set(module, new Set())
+      }
+      usedValues.forEach(v => moduleImports.get(module)!.add(v))
+    }
+  }
+
+  // Generate value import statements
+  for (const [module, values] of moduleImports) {
+    const importParts = Array.from(values).map((value) => {
+      const alias = importAliases.get(value)
+      return alias ? `${value} as ${alias}` : value
+    }).sort()
+
+    if (importParts.length > 0) {
+      const importStatement = `import { ${importParts.join(', ')} } from '${module}'`
+      if (!seenImports.has(importStatement)) {
+        imports.push(importStatement)
+        seenImports.add(importStatement)
+        debugLog(undefined, 'import-add', `Added value import: ${importStatement}`)
+      }
     }
   }
 
@@ -555,19 +599,32 @@ function formatOutput(state: ProcessingState): string {
   // Deduplicate and format imports
   state.dtsLines
     .filter(line => line.startsWith('import'))
-    .forEach(imp => imports.add(imp))
+    .forEach(imp => imports.add(imp.replace(/;+$/, ''))) // Remove any existing semicolons
 
-  state.dtsLines = [
-    ...Array.from(imports),
+  // Get all non-import lines
+  const declarations = state.dtsLines
+    .filter(line => !line.startsWith('import'))
+    .map(line => line.replace(/;+$/, '')) // Clean up any multiple semicolons
+
+  // Add default exports from state.defaultExports
+  const defaultExports = Array.from(state.defaultExports)
+    .map(exp => exp.replace(/;+$/, '')) // Clean up any multiple semicolons
+
+  // Reconstruct the output with single semicolons where needed
+  const output = [
+    ...Array.from(imports).map(imp => `${imp};`),
     '',
-    ...state.dtsLines.filter(line => !line.startsWith('import')),
+    ...declarations.map(decl => decl.trim() !== '' ? `${decl};` : ''),
+    '',
+    ...defaultExports.map(exp => `${exp};`),
   ]
 
   // Remove comments and normalize whitespace
-  return `${state.dtsLines
+  return `${output
     .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
     .filter(Boolean)
-    .join('\n')}\n`
+    .join('\n')
+  }\n`
 }
 
 /**
@@ -630,8 +687,11 @@ function createImportTrackingState(): ImportTrackingState {
   return {
     typeImports: new Map(),
     valueImports: new Map(),
+    valueAliases: new Map(),
     usedTypes: new Set(),
     usedValues: new Set(),
+    exportedValues: null,
+    defaultExportValue: null,
   }
 }
 
@@ -1276,6 +1336,9 @@ function processDefaultExportBlock(cleanDeclaration: string, state: ProcessingSt
   if (!cleanDeclaration.startsWith('export default'))
     return false
 
+  const exportedValue = cleanDeclaration.replace(/^export\s+default\s+/, '').replace(/;$/, '')
+  state.importTracking.defaultExportValue = exportedValue
+
   // Store the complete default export statement
   const defaultExport = cleanDeclaration.endsWith(';')
     ? cleanDeclaration
@@ -1599,31 +1662,60 @@ function processSourceFile(content: string, state: ProcessingState): void {
 /**
  * Process imports and track their usage
  */
-export function processImports(line: string, state: ImportTrackingState): void {
-  // Handle type imports
-  const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+function processImports(line: string, state: ImportTrackingState): void {
+  debugLog(undefined, 'import-processing', `Processing import line: ${line}`)
+
+  // Initialize collections if they don't exist
+  if (!state.valueAliases)
+    state.valueAliases = new Map()
+  if (!state.exportedValues)
+    state.exportedValues = new Set()
+  if (!state.importSources)
+    state.importSources = new Map()
+
+  // Handle type imports - more specific regex to catch type imports with and without braces
+  const typeImportMatch = line.match(/import\s+type\s*(?:\{([^}]+)\}|([^;\s]+))\s*from\s*['"]([^'"]+)['"]/)
   if (typeImportMatch) {
-    const [, names, module] = typeImportMatch
+    const [, bracedTypes, singleType, module] = typeImportMatch
+    const types = bracedTypes || singleType
+    debugLog(undefined, 'import-type', `Found type imports from ${module}: ${types}`)
+
     if (!state.typeImports.has(module)) {
       state.typeImports.set(module, new Set())
     }
-    names.split(',').forEach((name) => {
-      const cleanName = name.trim().split(/\s+as\s+/).shift()! // Use shift() to get original name before 'as'
-      state.typeImports.get(module)!.add(cleanName)
-    })
+
+    if (types) {
+      types.split(',').forEach((type) => {
+        const [original, alias] = type.trim().split(/\s+as\s+/).map(n => n.trim())
+        state.typeImports.get(module)!.add(original)
+        if (alias) {
+          state.valueAliases.set(alias, original)
+          debugLog(undefined, 'import-alias', `Registered type alias: ${original} as ${alias}`)
+        }
+      })
+    }
     return
   }
 
-  // Handle value imports
+  // Handle value imports (rest of the code remains the same)
   const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (valueImportMatch) {
     const [, names, module] = valueImportMatch
+    debugLog(undefined, 'import-value', `Found value imports from ${module}: ${names}`)
+
     if (!state.valueImports.has(module)) {
       state.valueImports.set(module, new Set())
     }
+
     names.split(',').forEach((name) => {
-      const cleanName = name.trim().split(/\s+as\s+/).shift()! // Use shift() to get original name before 'as'
-      state.valueImports.get(module)!.add(cleanName)
+      const [original, alias] = name.trim().split(/\s+as\s+/).map(n => n.trim())
+      state.valueImports.get(module)!.add(original)
+      state.importSources.set(original, module)
+
+      if (alias) {
+        state.valueAliases.set(alias, original)
+        debugLog(undefined, 'import-alias', `Registered value alias: ${original} as ${alias}`)
+      }
     })
   }
 }
@@ -2073,35 +2165,6 @@ function processPropertyValue(value: string, indentLevel: number, state?: Proces
   return 'unknown'
 }
 
-const REGEX = {
-  typePattern: /(?:typeof\s+)?([A-Z]\w*(?:<[^>]+>)?)|extends\s+([A-Z]\w*(?:<[^>]+>)?)/g,
-} as const
-
-/**
- * Track used types in declarations
- */
-function trackUsedTypes(content: string, usedTypes: Set<string>): void {
-  let match: any
-  while ((match = REGEX.typePattern.exec(content)) !== null) {
-    const type = match[1] || match[2]
-    if (type) {
-      const [baseType, ...genericParams] = type.split(/[<>]/)
-      if (baseType && /^[A-Z]/.test(baseType))
-        usedTypes.add(baseType)
-
-      if (genericParams.length > 0) {
-        genericParams.forEach((param: any) => {
-          const nestedTypes = param.split(/[,\s]/)
-          nestedTypes.forEach((t: any) => {
-            if (/^[A-Z]/.test(t))
-              usedTypes.add(t)
-          })
-        })
-      }
-    }
-  }
-}
-
 /**
  * Track type usage in declarations
  */
@@ -2119,14 +2182,21 @@ function trackTypeUsage(content: string, state: ImportTrackingState): void {
 /**
  * Track value usage in declarations
  */
-function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?: string[]): void {
+function trackValueUsage(content: string, state: ImportTrackingState): void {
+  // Track exports
+  const exportMatch = content.match(/export\s*\{([^}]+)\}/)
+  if (exportMatch) {
+    const exports = exportMatch[1].split(',').map(e => e.trim())
+    exports.forEach((e) => {
+      const [name] = e.split(/\s+as\s+/)
+      state.exportedValues.add(name.trim())
+    })
+  }
+
   // Track values in declarations
   const patterns = [
-    // Export statements in declarations
     /export\s+declare\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
-    // Declared exports
     /export\s+declare\s+(?:const|function|class)\s+([a-zA-Z_$][\w$]*)/g,
-    // Direct exports
     /export\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
   ]
 
@@ -2134,25 +2204,12 @@ function trackValueUsage(content: string, state: ImportTrackingState, dtsLines?:
     let match
     while ((match = pattern.exec(content)) !== null) {
       const values = match[1].split(',').map(v => v.trim())
-      for (const value of values) {
+      values.forEach((value) => {
         if (!['type', 'interface', 'declare', 'extends', 'implements', 'function', 'const', 'let', 'var'].includes(value)) {
           state.usedValues.add(value)
         }
-      }
+      })
     }
-  }
-
-  // Track values in the final output lines if provided
-  if (dtsLines) {
-    dtsLines.forEach((line) => {
-      if (line.includes('declare') || line.includes('export')) {
-        // Look for exported values
-        const exportMatch = line.match(/(?:export|declare)\s+(?:const|function|class)\s+([a-zA-Z_$][\w$]*)/)
-        if (exportMatch) {
-          state.usedValues.add(exportMatch[1])
-        }
-      }
-    })
   }
 }
 
