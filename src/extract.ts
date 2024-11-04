@@ -255,7 +255,9 @@ export function extractDtsTypes(sourceCode: string): string {
  * // }
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
-  // Get full declaration without early trimming
+  debugLog(undefined, 'signature-start', `Processing declaration: ${declaration}`)
+
+  // Get full declaration without early trimming to preserve structure
   const cleanDeclaration = getCleanDeclaration(declaration)
   debugLog(undefined, 'signature-clean', `Clean declaration: ${cleanDeclaration}`)
 
@@ -267,12 +269,12 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
 
   const name = functionMatch[1]
   const contentAfterName = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length)
+  debugLog(undefined, 'signature-content', `Content after name: ${contentAfterName}`)
 
   // Handle generics
   let generics = ''
   let rest = contentAfterName.trim()
 
-  // Extract complete generic block if it exists
   if (rest.startsWith('<')) {
     let depth = 0
     let pos = 0
@@ -295,7 +297,9 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     }
   }
 
-  // Extract parameters
+  debugLog(undefined, 'signature-generics', `Extracted generics: ${generics}`)
+
+  // Extract parameters with improved destructuring support
   let params = ''
   if (rest.startsWith('(')) {
     let depth = 0
@@ -319,6 +323,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
         }
       }
 
+      // Track depth for all bracket types
       if (!insideString) {
         if (char === '(' || char === '{' || char === '<')
           depth++
@@ -329,13 +334,16 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
       content.push(char)
       pos = i
 
-      if (depth === 0 && content[0] === '(') {
-        params = content.join('').slice(1, -1).trim() // Remove outer parentheses
+      // Break when we find closing parenthesis at root level
+      if (depth === 0 && content[0] === '(' && char === ')') {
+        params = content.join('').slice(1, -1).trim()
         rest = rest.slice(pos + 1).trim()
         break
       }
     }
   }
+
+  debugLog(undefined, 'signature-params', `Extracted params: ${params}`)
 
   // Extract return type
   let returnType = 'void'
@@ -345,7 +353,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     let insideString = false
     let stringChar = ''
 
-    // Skip the colon
+    // Skip the colon and any whitespace
     for (let i = 1; i < rest.length; i++) {
       const char = rest[i]
       const prevChar = rest[i - 1]
@@ -378,13 +386,9 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     returnType = content.join('').trim()
   }
 
-  debugLog(undefined, 'signature-parts', `
-     Name: ${name}
-     Generics: ${generics}
-     Params: ${params}
-     Return Type: ${returnType}
-   `)
+  debugLog(undefined, 'signature-return', `Extracted return type: ${returnType}`)
 
+  // Preserve parameter structure exactly as written
   return {
     name,
     generics,
@@ -1672,46 +1676,48 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
 /**
  * Process function declarations with overloads
  */
-function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
-  debugLog(undefined, 'process-function-start', `Starting to process: ${declaration}`)
+ function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
+   debugLog(undefined, 'process-function-start', `Starting to process: ${declaration}`)
 
-  const signature = extractFunctionSignature(declaration)
-  debugLog(undefined, 'process-function-signature', JSON.stringify(signature, null, 2))
+   const signature = extractFunctionSignature(declaration)
+   debugLog(undefined, 'process-function-signature', JSON.stringify(signature, null, 2))
 
-  // Build the declaration
-  const parts = [
-    isExported ? 'export ' : '',
-    'declare function ',
-    signature.name,
-    signature.generics,
-    `(${signature.params})`,
-    `: ${signature.returnType}`,
-    ';',
-  ]
+   // Check if the function is async
+   const isAsync = declaration.includes('async function')
+   if (isAsync && !signature.returnType.includes('Promise')) {
+     signature.returnType = `Promise<${signature.returnType}>`
+   }
 
-  const result = parts.filter(Boolean).join('')
-  debugLog(undefined, 'process-function-final', `Final declaration: ${result}`)
-  return result
-}
+   // Build the declaration preserving all parts exactly
+   const parts = [
+     isExported ? 'export ' : '',
+     'declare function ',
+     signature.name,
+     signature.generics,
+     `(${signature.params})`,
+     `: ${signature.returnType}`,
+     ';',
+   ]
+
+   const result = parts.filter(Boolean).join('')
+   debugLog(undefined, 'process-function-final', `Final declaration: ${result}`)
+   return result
+ }
 
 function getCleanDeclaration(declaration: string): string {
-  // Split on the first { that isn't inside a type definition
-  let depth = 0
-  let pos = 0
+  // Remove leading comments while preserving the structure
+  const lines = declaration.split('\n')
+  let startIndex = 0
 
-  for (; pos < declaration.length; pos++) {
-    const char = declaration[pos]
-    if (char === '{') {
-      if (depth === 0 && declaration[pos - 1] !== ':') {
-        break
-      }
-      depth++
+  while (startIndex < lines.length) {
+    const line = lines[startIndex].trim()
+    if (!line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*') && line !== '') {
+      break
     }
-    if (char === '}')
-      depth--
+    startIndex++
   }
 
-  return declaration.slice(0, pos).trim()
+  return lines.slice(startIndex).join('\n').trim()
 }
 
 function processGeneratorFunction(declaration: string, state?: ProcessingState): string {
