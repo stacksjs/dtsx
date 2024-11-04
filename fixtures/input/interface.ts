@@ -64,26 +64,26 @@ export interface DefaultGeneric<
 /**
  * Regular expression patterns used throughout the module
  */
-interface RegexPatterns {
-  /** Import type declarations */
-  readonly typeImport: RegExp
-  /** Regular import declarations */
-  readonly regularImport: RegExp
-  /** Async function declarations */
-  readonly asyncFunction: RegExp
-  /** Generic type parameters */
-  readonly functionOverload: RegExp
-  /** Module declaration pattern */
-  readonly moduleDeclaration: RegExp
-  /**
-   * Module augmentation pattern
-   */
-  readonly moduleAugmentation: RegExp
-}
+// interface RegexPatterns {
+//   /** Import type declarations */
+//   readonly typeImport: RegExp
+//   /** Regular import declarations */
+//   readonly regularImport: RegExp
+//   /** Async function declarations */
+//   readonly asyncFunction: RegExp
+//   /** Generic type parameters */
+//   readonly functionOverload: RegExp
+//   /** Module declaration pattern */
+//   readonly moduleDeclaration: RegExp
+//   /**
+//    * Module augmentation pattern
+//    */
+//   readonly moduleAugmentation: RegExp
+// }
 
-export interface ImportTrackingState {
-  typeImports: Map<string, Set<string>>
-  valueImports: Map<string, Set<string>>
-  usedTypes: Set<string>
-  usedValues: Set<string>
-}
+// export interface ImportTrackingState {
+//   typeImports: Map<string, Set<string>>
+//   valueImports: Map<string, Set<string>>
+//   usedTypes: Set<string>
+//   usedValues: Set<string>
+// }
