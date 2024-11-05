@@ -8,7 +8,7 @@ export declare const someObject: {
   someNumber: 1000;
   someBoolean: true;
   someFalse: false;
-  someFunction: () => void;
+  someFunction: () => unknown;
   anotherOne: () => unknown;
   someArray: Array<1 | 2 | 3>;
   someNestedArray: Array<Array<1 | 2 | 3> | Array<4 | 5 | 6 | 7 | 8 | 9 | 10>>;
@@ -24,7 +24,7 @@ export declare const someObject: {
     Array<11 | 12 | 13>
   >;
   someOtherNestedArray: Array<
-    Array<'some text' | 2 | unknown | (() => void) | unknown> |
+    Array<'some text' | 2 | unknown | (() => unknown) | unknown> |
     Array<4 | 5 | 6 | 7 | 8 | 9 | 10>
   >;
   someComplexArray: Array<
@@ -45,7 +45,7 @@ export declare const someObject: {
     };
     otherKey: {
       nestedKey: unknown;
-      nestedKey2: () => void
+      nestedKey2: () => unknown
     }
   };
   someNestedObjectArray: Array<
@@ -89,13 +89,13 @@ export declare const complexObject: {
   };
   utils: {
     formatters: {
-      date: (input: Date) => string;
-      currency: (amount: number, currency: string) => string
+      date: (input: Date) => unknown;
+      currency: (amount: number, currency: string) => unknown
     }
   }
 };
-export declare const methodDecorator: (...args: any[]) => unknown;
-export declare const methodDecoratorWithExplicitType: (...args: any[]) => unknown;
+export declare const methodDecorator: (target: any, propertyKey: string, descriptor: PropertyDescriptor) => unknown;
+export declare const methodDecoratorWithExplicitType: (target: any, propertyKey: string, descriptor: PropertyDescriptor) => SomeType;
 export declare const CONFIG_MAP: {
   development: {
     features: {

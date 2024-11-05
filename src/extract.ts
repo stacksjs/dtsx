@@ -411,42 +411,106 @@ function extractFunctionType(value: string): string | null {
   debugLog('extract-function', `Extracting function type from: ${value}`)
 
   const cleanValue = value.trim()
+  let pos = 0
+  const length = cleanValue.length
 
-  // Handle explicit return type annotations
-  const returnTypeMatch = cleanValue.match(/\):\s*([^{;]+)(?:[{;]|$)/)
-  let returnType = returnTypeMatch ? normalizeType(returnTypeMatch[1]) : 'unknown'
-
-  // Check value contents for return type inference
-  if (returnType === 'unknown') {
-    if (cleanValue.includes('toISOString()')) {
-      returnType = 'string'
+  // Check if the value starts with '(' (function expression)
+  if (!cleanValue.startsWith('(')) {
+    // Handle function keyword with explicit parameter types
+    const funcMatch = cleanValue.match(/^function\s*\w*\s*\((.*?)\)/s)
+    if (funcMatch) {
+      const [, params] = funcMatch
+      // Clean parameters while preserving type annotations
+      const cleanParams = cleanParameterTypes(params || '')
+      // Extract return type if available
+      const returnTypeMatch = cleanValue.match(/\):\s*([^{;]+)(?:[{;]|$)/)
+      const returnType = returnTypeMatch ? normalizeType(returnTypeMatch[1]) : 'unknown'
+      return `(${cleanParams}) => ${returnType}`
     }
-    else if (cleanValue.includes('Intl.NumberFormat') && cleanValue.includes('format')) {
-      returnType = 'string'
-    }
-    else if (cleanValue.includes('console.log')) {
-      returnType = 'void'
-    }
+    return null
   }
 
-  // Handle arrow functions with explicit parameter types
-  const arrowMatch = value.match(/^\((.*?)\)\s*=>\s*(.*)/)
-  if (arrowMatch) {
-    const [, params] = arrowMatch
-    // Clean parameters while preserving type annotations
-    const cleanParams = cleanParameterTypes(params || '')
-    return `(${cleanParams}) => ${returnType}`
+  // Now, handle arrow functions with possible return types
+  // Extract parameters using balanced parentheses
+  pos++ // Skip '('
+  let depth = 1
+  const paramsStart = pos
+  let inString = false
+  let stringChar = ''
+  for (; pos < length; pos++) {
+    const char = cleanValue[pos]
+    const prevChar = pos > 0 ? cleanValue[pos - 1] : ''
+
+    if (inString) {
+      if (char === stringChar && prevChar !== '\\') {
+        inString = false
+      }
+      else if (char === '\\') {
+        pos++ // Skip escaped character
+      }
+    }
+    else {
+      if (char === '"' || char === '\'' || char === '`') {
+        inString = true
+        stringChar = char
+      }
+      else if (char === '(') {
+        depth++
+      }
+      else if (char === ')') {
+        depth--
+        if (depth === 0) {
+          break
+        }
+      }
+    }
+  }
+  if (depth !== 0) {
+    // Unbalanced parentheses
+    debugLog('extract-function', 'Unbalanced parentheses in function parameters')
+    return null
   }
 
-  // Handle function keyword with explicit parameter types
-  const funcMatch = value.match(/^function\s*\w*\s*\((.*?)\)/)
-  if (funcMatch) {
-    const [, params] = funcMatch
-    const cleanParams = cleanParameterTypes(params || '')
-    return `(${cleanParams}) => ${returnType}`
+  const paramsEnd = pos
+  const params = cleanValue.slice(paramsStart, paramsEnd)
+
+  pos++ // Move past ')'
+
+  // Skip any whitespace
+  while (pos < length && /\s/.test(cleanValue[pos])) pos++
+
+  // Check for optional return type
+  let returnType = 'unknown'
+  if (cleanValue[pos] === ':') {
+    pos++ // Skip ':'
+    // Skip any whitespace
+    while (pos < length && /\s/.test(cleanValue[pos])) pos++
+    const returnTypeStart = pos
+    // Read until '=>' or '{'
+    while (pos < length && !cleanValue.startsWith('=>', pos) && cleanValue[pos] !== '{') {
+      pos++
+    }
+    const returnTypeEnd = pos
+    returnType = cleanValue.slice(returnTypeStart, returnTypeEnd).trim()
   }
 
-  return null
+  // Skip any whitespace
+  while (pos < length && /\s/.test(cleanValue[pos])) pos++
+
+  // Now, check for '=>'
+  if (cleanValue.startsWith('=>', pos)) {
+    pos += 2
+  }
+  else {
+    // No '=>', invalid function expression
+    debugLog('extract-function', 'Function expression missing "=>"')
+    return null
+  }
+
+  // Now, construct the function type
+  const cleanParams = cleanParameterTypes(params || '')
+  debugLog('extract-function', `Extracted function type: (${cleanParams}) => ${returnType}`)
+  return `(${cleanParams}) => ${returnType}`
 }
 
 /**
