@@ -37,3 +37,8 @@ export declare interface DefaultGeneric<
   T = string,
   K extends keyof any = string,
   V extends Record<K, T> = Record<K, T>
+> {
+  key: K
+  value: T
+  record: V
+}

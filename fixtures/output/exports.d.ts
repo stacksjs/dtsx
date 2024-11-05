@@ -1,3 +1,5 @@
+import type { BunPlugin } from 'bun';
+import type { SomeOtherType } from '@stacksjs/types';
 import { dtsConfig } from './config';
 import { generate, something as dts } from './generate';
 

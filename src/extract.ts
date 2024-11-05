@@ -1,10 +1,5 @@
 /* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
-import type { FunctionSignature, ImportTrackingState, ProcessingState } from './types'
-
-interface ProcessedMethod {
-  name: string
-  signature: string
-}
+import type { FunctionSignature, ImportTrackingState, ProcessedMethod, ProcessingState } from './types'
 
 function cleanParameterTypes(params: string): string {
   debugLog(undefined, 'params', `Cleaning parameters: ${params}`)
@@ -69,7 +64,7 @@ function cleanSingleParameter(param: string): string {
   debugLog(undefined, 'param-clean', `Cleaning parameter: ${param}`)
 
   // Handle parameters with type annotations
-  const typeMatch = param.match(/^([^:]+):\s*([^=]+)(?:\s*=\s*.+)?$/)
+  const typeMatch = param.match(/^([^:]+):\s*([^=]+)(?:=\s*.+)?$/)
   if (typeMatch) {
     const [, paramName, paramType] = typeMatch
     // Clean intersection types while avoiding extra spaces
@@ -84,7 +79,7 @@ function cleanSingleParameter(param: string): string {
   }
 
   // Handle parameters with default values but no explicit type
-  const defaultMatch = param.match(/^([^=]+)\s*=\s*(.+)$/)
+  const defaultMatch = param.match(/^([^=]+)=\s*(.+)$/)
   if (defaultMatch) {
     const [, paramName, defaultValue] = defaultMatch
     const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
@@ -418,7 +413,7 @@ function extractFunctionType(value: string): string | null {
   const cleanValue = value.trim()
 
   // Handle explicit return type annotations
-  const returnTypeMatch = cleanValue.match(/\):\s*([^{;]+)(?:\s*[{;]|$)/)
+  const returnTypeMatch = cleanValue.match(/\):\s*([^{;]+)(?:[{;]|$)/)
   let returnType = returnTypeMatch ? normalizeType(returnTypeMatch[1]) : 'unknown'
 
   // Check value contents for return type inference
@@ -461,12 +456,17 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
   const imports: string[] = []
   const seenImports = new Set<string>()
 
-  debugLog(undefined, 'import-gen', `Generating optimized imports. Default export value: ${state.defaultExportValue}`)
+  debugLog(undefined, 'import-gen', `Generating optimized imports. ${state.exportedTypes.size} exported types`)
 
   // Handle type imports first
   for (const [module, types] of state.typeImports) {
+    debugLog(undefined, 'import-type-check', `Checking types from ${module}: ${Array.from(types).join(', ')}`)
     const typeImports = Array.from(types)
-      .filter(t => state.usedTypes.has(t) || state.exportedValues?.has(t))
+      .filter((t) => {
+        const isUsed = state.exportedTypes.has(t) || state.usedTypes.has(t)
+        debugLog(undefined, 'import-type-filter', `Type ${t}: exported=${state.exportedTypes.has(t)}, used=${state.usedTypes.has(t)}`)
+        return isUsed
+      })
       .map((t) => {
         const alias = state.valueAliases.get(t)
         return alias ? `${t} as ${alias}` : t
@@ -478,65 +478,41 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog(undefined, 'import-add', `Added type import: ${importStatement}`)
+        debugLog(undefined, 'import-add-type', `Added type import: ${importStatement}`)
       }
     }
   }
 
-  // Group value imports by module
-  const moduleImports = new Map<string, Set<string>>()
-  const importAliases = new Map<string, string>()
-
-  // Handle default export
-  if (state.defaultExportValue) {
-    const originalName = Array.from(state.valueAliases.entries())
-      .find(([alias]) => alias === state.defaultExportValue)?.[1]
-
-    if (originalName) {
-      debugLog(undefined, 'import-default', `Found original name ${originalName} for default export alias ${state.defaultExportValue}`)
-      const module = state.importSources.get(originalName)
-      if (module) {
-        if (!moduleImports.has(module)) {
-          moduleImports.set(module, new Set())
-        }
-        moduleImports.get(module)!.add(originalName)
-        importAliases.set(originalName, state.defaultExportValue)
-      }
-    }
-  }
-
-  // Handle regular value imports
+  // Handle value imports with alias preservation
   for (const [module, values] of state.valueImports) {
-    const usedValues = Array.from(values)
+    const moduleAliases = new Map<string, string>()
+    const valueImports = Array.from(values)
       .filter((v) => {
-        const isUsed = state.usedValues.has(v)
-          || state.exportedValues?.has(v)
+        // Check if value is used directly or through an alias
+        const alias = Array.from(state.valueAliases.entries())
+          .find(([_, orig]) => orig === v)?.[0]
+        const isUsed = state.exportedValues.has(v)
+          || state.usedValues.has(v)
           || v === state.defaultExportValue
-        debugLog(undefined, 'import-filter', `Checking ${v}: used=${isUsed}`)
+          || (alias && (state.exportedValues.has(alias) || alias === state.defaultExportValue))
+
+        if (isUsed && alias) {
+          moduleAliases.set(v, alias)
+        }
         return isUsed
       })
+      .map((v) => {
+        const alias = moduleAliases.get(v)
+        return alias ? `${v} as ${alias}` : v
+      })
+      .sort()
 
-    if (usedValues.length > 0) {
-      if (!moduleImports.has(module)) {
-        moduleImports.set(module, new Set())
-      }
-      usedValues.forEach(v => moduleImports.get(module)!.add(v))
-    }
-  }
-
-  // Generate value import statements
-  for (const [module, values] of moduleImports) {
-    const importParts = Array.from(values).map((value) => {
-      const alias = importAliases.get(value)
-      return alias ? `${value} as ${alias}` : value
-    }).sort()
-
-    if (importParts.length > 0) {
-      const importStatement = `import { ${importParts.join(', ')} } from '${module}'`
+    if (valueImports.length > 0) {
+      const importStatement = `import { ${valueImports.join(', ')} } from '${module}'`
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog(undefined, 'import-add', `Added value import: ${importStatement}`)
+        debugLog(undefined, 'import-add-value', `Added value import: ${importStatement}`)
       }
     }
   }
@@ -707,11 +683,13 @@ function createImportTrackingState(): ImportTrackingState {
   return {
     typeImports: new Map(),
     valueImports: new Map(),
-    valueAliases: new Map(),
     usedTypes: new Set(),
     usedValues: new Set(),
+    exportedTypes: new Set(),
     exportedValues: new Set(),
+    valueAliases: new Map(),
     importSources: new Map(),
+    typeExportSources: new Map(),
     defaultExportValue: undefined,
   }
 }
@@ -1197,7 +1175,67 @@ function normalizeTypeReference(value: string): string {
 }
 
 function processBlock(lines: string[], comments: string[], state: ProcessingState): void {
-  const declarationText = lines.join('\n')
+  debugLog(state, 'block-processing', 'Starting block processing')
+
+  // Read ahead to capture the entire block
+  const allLines: string[] = []
+  let bracketDepth = 0
+  let angleDepth = 0
+  let i = 0
+  let hasFoundBody = false
+  const totalLines = lines.length
+
+  debugLog(state, 'block-scan', `Total available lines: ${totalLines}`)
+
+  // First, collect all lines that belong to this block
+  while (i < totalLines) {
+    const line = lines[i]
+    const trimmedLine = line.trim()
+
+    // Track brackets and angles before adding the line
+    const openCurly = (line.match(/\{/g) || []).length
+    const closeCurly = (line.match(/\}/g) || []).length
+    const openAngle = (line.match(/</g) || []).length
+    const closeAngle = (line.match(/>/g) || []).length
+
+    debugLog(state, 'block-scan-details', `Scanning line ${i + 1}: "${trimmedLine}" `
+    + `Current depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
+    + `Found body: ${hasFoundBody} `
+    + `Changes - Curly: +${openCurly}/-${closeCurly}, Angle: +${openAngle}/-${closeAngle}`)
+
+    // Add the line to our collection
+    allLines.push(line)
+
+    // Update depths
+    bracketDepth += openCurly - closeCurly
+    angleDepth += openAngle - closeAngle
+
+    // Track if we've found the interface body
+    if (trimmedLine.includes('{')) {
+      hasFoundBody = true
+      debugLog(state, 'block-scan', `Found body start at line ${i + 1}`)
+    }
+
+    debugLog(state, 'block-collection', `Line ${i + 1}: "${trimmedLine}" `
+    + `Updated depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
+    + `Found body: ${hasFoundBody}`)
+
+    // If we've found a complete block, stop collecting
+    const isComplete = bracketDepth === 0
+      && (angleDepth === 0 || hasFoundBody)
+      && trimmedLine.endsWith('}')
+
+    if (isComplete && hasFoundBody) {
+      debugLog(state, 'block-scan', `Found complete block at line ${i + 1}`)
+      break
+    }
+
+    i++
+  }
+
+  const declarationText = allLines.join('\n')
+  debugLog(state, 'block-scan', `Collected block:\n${declarationText}`)
+
   const cleanDeclaration = removeLeadingComments(declarationText).trim()
 
   debugLog(state, 'block-processing', `Full block content:\n${cleanDeclaration}`)
@@ -1211,6 +1249,15 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   if (isVariableInsideFunction(cleanDeclaration, state)) {
     debugLog(state, 'block-processing', 'Skipping variable declaration inside function')
     return
+  }
+
+  // Process interfaces first with improved depth tracking
+  if (cleanDeclaration.startsWith('interface') || cleanDeclaration.startsWith('export interface')) {
+    debugLog(state, 'block-processing', 'Processing interface declaration using interface block processor')
+    if (processInterfaceBlock(cleanDeclaration, declarationText, state)) {
+      debugLog(state, 'block-processing', 'Interface successfully processed')
+      return
+    }
   }
 
   // Split declarations if multiple are found and they're functions
@@ -1230,8 +1277,6 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   if (processFunctionBlock(cleanDeclaration, state))
     return
   if (processVariableBlock(cleanDeclaration, lines, state))
-    return
-  if (processInterfaceBlock(cleanDeclaration, declarationText, state))
     return
   if (processTypeBlock(cleanDeclaration, declarationText, state))
     return
@@ -1336,12 +1381,73 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
 }
 
 function processInterfaceBlock(cleanDeclaration: string, declarationText: string, state: ProcessingState): boolean {
-  if (!cleanDeclaration.startsWith('interface') && !cleanDeclaration.startsWith('export interface'))
-    return false
+  debugLog(state, 'interface-processing', `Starting interface processing with declaration: ${cleanDeclaration.slice(0, 100)}...`)
 
-  const isExported = cleanDeclaration.startsWith('export')
-  state.dtsLines.push(processInterface(declarationText, isExported))
-  return true
+  if (!cleanDeclaration.startsWith('interface') && !cleanDeclaration.startsWith('export interface')) {
+    debugLog(state, 'interface-processing', 'Not an interface declaration, skipping')
+    return false
+  }
+
+  const lines = declarationText.split('\n')
+  let bracketDepth = 0
+  let angleDepth = 0
+  const processedLines: string[] = []
+  let isFirstLine = true
+  let hasStartedBody = false
+
+  debugLog(state, 'interface-processing', `Processing ${lines.length} lines`)
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmedLine = line.trim()
+
+    // Track bracket depths
+    const openCurly = (line.match(/\{/g) || []).length
+    const closeCurly = (line.match(/\}/g) || []).length
+    const openAngle = (line.match(/</g) || []).length
+    const closeAngle = (line.match(/>/g) || []).length
+
+    bracketDepth += openCurly - closeCurly
+    angleDepth += openAngle - closeAngle
+
+    if (trimmedLine.includes('{')) {
+      hasStartedBody = true
+    }
+
+    debugLog(state, 'interface-depth', `Line ${i + 1}: "${trimmedLine}" `
+    + `Bracket depth: ${bracketDepth}, Angle depth: ${angleDepth}, `
+    + `Has started body: ${hasStartedBody}`)
+
+    // Handle first line separately to add 'declare'
+    if (isFirstLine) {
+      const prefix = trimmedLine.startsWith('export') ? 'export declare' : 'declare'
+      processedLines.push(
+        line.replace(
+          /^(\s*)(?:export\s+)?interface/,
+          `$1${prefix} interface`,
+        ),
+      )
+      isFirstLine = false
+    }
+    else {
+      processedLines.push(line)
+    }
+  }
+
+  // Only consider it successful if we have a complete interface
+  const result = processedLines.join('\n')
+  const hasCompleteBody = result.includes('{') && result.includes('}')
+  const isComplete = (bracketDepth === 0 && (angleDepth === 0 || result.includes('>'))) && hasCompleteBody
+
+  if (isComplete) {
+    debugLog(state, 'interface-processing', `Successfully processed interface:\n${result}`)
+    state.dtsLines.push(result)
+    return true
+  }
+
+  debugLog(state, 'interface-processing', `Interface processing incomplete. Bracket depth: ${bracketDepth}, `
+  + `Angle depth: ${angleDepth}, Has started body: ${hasStartedBody}`)
+  return false
 }
 
 function processTypeBlock(cleanDeclaration: string, declarationText: string, state: ProcessingState): boolean {
@@ -1403,6 +1509,38 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
     `Unhandled exported declaration type: ${cleanDeclaration.split('\n')[0]}`,
   )
   return true
+}
+
+function processExport(line: string, state: ProcessingState): void {
+  debugLog(state, 'export-processing', `Processing export: ${line}`)
+
+  const exportMatch = line.match(/export\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?/)
+  if (!exportMatch) {
+    debugLog(state, 'export-error', 'Failed to match export pattern')
+    return
+  }
+
+  const [, exports, sourceModule] = exportMatch
+  debugLog(state, 'export-found', `Found exports: ${exports}, source: ${sourceModule || 'local'}`)
+
+  exports.split(',').forEach((exp) => {
+    const [itemName, aliasName] = exp.trim().split(/\s+as\s+/).map(e => e.trim())
+
+    if (itemName.startsWith('type ')) {
+      const typeName = itemName.replace(/^type\s+/, '').trim()
+      const exportedName = aliasName || typeName
+      state.importTracking.exportedTypes.add(exportedName)
+      if (sourceModule) {
+        state.importTracking.typeExportSources.set(exportedName, sourceModule)
+      }
+      debugLog(state, 'export-type-processed', `Added exported type: ${exportedName}`)
+    }
+    else {
+      const exportedName = aliasName || itemName
+      state.importTracking.exportedValues.add(exportedName)
+      debugLog(state, 'export-value-processed', `Added exported value: ${exportedName}`)
+    }
+  })
 }
 
 function processExportedClass(cleanDeclaration: string, state: ProcessingState): boolean {
@@ -1600,13 +1738,53 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let currentBlock: string[] = []
   let currentComments: string[] = []
   let bracketDepth = 0
-  let parenDepth = 0
+  let angleDepth = 0
   let inDeclaration = false
   state.currentScope = 'top'
 
+  debugLog(state, 'source-processing', `Processing source file with ${lines.length} lines`)
+
+  // First pass: process imports and type exports
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmedLine = line.trim()
+
+    debugLog(state, 'source-scan', `First pass - Line ${i + 1}: ${trimmedLine}`)
+
+    // Process imports
+    if (line.includes('import ')) {
+      processImports(line, state.importTracking)
+      debugLog(state, 'import', `Processed import: ${line}`)
+    }
+
+    // Process type exports
+    if (trimmedLine.startsWith('export type {')) {
+      debugLog(state, 'type-export', `Found type export: ${trimmedLine}`)
+      processTypeExport(trimmedLine, state)
+      state.dtsLines.push(line)
+      continue
+    }
+
+    // Process regular exports that might include types
+    if (trimmedLine.startsWith('export {')) {
+      debugLog(state, 'mixed-export', `Found mixed export: ${trimmedLine}`)
+      processExport(trimmedLine, state)
+      state.dtsLines.push(line)
+      continue
+    }
+  }
+
+  // Second pass: process declarations and other content
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmedLine = line.trim()
+
+    // Skip lines we've already processed
+    if (trimmedLine.startsWith('import ')
+      || trimmedLine.startsWith('export type {')
+      || trimmedLine.startsWith('export {')) {
+      continue
+    }
 
     // Track comments
     if (trimmedLine.startsWith('/*') || trimmedLine.startsWith('//')) {
@@ -1614,62 +1792,44 @@ function processSourceFile(content: string, state: ProcessingState): void {
       continue
     }
 
-    // Start of a new declaration - now includes generator functions
-    if (isDeclarationStart(trimmedLine) && bracketDepth === 0) {
-      if (inDeclaration && currentBlock.length > 0) {
-        processBlock(currentBlock, currentComments, state)
-        currentBlock = []
-        currentComments = []
-        bracketDepth = 0
-        parenDepth = 0
-      }
+    // Track depths
+    const openCurly = (line.match(/\{/g) || []).length
+    const closeCurly = (line.match(/\}/g) || []).length
+    const openAngle = (line.match(/</g) || []).length
+    const closeAngle = (line.match(/>/g) || []).length
+
+    // Start of a new declaration
+    if (!inDeclaration && isDeclarationStart(trimmedLine)) {
+      debugLog(state, 'declaration', `Found declaration start: ${trimmedLine}`)
       inDeclaration = true
       currentBlock = [line]
-
-      // Update depths
-      parenDepth += (line.match(/\(/g) || []).length
-      parenDepth -= (line.match(/\)/g) || []).length
-      bracketDepth += (line.match(/\{/g) || []).length
-      bracketDepth -= (line.match(/\}/g) || []).length
-
-      // Update scope
-      if (/^(?:export\s+)?(?:async\s+)?function\*?/.test(trimmedLine)) {
-        state.currentScope = 'function'
-      }
-
+      bracketDepth = openCurly - closeCurly
+      angleDepth = openAngle - closeAngle
       continue
     }
 
-    // Collecting declaration lines
+    // If we're in a declaration, keep collecting lines
     if (inDeclaration) {
       currentBlock.push(line)
+      bracketDepth += openCurly - closeCurly
+      angleDepth += openAngle - closeAngle
 
-      // Update depths
-      parenDepth += (line.match(/\(/g) || []).length
-      parenDepth -= (line.match(/\)/g) || []).length
-      bracketDepth += (line.match(/\{/g) || []).length
-      bracketDepth -= (line.match(/\}/g) || []).length
+      // Check for end of declaration
+      const isComplete = bracketDepth === 0 && angleDepth === 0 && trimmedLine.endsWith('}')
 
-      // Check if declaration is complete
-      if (parenDepth === 0 && bracketDepth === 0) {
-        const isComplete = (
-          trimmedLine.endsWith(';')
-          || trimmedLine.endsWith('}')
-          || (!trimmedLine.endsWith('{') && !trimmedLine.endsWith(','))
-        )
+      // Look ahead for continuation
+      const nextLine = i < lines.length - 1 ? lines[i + 1]?.trim() : ''
+      const shouldContinue = bracketDepth > 0 || angleDepth > 0
+        || (nextLine && !nextLine.startsWith('export') && !nextLine.startsWith('interface'))
 
-        if (isComplete) {
-          processBlock(currentBlock, currentComments, state)
-          currentBlock = []
-          currentComments = []
-          inDeclaration = false
-          bracketDepth = 0
-          parenDepth = 0
-
-          if (state.currentScope === 'function') {
-            state.currentScope = 'top'
-          }
-        }
+      if (!shouldContinue || isComplete) {
+        debugLog(state, 'declaration-complete', `Declaration complete at line ${i + 1}`)
+        processBlock(currentBlock, currentComments, state)
+        currentBlock = []
+        currentComments = []
+        inDeclaration = false
+        bracketDepth = 0
+        angleDepth = 0
       }
     }
   }
@@ -1686,15 +1846,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
 function processImports(line: string, state: ImportTrackingState): void {
   debugLog(undefined, 'import-processing', `Processing import line: ${line}`)
 
-  // Initialize collections if they don't exist
-  if (!state.valueAliases)
-    state.valueAliases = new Map()
-  if (!state.exportedValues)
-    state.exportedValues = new Set()
-  if (!state.importSources)
-    state.importSources = new Map()
-
-  // Handle type imports - more specific regex to catch type imports with and without braces
+  // Handle type imports
   const typeImportMatch = line.match(/import\s+type\s*(?:\{([^}]+)\}|([^;\s]+))\s*from\s*['"]([^'"]+)['"]/)
   if (typeImportMatch) {
     const [, bracedTypes, singleType, module] = typeImportMatch
@@ -1709,6 +1861,8 @@ function processImports(line: string, state: ImportTrackingState): void {
       types.split(',').forEach((type) => {
         const [original, alias] = type.trim().split(/\s+as\s+/).map(n => n.trim())
         state.typeImports.get(module)!.add(original)
+        state.typeExportSources.set(original, module)
+        debugLog(undefined, 'import-type-tracking', `Tracking type ${original} from ${module}`)
         if (alias) {
           state.valueAliases.set(alias, original)
           debugLog(undefined, 'import-alias', `Registered type alias: ${original} as ${alias}`)
@@ -1718,7 +1872,7 @@ function processImports(line: string, state: ImportTrackingState): void {
     return
   }
 
-  // Handle value imports (rest of the code remains the same)
+  // Handle regular imports with improved alias tracking
   const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (valueImportMatch) {
     const [, names, module] = valueImportMatch
@@ -1728,14 +1882,35 @@ function processImports(line: string, state: ImportTrackingState): void {
       state.valueImports.set(module, new Set())
     }
 
-    names.split(',').forEach((name) => {
-      const [original, alias] = name.trim().split(/\s+as\s+/).map(n => n.trim())
-      state.valueImports.get(module)!.add(original)
-      state.importSources.set(original, module)
+    names.split(',').forEach((importItem) => {
+      const [itemName, alias] = importItem.trim().split(/\s+as\s+/).map(n => n.trim())
 
-      if (alias) {
-        state.valueAliases.set(alias, original)
-        debugLog(undefined, 'import-alias', `Registered value alias: ${original} as ${alias}`)
+      // Check if this is a type import within a regular import statement
+      if (itemName.startsWith('type ')) {
+        const typeName = itemName.replace(/^type\s+/, '').trim()
+        if (!state.typeImports.has(module)) {
+          state.typeImports.set(module, new Set())
+        }
+        state.typeImports.get(module)!.add(typeName)
+        state.typeExportSources.set(typeName, module)
+        debugLog(undefined, 'import-type-in-value', `Found inline type import: ${typeName} from ${module}`)
+      }
+      else {
+        // Add the original name to valueImports
+        state.valueImports.get(module)!.add(itemName)
+        state.importSources.set(itemName, module)
+
+        // If there's an alias, track it and mark it as used if it's the default export
+        if (alias) {
+          state.valueAliases.set(alias, itemName)
+          // If this alias is used as the default export, mark the original as used
+          if (alias === state.defaultExportValue) {
+            state.usedValues.add(itemName)
+          }
+          // Also add the alias to the imports
+          state.valueImports.get(module)!.add(itemName)
+          debugLog(undefined, 'import-alias', `Registered value alias: ${itemName} as ${alias}`)
+        }
       }
     })
   }
@@ -1759,6 +1934,30 @@ function processType(declaration: string, isExported = true): string {
 
   // Return original declaration with only the first line modified
   return [modifiedFirstLine, ...lines.slice(1)].join('\n')
+}
+
+function processTypeExport(line: string, state: ProcessingState): void {
+  debugLog(state, 'type-export-processing', `Processing type export: ${line}`)
+
+  const typeExportMatch = line.match(/export\s+type\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?/)
+  if (!typeExportMatch) {
+    debugLog(state, 'type-export-error', 'Failed to match type export pattern')
+    return
+  }
+
+  const [, types, sourceModule] = typeExportMatch
+  debugLog(state, 'type-export-found', `Found types: ${types}, source: ${sourceModule || 'local'}`)
+
+  types.split(',').forEach((typeExport) => {
+    const [typeName, aliasName] = typeExport.trim().split(/\s+as\s+/).map(t => t.trim())
+    const exportedName = aliasName || typeName
+
+    state.importTracking.exportedTypes.add(exportedName)
+    if (sourceModule) {
+      state.importTracking.typeExportSources.set(exportedName, sourceModule)
+    }
+    debugLog(state, 'type-export-processed', `Added exported type: ${exportedName}`)
+  })
 }
 
 /**
@@ -1787,7 +1986,7 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
   const trimmedValue = rawValue.trim()
 
   // Check for explicit return type in arrow functions
-  const arrowWithType = trimmedValue.match(/^\(\s*.*?\)\s*:\s*([^=>\s{]+).*=>/)
+  const arrowWithType = trimmedValue.match(/^\(\s*.*?\)\s*:\s*([^=>\s{]).*=>/)
   if (arrowWithType) {
     const returnType = arrowWithType[1]
     return `${isExported ? 'export ' : ''}declare ${declarationType} ${name}: ${returnType};`

@@ -88,9 +88,11 @@ export interface ImportTrackingState {
   valueImports: Map<string, Set<string>> // module -> Set of value names
   usedTypes: Set<string> // All used type names
   usedValues: Set<string> // All used value names
+  exportedTypes: Set<string> // Types that are exported
   exportedValues: Set<string> // Values that are exported
   valueAliases: Map<string, string> // alias -> original name mapping
   importSources: Map<string, string> // name -> module mapping
+  typeExportSources: Map<string, string> // type name -> source module for type exports
   defaultExportValue?: string // The value being default exported
 }
 
@@ -174,4 +176,9 @@ export interface FunctionSignature {
   params: string
   returnType: string
   generics: string
+}
+
+export interface ProcessedMethod {
+  name: string
+  signature: string
 }
