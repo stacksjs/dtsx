@@ -1320,17 +1320,34 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
     }
   }
 
-  // Regular function detection
+  // Check for function declarations
   if (!/^(?:export\s+)?(?:async\s+)?function\s+[a-zA-Z_$][\w$]*/.test(cleanDeclaration))
     return false
 
   debugLog('block-processing', 'Processing function declaration')
 
-  // Extract signature
+  // Handle potential overloads by splitting on newlines and semicolons
+  const declarations = cleanDeclaration
+    .split(/[\n;]/)
+    .map(d => d.trim())
+    .filter(d => d.startsWith('export function') || d.startsWith('function'))
+
+  if (declarations.length > 1) {
+    // Process each overload separately
+    declarations.forEach((declaration) => {
+      if (!declaration.endsWith('{')) { // Skip implementation
+        const processed = processFunction(declaration, state.usedTypes, declaration.startsWith('export'))
+        if (processed)
+          state.dtsLines.push(processed)
+      }
+    })
+    return true
+  }
+
+  // Extract signature for non-overloaded functions
   let signatureEnd = 0
   let parenDepth = 0
   let angleDepth = 0
-  // const braceDepth = 0
 
   for (let i = 0; i < cleanDeclaration.length; i++) {
     const char = cleanDeclaration[i]
@@ -2006,12 +2023,13 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
   debugLog('process-function-start', `Starting to process: ${declaration}`)
 
-  // Normalize while preserving structure
+  // Normalize while preserving structure and remove any trailing semicolon
   const normalizedDeclaration = declaration
     .split('\n')
     .map(line => line.trim())
     .join(' ')
     .replace(/\s+/g, ' ')
+    .replace(/;$/, '')
 
   debugLog('process-function-normalized', `Normalized declaration: ${normalizedDeclaration}`)
 
