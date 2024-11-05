@@ -44,3 +44,18 @@ export class CustomErrorWithMethodAndTypeAndReturn {
     return new Error(this.message)
   }
 }
+
+export class Result<T, E extends Error> {
+  constructor(
+    readonly value: T | null = null,
+    readonly error: E | null = null
+  ) {}
+
+  isOk(): this is { readonly value: T } {
+    return this.value !== null && this.error === null;
+  }
+
+  isErr(): this is { readonly error: E } {
+    return this.error !== null && this.value === null;
+  }
+}
