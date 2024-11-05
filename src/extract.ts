@@ -2,7 +2,7 @@
 import type { FunctionSignature, ImportTrackingState, ProcessedMethod, ProcessingState } from './types'
 
 function cleanParameterTypes(params: string): string {
-  debugLog(undefined, 'params', `Cleaning parameters: ${params}`)
+  debugLog('params', `Cleaning parameters: ${params}`)
 
   if (!params.trim())
     return ''
@@ -56,12 +56,12 @@ function cleanParameterTypes(params: string): string {
   }
 
   const result = parts.join(', ')
-  debugLog(undefined, 'params', `Cleaned parameters: ${result}`)
+  debugLog('params', `Cleaned parameters: ${result}`)
   return result
 }
 
 function cleanSingleParameter(param: string): string {
-  debugLog(undefined, 'param-clean', `Cleaning parameter: ${param}`)
+  debugLog('param-clean', `Cleaning parameter: ${param}`)
 
   // Handle parameters with type annotations
   const typeMatch = param.match(/^([^:]+):\s*([^=]+)(?:=\s*.+)?$/)
@@ -74,7 +74,7 @@ function cleanSingleParameter(param: string): string {
       .trim()
 
     const cleanedParam = `${paramName.trim()}: ${cleanedType}`
-    debugLog(undefined, 'param-clean', `Cleaned to: ${cleanedParam}`)
+    debugLog('param-clean', `Cleaned to: ${cleanedParam}`)
     return cleanedParam
   }
 
@@ -84,7 +84,7 @@ function cleanSingleParameter(param: string): string {
     const [, paramName, defaultValue] = defaultMatch
     const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
     const cleanedParam = `${paramName.trim()}: ${inferredType}`
-    debugLog(undefined, 'param-clean', `Inferred type: ${cleanedParam}`)
+    debugLog('param-clean', `Inferred type: ${cleanedParam}`)
     return cleanedParam
   }
 
@@ -113,13 +113,13 @@ export async function extract(filePath: string): Promise<string> {
  */
 export function extractDtsTypes(sourceCode: string): string {
   const state = createProcessingState()
-  // debugLog(state, 'init', 'Starting DTS extraction')
+  // debugLog('init', 'Starting DTS extraction')
 
   // Process imports first
   sourceCode.split('\n').forEach((line) => {
     if (line.includes('import ')) {
       processImports(line, state.importTracking)
-      // debugLog(state, 'import', `Processed import: ${line.trim()}`)
+      // debugLog('import', `Processed import: ${line.trim()}`)
     }
   })
 
@@ -127,8 +127,8 @@ export function extractDtsTypes(sourceCode: string): string {
   processSourceFile(sourceCode, state)
 
   // Log the state of exports before formatting
-  // debugLog(state, 'export-summary', `Found ${state.defaultExports.size} default exports`)
-  // debugLog(state, 'export-summary', `Found ${state.exportAllStatements.length} export * statements`)
+  // debugLog('export-summary', `Found ${state.defaultExports.size} default exports`)
+  // debugLog('export-summary', `Found ${state.exportAllStatements.length} export * statements`)
 
   // Final pass to track what actually made it to the output
   state.dtsLines.forEach((line) => {
@@ -140,7 +140,7 @@ export function extractDtsTypes(sourceCode: string): string {
 
   // Generate optimized imports based on actual output
   const optimizedImports = generateOptimizedImports(state.importTracking)
-  // debugLog(state, 'import-summary', `Generated ${optimizedImports.length} optimized imports`)
+  // debugLog('import-summary', `Generated ${optimizedImports.length} optimized imports`)
 
   // Clear any existing imports and set up dtsLines with optimized imports
   state.dtsLines = [
@@ -176,30 +176,30 @@ export function extractDtsTypes(sourceCode: string): string {
  * // }
  */
 function extractFunctionSignature(declaration: string): FunctionSignature {
-  debugLog(undefined, 'signature-start', `Processing declaration: ${declaration}`)
+  debugLog('signature-start', `Processing declaration: ${declaration}`)
 
   // Clean up the declaration
   const cleanDeclaration = getCleanDeclaration(declaration)
-  debugLog(undefined, 'signature-clean', `Clean declaration: ${cleanDeclaration}`)
+  debugLog('signature-clean', `Clean declaration: ${cleanDeclaration}`)
 
   // Extract function name
   const name = extractFunctionName(cleanDeclaration)
   let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
-  debugLog(undefined, 'signature-content', `Content after name: ${rest}`)
+  debugLog('signature-content', `Content after name: ${rest}`)
 
   // Extract generics with improved depth tracking
   const { generics, rest: restAfterGenerics } = extractGenerics(rest)
   rest = restAfterGenerics.trim()
-  debugLog(undefined, 'signature-after-generics', `Remaining content: ${rest}`)
+  debugLog('signature-after-generics', `Remaining content: ${rest}`)
 
   // Extract parameters
   const { params, rest: restAfterParams } = extractParams(rest)
   rest = restAfterParams.trim()
-  debugLog(undefined, 'signature-after-params', `Remaining content: ${rest}`)
+  debugLog('signature-after-params', `Remaining content: ${rest}`)
 
   // Extract return type
   const { returnType } = extractReturnType(rest)
-  debugLog(undefined, 'signature-return', `Extracted return type: ${returnType}`)
+  debugLog('signature-return', `Extracted return type: ${returnType}`)
 
   const signature = {
     name,
@@ -208,7 +208,7 @@ function extractFunctionSignature(declaration: string): FunctionSignature {
     returnType,
   }
 
-  debugLog(undefined, 'signature-final', `Final signature object: ${JSON.stringify(signature, null, 2)}`)
+  debugLog('signature-final', `Final signature object: ${JSON.stringify(signature, null, 2)}`)
   return signature
 }
 
@@ -229,7 +229,7 @@ function extractGenerics(rest: string): { generics: string, rest: string } {
     let inString = false
     let stringChar = ''
 
-    debugLog(undefined, 'generics-input', `Starting generic extraction with: ${rest}`)
+    debugLog('generics-input', `Starting generic extraction with: ${rest}`)
 
     // Start from position 1 since we already handled the first '<'
     for (let i = 1; i < rest.length; i++) {
@@ -237,18 +237,18 @@ function extractGenerics(rest: string): { generics: string, rest: string } {
       const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
       const prevChar = i > 0 ? rest[i - 1] : ''
 
-      debugLog(undefined, 'generics-char', `Processing char: ${char}, next char: ${nextChar}, depth: ${depth}, pos: ${i}`)
+      debugLog('generics-char', `Processing char: ${char}, next char: ${nextChar}, depth: ${depth}, pos: ${i}`)
 
       // Handle string boundaries
       if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
         if (!inString) {
           inString = true
           stringChar = char
-          debugLog(undefined, 'generics-string', `Entering string with ${stringChar}`)
+          debugLog('generics-string', `Entering string with ${stringChar}`)
         }
         else if (char === stringChar) {
           inString = false
-          debugLog(undefined, 'generics-string', 'Exiting string')
+          debugLog('generics-string', 'Exiting string')
         }
       }
 
@@ -256,23 +256,23 @@ function extractGenerics(rest: string): { generics: string, rest: string } {
       if (!inString) {
         if (char === '<') {
           depth++
-          debugLog(undefined, 'generics-depth', `Increasing depth to ${depth} at pos ${i}`)
+          debugLog('generics-depth', `Increasing depth to ${depth} at pos ${i}`)
         }
         else if (char === '>') {
           depth--
-          debugLog(undefined, 'generics-depth', `Decreasing depth to ${depth} at pos ${i}`)
+          debugLog('generics-depth', `Decreasing depth to ${depth} at pos ${i}`)
 
           // If we hit zero depth and the next char is also '>', include both
           if (depth === 0 && nextChar === '>') {
             buffer += '>>' // Add both closing brackets
             pos = i + 1 // Skip the next '>' since we've included it
-            debugLog(undefined, 'generics-complete', `Found double closing bracket at pos ${i}, final buffer: ${buffer}`)
+            debugLog('generics-complete', `Found double closing bracket at pos ${i}, final buffer: ${buffer}`)
             break
           }
           else if (depth === 0) {
             buffer += '>'
             pos = i
-            debugLog(undefined, 'generics-complete', `Found single closing bracket at pos ${i}, final buffer: ${buffer}`)
+            debugLog('generics-complete', `Found single closing bracket at pos ${i}, final buffer: ${buffer}`)
             break
           }
         }
@@ -280,18 +280,18 @@ function extractGenerics(rest: string): { generics: string, rest: string } {
 
       if (depth > 0) { // Only add to buffer if we're still inside generic parameters
         buffer += char
-        debugLog(undefined, 'generics-buffer', `Current buffer: ${buffer}`)
+        debugLog('generics-buffer', `Current buffer: ${buffer}`)
       }
     }
 
     if (buffer) {
       generics = buffer
       rest = rest.slice(pos + 1)
-      debugLog(undefined, 'generics-success', `Successfully extracted generics: ${generics}`)
-      debugLog(undefined, 'generics-rest', `Remaining text: ${rest}`)
+      debugLog('generics-success', `Successfully extracted generics: ${generics}`)
+      debugLog('generics-rest', `Remaining text: ${rest}`)
     }
     else {
-      debugLog(undefined, 'generics-fail', `Failed to extract generics from: ${rest}`)
+      debugLog('generics-fail', `Failed to extract generics from: ${rest}`)
     }
   }
   return { generics, rest }
@@ -305,7 +305,7 @@ function extractParams(rest: string): { params: string, rest: string } {
     let pos = start + 1
     let buffer = ''
 
-    debugLog(undefined, 'params-extraction-start', `Starting params extraction from pos ${pos}: ${rest}`)
+    debugLog('params-extraction-start', `Starting params extraction from pos ${pos}: ${rest}`)
 
     for (; pos < rest.length; pos++) {
       const char = rest[pos]
@@ -315,7 +315,7 @@ function extractParams(rest: string): { params: string, rest: string } {
       if (char === ')') {
         depth--
         if (depth === 0) {
-          debugLog(undefined, 'params-depth-zero', `Found closing parenthesis at pos ${pos}`)
+          debugLog('params-depth-zero', `Found closing parenthesis at pos ${pos}`)
           break
         }
       }
@@ -325,7 +325,7 @@ function extractParams(rest: string): { params: string, rest: string } {
 
     params = buffer.trim()
     rest = rest.slice(pos + 1).trim()
-    debugLog(undefined, 'signature-params', `Extracted params: ${params}`)
+    debugLog('signature-params', `Extracted params: ${params}`)
   }
   return { params, rest }
 }
@@ -333,7 +333,7 @@ function extractParams(rest: string): { params: string, rest: string } {
 function extractReturnType(rest: string): { returnType: string } {
   let returnType = 'void'
   if (rest.startsWith(':')) {
-    debugLog(undefined, 'return-start', `Starting return type extraction with: ${rest}`)
+    debugLog('return-start', `Starting return type extraction with: ${rest}`)
     rest = rest.slice(1).trim()
 
     let depth = 0
@@ -343,25 +343,25 @@ function extractReturnType(rest: string): { returnType: string } {
     let stringChar = ''
     let foundEnd = false
 
-    debugLog(undefined, 'return-extraction', 'Starting character-by-character extraction')
+    debugLog('return-extraction', 'Starting character-by-character extraction')
 
     while (i < rest.length && !foundEnd) {
       const char = rest[i]
       const prevChar = i > 0 ? rest[i - 1] : ''
       // const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
 
-      debugLog(undefined, 'return-char', `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
+      debugLog('return-char', `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
 
       // Handle string boundaries
       if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
         if (!inString) {
           inString = true
           stringChar = char
-          debugLog(undefined, 'return-string', `Entering string with ${stringChar}`)
+          debugLog('return-string', `Entering string with ${stringChar}`)
         }
         else if (char === stringChar) {
           inString = false
-          debugLog(undefined, 'return-string', 'Exiting string')
+          debugLog('return-string', 'Exiting string')
         }
       }
 
@@ -369,11 +369,11 @@ function extractReturnType(rest: string): { returnType: string } {
       if (!inString) {
         if (char === '{' || char === '<' || char === '(') {
           depth++
-          debugLog(undefined, 'return-depth', `Opening bracket, increasing depth to ${depth}`)
+          debugLog('return-depth', `Opening bracket, increasing depth to ${depth}`)
         }
         else if (char === '}' || char === '>' || char === ')') {
           depth--
-          debugLog(undefined, 'return-depth', `Closing bracket, decreasing depth to ${depth}`)
+          debugLog('return-depth', `Closing bracket, decreasing depth to ${depth}`)
 
           // If we hit depth 0 with a closing brace, this might be the end of our type
           if (depth === 0 && char === '}') {
@@ -381,7 +381,7 @@ function extractReturnType(rest: string): { returnType: string } {
             // Look ahead to see if this is followed by a function body
             const nextNonWhitespace = rest.slice(i + 1).trim()[0]
             if (nextNonWhitespace === '{') {
-              debugLog(undefined, 'return-end', `Found end of return type at pos ${i}, next char is function body`)
+              debugLog('return-end', `Found end of return type at pos ${i}, next char is function body`)
               foundEnd = true
               break
             }
@@ -390,25 +390,25 @@ function extractReturnType(rest: string): { returnType: string } {
 
         // Stop at semicolons at depth 0
         if (depth === 0 && char === ';') {
-          debugLog(undefined, 'return-end', 'Found semicolon at depth 0')
+          debugLog('return-end', 'Found semicolon at depth 0')
           foundEnd = true
           break
         }
       }
 
       buffer += char
-      debugLog(undefined, 'return-buffer', `Updated buffer: ${buffer}`)
+      debugLog('return-buffer', `Updated buffer: ${buffer}`)
       i++
     }
 
     returnType = buffer.trim()
-    debugLog(undefined, 'return-final', `Final extracted return type: ${returnType}`)
+    debugLog('return-final', `Final extracted return type: ${returnType}`)
   }
   return { returnType }
 }
 
 function extractFunctionType(value: string): string | null {
-  debugLog(undefined, 'extract-function', `Extracting function type from: ${value}`)
+  debugLog('extract-function', `Extracting function type from: ${value}`)
 
   const cleanValue = value.trim()
 
@@ -456,15 +456,15 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
   const imports: string[] = []
   const seenImports = new Set<string>()
 
-  debugLog(undefined, 'import-gen', `Generating optimized imports. ${state.exportedTypes.size} exported types`)
+  debugLog('import-gen', `Generating optimized imports. ${state.exportedTypes.size} exported types`)
 
   // Handle type imports first
   for (const [module, types] of state.typeImports) {
-    debugLog(undefined, 'import-type-check', `Checking types from ${module}: ${Array.from(types).join(', ')}`)
+    debugLog('import-type-check', `Checking types from ${module}: ${Array.from(types).join(', ')}`)
     const typeImports = Array.from(types)
       .filter((t) => {
         const isUsed = state.exportedTypes.has(t) || state.usedTypes.has(t)
-        debugLog(undefined, 'import-type-filter', `Type ${t}: exported=${state.exportedTypes.has(t)}, used=${state.usedTypes.has(t)}`)
+        debugLog('import-type-filter', `Type ${t}: exported=${state.exportedTypes.has(t)}, used=${state.usedTypes.has(t)}`)
         return isUsed
       })
       .map((t) => {
@@ -478,7 +478,7 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog(undefined, 'import-add-type', `Added type import: ${importStatement}`)
+        debugLog('import-add-type', `Added type import: ${importStatement}`)
       }
     }
   }
@@ -512,7 +512,7 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog(undefined, 'import-add-value', `Added value import: ${importStatement}`)
+        debugLog('import-add-value', `Added value import: ${importStatement}`)
       }
     }
   }
@@ -521,7 +521,7 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
 }
 
 function extractCompleteObjectContent(value: string): string | null {
-  // debugLog(state, 'extract-object', `Processing object of length ${value.length}`)
+  // debugLog('extract-object', `Processing object of length ${value.length}`)
   const fullContent = value.trim()
 
   // Must start with an object
@@ -918,7 +918,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
-  // debugLog(state, 'infer-const', `Inferring const array type for: ${value}`)
+  // debugLog('infer-const', `Inferring const array type for: ${value}`)
 
   // For string literals, return them directly
   if (/^['"`].*['"`]$/.test(value)) {
@@ -937,7 +937,7 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
     // Build tuple type
     const literalTypes = elements.map((element) => {
       let trimmed = element.trim()
-      // debugLog(state, 'const-tuple-element', `Processing tuple element: ${trimmed}`)
+      // debugLog('const-tuple-element', `Processing tuple element: ${trimmed}`)
 
       // Clean up any 'as cons' or 'as const' suffixes first
       if (trimmed.includes('] as cons') || trimmed.includes('] as const')) {
@@ -986,7 +986,7 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
       return `'${cleanString}'`
     })
 
-    // debugLog(state, 'const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
+    // debugLog('const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
     return `readonly [${literalTypes.join(', ')}]`
   }
 
@@ -1175,7 +1175,7 @@ function normalizeTypeReference(value: string): string {
 }
 
 function processBlock(lines: string[], comments: string[], state: ProcessingState): void {
-  debugLog(state, 'block-processing', 'Starting block processing')
+  debugLog('block-processing', 'Starting block processing')
 
   // Read ahead to capture the entire block
   const allLines: string[] = []
@@ -1185,7 +1185,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   let hasFoundBody = false
   const totalLines = lines.length
 
-  debugLog(state, 'block-scan', `Total available lines: ${totalLines}`)
+  debugLog('block-scan', `Total available lines: ${totalLines}`)
 
   // First, collect all lines that belong to this block
   while (i < totalLines) {
@@ -1198,7 +1198,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     const openAngle = (line.match(/</g) || []).length
     const closeAngle = (line.match(/>/g) || []).length
 
-    debugLog(state, 'block-scan-details', `Scanning line ${i + 1}: "${trimmedLine}" `
+    debugLog('block-scan-details', `Scanning line ${i + 1}: "${trimmedLine}" `
     + `Current depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
     + `Found body: ${hasFoundBody} `
     + `Changes - Curly: +${openCurly}/-${closeCurly}, Angle: +${openAngle}/-${closeAngle}`)
@@ -1213,10 +1213,10 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     // Track if we've found the interface body
     if (trimmedLine.includes('{')) {
       hasFoundBody = true
-      debugLog(state, 'block-scan', `Found body start at line ${i + 1}`)
+      debugLog('block-scan', `Found body start at line ${i + 1}`)
     }
 
-    debugLog(state, 'block-collection', `Line ${i + 1}: "${trimmedLine}" `
+    debugLog('block-collection', `Line ${i + 1}: "${trimmedLine}" `
     + `Updated depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
     + `Found body: ${hasFoundBody}`)
 
@@ -1226,7 +1226,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
       && trimmedLine.endsWith('}')
 
     if (isComplete && hasFoundBody) {
-      debugLog(state, 'block-scan', `Found complete block at line ${i + 1}`)
+      debugLog('block-scan', `Found complete block at line ${i + 1}`)
       break
     }
 
@@ -1234,28 +1234,28 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   }
 
   const declarationText = allLines.join('\n')
-  debugLog(state, 'block-scan', `Collected block:\n${declarationText}`)
+  debugLog('block-scan', `Collected block:\n${declarationText}`)
 
   const cleanDeclaration = removeLeadingComments(declarationText).trim()
 
-  debugLog(state, 'block-processing', `Full block content:\n${cleanDeclaration}`)
+  debugLog('block-processing', `Full block content:\n${cleanDeclaration}`)
 
   if (!cleanDeclaration) {
-    debugLog(state, 'block-processing', 'Empty declaration block')
+    debugLog('block-processing', 'Empty declaration block')
     return
   }
 
   // Early check for variables inside functions
   if (isVariableInsideFunction(cleanDeclaration, state)) {
-    debugLog(state, 'block-processing', 'Skipping variable declaration inside function')
+    debugLog('block-processing', 'Skipping variable declaration inside function')
     return
   }
 
   // Process interfaces first with improved depth tracking
   if (cleanDeclaration.startsWith('interface') || cleanDeclaration.startsWith('export interface')) {
-    debugLog(state, 'block-processing', 'Processing interface declaration using interface block processor')
+    debugLog('block-processing', 'Processing interface declaration using interface block processor')
     if (processInterfaceBlock(cleanDeclaration, declarationText, state)) {
-      debugLog(state, 'block-processing', 'Interface successfully processed')
+      debugLog('block-processing', 'Interface successfully processed')
       return
     }
   }
@@ -1264,7 +1264,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   if (cleanDeclaration.includes('\n\nexport function') || cleanDeclaration.includes('\n\nfunction')) {
     const declarations = splitFunctionDeclarations(cleanDeclaration)
     if (declarations.length > 1) {
-      debugLog(state, 'block-processing', `Found ${declarations.length} function declarations to process`)
+      debugLog('block-processing', `Found ${declarations.length} function declarations to process`)
       declarations.forEach((declaration) => {
         const declarationLines = declaration.split('\n')
         processBlock(declarationLines, comments, state)
@@ -1289,7 +1289,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   if (processModuleBlock(cleanDeclaration, declarationText, state))
     return
 
-  debugLog(state, 'processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
+  debugLog('processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
 }
 
 function processVariableBlock(cleanDeclaration: string, lines: string[], state: ProcessingState): boolean {
@@ -1299,7 +1299,7 @@ function processVariableBlock(cleanDeclaration: string, lines: string[], state: 
 
   // Double-check we're not inside a function
   if (isVariableInsideFunction(cleanDeclaration, state)) {
-    debugLog(state, 'variable-processing', 'Skipping variable inside function')
+    debugLog('variable-processing', 'Skipping variable inside function')
     return true // Return true because we handled it (by skipping)
   }
 
@@ -1311,17 +1311,17 @@ function processVariableBlock(cleanDeclaration: string, lines: string[], state: 
     state.dtsLines.push(processVariable(fullDeclaration, isExported, state))
   }
   else {
-    debugLog(state, 'block-processing', 'Skipping variable declared inside a function')
+    debugLog('block-processing', 'Skipping variable declared inside a function')
   }
   return true
 }
 
 function processFunctionBlock(cleanDeclaration: string, state: ProcessingState): boolean {
-  debugLog(state, 'function-processing', `Processing potential function block: ${cleanDeclaration.slice(0, 100)}...`)
+  debugLog('function-processing', `Processing potential function block: ${cleanDeclaration.slice(0, 100)}...`)
 
   // First check for generator functions
   if (/^(?:export\s+)?(?:async\s+)?function\s*\*/.test(cleanDeclaration)) {
-    debugLog(state, 'block-processing', 'Processing generator function declaration')
+    debugLog('block-processing', 'Processing generator function declaration')
     const processed = processGeneratorFunction(cleanDeclaration, state)
     if (processed) {
       state.dtsLines.push(processed)
@@ -1333,7 +1333,7 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
   if (!/^(?:export\s+)?(?:async\s+)?function\s+[a-zA-Z_$][\w$]*/.test(cleanDeclaration))
     return false
 
-  debugLog(state, 'block-processing', 'Processing function declaration')
+  debugLog('block-processing', 'Processing function declaration')
 
   // Extract signature
   let signatureEnd = 0
@@ -1368,12 +1368,12 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
 
   const signaturePart = cleanDeclaration.slice(0, signatureEnd).trim()
 
-  debugLog(state, 'signature-extraction', `Extracted signature: ${signaturePart}`)
+  debugLog('signature-extraction', `Extracted signature: ${signaturePart}`)
 
   const isExported = signaturePart.startsWith('export')
   const processed = processFunction(signaturePart, state.usedTypes, isExported)
   if (processed) {
-    debugLog(state, 'function-processed', `Generated declaration: ${processed}`)
+    debugLog('function-processed', `Generated declaration: ${processed}`)
     state.dtsLines.push(processed)
   }
 
@@ -1381,10 +1381,10 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
 }
 
 function processInterfaceBlock(cleanDeclaration: string, declarationText: string, state: ProcessingState): boolean {
-  debugLog(state, 'interface-processing', `Starting interface processing with declaration: ${cleanDeclaration.slice(0, 100)}...`)
+  debugLog('interface-processing', `Starting interface processing with declaration: ${cleanDeclaration.slice(0, 100)}...`)
 
   if (!cleanDeclaration.startsWith('interface') && !cleanDeclaration.startsWith('export interface')) {
-    debugLog(state, 'interface-processing', 'Not an interface declaration, skipping')
+    debugLog('interface-processing', 'Not an interface declaration, skipping')
     return false
   }
 
@@ -1395,7 +1395,7 @@ function processInterfaceBlock(cleanDeclaration: string, declarationText: string
   let isFirstLine = true
   let hasStartedBody = false
 
-  debugLog(state, 'interface-processing', `Processing ${lines.length} lines`)
+  debugLog('interface-processing', `Processing ${lines.length} lines`)
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -1414,7 +1414,7 @@ function processInterfaceBlock(cleanDeclaration: string, declarationText: string
       hasStartedBody = true
     }
 
-    debugLog(state, 'interface-depth', `Line ${i + 1}: "${trimmedLine}" `
+    debugLog('interface-depth', `Line ${i + 1}: "${trimmedLine}" `
     + `Bracket depth: ${bracketDepth}, Angle depth: ${angleDepth}, `
     + `Has started body: ${hasStartedBody}`)
 
@@ -1440,12 +1440,12 @@ function processInterfaceBlock(cleanDeclaration: string, declarationText: string
   const isComplete = (bracketDepth === 0 && (angleDepth === 0 || result.includes('>'))) && hasCompleteBody
 
   if (isComplete) {
-    debugLog(state, 'interface-processing', `Successfully processed interface:\n${result}`)
+    debugLog('interface-processing', `Successfully processed interface:\n${result}`)
     state.dtsLines.push(result)
     return true
   }
 
-  debugLog(state, 'interface-processing', `Interface processing incomplete. Bracket depth: ${bracketDepth}, `
+  debugLog('interface-processing', `Interface processing incomplete. Bracket depth: ${bracketDepth}, `
   + `Angle depth: ${angleDepth}, Has started body: ${hasStartedBody}`)
   return false
 }
@@ -1512,16 +1512,16 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
 }
 
 function processExport(line: string, state: ProcessingState): void {
-  debugLog(state, 'export-processing', `Processing export: ${line}`)
+  debugLog('export-processing', `Processing export: ${line}`)
 
   const exportMatch = line.match(/export\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?/)
   if (!exportMatch) {
-    debugLog(state, 'export-error', 'Failed to match export pattern')
+    debugLog('export-error', 'Failed to match export pattern')
     return
   }
 
   const [, exports, sourceModule] = exportMatch
-  debugLog(state, 'export-found', `Found exports: ${exports}, source: ${sourceModule || 'local'}`)
+  debugLog('export-found', `Found exports: ${exports}, source: ${sourceModule || 'local'}`)
 
   exports.split(',').forEach((exp) => {
     const [itemName, aliasName] = exp.trim().split(/\s+as\s+/).map(e => e.trim())
@@ -1533,12 +1533,12 @@ function processExport(line: string, state: ProcessingState): void {
       if (sourceModule) {
         state.importTracking.typeExportSources.set(exportedName, sourceModule)
       }
-      debugLog(state, 'export-type-processed', `Added exported type: ${exportedName}`)
+      debugLog('export-type-processed', `Added exported type: ${exportedName}`)
     }
     else {
       const exportedName = aliasName || itemName
       state.importTracking.exportedValues.add(exportedName)
-      debugLog(state, 'export-value-processed', `Added exported value: ${exportedName}`)
+      debugLog('export-value-processed', `Added exported value: ${exportedName}`)
     }
   })
 }
@@ -1584,11 +1584,10 @@ function processModuleBlock(cleanDeclaration: string, declarationText: string, s
 }
 
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
-  state.debug.currentProcessing = declarationWithoutComments
-  // debugLog(state, 'processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
+  // debugLog('processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
 
   if (declarationWithoutComments.startsWith('export default')) {
-    // debugLog(state, 'default-export', `Found default export: ${declarationWithoutComments}`)
+    // debugLog('default-export', `Found default export: ${declarationWithoutComments}`)
 
     // Store the complete default export statement
     const defaultExport = declarationWithoutComments.endsWith(';')
@@ -1596,12 +1595,12 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
       : `${declarationWithoutComments};`
 
     state.defaultExports.add(defaultExport)
-    // debugLog(state, 'default-export', `Added to default exports: ${defaultExport}`)
+    // debugLog('default-export', `Added to default exports: ${defaultExport}`)
     return
   }
 
   if (declarationWithoutComments.startsWith('declare module')) {
-    // debugLog(state, 'module-declaration', `Found module declaration: ${declarationWithoutComments}`)
+    // debugLog('module-declaration', `Found module declaration: ${declarationWithoutComments}`)
     const processed = processModule(fullDeclaration)
     state.dtsLines.push(processed)
     return
@@ -1611,7 +1610,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('export const')
     || declarationWithoutComments.startsWith('const')
   ) {
-    // debugLog(state, 'variable-declaration', `Found const declaration: ${declarationWithoutComments}`)
+    // debugLog('variable-declaration', `Found const declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.trimStart().startsWith('export')
     const processed = processVariable(fullDeclaration, isExported, state)
     state.dtsLines.push(processed)
@@ -1622,7 +1621,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('interface')
     || declarationWithoutComments.startsWith('export interface')
   ) {
-    // debugLog(state, 'interface-declaration', `Found interface declaration: ${declarationWithoutComments}`)
+    // debugLog('interface-declaration', `Found interface declaration: ${declarationWithoutComments}`)
     const processed = processInterface(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -1635,7 +1634,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('type')
     || declarationWithoutComments.startsWith('export type')
   ) {
-    // debugLog(state, 'type-declaration', `Found type declaration: ${declarationWithoutComments}`)
+    // debugLog('type-declaration', `Found type declaration: ${declarationWithoutComments}`)
     const processed = processType(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -1650,7 +1649,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('async function')
     || declarationWithoutComments.startsWith('export async function')
   ) {
-    // debugLog(state, 'function-declaration', `Found function declaration: ${declarationWithoutComments}`)
+    // debugLog('function-declaration', `Found function declaration: ${declarationWithoutComments}`)
 
     const processed = processFunction(
       fullDeclaration,
@@ -1663,19 +1662,19 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
 
   if (declarationWithoutComments.startsWith('export *')) {
     state.exportAllStatements.push(declarationWithoutComments)
-    // debugLog(state, 'export-all-declaration', `Found export all declaration: ${declarationWithoutComments}`)
+    // debugLog('export-all-declaration', `Found export all declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export {')) {
-    // debugLog(state, 'export-declaration', `Found export declaration: ${declarationWithoutComments}`)
+    // debugLog('export-declaration', `Found export declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export type {')) {
-    // debugLog(state, 'export-type-declaration', `Found export type declaration: ${declarationWithoutComments}`)
+    // debugLog('export-type-declaration', `Found export type declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
@@ -1686,7 +1685,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('abstract class')
     || declarationWithoutComments.startsWith('export abstract class')
   ) {
-    // debugLog(state, 'class-declaration', `Found class declaration: ${declarationWithoutComments}`)
+    // debugLog('class-declaration', `Found class declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1699,7 +1698,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('const enum')
     || declarationWithoutComments.startsWith('export const enum')
   ) {
-    // debugLog(state, 'enum-declaration', `Found enum declaration: ${declarationWithoutComments}`)
+    // debugLog('enum-declaration', `Found enum declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1710,7 +1709,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('namespace')
     || declarationWithoutComments.startsWith('export namespace')
   ) {
-    // debugLog(state, 'namespace-declaration', `Found namespace declaration: ${declarationWithoutComments}`)
+    // debugLog('namespace-declaration', `Found namespace declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1723,7 +1722,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('var')
     || declarationWithoutComments.startsWith('export var')
   ) {
-    // debugLog(state, 'variable-declaration', `Found variable declaration: ${declarationWithoutComments}`)
+    // debugLog('variable-declaration', `Found variable declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1742,24 +1741,24 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let inDeclaration = false
   state.currentScope = 'top'
 
-  debugLog(state, 'source-processing', `Processing source file with ${lines.length} lines`)
+  debugLog('source-processing', `Processing source file with ${lines.length} lines`)
 
   // First pass: process imports and type exports
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmedLine = line.trim()
 
-    debugLog(state, 'source-scan', `First pass - Line ${i + 1}: ${trimmedLine}`)
+    debugLog('source-scan', `First pass - Line ${i + 1}: ${trimmedLine}`)
 
     // Process imports
     if (line.includes('import ')) {
       processImports(line, state.importTracking)
-      debugLog(state, 'import', `Processed import: ${line}`)
+      debugLog('import', `Processed import: ${line}`)
     }
 
     // Process type exports
     if (trimmedLine.startsWith('export type {')) {
-      debugLog(state, 'type-export', `Found type export: ${trimmedLine}`)
+      debugLog('type-export', `Found type export: ${trimmedLine}`)
       processTypeExport(trimmedLine, state)
       state.dtsLines.push(line)
       continue
@@ -1767,7 +1766,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
     // Process regular exports that might include types
     if (trimmedLine.startsWith('export {')) {
-      debugLog(state, 'mixed-export', `Found mixed export: ${trimmedLine}`)
+      debugLog('mixed-export', `Found mixed export: ${trimmedLine}`)
       processExport(trimmedLine, state)
       state.dtsLines.push(line)
       continue
@@ -1800,7 +1799,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
 
     // Start of a new declaration
     if (!inDeclaration && isDeclarationStart(trimmedLine)) {
-      debugLog(state, 'declaration', `Found declaration start: ${trimmedLine}`)
+      debugLog('declaration', `Found declaration start: ${trimmedLine}`)
       inDeclaration = true
       currentBlock = [line]
       bracketDepth = openCurly - closeCurly
@@ -1823,7 +1822,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
         || (nextLine && !nextLine.startsWith('export') && !nextLine.startsWith('interface'))
 
       if (!shouldContinue || isComplete) {
-        debugLog(state, 'declaration-complete', `Declaration complete at line ${i + 1}`)
+        debugLog('declaration-complete', `Declaration complete at line ${i + 1}`)
         processBlock(currentBlock, currentComments, state)
         currentBlock = []
         currentComments = []
@@ -1844,14 +1843,14 @@ function processSourceFile(content: string, state: ProcessingState): void {
  * Process imports and track their usage
  */
 function processImports(line: string, state: ImportTrackingState): void {
-  debugLog(undefined, 'import-processing', `Processing import line: ${line}`)
+  debugLog('import-processing', `Processing import line: ${line}`)
 
   // Handle type imports
   const typeImportMatch = line.match(/import\s+type\s*(?:\{([^}]+)\}|([^;\s]+))\s*from\s*['"]([^'"]+)['"]/)
   if (typeImportMatch) {
     const [, bracedTypes, singleType, module] = typeImportMatch
     const types = bracedTypes || singleType
-    debugLog(undefined, 'import-type', `Found type imports from ${module}: ${types}`)
+    debugLog('import-type', `Found type imports from ${module}: ${types}`)
 
     if (!state.typeImports.has(module)) {
       state.typeImports.set(module, new Set())
@@ -1862,10 +1861,10 @@ function processImports(line: string, state: ImportTrackingState): void {
         const [original, alias] = type.trim().split(/\s+as\s+/).map(n => n.trim())
         state.typeImports.get(module)!.add(original)
         state.typeExportSources.set(original, module)
-        debugLog(undefined, 'import-type-tracking', `Tracking type ${original} from ${module}`)
+        debugLog('import-type-tracking', `Tracking type ${original} from ${module}`)
         if (alias) {
           state.valueAliases.set(alias, original)
-          debugLog(undefined, 'import-alias', `Registered type alias: ${original} as ${alias}`)
+          debugLog('import-alias', `Registered type alias: ${original} as ${alias}`)
         }
       })
     }
@@ -1876,7 +1875,7 @@ function processImports(line: string, state: ImportTrackingState): void {
   const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (valueImportMatch) {
     const [, names, module] = valueImportMatch
-    debugLog(undefined, 'import-value', `Found value imports from ${module}: ${names}`)
+    debugLog('import-value', `Found value imports from ${module}: ${names}`)
 
     if (!state.valueImports.has(module)) {
       state.valueImports.set(module, new Set())
@@ -1893,7 +1892,7 @@ function processImports(line: string, state: ImportTrackingState): void {
         }
         state.typeImports.get(module)!.add(typeName)
         state.typeExportSources.set(typeName, module)
-        debugLog(undefined, 'import-type-in-value', `Found inline type import: ${typeName} from ${module}`)
+        debugLog('import-type-in-value', `Found inline type import: ${typeName} from ${module}`)
       }
       else {
         // Add the original name to valueImports
@@ -1909,7 +1908,7 @@ function processImports(line: string, state: ImportTrackingState): void {
           }
           // Also add the alias to the imports
           state.valueImports.get(module)!.add(itemName)
-          debugLog(undefined, 'import-alias', `Registered value alias: ${itemName} as ${alias}`)
+          debugLog('import-alias', `Registered value alias: ${itemName} as ${alias}`)
         }
       }
     })
@@ -1937,16 +1936,16 @@ function processType(declaration: string, isExported = true): string {
 }
 
 function processTypeExport(line: string, state: ProcessingState): void {
-  debugLog(state, 'type-export-processing', `Processing type export: ${line}`)
+  debugLog('type-export-processing', `Processing type export: ${line}`)
 
   const typeExportMatch = line.match(/export\s+type\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?/)
   if (!typeExportMatch) {
-    debugLog(state, 'type-export-error', 'Failed to match type export pattern')
+    debugLog('type-export-error', 'Failed to match type export pattern')
     return
   }
 
   const [, types, sourceModule] = typeExportMatch
-  debugLog(state, 'type-export-found', `Found types: ${types}, source: ${sourceModule || 'local'}`)
+  debugLog('type-export-found', `Found types: ${types}, source: ${sourceModule || 'local'}`)
 
   types.split(',').forEach((typeExport) => {
     const [typeName, aliasName] = typeExport.trim().split(/\s+as\s+/).map(t => t.trim())
@@ -1956,7 +1955,7 @@ function processTypeExport(line: string, state: ProcessingState): void {
     if (sourceModule) {
       state.importTracking.typeExportSources.set(exportedName, sourceModule)
     }
-    debugLog(state, 'type-export-processed', `Added exported type: ${exportedName}`)
+    debugLog('type-export-processed', `Added exported type: ${exportedName}`)
   })
 }
 
@@ -2018,7 +2017,7 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
-  debugLog(undefined, 'process-function-start', `Starting to process: ${declaration}`)
+  debugLog('process-function-start', `Starting to process: ${declaration}`)
 
   // Normalize while preserving structure
   const normalizedDeclaration = declaration
@@ -2027,18 +2026,18 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
     .join(' ')
     .replace(/\s+/g, ' ')
 
-  debugLog(undefined, 'process-function-normalized', `Normalized declaration: ${normalizedDeclaration}`)
+  debugLog('process-function-normalized', `Normalized declaration: ${normalizedDeclaration}`)
 
   const signature = extractFunctionSignature(normalizedDeclaration)
-  debugLog(undefined, 'process-function-signature', `Extracted signature: ${JSON.stringify(signature, null, 2)}`)
+  debugLog('process-function-signature', `Extracted signature: ${JSON.stringify(signature, null, 2)}`)
 
   // Extra validation
   if (!signature.params && normalizedDeclaration.includes('(')) {
-    debugLog(undefined, 'process-function-warning', 'Found parentheses but no params extracted')
+    debugLog('process-function-warning', 'Found parentheses but no params extracted')
   }
 
   if (signature.returnType === 'void' && normalizedDeclaration.includes('):')) {
-    debugLog(undefined, 'process-function-warning', 'Found return type indicator but extracted void')
+    debugLog('process-function-warning', 'Found return type indicator but extracted void')
   }
 
   const parts = [
@@ -2052,7 +2051,7 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
   ]
 
   const result = parts.filter(Boolean).join('')
-  debugLog(undefined, 'process-function-final', `Final declaration: ${result}`)
+  debugLog('process-function-final', `Final declaration: ${result}`)
   return result
 }
 
@@ -2073,7 +2072,7 @@ function getCleanDeclaration(declaration: string): string {
 }
 
 function processGeneratorFunction(declaration: string, state?: ProcessingState): string {
-  debugLog(state, 'generator-function', `Processing generator function: ${declaration}`)
+  debugLog('generator-function', `Processing generator function: ${declaration}`)
 
   // Clean up the declaration but keep info for processing
   const cleanDeclaration = declaration
@@ -2084,7 +2083,7 @@ function processGeneratorFunction(declaration: string, state?: ProcessingState):
   // Extract function name
   const nameMatch = cleanDeclaration.match(/function\*\s+([^(<\s]+)/)
   if (!nameMatch) {
-    debugLog(state, 'generator-function', 'Failed to match generator function name')
+    debugLog('generator-function', 'Failed to match generator function name')
     return ''
   }
 
@@ -2208,14 +2207,14 @@ function processModule(declaration: string): string {
 }
 
 function processObjectMethod(declaration: string): ProcessedMethod {
-  // debugLog(state, 'process-method-start', `Processing method: ${declaration}`)
+  // debugLog('process-method-start', `Processing method: ${declaration}`)
 
   // Regex to match the method declaration
   const methodPattern = /^(?:async\s+)?(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)\s*(?::\s*([^ {][^;{]*))?/
   const match = declaration.match(methodPattern)
 
   if (!match) {
-    // debugLog(state, 'process-method-error', `Failed to parse method declaration: ${declaration}`)
+    // debugLog('process-method-error', `Failed to parse method declaration: ${declaration}`)
     return {
       name: declaration.split('(')[0].trim().replace(/^async\s+/, ''),
       signature: '() => unknown',
@@ -2234,7 +2233,7 @@ function processObjectMethod(declaration: string): ProcessedMethod {
     returnType = `Promise<${returnType}>`
   }
 
-  // debugLog(state, 'process-method-parsed', `Name: ${name}, Generics: ${generics}, Params: ${params}, ReturnType: ${returnType}`)
+  // debugLog('process-method-parsed', `Name: ${name}, Generics: ${generics}, Params: ${params}, ReturnType: ${returnType}`)
 
   const cleanParams = cleanParameterTypes(params || '')
   const signature = [
@@ -2247,12 +2246,12 @@ function processObjectMethod(declaration: string): ProcessedMethod {
     .join(' ')
     .trim()
 
-  // debugLog(state, 'process-method-result', `Generated signature for ${name}: ${signature}`)
+  // debugLog('process-method-result', `Generated signature for ${name}: ${signature}`)
   return { name, signature }
 }
 
 function processObjectProperties(content: string, state?: ProcessingState, indentLevel = 0): Array<{ key: string, value: string }> {
-  // debugLog(state, 'process-props', `Processing object properties at indent level ${indentLevel}`)
+  // debugLog('process-props', `Processing object properties at indent level ${indentLevel}`)
   const properties: Array<{ key: string, value: string }> = []
   const cleanContent = content.slice(1, -1).trim()
   if (!cleanContent)
@@ -2293,7 +2292,7 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
         if (char === ':' && !colonFound) {
           colonFound = true
           currentKey = buffer.trim()
-          // debugLog(state, 'process-props-key', `Found key: ${currentKey}`)
+          // debugLog('process-props-key', `Found key: ${currentKey}`)
           buffer = ''
           isParsingKey = false
           continue
@@ -2301,13 +2300,13 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
         else if ((char === ',' || char === ';') && !isParsingKey) {
           if (currentKey) {
             const trimmedBuffer = buffer.trim()
-            // debugLog(state, 'process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
+            // debugLog('process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
 
             const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
-            // debugLog(state, 'method-check', `Checking if method declaration: ${currentKey}`)
+            // debugLog('method-check', `Checking if method declaration: ${currentKey}`)
 
             if (isMethodDecl) {
-              // debugLog(state, 'process-props-method', `Detected method: ${currentKey} with body length: ${trimmedBuffer.length}`)
+              // debugLog('process-props-method', `Detected method: ${currentKey} with body length: ${trimmedBuffer.length}`)
               const { name, signature } = processObjectMethod(currentKey)
               properties.push({ key: name, value: signature })
             }
@@ -2333,7 +2332,7 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
     const trimmedBuffer = buffer.trim()
     const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
     if (isMethodDecl) {
-      // debugLog(state, 'process-props-method', `Detected final method: ${currentKey}`)
+      // debugLog('process-props-method', `Detected final method: ${currentKey}`)
       const { name, signature } = processObjectMethod(currentKey)
       properties.push({ key: name, value: signature })
     }
@@ -2343,35 +2342,35 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
     }
   }
 
-  // debugLog(state, 'process-props', `Processed ${properties.length} properties`)
+  // debugLog('process-props', `Processed ${properties.length} properties`)
   return properties
 }
 
 function processPropertyValue(value: string, indentLevel: number, state?: ProcessingState): string {
   const trimmed = value.trim()
-  // debugLog(state, 'process-value', `Processing value: ${trimmed.substring(0, 100)}...`)
+  // debugLog('process-value', `Processing value: ${trimmed.substring(0, 100)}...`)
 
   // Check if this is an object with method declarations first
   if (trimmed.startsWith('{') && trimmed.includes('(') && trimmed.includes(')') && trimmed.includes(':')) {
-    // debugLog(state, 'process-value', 'Detected potential object with methods')
+    // debugLog('process-value', 'Detected potential object with methods')
     return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
   // Handle arrays before methods since they might contain method-like structures
   if (trimmed.startsWith('[')) {
-    // debugLog(state, 'process-value', 'Detected array')
+    // debugLog('process-value', 'Detected array')
     return inferArrayType(trimmed, state, true)
   }
 
   // Handle regular objects
   if (trimmed.startsWith('{')) {
-    // debugLog(state, 'process-value', 'Detected object')
+    // debugLog('process-value', 'Detected object')
     return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
   // Handle function expressions
   if (trimmed.includes('=>') || trimmed.includes('function')) {
-    // debugLog(state, 'process-value', 'Detected function expression')
+    // debugLog('process-value', 'Detected function expression')
     const funcType = extractFunctionType(trimmed)
     return funcType || '(...args: any[]) => unknown'
   }
@@ -2433,20 +2432,9 @@ function trackValueUsage(content: string, state: ImportTrackingState): void {
   }
 }
 
-function debugLog(state: ProcessingState | undefined, category: string, message: string): void {
+function debugLog(category: string, message: string): void {
   // eslint-disable-next-line no-console
   console.debug(`[dtsx:${category}] ${message}`)
-
-  // Track in debug state
-  if (category === 'default-export') {
-    state?.debug.exports.default.push(message)
-  }
-  else if (category === 'named-export') {
-    state?.debug.exports.named.push(message)
-  }
-  else if (category === 'declaration') {
-    state?.debug.declarations.push(message)
-  }
 }
 
 /**
@@ -2508,7 +2496,7 @@ function splitArrayElements(content: string): string[] {
       else if (char === ',' && depth === 0) {
         const trimmed = current.trim()
         if (trimmed) {
-          // debugLog(state, 'array-split', `Found element: ${trimmed}`)
+          // debugLog('array-split', `Found element: ${trimmed}`)
           elements.push(trimmed)
         }
         current = ''
@@ -2522,7 +2510,7 @@ function splitArrayElements(content: string): string[] {
   // Add final element
   const trimmed = current.trim()
   if (trimmed) {
-    // debugLog(state, 'array-split', `Found element: ${trimmed}`)
+    // debugLog('array-split', `Found element: ${trimmed}`)
     elements.push(trimmed)
   }
 

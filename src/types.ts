@@ -119,15 +119,6 @@ export interface ProcessingState {
   } | null
   importTracking: ImportTrackingState
   defaultExports: Set<string>
-  debug: {
-    exports: {
-      default: string[]
-      named: string[]
-      all: string[]
-    }
-    declarations: string[]
-    currentProcessing: string
-  }
   currentScope: 'top' | 'function'
 }
 
