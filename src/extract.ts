@@ -663,15 +663,6 @@ function createProcessingState(): ProcessingState {
     declarationBuffer: null,
     importTracking: createImportTrackingState(),
     defaultExports: new Set(),
-    debug: {
-      exports: {
-        default: [],
-        named: [],
-        all: [],
-      },
-      declarations: [],
-      currentProcessing: '',
-    },
     currentScope: 'top',
   }
 }
@@ -1322,7 +1313,7 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState):
   // First check for generator functions
   if (/^(?:export\s+)?(?:async\s+)?function\s*\*/.test(cleanDeclaration)) {
     debugLog('block-processing', 'Processing generator function declaration')
-    const processed = processGeneratorFunction(cleanDeclaration, state)
+    const processed = processGeneratorFunction(cleanDeclaration)
     if (processed) {
       state.dtsLines.push(processed)
       return true
@@ -1503,11 +1494,7 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
   }
 
   // Log unhandled export
-  debugLog(
-    state,
-    'processing',
-    `Unhandled exported declaration type: ${cleanDeclaration.split('\n')[0]}`,
-  )
+  debugLog('processing', `Unhandled exported declaration type: ${cleanDeclaration.split('\n')[0]}`)
   return true
 }
 
@@ -2071,7 +2058,7 @@ function getCleanDeclaration(declaration: string): string {
   return lines.slice(startIndex).join('\n').trim()
 }
 
-function processGeneratorFunction(declaration: string, state?: ProcessingState): string {
+function processGeneratorFunction(declaration: string): string {
   debugLog('generator-function', `Processing generator function: ${declaration}`)
 
   // Clean up the declaration but keep info for processing
