@@ -1,32 +1,6 @@
 import type { DtsGenerationConfig } from './types'
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 import process from 'node:process'
-import { deepMerge } from './utils'
-
-interface Options<T> {
-  name: string
-  cwd?: string
-  defaultConfig: T
-}
-
-export async function loadConfig<T extends Record<string, unknown>>({ name, cwd, defaultConfig }: Options<T>): Promise<T> {
-  const c = cwd ?? process.cwd()
-  const configPath = resolve(c, `${name}.config`)
-
-  if (existsSync(configPath)) {
-    try {
-      const importedConfig = await import(configPath)
-      const loadedConfig = importedConfig.default || importedConfig
-      return deepMerge(defaultConfig, loadedConfig)
-    }
-    catch (error) {
-      console.error(`Error loading config from ${configPath}:`, error)
-    }
-  }
-
-  return defaultConfig
-}
+import { loadConfig } from 'bun-config'
 
 // Get loaded config
 // eslint-disable-next-line antfu/no-top-level-await

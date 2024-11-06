@@ -1103,13 +1103,13 @@ function inferTypeFromDefaultValue(defaultValue: string): string {
 /**
  * Check if a line is a JSDoc comment
  */
-export function isJSDocComment(line: string): boolean {
+function isJSDocComment(line: string): boolean {
   const trimmed = line.trim()
   const isJsDoc = trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
   return isJsDoc
 }
 
-export function isDefaultExport(line: string): boolean {
+function isDefaultExport(line: string): boolean {
   // Handle both inline and multi-line default exports
   return line.trim().startsWith('export default')
 }
@@ -1532,7 +1532,7 @@ function processTypeBlock(cleanDeclaration: string, declarationText: string, sta
 }
 
 function processDefaultExportBlock(cleanDeclaration: string, state: ProcessingState): boolean {
-  if (!cleanDeclaration.startsWith('export default'))
+  if (!isDefaultExport(cleanDeclaration))
     return false
 
   const exportedValue = cleanDeclaration.replace(/^export\s+default\s+/, '').replace(/;$/, '')
@@ -1654,7 +1654,7 @@ function processModuleBlock(cleanDeclaration: string, declarationText: string, s
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
   // debugLog('processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
 
-  if (declarationWithoutComments.startsWith('export default')) {
+  if (isDefaultExport(declarationWithoutComments)) {
     // debugLog('default-export', `Found default export: ${declarationWithoutComments}`)
 
     // Store the complete default export statement
