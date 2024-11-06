@@ -1,5 +1,6 @@
 /* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
 import type { FunctionSignature, ImportTrackingState, ProcessedMethod, ProcessingState } from './types'
+import { config } from './config'
 
 function cleanParameterTypes(params: string): string {
   debugLog('params', `Cleaning parameters: ${params}`)
@@ -2502,8 +2503,10 @@ function trackValueUsage(content: string, state: ImportTrackingState): void {
 }
 
 function debugLog(category: string, message: string): void {
-  // eslint-disable-next-line no-console
-  console.debug(`[dtsx:${category}] ${message}`)
+  if (config.verbose) {
+    // eslint-disable-next-line no-console
+    console.debug(`[dtsx:${category}] ${message}`)
+  }
 }
 
 /**

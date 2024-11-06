@@ -7,6 +7,7 @@ const config: DtsGenerationOption = {
   outdir: './dist',
   keepComments: true,
   clean: true,
+  verbose: false,
 
   // bundle: true,
   // minify: true,
