@@ -15,6 +15,7 @@ const defaultOptions: DtsGenerationConfig = {
   keepComments: true,
   clean: false,
   tsconfigPath: 'tsconfig.json',
+  verbose: false,
 }
 
 cli
@@ -29,7 +30,7 @@ cli
   .option('--keep-comments', 'Keep comments in generated .d.ts files', { default: defaultOptions.keepComments })
   .option('--clean', 'Clean output directory before generation', { default: defaultOptions.clean })
   .option('--tsconfig <path>', 'Path to tsconfig.json', { default: defaultOptions.tsconfigPath })
-  // .option('--verbose', 'Enable verbose logging', { default: false })
+  .option('--verbose', 'Enable verbose logging', { default: defaultOptions.verbose })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .action(async (options: DtsGenerationOption) => {
@@ -42,11 +43,8 @@ cli
         tsconfigPath: resolve(options.tsconfigPath || defaultOptions.tsconfigPath),
         keepComments: options.keepComments || defaultOptions.keepComments,
         clean: options.clean || defaultOptions.clean,
+        verbose: options.verbose || defaultOptions.verbose,
       }
-
-      // if (options.verbose) {
-      //   console.log('Using options:', mergedOptions)
-      // }
 
       await generate(config)
     }
