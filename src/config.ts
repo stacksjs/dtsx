@@ -1,4 +1,5 @@
 import type { DtsGenerationConfig } from './types'
+import { resolve } from 'node:path'
 import process from 'node:process'
 // @ts-expect-error - types are missing for now
 import { loadConfig } from 'bun-config'
@@ -7,7 +8,7 @@ import { loadConfig } from 'bun-config'
 // eslint-disable-next-line antfu/no-top-level-await
 export const config: DtsGenerationConfig = await loadConfig({
   name: 'dts',
-  cwd: process.cwd(),
+  cwd: resolve('./', __dirname.includes('node_modules') ? '../../..' : '..'),
   defaultConfig: {
     cwd: process.cwd(),
     root: './src',

@@ -1,7 +1,7 @@
 import type { DtsGenerationOption } from './src/types'
 
 const config: DtsGenerationOption = {
-  cwd: './',
+  cwd: __dirname,
   root: './src',
   entrypoints: ['**/*.ts'],
   outdir: './dist',
