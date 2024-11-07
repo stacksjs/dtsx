@@ -6,6 +6,22 @@ import { config } from './config'
 import { extract } from './extract'
 import { checkIsolatedDeclarations, getAllTypeScriptFiles, writeToFile } from './utils'
 
+/**
+ * Generate declaration files from TypeScript files.
+ * @param options - Generation options.
+ * @returns Promise<void>
+ * @example ```ts
+ * // Generate declaration files from all TypeScript files in the src directory.
+ * const options = {
+ *   cwd: process.cwd(),
+ *   root: './src',
+ *   outdir: './dist',
+ *   clean: true,
+ *   verbose: false,
+ * }
+ *
+ * await generateDeclarationsFromFiles(options)
+ */
 export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
   try {
     // Check for isolatedModules setting
@@ -51,6 +67,22 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
   }
 }
 
+/**
+ * Generate TypeScript declaration files.
+ * @param options - Generation options.
+ * @returns Promise<void>
+ * @example ```ts
+ * // Generate declaration files from all TypeScript files in the src directory.
+ * const options = {
+ *   cwd: process.cwd(),
+ *   root: './src',
+ *   outdir: './dist',
+ *   clean: true,
+ *   verbose: false,
+ * }
+ *
+ * await generate(options)
+ */
 export async function generate(options?: DtsGenerationOption): Promise<void> {
   await generateDeclarationsFromFiles({ ...config, ...options })
 }
