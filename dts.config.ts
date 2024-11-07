@@ -5,10 +5,10 @@ const config: DtsGenerationOption = {
   root: './src',
   entrypoints: ['**/*.ts'],
   outdir: './dist',
-  keepComments: true,
   clean: true,
   verbose: false,
 
+  // keepComments: true,
   // bundle: true,
   // minify: true,
 }

@@ -21,10 +21,10 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
 
     let files: string[]
     if (options?.entrypoints) {
-      files = await glob(options.entrypoints, { cwd: options.root ?? options.cwd, absolute: true })
+      files = await glob(options.entrypoints, { cwd: options.root ?? `${options.cwd}/src`, absolute: true })
     }
     else {
-      files = await getAllTypeScriptFiles(options?.root)
+      files = await getAllTypeScriptFiles(options?.root ?? `${options?.cwd}/src`)
     }
 
     for (const file of files) {
