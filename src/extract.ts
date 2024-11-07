@@ -1104,11 +1104,11 @@ function inferTypeFromDefaultValue(defaultValue: string): string {
 /**
  * Check if a line is a JSDoc comment
  */
-function isJSDocComment(line: string): boolean {
-  const trimmed = line.trim()
-  const isJsDoc = trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
-  return isJsDoc
-}
+// function isJSDocComment(line: string): boolean {
+//   const trimmed = line.trim()
+//   const isJsDoc = trimmed.startsWith('/**') || trimmed.startsWith('*') || trimmed.startsWith('*/')
+//   return isJsDoc
+// }
 
 function isDefaultExport(line: string): boolean {
   // Handle both inline and multi-line default exports
