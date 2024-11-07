@@ -51,7 +51,6 @@
     "lint": "bunx eslint .",
     "lint:fix": "bunx eslint . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
-    "commit": "git cz",
     "changelog": "bunx changelogen --output CHANGELOG.md",
     "prepublishOnly": "bun --bun run build",
     "release": "bun run changelog && bunx bumpp package.json --all",
@@ -75,10 +74,5 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": "bunx eslint . --fix"
-  },
-  "config": {
-    "commitizen": {
-      "path": "node_modules/cz-git"
-    }
   }
 }
