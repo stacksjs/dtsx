@@ -1,6 +1,7 @@
 import type { DtsGenerationConfig, DtsGenerationOption } from './types'
 import { mkdir, rm } from 'node:fs/promises'
 import { dirname, join, parse, relative } from 'node:path'
+import process from 'node:process'
 import { glob } from 'tinyglobby'
 import { config } from './config'
 import { extract } from './extract'
@@ -35,12 +36,14 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
       await rm(options.outdir, { recursive: true, force: true })
     }
 
+    const cwd = options?.cwd || process.cwd()
     let files: string[]
+
     if (options?.entrypoints) {
-      files = await glob(options.entrypoints, { cwd: options.root ?? `${options.cwd}/src`, absolute: true })
+      files = await glob(options.entrypoints, { cwd: options.root ?? `${cwd}/src`, absolute: true })
     }
     else {
-      files = await getAllTypeScriptFiles(options?.root ?? `${options?.cwd}/src`)
+      files = await getAllTypeScriptFiles(options?.root ?? `${cwd}/src`)
     }
 
     for (const file of files) {
@@ -51,11 +54,8 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
         const parsedPath = parse(relativePath)
         const outputPath = join(options?.outdir ?? './dist', `${parsedPath.name}.d.ts`)
 
-        // Ensure the directory exists
-        await mkdir(dirname(outputPath), { recursive: true })
-
-        // Write the declarations without additional formatting
-        await writeToFile(outputPath, fileDeclarations)
+        await mkdir(dirname(outputPath), { recursive: true }) // Ensure the directory exists
+        await writeToFile(outputPath, fileDeclarations) // Write the declarations without additional formatting
       }
       else {
         console.warn(`No declarations extracted for ${file}`)

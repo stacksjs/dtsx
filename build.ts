@@ -1,6 +1,6 @@
 import { log } from '@stacksjs/cli'
 import { fs } from '@stacksjs/storage'
-import { generateDeclarationsFromFiles } from './src/generate'
+import { dts } from 'bun-plugin-dtsx'
 
 log.info('Building...')
 
@@ -12,15 +12,8 @@ await Bun.build({
   format: 'esm',
   target: 'bun',
   minify: true,
+  plugins: [dts()],
 })
-
-try {
-  await generateDeclarationsFromFiles()
-  console.log('Generated declarations')
-}
-catch (error) {
-  console.error('Error generating declarations:', error)
-}
 
 // prepare dist for publishing
 await fs.move('./dist/bin/cli.js', './dist/cli.js')

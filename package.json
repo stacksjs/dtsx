@@ -66,6 +66,7 @@
     "@stacksjs/eslint-config": "^3.8.1-beta.2",
     "@types/bun": "^1.1.13",
     "bun-config": "^0.1.1",
+    "bun-plugin-dtsx": "^0.21.2",
     "tinyglobby": "^0.2.10",
     "vitepress": "^1.5.0"
   },
@@ -73,6 +74,6 @@
     "pre-commit": "bunx lint-staged"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": "bunx eslint . --fix"
+    "*.{js,ts}": "bunx eslint . --fix"
   }
 }

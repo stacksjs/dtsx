@@ -8,7 +8,6 @@ import { loadConfig } from 'bun-config'
 // eslint-disable-next-line antfu/no-top-level-await
 export const config: DtsGenerationConfig = await loadConfig({
   name: 'dts',
-  cwd: resolve('./', __dirname.includes('node_modules') ? '../../..' : '..'),
   defaultConfig: {
     cwd: process.cwd(),
     root: './src',
