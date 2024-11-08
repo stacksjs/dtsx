@@ -1,6 +1,22 @@
 # Changelog
 
 
+## v0.5.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.0...main)
+
+### 🏡 Chore
+
+- Fix lint issues ([6d8ba64](https://github.com/stacksjs/dtsx/commit/6d8ba64))
+- Add some jsdocs ([de495ee](https://github.com/stacksjs/dtsx/commit/de495ee))
+- Add two examples ([0e996ab](https://github.com/stacksjs/dtsx/commit/0e996ab))
+- Remove unused script ([c2ecc45](https://github.com/stacksjs/dtsx/commit/c2ecc45))
+- Several minor adjustments ([a6ef9a1](https://github.com/stacksjs/dtsx/commit/a6ef9a1))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.4.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.4.0...main)

@@ -24,7 +24,6 @@ export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): 
   try {
     const cwd = options?.cwd || process.cwd()
     const tsconfigPath = options?.tsconfigPath || join(cwd, 'tsconfig.json')
-    console.log('tsconfigPath', tsconfigPath)
     const tsconfig = await import(tsconfigPath)
 
     return tsconfig.compilerOptions?.isolatedDeclarations === true
