@@ -2458,13 +2458,31 @@ function processPropertyValue(value: string, indentLevel: number, state?: Proces
  * Track type usage in declarations
  */
 function trackTypeUsage(content: string, state: ImportTrackingState): void {
-  // Only look for capitalized type references that are actually used in declarations
+  // Existing pattern for types in declarations
   const typePattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
-  let match
 
+  // Pattern for parameterized types like Partial<T>
+  const parameterizedTypePattern = /(?:^|[\s<,])\s*([A-Z][a-zA-Z0-9]*)(?:[<>,\s]|$)/g
+
+  // Track both patterns
+  let match
   while ((match = typePattern.exec(content)) !== null) {
     const typeName = match[1].split('<')[0] // Handle generic types
     state.usedTypes.add(typeName)
+  }
+
+  while ((match = parameterizedTypePattern.exec(content)) !== null) {
+    const typeName = match[1]
+    state.usedTypes.add(typeName)
+  }
+
+  // special handling for types used in Partial<T> and similar constructs
+  const partialPattern = /Partial<([^>]+)>/g
+  while ((match = partialPattern.exec(content)) !== null) {
+    const innerType = match[1].trim()
+    if (/^[A-Z]/.test(innerType)) { // Only track if it starts with capital letter
+      state.usedTypes.add(innerType)
+    }
   }
 }
 
