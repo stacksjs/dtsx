@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.5.1...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.1...main)
+
+### 🏡 Chore
+
+- Resolve lint errors ([fa023d4](https://github.com/stacksjs/dtsx/commit/fa023d4))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.5.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.0...main)
