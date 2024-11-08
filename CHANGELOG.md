@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.5.2...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.2...main)
+
+### 🏡 Chore
+
+- Update `bun-plugin-dtsx` ([0d85166](https://github.com/stacksjs/dtsx/commit/0d85166))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.5.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.1...main)
