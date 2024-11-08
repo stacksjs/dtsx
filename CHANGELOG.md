@@ -1,6 +1,19 @@
 # Changelog
 
 
+## v0.5.3...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.3...main)
+
+### 🏡 Chore
+
+- Wip ([fdbb721](https://github.com/stacksjs/dtsx/commit/fdbb721))
+- Improve `trackTypeUsage` ([0691934](https://github.com/stacksjs/dtsx/commit/0691934))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.5.2...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.2...main)
