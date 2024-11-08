@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.5.4...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.4...main)
+
+### 🏡 Chore
+
+- Add tests ([ba4db2f](https://github.com/stacksjs/dtsx/commit/ba4db2f))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.5.3...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.3...main)
