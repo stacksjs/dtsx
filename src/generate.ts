@@ -25,10 +25,10 @@ import { checkIsolatedDeclarations, getAllTypeScriptFiles, writeToFile } from '.
  */
 export async function generateDeclarationsFromFiles(options?: DtsGenerationConfig): Promise<void> {
   try {
-    // Check for isolatedModules setting
+    // Check for isolatedDeclarations setting
     const isIsolatedDeclarations = await checkIsolatedDeclarations(options)
     if (!isIsolatedDeclarations) {
-      console.error('Error: isolatedModules must be set to true in your tsconfig.json. Ensure `tsc --noEmit` does not output any errors.')
+      console.error('Error: isolatedDeclarations must be set to true in your tsconfig.json. Ensure `tsc --noEmit` does not output any errors.')
       return
     }
 
