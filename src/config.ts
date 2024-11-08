@@ -1,5 +1,4 @@
 import type { DtsGenerationConfig } from './types'
-import { resolve } from 'node:path'
 import process from 'node:process'
 // @ts-expect-error - types are missing for now
 import { loadConfig } from 'bun-config'

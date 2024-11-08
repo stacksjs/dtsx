@@ -1,5 +1,6 @@
 import { log } from '@stacksjs/cli'
 import { fs } from '@stacksjs/storage'
+// @ts-expect-error - types are missing for now
 import { dts } from 'bun-plugin-dtsx'
 
 log.info('Building...')
