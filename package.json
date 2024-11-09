@@ -61,12 +61,12 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@stacksjs/cli": "^0.67.0",
-    "@stacksjs/development": "^0.67.0",
+    "@stacksjs/cli": "^0.68.2",
+    "@stacksjs/development": "^0.68.2",
     "@stacksjs/eslint-config": "^3.8.1-beta.2",
     "@types/bun": "^1.1.13",
-    "bun-config": "^0.1.4",
-    "bun-plugin-dtsx": "^0.21.7",
+    "bun-config": "^0.1.5",
+    "bun-plugin-dtsx": "^0.21.8",
     "tinyglobby": "^0.2.10",
     "vitepress": "^1.5.0"
   },
