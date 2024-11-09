@@ -640,12 +640,17 @@ function formatOutput(state: ProcessingState): string {
   // Deduplicate and format imports
   state.dtsLines
     .filter(line => line.startsWith('import'))
-    .forEach(imp => imports.add(imp.replace(/;+$/, ''))) // Remove any existing semicolons
+    .forEach(imp => imports.add(imp.replace(/;+$/, '')))
 
-  // Get all non-import lines and clean up semicolons
+  // Get all non-import lines, clean up semicolons and comments
   const declarations = state.dtsLines
     .filter(line => !line.startsWith('import'))
     .map((line) => {
+      // Remove any standalone comment lines
+      if (line.trim().startsWith('/*') || line.trim().startsWith('*') || line.trim().startsWith('//')) {
+        return ''
+      }
+
       // Clean up any multiple semicolons and ensure all declarations end with one
       const trimmed = line.trim()
       if (!trimmed)
@@ -663,10 +668,11 @@ function formatOutput(state: ProcessingState): string {
 
       return trimmed.replace(/;+$/, ';')
     })
+    .filter(line => line.trim()) // Remove empty lines after comment removal
 
   // Add default exports from state.defaultExports
   const defaultExports = Array.from(state.defaultExports)
-    .map(exp => exp.trim().replace(/;+$/, ';')) // Ensure single semicolon
+    .map(exp => exp.trim().replace(/;+$/, ';'))
 
   // Reconstruct the output with proper line breaks and semicolons
   const output = [
@@ -681,11 +687,11 @@ function formatOutput(state: ProcessingState): string {
   ]
 
   // Remove comments, normalize whitespace, and ensure single trailing newline
-  return `${output
-    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
+  return output
+    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')) // Remove any inline comments
     .filter(line => line.trim() || line === '') // Keep empty lines for spacing
     .join('\n')
-  }`.trim()
+    .trim()
 }
 
 /**
@@ -1233,65 +1239,18 @@ function normalizeTypeReference(value: string): string {
 function processBlock(lines: string[], comments: string[], state: ProcessingState): void {
   debugLog('block-processing', 'Starting block processing')
 
-  // Read ahead to capture the entire block
-  const allLines: string[] = []
-  let bracketDepth = 0
-  let angleDepth = 0
-  let i = 0
-  let hasFoundBody = false
-  const totalLines = lines.length
+  // Clean up comments from the block content
+  const cleanedLines = lines.filter((line) => {
+    const trimmed = line.trim()
+    return !trimmed.startsWith('/*') && !trimmed.startsWith('*') && !trimmed.startsWith('//')
+  })
 
-  debugLog('block-scan', `Total available lines: ${totalLines}`)
-
-  // First, collect all lines that belong to this block
-  while (i < totalLines) {
-    const line = lines[i]
-    const trimmedLine = line.trim()
-
-    // Track brackets and angles before adding the line
-    const openCurly = (line.match(/\{/g) || []).length
-    const closeCurly = (line.match(/\}/g) || []).length
-    const openAngle = (line.match(/</g) || []).length
-    const closeAngle = (line.match(/>/g) || []).length
-
-    debugLog('block-scan-details', `Scanning line ${i + 1}: "${trimmedLine}" `
-    + `Current depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
-    + `Found body: ${hasFoundBody} `
-    + `Changes - Curly: +${openCurly}/-${closeCurly}, Angle: +${openAngle}/-${closeAngle}`)
-
-    // Add the line to our collection
-    allLines.push(line)
-
-    // Update depths
-    bracketDepth += openCurly - closeCurly
-    angleDepth += openAngle - closeAngle
-
-    // Track if we've found the interface body
-    if (trimmedLine.includes('{')) {
-      hasFoundBody = true
-      debugLog('block-scan', `Found body start at line ${i + 1}`)
-    }
-
-    debugLog('block-collection', `Line ${i + 1}: "${trimmedLine}" `
-    + `Updated depths - Bracket: ${bracketDepth}, Angle: ${angleDepth} `
-    + `Found body: ${hasFoundBody}`)
-
-    // If we've found a complete block, stop collecting
-    const isComplete = bracketDepth === 0
-      && (angleDepth === 0 || hasFoundBody)
-      && trimmedLine.endsWith('}')
-
-    if (isComplete && hasFoundBody) {
-      debugLog('block-scan', `Found complete block at line ${i + 1}`)
-      break
-    }
-
-    i++
+  // Skip empty blocks after comment removal
+  if (cleanedLines.length === 0) {
+    return
   }
 
-  const declarationText = allLines.join('\n')
-  debugLog('block-scan', `Collected block:\n${declarationText}`)
-
+  const declarationText = cleanedLines.join('\n')
   const cleanDeclaration = removeLeadingComments(declarationText).trim()
 
   debugLog('block-processing', `Full block content:\n${cleanDeclaration}`)
@@ -1304,6 +1263,13 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
   // Early check for variables inside functions
   if (isVariableInsideFunction(cleanDeclaration, state)) {
     debugLog('block-processing', 'Skipping variable declaration inside function')
+    return
+  }
+
+  // Handle branded types (like ProductId)
+  if (cleanDeclaration.includes('& {') && cleanDeclaration.includes('__brand')) {
+    const processed = processType(declarationText, cleanDeclaration.startsWith('export'))
+    state.dtsLines.push(processed)
     return
   }
 

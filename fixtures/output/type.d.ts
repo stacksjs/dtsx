@@ -28,6 +28,9 @@ export type RecursiveObject = {
   metadata: Record<string, unknown>
 }
 export declare type UserId = string & { readonly __brand: unique symbol }
+export type ProductId = number & {
+  readonly __brand: unique symbol
+}
 export declare type DeepPartial<T> = T extends object ? {
   [P in keyof T]?: DeepPartial<T[P]>
 } : T
