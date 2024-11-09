@@ -1552,6 +1552,12 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
     return false
 
   // Handle various export types
+  if (cleanDeclaration.startsWith('export {')) {
+    // Handle multiline exports by preserving the entire declaration
+    state.dtsLines.push(declarationText)
+    return true
+  }
+
   if (processExportedClass(cleanDeclaration, state))
     return true
   if (processExportedEnum(cleanDeclaration, state))
@@ -1560,7 +1566,7 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
     return true
 
   // Handle named exports
-  if (cleanDeclaration.startsWith('export {')) {
+  if (cleanDeclaration.includes('export {')) {
     state.dtsLines.push(declarationText)
     return true
   }
@@ -1573,14 +1579,38 @@ function processExportBlock(cleanDeclaration: string, declarationText: string, s
 function processExport(line: string, state: ProcessingState): void {
   debugLog('export-processing', `Processing export: ${line}`)
 
+  // Handle multiline exports by concatenating until we have a complete statement
+  if (line.includes('{') && !line.includes('}')) {
+    state.currentDeclaration = line
+    return
+  }
+
+  // Continue building multiline export
+  if (state.currentDeclaration) {
+    state.currentDeclaration += ` ${line}`
+    if (!line.includes('}'))
+      return
+    line = state.currentDeclaration
+    state.currentDeclaration = ''
+  }
+
   const exportMatch = line.match(/export\s*\{([^}]+)\}(?:\s*from\s*['"]([^'"]+)['"])?/)
   if (!exportMatch) {
     debugLog('export-error', 'Failed to match export pattern')
+    if (line.startsWith('export {')) {
+      // If it's a malformed export statement, add it as-is to preserve the declaration
+      state.dtsLines.push(line)
+    }
     return
   }
 
   const [, exports, sourceModule] = exportMatch
   debugLog('export-found', `Found exports: ${exports}, source: ${sourceModule || 'local'}`)
+
+  // If it's a complete export statement, add it to dtsLines
+  if (line.startsWith('export {')) {
+    state.dtsLines.push(line)
+  }
 
   exports.split(',').forEach((exp) => {
     const [itemName, aliasName] = exp.trim().split(/\s+as\s+/).map(e => e.trim())
@@ -1798,6 +1828,7 @@ function processSourceFile(content: string, state: ProcessingState): void {
   let bracketDepth = 0
   let angleDepth = 0
   let inDeclaration = false
+  let inExport = false
   state.currentScope = 'top'
 
   debugLog('source-processing', `Processing source file with ${lines.length} lines`)
@@ -1807,7 +1838,27 @@ function processSourceFile(content: string, state: ProcessingState): void {
     const line = lines[i]
     const trimmedLine = line.trim()
 
-    debugLog('source-scan', `First pass - Line ${i + 1}: ${trimmedLine}`)
+    // Handle export blocks
+    if (trimmedLine.startsWith('export {')) {
+      if (trimmedLine.includes('}')) {
+        // Single-line export
+        state.dtsLines.push(line)
+        continue
+      }
+      inExport = true
+      currentBlock = [line]
+      continue
+    }
+
+    if (inExport) {
+      currentBlock.push(line)
+      if (line.includes('}')) {
+        state.dtsLines.push(currentBlock.join('\n'))
+        currentBlock = []
+        inExport = false
+      }
+      continue
+    }
 
     // Process imports
     if (line.includes('import ')) {
@@ -1827,7 +1878,9 @@ function processSourceFile(content: string, state: ProcessingState): void {
     if (trimmedLine.startsWith('export {')) {
       debugLog('mixed-export', `Found mixed export: ${trimmedLine}`)
       processExport(trimmedLine, state)
-      state.dtsLines.push(line)
+      if (trimmedLine.includes('}')) {
+        state.dtsLines.push(line)
+      }
       continue
     }
   }
