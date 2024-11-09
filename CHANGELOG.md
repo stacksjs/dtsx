@@ -1,6 +1,19 @@
 # Changelog
 
 
+## v0.6.1...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.1...main)
+
+### 🏡 Chore
+
+- Improve branded type handling ([3df7622](https://github.com/stacksjs/dtsx/commit/3df7622))
+- Add example test 4 & 5 ([73d0659](https://github.com/stacksjs/dtsx/commit/73d0659))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.6.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.0...main)
