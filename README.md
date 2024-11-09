@@ -57,9 +57,9 @@ const options: DtsGenerationOptions = {
   root: './src', // default: './src'
   entrypoints: ['**/*.ts'], // default: ['**/*.ts']
   outdir: './dist', // default: './dist'
-  keepComments: true, // default: true
   clean: true, // default: false
   verbose: true, // default: false
+  // keepComments: true, // coming soon
 }
 
 await generate(options)
