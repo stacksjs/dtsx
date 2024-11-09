@@ -1,6 +1,19 @@
 # Changelog
 
 
+## v0.6.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.0...main)
+
+### 🏡 Chore
+
+- Adjust changelog ([dfdf3cc](https://github.com/stacksjs/dtsx/commit/dfdf3cc))
+- Couple minor fixes ([cf0928f](https://github.com/stacksjs/dtsx/commit/cf0928f))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.5.4...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.4...main)
