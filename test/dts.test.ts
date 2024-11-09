@@ -220,6 +220,48 @@ describe('dts-generation', () => {
     expect(generatedContent).toBe(expectedContent)
   })
 
+  it('should properly generate types for type example/0004', async () => {
+    const example = '0004'
+
+    const config: DtsGenerationOption = {
+      entrypoints: [join(inputDir, `example/${example}.ts`)],
+      outdir: generatedDir,
+      clean: false,
+      tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+    }
+
+    await generate(config)
+
+    const outputPath = join(outputDir, `${example}.d.ts`)
+    const generatedPath = join(generatedDir, `${example}.d.ts`)
+
+    const expectedContent = await Bun.file(outputPath).text()
+    const generatedContent = await Bun.file(generatedPath).text()
+
+    expect(generatedContent).toBe(expectedContent)
+  })
+
+  it('should properly generate types for type example/0005', async () => {
+    const example = '0005'
+
+    const config: DtsGenerationOption = {
+      entrypoints: [join(inputDir, `example/${example}.ts`)],
+      outdir: generatedDir,
+      clean: false,
+      tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+    }
+
+    await generate(config)
+
+    const outputPath = join(outputDir, `${example}.d.ts`)
+    const generatedPath = join(generatedDir, `${example}.d.ts`)
+
+    const expectedContent = await Bun.file(outputPath).text()
+    const generatedContent = await Bun.file(generatedPath).text()
+
+    expect(generatedContent).toBe(expectedContent)
+  })
+
   afterEach(async () => {
     // Clean up generated files
     try {
