@@ -8,6 +8,38 @@
 ### 🏡 Chore
 
 - Add tests ([ba4db2f](https://github.com/stacksjs/dtsx/commit/ba4db2f))
+- Adjust error message ([408ea3a](https://github.com/stacksjs/dtsx/commit/408ea3a))
+- Add changelog ([bcfcd63](https://github.com/stacksjs/dtsx/commit/bcfcd63))
+- Remove @ts-expect-error ([a90462f](https://github.com/stacksjs/dtsx/commit/a90462f))
+- Check nested tsconfigs ([60582af](https://github.com/stacksjs/dtsx/commit/60582af))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
+## v0.5.4...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.4...main)
+
+### 🏡 Chore
+
+- Add tests ([ba4db2f](https://github.com/stacksjs/dtsx/commit/ba4db2f))
+- Adjust error message ([408ea3a](https://github.com/stacksjs/dtsx/commit/408ea3a))
+- Add changelog ([bcfcd63](https://github.com/stacksjs/dtsx/commit/bcfcd63))
+- Remove @ts-expect-error ([a90462f](https://github.com/stacksjs/dtsx/commit/a90462f))
+- Check nested tsconfigs ([60582af](https://github.com/stacksjs/dtsx/commit/60582af))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
+## v0.5.4...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.5.4...main)
+
+### 🏡 Chore
+
+- Add tests ([ba4db2f](https://github.com/stacksjs/dtsx/commit/ba4db2f))
 
 ### ❤️ Contributors
 
