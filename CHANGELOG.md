@@ -1,6 +1,20 @@
 # Changelog
 
 
+## v0.6.2...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.2...main)
+
+### 🏡 Chore
+
+- Update dtsx plugin ([f413a80](https://github.com/stacksjs/dtsx/commit/f413a80))
+- Adjust readme ([14eea76](https://github.com/stacksjs/dtsx/commit/14eea76))
+- Improve export processing ([2dd4d30](https://github.com/stacksjs/dtsx/commit/2dd4d30))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+
 ## v0.6.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.1...main)
