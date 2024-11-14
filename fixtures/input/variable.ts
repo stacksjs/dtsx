@@ -199,3 +199,13 @@ export const CONFIG_MAP = {
     }
   }
 } as const
+
+export const command = {
+  run: async (command: string, options?: CliOptions): Promise<Result<Subprocess<Writable, Readable, Readable>, Error>> => {
+    return await runCommand(command, options)
+  },
+
+  runSync: async (command: string, options?: CliOptions): Promise<Result<Subprocess<Writable, Readable, Readable>, Error>> => {
+    return await runCommand(command, options)
+  },
+}

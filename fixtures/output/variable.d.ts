@@ -120,3 +120,8 @@ export declare const CONFIG_MAP: {
     }
   }
 };
+export declare const command: {
+  run: unknown;
+  Readable, Readable>, Error>> => {
+    return await runCommand: () => unknown
+};
