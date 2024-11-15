@@ -37,7 +37,7 @@ _But before you get started, please ensure you enabled `isolatedDeclarations` in
 ```json
 {
   "compilerOptions": {
-    "isolatedDeclaration": true
+    "isolatedDeclarations": true
   }
 }
 ```
