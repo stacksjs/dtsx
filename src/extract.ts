@@ -1142,7 +1142,6 @@ function isDeclarationStart(line: string): boolean {
     || trimmed.startsWith('function ')
     || trimmed.startsWith('async function ')
     || trimmed.startsWith('declare ')
-    || trimmed.startsWith('declare module')
     || /^export\s+(?:interface|type|const|function\*?|async\s+function\*?)/.test(trimmed)
   )
 }
@@ -1925,22 +1924,52 @@ function processSourceFile(content: string, state: ProcessingState): void {
       bracketDepth += openCurly - closeCurly
       angleDepth += openAngle - closeAngle
 
-      // Check for end of declaration
-      const isComplete = bracketDepth === 0 && angleDepth === 0 && trimmedLine.endsWith('}')
+      // Special handling for type declarations
+      const isTypeDeclaration = currentBlock[0].trim().startsWith('type')
+        || currentBlock[0].trim().startsWith('export type')
 
-      // Look ahead for continuation
-      const nextLine = i < lines.length - 1 ? lines[i + 1]?.trim() : ''
-      const shouldContinue = bracketDepth > 0 || angleDepth > 0
-        || (nextLine && !nextLine.startsWith('export') && !nextLine.startsWith('interface'))
+      if (isTypeDeclaration) {
+        // For type declarations, we need to track the complete expression
+        const nextLine = i < lines.length - 1 ? lines[i + 1]?.trim() : ''
+        const shouldContinue = bracketDepth > 0 || angleDepth > 0
+          || !trimmedLine.endsWith(';') // No semicolon yet
+          || trimmedLine.endsWith('?') // Conditional type continues
+          || trimmedLine.endsWith(':') // Property type continues
+          || (nextLine && (
+            nextLine.startsWith('?')
+            || nextLine.startsWith(':')
+            || nextLine.startsWith('|')
+            || nextLine.startsWith('&')
+            || nextLine.startsWith('extends')
+            || nextLine.startsWith('=>')
+          ))
 
-      if (!shouldContinue || isComplete) {
-        debugLog('declaration-complete', `Declaration complete at line ${i + 1}`)
-        processBlock(currentBlock, currentComments, state)
-        currentBlock = []
-        currentComments = []
-        inDeclaration = false
-        bracketDepth = 0
-        angleDepth = 0
+        if (!shouldContinue) {
+          debugLog('declaration-complete', `Type declaration complete at line ${i + 1}`)
+          processBlock(currentBlock, currentComments, state)
+          currentBlock = []
+          currentComments = []
+          inDeclaration = false
+          bracketDepth = 0
+          angleDepth = 0
+        }
+      }
+      else {
+        // Original handling for non-type declarations
+        const isComplete = bracketDepth === 0 && angleDepth === 0 && trimmedLine.endsWith('}')
+        const nextLine = i < lines.length - 1 ? lines[i + 1]?.trim() : ''
+        const shouldContinue = bracketDepth > 0 || angleDepth > 0
+          || (nextLine && !nextLine.startsWith('export') && !nextLine.startsWith('interface'))
+
+        if (!shouldContinue || isComplete) {
+          debugLog('declaration-complete', `Declaration complete at line ${i + 1}`)
+          processBlock(currentBlock, currentComments, state)
+          currentBlock = []
+          currentComments = []
+          inDeclaration = false
+          bracketDepth = 0
+          angleDepth = 0
+        }
       }
     }
   }

@@ -9,4 +9,4 @@ declare interface AutoImportsPlugin {
 export declare function autoImports(options: Partial<UnimportOptions & { dts: string }>): AutoImportsPlugin;
 export declare type AutoImportsOptions = UnimportOptions
 
-export default autoImports;
+export default autoImports

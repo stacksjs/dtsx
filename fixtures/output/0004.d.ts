@@ -9,8 +9,10 @@ export declare interface DtsGenerationConfig {
   verbose: boolean
 }
 export declare type DtsGenerationOption = Partial<DtsGenerationConfig>
-export declare type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
-export declare interface RegexPatterns {
+
+export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
+
+export interface RegexPatterns {
   readonly typeImport: RegExp
   readonly regularImport: RegExp
   readonly bracketOpen: RegExp
@@ -37,7 +39,8 @@ export declare interface RegexPatterns {
   readonly moduleDeclaration: RegExp
   readonly moduleAugmentation: RegExp
 }
-export declare interface ImportTrackingState {
+
+export interface ImportTrackingState {
   typeImports: Map<string, Set<string>> 
   valueImports: Map<string, Set<string>> 
   usedTypes: Set<string> 
@@ -49,7 +52,8 @@ export declare interface ImportTrackingState {
   typeExportSources: Map<string, string> 
   defaultExportValue?: string 
 }
-export declare interface ProcessingState {
+
+export interface ProcessingState {
   dtsLines: string[]
   imports: string[]
   usedTypes: Set<string>
@@ -74,33 +78,38 @@ export declare interface ProcessingState {
   defaultExports: Set<string>
   currentScope: 'top' | 'function'
 }
-export declare interface MethodSignature {
+
+export interface MethodSignature {
   name: string
   async: boolean
   generics: string
   params: string
   returnType: string
 }
-export declare interface PropertyInfo {
+
+export interface PropertyInfo {
   key: string
   value: string
   type: string
   nested?: PropertyInfo[]
   method?: MethodSignature
 }
-export declare interface ImportInfo {
+
+export interface ImportInfo {
   kind: 'type' | 'value' | 'mixed'
   usedTypes: Set<string>
   usedValues: Set<string>
   source: string
 }
-export declare interface FunctionSignature {
+
+export interface FunctionSignature {
   name: string
   params: string
   returnType: string
   generics: string
 }
-export declare interface ProcessedMethod {
+
+export interface ProcessedMethod {
   name: string
   signature: string
 }

@@ -65,3 +65,19 @@ export type DynamicRecord<K extends PropertyKey> = {
       ? Record<string, unknown>
       : never
 }
+
+export type RecordMerge<T, U> = IsEmptyType<U> extends true
+  ? T
+  : [T, U] extends [any[], any[]]
+      ? U
+      : [T, U] extends [object, object]
+          ? {
+              [K in keyof T | keyof U]: K extends keyof T
+                ? K extends keyof U
+                  ? RecordMerge<T[K], U[K]>
+                  : T[K]
+                : K extends keyof U
+                  ? U[K]
+                  : never
+            }
+          : U
