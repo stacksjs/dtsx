@@ -59,5 +59,6 @@ export {
   white,
   yellow,
 } from 'kolorist'
-export * as kolorist from 'kolorist'
 export declare let quotes: Collection<string[]>;
+
+export * as kolorist from 'kolorist'

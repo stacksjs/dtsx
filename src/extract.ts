@@ -674,22 +674,55 @@ function formatOutput(state: ProcessingState): string {
   const defaultExports = Array.from(state.defaultExports)
     .map(exp => exp.trim().replace(/;+$/, ';'))
 
-  // Reconstruct the output with proper line breaks and semicolons
-  const output = [
-    // Add semicolons to imports
-    ...Array.from(imports).map(imp => `${imp};`),
-    '',
-    // Filter empty lines and join declarations
-    ...declarations.filter(Boolean),
-    '',
-    // Add default export
-    ...defaultExports,
-  ]
+  // Organize declarations by type
+  const exportAllStatements = declarations.filter(line => line.trim().startsWith('export *'))
+  const otherDeclarations = declarations.filter(line => !line.trim().startsWith('export *'))
 
-  // Remove comments, normalize whitespace, and ensure single trailing newline
-  return output
-    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')) // Remove any inline comments
-    .filter(line => line.trim() || line === '') // Keep empty lines for spacing
+  // Construct the output with proper spacing
+  const parts: string[] = []
+
+  // Add imports with a line break after if there are any
+  if (imports.size > 0) {
+    parts.push(
+      ...Array.from(imports).map(imp => `${imp};`),
+      '',
+    )
+  }
+
+  // Add other declarations
+  if (otherDeclarations.length > 0) {
+    parts.push(...otherDeclarations)
+  }
+
+  // Position export * statements based on whether there's a default export
+  if (exportAllStatements.length > 0) {
+    if (defaultExports.length > 0) {
+      // Add export * statements before default export
+      if (parts.length > 0) {
+        parts.push('')
+      }
+      parts.push(...exportAllStatements)
+    }
+    else {
+      // Add export * statements at the end
+      if (parts.length > 0) {
+        parts.push('')
+      }
+      parts.push(...exportAllStatements)
+    }
+  }
+
+  // Add default exports last if there are any
+  if (defaultExports.length > 0) {
+    if (parts.length > 0) {
+      parts.push('')
+    }
+    parts.push(...defaultExports)
+  }
+
+  // Clean up and return
+  return parts
+    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')) // Remove comments
     .join('\n')
     .trim()
 }
@@ -1318,23 +1351,27 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     }
   }
 
-  // Try each processor in order
-  if (processFunctionBlock(cleanDeclaration, state))
-    return
-  if (processVariableBlock(cleanDeclaration, lines, state))
-    return
-  if (processTypeBlock(cleanDeclaration, declarationText, state))
-    return
-  if (processDefaultExportBlock(cleanDeclaration, state))
-    return
-  if (processExportAllBlock(cleanDeclaration, state))
-    return
-  if (processExportBlock(cleanDeclaration, declarationText, state))
-    return
-  if (processModuleBlock(cleanDeclaration, declarationText, state))
-    return
+  const processed
+    // Try each processor in order
+    = processFunctionBlock(cleanDeclaration, state)
+      ? undefined
+      : processVariableBlock(cleanDeclaration, lines, state)
+        ? undefined
+        : processTypeBlock(cleanDeclaration, declarationText, state)
+          ? undefined
+          : processDefaultExportBlock(cleanDeclaration, state)
+            ? undefined
+            : processExportAllBlock(cleanDeclaration, state)
+              ? undefined
+              : processExportBlock(cleanDeclaration, declarationText, state)
+                ? undefined
+                : processModuleBlock(cleanDeclaration, declarationText, state)
+                  ? undefined
+                  : undefined
 
-  debugLog('processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
+  if (processed === undefined) {
+    debugLog('processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`)
+  }
 }
 
 function processVariableBlock(cleanDeclaration: string, lines: string[], state: ProcessingState): boolean {
@@ -2072,8 +2109,8 @@ function processType(declaration: string, isExported = true): string {
     `$1${prefix} type`,
   )
 
-  // Return original declaration with only the first line modified
-  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
+  // Return declaration with no extra whitespace
+  return [modifiedFirstLine, ...lines.slice(1)].join('\n').trimEnd()
 }
 
 function processTypeExport(line: string, state: ProcessingState): void {
@@ -2290,21 +2327,17 @@ function processGeneratorFunction(declaration: string): string {
  * Process interface declarations
  */
 function processInterface(declaration: string, isExported = true): string {
-  // Split into lines while preserving all formatting and comments
   const lines = declaration.split('\n')
-
-  // Only modify the first line to add necessary keywords
-  const firstLine = lines[0]
   const prefix = isExported ? 'export declare' : 'declare'
 
   // Replace only the 'interface' or 'export interface' part
-  const modifiedFirstLine = firstLine.replace(
+  const modifiedFirstLine = lines[0].replace(
     /^(\s*)(?:export\s+)?interface/,
     `$1${prefix} interface`,
   )
 
-  // Return original declaration with only the first line modified
-  return [modifiedFirstLine, ...lines.slice(1)].join('\n')
+  // Return declaration with no extra whitespace
+  return [modifiedFirstLine, ...lines.slice(1)].join('\n').trimEnd()
 }
 
 function processModule(declaration: string): string {
