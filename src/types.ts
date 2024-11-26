@@ -11,7 +11,7 @@ export interface DtsGenerationConfig {
   keepComments: boolean
   clean: boolean
   tsconfigPath: string
-  verbose: boolean
+  verbose: boolean | string[]
 }
 
 /**

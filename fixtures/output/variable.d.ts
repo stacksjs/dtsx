@@ -90,7 +90,7 @@ export declare const complexObject: {
   utils: {
     formatters: {
       date: (input: Date) => unknown;
-      currency: (amount: number, currency: string) => unknown
+      currency: (amount: number, currency) => unknown
     }
   }
 };

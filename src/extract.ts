@@ -1,19 +1,41 @@
-/* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign, regexp/no-misleading-capturing-group */
+/* eslint-disable regexp/no-super-linear-backtracking, no-cond-assign */
 import type { FunctionSignature, ImportTrackingState, ProcessedMethod, ProcessingState } from './types'
 import { config } from './config'
 
 function cleanParameterTypes(params: string): string {
-  debugLog('params', `Cleaning parameters: ${params}`)
-
   if (!params.trim())
     return ''
 
+  // Handle object type parameters
+  if (params.includes('{')) {
+    const objectMatch = params.match(/(\w+):\s*(\{[^}]+\})/)
+    if (objectMatch) {
+      const [, paramName, objectType] = objectMatch
+      // Split on actual property boundaries
+      const properties = objectType
+        .slice(1, -1)
+        .split(/\s+(?=\w+\??\s*:)/) // Split before property names
+        .map(prop => prop.trim())
+        .filter(Boolean)
+        .map((prop) => {
+          // Keep property name and type together
+          const [name, type] = prop.split(/:\s*/)
+          const isOptional = name.endsWith('?')
+          const cleanName = name.replace(/\?$/, '')
+          return `${cleanName}${isOptional ? '?' : ''}: ${type}`
+        })
+        .join(', ')
+
+      return `${paramName}: { ${properties} }`
+    }
+  }
+
+  // Rest of the function remains unchanged for non-object params
   const parts: string[] = []
   let current = ''
   let depth = 0
   let inString = false
   let stringChar = ''
-  let inDestructuring = false
 
   for (const char of params) {
     if ((char === '"' || char === '\'' || char === '`')) {
@@ -27,20 +49,12 @@ function cleanParameterTypes(params: string): string {
     }
 
     if (!inString) {
-      if (char === '{') {
-        inDestructuring = true
+      if (char === '{' || char === '<' || char === '(')
         depth++
-      }
-      if (char === '}') {
-        inDestructuring = false
-        depth--
-      }
-      if (char === '<' || char === '(')
-        depth++
-      if (char === '>' || char === ')')
+      if (char === '}' || char === '>' || char === ')')
         depth--
 
-      if (char === ',' && depth === 0 && !inDestructuring) {
+      if (char === ',' && depth === 0) {
         if (current.trim()) {
           parts.push(cleanSingleParameter(current))
         }
@@ -56,41 +70,30 @@ function cleanParameterTypes(params: string): string {
     parts.push(cleanSingleParameter(current))
   }
 
-  const result = parts.join(', ')
-  debugLog('params', `Cleaned parameters: ${result}`)
-  return result
+  return parts.join(', ')
 }
 
 function cleanSingleParameter(param: string): string {
-  debugLog('param-clean', `Cleaning parameter: ${param}`)
+  const trimmed = param.trim()
+
+  // Handle parameters with default values
+  if (trimmed.includes('=')) {
+    const [paramPart] = trimmed.split('=')
+    return cleanSingleParameter(paramPart)
+  }
 
   // Handle parameters with type annotations
-  const typeMatch = param.match(/^([^:]+):\s*([^=]+)(?:=\s*.+)?$/)
+  const typeMatch = trimmed.match(/^([^:]+):\s*(.+)$/)
   if (typeMatch) {
     const [, paramName, paramType] = typeMatch
-    // Clean intersection types while avoiding extra spaces
-    const cleanedType = paramType
-      .replace(/\s*&\s*/g, ' & ') // Changed from '&' to ' & '
-      .replace(/\s{2,}/g, ' ')
-      .trim()
-
-    const cleanedParam = `${paramName.trim()}: ${cleanedType}`
-    debugLog('param-clean', `Cleaned to: ${cleanedParam}`)
-    return cleanedParam
+    // Handle object types
+    if (paramType.includes('{')) {
+      return `${paramName.trim()}: ${formatObjectType(paramType)}`
+    }
+    return `${paramName.trim()}: ${paramType.trim()}`
   }
 
-  // Handle parameters with default values but no explicit type
-  const defaultMatch = param.match(/^([^=]+)=\s*(.+)$/)
-  if (defaultMatch) {
-    const [, paramName, defaultValue] = defaultMatch
-    const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
-    const cleanedParam = `${paramName.trim()}: ${inferredType}`
-    debugLog('param-clean', `Inferred type: ${cleanedParam}`)
-    return cleanedParam
-  }
-
-  // For simple parameters with no type or default
-  return param.trim()
+  return trimmed
 }
 
 /**
@@ -114,13 +117,13 @@ export async function extract(filePath: string): Promise<string> {
  */
 export function extractDtsTypes(sourceCode: string): string {
   const state = createProcessingState()
-  // debugLog('init', 'Starting DTS extraction')
+  debugLog('init', 'Starting DTS extraction')
 
   // Process imports first
   sourceCode.split('\n').forEach((line) => {
     if (line.includes('import ')) {
       processImports(line, state.importTracking)
-      // debugLog('import', `Processed import: ${line.trim()}`)
+      debugLog('import', `Processed import: ${line.trim()}`)
     }
   })
 
@@ -128,8 +131,8 @@ export function extractDtsTypes(sourceCode: string): string {
   processSourceFile(sourceCode, state)
 
   // Log the state of exports before formatting
-  // debugLog('export-summary', `Found ${state.defaultExports.size} default exports`)
-  // debugLog('export-summary', `Found ${state.exportAllStatements.length} export * statements`)
+  debugLog('export-summary', `Found ${state.defaultExports.size} default exports`)
+  debugLog('export-summary', `Found ${state.exportAllStatements.length} export * statements`)
 
   // Final pass to track what actually made it to the output
   state.dtsLines.forEach((line) => {
@@ -141,7 +144,7 @@ export function extractDtsTypes(sourceCode: string): string {
 
   // Generate optimized imports based on actual output
   const optimizedImports = generateOptimizedImports(state.importTracking)
-  // debugLog('import-summary', `Generated ${optimizedImports.length} optimized imports`)
+  debugLog('import-summary', `Generated ${optimizedImports.length} optimized imports`)
 
   // Clear any existing imports and set up dtsLines with optimized imports
   state.dtsLines = [
@@ -332,80 +335,57 @@ function extractParams(rest: string): { params: string, rest: string } {
 }
 
 function extractReturnType(rest: string): { returnType: string } {
-  let returnType = 'void'
-  if (rest.startsWith(':')) {
-    debugLog('return-start', `Starting return type extraction with: ${rest}`)
-    rest = rest.slice(1).trim()
+  if (!rest.startsWith(':'))
+    return { returnType: 'void' }
 
-    let depth = 0
-    let buffer = ''
-    let i = 0
-    let inString = false
-    let stringChar = ''
-    let foundEnd = false
+  rest = rest.slice(1).trim()
 
-    debugLog('return-extraction', 'Starting character-by-character extraction')
+  // Handle type predicates (e.g., "value is User")
+  if (rest.includes('value is ')) {
+    return { returnType: rest.trim() }
+  }
 
-    while (i < rest.length && !foundEnd) {
+  // Handle array types with object members
+  if (rest.startsWith('Array<') || rest.startsWith('Promise<')) {
+    let depth = 1
+    let i = rest.indexOf('<') + 1
+    let buffer = rest.slice(0, i)
+
+    while (i < rest.length && depth > 0) {
       const char = rest[i]
-      const prevChar = i > 0 ? rest[i - 1] : ''
-      // const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
-
-      debugLog('return-char', `Pos ${i}: Char "${char}", Depth ${depth}, InString ${inString}, Buffer length ${buffer.length}`)
-
-      // Handle string boundaries
-      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
-        if (!inString) {
-          inString = true
-          stringChar = char
-          debugLog('return-string', `Entering string with ${stringChar}`)
-        }
-        else if (char === stringChar) {
-          inString = false
-          debugLog('return-string', 'Exiting string')
-        }
-      }
-
-      // Track depth when not in string
-      if (!inString) {
-        if (char === '{' || char === '<' || char === '(') {
-          depth++
-          debugLog('return-depth', `Opening bracket, increasing depth to ${depth}`)
-        }
-        else if (char === '}' || char === '>' || char === ')') {
-          depth--
-          debugLog('return-depth', `Closing bracket, decreasing depth to ${depth}`)
-
-          // If we hit depth 0 with a closing brace, this might be the end of our type
-          if (depth === 0 && char === '}') {
-            buffer += char
-            // Look ahead to see if this is followed by a function body
-            const nextNonWhitespace = rest.slice(i + 1).trim()[0]
-            if (nextNonWhitespace === '{') {
-              debugLog('return-end', `Found end of return type at pos ${i}, next char is function body`)
-              foundEnd = true
-              break
-            }
-          }
-        }
-
-        // Stop at semicolons at depth 0
-        if (depth === 0 && char === ';') {
-          debugLog('return-end', 'Found semicolon at depth 0')
-          foundEnd = true
-          break
-        }
-      }
-
+      if (char === '<')
+        depth++
+      if (char === '>')
+        depth--
       buffer += char
-      debugLog('return-buffer', `Updated buffer: ${buffer}`)
       i++
     }
 
-    returnType = buffer.trim()
-    debugLog('return-final', `Final extracted return type: ${returnType}`)
+    return { returnType: buffer }
   }
-  return { returnType }
+
+  // Handle object types
+  if (rest.startsWith('{')) {
+    let depth = 1
+    let i = 1
+    let buffer = '{'
+
+    while (i < rest.length && depth > 0) {
+      const char = rest[i]
+      if (char === '{')
+        depth++
+      if (char === '}')
+        depth--
+      buffer += char
+      i++
+    }
+
+    return { returnType: buffer }
+  }
+
+  // Handle simple types
+  const match = rest.match(/^([^{;]+)/)
+  return { returnType: match ? match[1].trim() : 'void' }
 }
 
 function extractFunctionType(value: string): string | null {
@@ -586,7 +566,7 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
 }
 
 function extractCompleteObjectContent(value: string): string | null {
-  // debugLog('extract-object', `Processing object of length ${value.length}`)
+  debugLog('extract-object', `Processing object of length ${value.length}`)
   const fullContent = value.trim()
 
   // Must start with an object
@@ -1013,7 +993,7 @@ function inferComplexObjectType(value: string, state?: ProcessingState, indentLe
 }
 
 function inferConstArrayType(value: string, state?: ProcessingState): string {
-  // debugLog('infer-const', `Inferring const array type for: ${value}`)
+  debugLog('infer-const', `Inferring const array type for: ${value}`)
 
   // For string literals, return them directly
   if (/^['"`].*['"`]$/.test(value)) {
@@ -1032,7 +1012,7 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
     // Build tuple type
     const literalTypes = elements.map((element) => {
       let trimmed = element.trim()
-      // debugLog('const-tuple-element', `Processing tuple element: ${trimmed}`)
+      debugLog('const-tuple-element', `Processing tuple element: ${trimmed}`)
 
       // Clean up any 'as cons' or 'as const' suffixes first
       if (trimmed.includes('] as cons') || trimmed.includes('] as const')) {
@@ -1081,7 +1061,7 @@ function inferConstArrayType(value: string, state?: ProcessingState): string {
       return `'${cleanString}'`
     })
 
-    // debugLog('const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
+    debugLog('const-tuple-result', `Generated tuple types: [${literalTypes.join(', ')}]`)
     return `readonly [${literalTypes.join(', ')}]`
   }
 
@@ -1709,10 +1689,10 @@ function processModuleBlock(cleanDeclaration: string, declarationText: string, s
 }
 
 export function processSpecificDeclaration(declarationWithoutComments: string, fullDeclaration: string, state: ProcessingState): void {
-  // debugLog('processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
+  debugLog('processing', `Processing declaration: ${declarationWithoutComments.substring(0, 100)}...`)
 
   if (isDefaultExport(declarationWithoutComments)) {
-    // debugLog('default-export', `Found default export: ${declarationWithoutComments}`)
+    debugLog('default-export', `Found default export: ${declarationWithoutComments}`)
 
     // Store the complete default export statement
     const defaultExport = declarationWithoutComments.endsWith(';')
@@ -1720,12 +1700,12 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
       : `${declarationWithoutComments};`
 
     state.defaultExports.add(defaultExport)
-    // debugLog('default-export', `Added to default exports: ${defaultExport}`)
+    debugLog('default-export', `Added to default exports: ${defaultExport}`)
     return
   }
 
   if (declarationWithoutComments.startsWith('declare module')) {
-    // debugLog('module-declaration', `Found module declaration: ${declarationWithoutComments}`)
+    debugLog('module-declaration', `Found module declaration: ${declarationWithoutComments}`)
     const processed = processModule(fullDeclaration)
     state.dtsLines.push(processed)
     return
@@ -1735,7 +1715,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('export const')
     || declarationWithoutComments.startsWith('const')
   ) {
-    // debugLog('variable-declaration', `Found const declaration: ${declarationWithoutComments}`)
+    debugLog('variable-declaration', `Found const declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.trimStart().startsWith('export')
     const processed = processVariable(fullDeclaration, isExported, state)
     state.dtsLines.push(processed)
@@ -1746,7 +1726,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('interface')
     || declarationWithoutComments.startsWith('export interface')
   ) {
-    // debugLog('interface-declaration', `Found interface declaration: ${declarationWithoutComments}`)
+    debugLog('interface-declaration', `Found interface declaration: ${declarationWithoutComments}`)
     const processed = processInterface(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -1759,7 +1739,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('type')
     || declarationWithoutComments.startsWith('export type')
   ) {
-    // debugLog('type-declaration', `Found type declaration: ${declarationWithoutComments}`)
+    debugLog('type-declaration', `Found type declaration: ${declarationWithoutComments}`)
     const processed = processType(
       fullDeclaration,
       declarationWithoutComments.startsWith('export'),
@@ -1774,7 +1754,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('async function')
     || declarationWithoutComments.startsWith('export async function')
   ) {
-    // debugLog('function-declaration', `Found function declaration: ${declarationWithoutComments}`)
+    debugLog('function-declaration', `Found function declaration: ${declarationWithoutComments}`)
 
     const processed = processFunction(
       fullDeclaration,
@@ -1787,19 +1767,19 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
 
   if (declarationWithoutComments.startsWith('export *')) {
     state.exportAllStatements.push(declarationWithoutComments)
-    // debugLog('export-all-declaration', `Found export all declaration: ${declarationWithoutComments}`)
+    debugLog('export-all-declaration', `Found export all declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export {')) {
-    // debugLog('export-declaration', `Found export declaration: ${declarationWithoutComments}`)
+    debugLog('export-declaration', `Found export declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
 
   if (declarationWithoutComments.startsWith('export type {')) {
-    // debugLog('export-type-declaration', `Found export type declaration: ${declarationWithoutComments}`)
+    debugLog('export-type-declaration', `Found export type declaration: ${declarationWithoutComments}`)
     state.dtsLines.push(fullDeclaration)
     return
   }
@@ -1810,7 +1790,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('abstract class')
     || declarationWithoutComments.startsWith('export abstract class')
   ) {
-    // debugLog('class-declaration', `Found class declaration: ${declarationWithoutComments}`)
+    debugLog('class-declaration', `Found class declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1823,7 +1803,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('const enum')
     || declarationWithoutComments.startsWith('export const enum')
   ) {
-    // debugLog('enum-declaration', `Found enum declaration: ${declarationWithoutComments}`)
+    debugLog('enum-declaration', `Found enum declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1834,7 +1814,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     declarationWithoutComments.startsWith('namespace')
     || declarationWithoutComments.startsWith('export namespace')
   ) {
-    // debugLog('namespace-declaration', `Found namespace declaration: ${declarationWithoutComments}`)
+    debugLog('namespace-declaration', `Found namespace declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -1847,7 +1827,7 @@ export function processSpecificDeclaration(declarationWithoutComments: string, f
     || declarationWithoutComments.startsWith('var')
     || declarationWithoutComments.startsWith('export var')
   ) {
-    // debugLog('variable-declaration', `Found variable declaration: ${declarationWithoutComments}`)
+    debugLog('variable-declaration', `Found variable declaration: ${declarationWithoutComments}`)
     const isExported = declarationWithoutComments.startsWith('export')
     const processed = `${isExported ? 'export ' : ''}declare ${declarationWithoutComments.replace(/^export\s+/, '')}`
     state.dtsLines.push(processed)
@@ -2023,74 +2003,128 @@ function processSourceFile(content: string, state: ProcessingState): void {
 function processImports(line: string, state: ImportTrackingState): void {
   debugLog('import-processing', `Processing import line: ${line}`)
 
-  // Handle type imports
-  const typeImportMatch = line.match(/import\s+type\s*(?:\{([^}]+)\}|([^;\s]+))\s*from\s*['"]([^'"]+)['"]/)
+  // Handle pure type imports (import type { X } from 'y')
+  const typeImportMatch = line.match(/import\s+type\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (typeImportMatch) {
-    const [, bracedTypes, singleType, module] = typeImportMatch
-    const types = bracedTypes || singleType
-    debugLog('import-type', `Found type imports from ${module}: ${types}`)
-
-    if (!state.typeImports.has(module)) {
-      state.typeImports.set(module, new Set())
-    }
-
-    if (types) {
-      types.split(',').forEach((type) => {
-        const [original, alias] = type.trim().split(/\s+as\s+/).map(n => n.trim())
-        state.typeImports.get(module)!.add(original)
-        state.typeExportSources.set(original, module)
-        debugLog('import-type-tracking', `Tracking type ${original} from ${module}`)
-        if (alias) {
-          state.valueAliases.set(alias, original)
-          debugLog('import-alias', `Registered type alias: ${original} as ${alias}`)
-        }
-      })
-    }
+    const [, types, module] = typeImportMatch
+    handleTypeImports(types, module, state)
     return
   }
 
-  // Handle regular imports with improved alias tracking
-  const valueImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
-  if (valueImportMatch) {
-    const [, names, module] = valueImportMatch
-    debugLog('import-value', `Found value imports from ${module}: ${names}`)
-
-    if (!state.valueImports.has(module)) {
-      state.valueImports.set(module, new Set())
-    }
-
-    names.split(',').forEach((importItem) => {
-      const [itemName, alias] = importItem.trim().split(/\s+as\s+/).map(n => n.trim())
-
-      // Check if this is a type import within a regular import statement
-      if (itemName.startsWith('type ')) {
-        const typeName = itemName.replace(/^type\s+/, '').trim()
-        if (!state.typeImports.has(module)) {
-          state.typeImports.set(module, new Set())
-        }
-        state.typeImports.get(module)!.add(typeName)
-        state.typeExportSources.set(typeName, module)
-        debugLog('import-type-in-value', `Found inline type import: ${typeName} from ${module}`)
-      }
-      else {
-        // Add the original name to valueImports
-        state.valueImports.get(module)!.add(itemName)
-        state.importSources.set(itemName, module)
-
-        // If there's an alias, track it and mark it as used if it's the default export
-        if (alias) {
-          state.valueAliases.set(alias, itemName)
-          // If this alias is used as the default export, mark the original as used
-          if (alias === state.defaultExportValue) {
-            state.usedValues.add(itemName)
-          }
-          // Also add the alias to the imports
-          state.valueImports.get(module)!.add(itemName)
-          debugLog('import-alias', `Registered value alias: ${itemName} as ${alias}`)
-        }
-      }
-    })
+  // Handle default import with named imports (import X, { Y } from 'z')
+  const defaultWithNamedMatch = line.match(/import\s+([^,{\s]+)\s*,\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+  if (defaultWithNamedMatch) {
+    const [, defaultImport, namedImports, module] = defaultWithNamedMatch
+    handleDefaultAndNamedImports(defaultImport, namedImports, module, state)
+    return
   }
+
+  // Handle mixed imports (import { type X, Y } from 'z')
+  const mixedImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
+  if (mixedImportMatch) {
+    const [, imports, module] = mixedImportMatch
+    handleMixedImports(imports, module, state)
+  }
+}
+
+function handleTypeImports(types: string, module: string, state: ImportTrackingState): void {
+  if (!state.typeImports.has(module)) {
+    state.typeImports.set(module, new Set())
+  }
+
+  types.split(',').forEach((type) => {
+    const [original, alias] = type.trim().split(/\s+as\s+/).map(t => t.trim())
+    // Only track the import source, don't mark as used yet
+    state.typeImports.get(module)!.add(original)
+    state.typeExportSources.set(original, module)
+
+    if (alias) {
+      state.valueAliases.set(alias, original)
+    }
+  })
+}
+
+function handleDefaultAndNamedImports(
+  defaultImport: string,
+  namedImports: string,
+  module: string,
+  state: ImportTrackingState,
+): void {
+  // Setup module in value imports if not exists
+  if (!state.valueImports.has(module)) {
+    state.valueImports.set(module, new Set())
+  }
+
+  // Handle default import mapping
+  state.valueImports.get(module)!.add('default')
+  state.importSources.set('default', module)
+  state.valueAliases.set(defaultImport, 'default')
+
+  // Handle named imports
+  namedImports.split(',').forEach((importItem) => {
+    const item = importItem.trim()
+    if (item.startsWith('type ')) {
+      // Handle inline type import
+      const typeName = item.replace(/^type\s+/, '').trim()
+      const [original, alias] = typeName.split(/\s+as\s+/).map(n => n.trim())
+
+      if (!state.typeImports.has(module)) {
+        state.typeImports.set(module, new Set())
+      }
+      state.typeImports.get(module)!.add(original)
+      state.typeExportSources.set(original, module)
+
+      if (alias) {
+        state.valueAliases.set(alias, original)
+      }
+    }
+    else {
+      // Handle value import
+      const [original, alias] = item.split(/\s+as\s+/).map(n => n.trim())
+      state.valueImports.get(module)!.add(original)
+      state.importSources.set(original, module)
+
+      if (alias) {
+        state.valueAliases.set(alias, original)
+      }
+    }
+  })
+}
+
+function handleMixedImports(imports: string, module: string, state: ImportTrackingState): void {
+  imports.split(',').forEach((importItem) => {
+    const item = importItem.trim()
+
+    if (item.startsWith('type ')) {
+      // Handle type import
+      const typeName = item.replace(/^type\s+/, '').trim()
+      const [original, alias] = typeName.split(/\s+as\s+/).map(n => n.trim())
+
+      if (!state.typeImports.has(module)) {
+        state.typeImports.set(module, new Set())
+      }
+      state.typeImports.get(module)!.add(original)
+      state.typeExportSources.set(original, module)
+
+      if (alias) {
+        state.valueAliases.set(alias, original)
+      }
+    }
+    else {
+      // Handle value import
+      const [original, alias] = item.split(/\s+as\s+/).map(n => n.trim())
+
+      if (!state.valueImports.has(module)) {
+        state.valueImports.set(module, new Set())
+      }
+      state.valueImports.get(module)!.add(original)
+      state.importSources.set(original, module)
+
+      if (alias) {
+        state.valueAliases.set(alias, original)
+      }
+    }
+  })
 }
 
 function processType(declaration: string, isExported = true): string {
@@ -2195,43 +2229,71 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true): string {
-  debugLog('process-function-start', `Starting to process: ${declaration}`)
-
-  // Normalize while preserving structure and remove any trailing semicolon
-  const normalizedDeclaration = declaration
-    .split('\n')
-    .map(line => line.trim())
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .replace(/;$/, '')
-
-  debugLog('process-function-normalized', `Normalized declaration: ${normalizedDeclaration}`)
-
+  const normalizedDeclaration = declaration.trim().replace(/\s+/g, ' ')
   const signature = extractFunctionSignature(normalizedDeclaration)
-  debugLog('process-function-signature', `Extracted signature: ${JSON.stringify(signature, null, 2)}`)
 
-  // Extra validation
-  if (!signature.params && normalizedDeclaration.includes('(')) {
-    debugLog('process-function-warning', 'Found parentheses but no params extracted')
+  // Clean up params
+  if (signature.params) {
+    signature.params = cleanParameterTypes(signature.params)
   }
 
-  if (signature.returnType === 'void' && normalizedDeclaration.includes('):')) {
-    debugLog('process-function-warning', 'Found return type indicator but extracted void')
-  }
-
+  // Preserve type predicates and complete return types
   const parts = [
     isExported ? 'export ' : '',
     'declare function ',
     signature.name,
-    signature.generics,
+    signature.generics || '',
     `(${signature.params})`,
     signature.returnType ? `: ${signature.returnType}` : '',
     ';',
-  ]
+  ].filter(Boolean)
 
-  const result = parts.filter(Boolean).join('')
-  debugLog('process-function-final', `Final declaration: ${result}`)
-  return result
+  return parts.join('')
+}
+
+function formatObjectType(type: string): string {
+  const trimmed = type.trim()
+  if (!trimmed.startsWith('{'))
+    return trimmed
+
+  const content = trimmed.slice(1, -1).trim()
+  if (!content)
+    return '{}'
+
+  // Properly parse and format each property
+  const properties = content
+    .split(/,?\s+/)
+    .filter(Boolean)
+    .map((prop) => {
+      const parts = prop.split(':').map(p => p.trim())
+      if (parts.length < 2)
+        return prop // Handle malformed properties
+
+      const name = parts[0].endsWith('?')
+        ? parts[0].slice(0, -1)
+        : parts[0]
+
+      const type = parts[1]
+      return `${name}${parts[0].endsWith('?') ? '?' : ''}: ${type}`
+    })
+    .join(', ')
+
+  return `{ ${properties} }`
+}
+
+function formatObjectParams(objectType: string): string {
+  const lines = objectType
+    .slice(1, -1) // Remove outer braces
+    .split(',')
+    .map(prop => prop.trim())
+    .filter(Boolean)
+
+  if (lines.length <= 1)
+    return `{ ${lines[0]} }`
+
+  return `{
+    ${lines.join('\n    ')}
+  }`
 }
 
 function getCleanDeclaration(declaration: string): string {
@@ -2382,14 +2444,14 @@ function processModule(declaration: string): string {
 }
 
 function processObjectMethod(declaration: string): ProcessedMethod {
-  // debugLog('process-method-start', `Processing method: ${declaration}`)
+  debugLog('process-method-start', `Processing method: ${declaration}`)
 
   // Regex to match the method declaration
   const methodPattern = /^(?:async\s+)?(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)\s*(?::\s*([^ {][^;{]*))?/
   const match = declaration.match(methodPattern)
 
   if (!match) {
-    // debugLog('process-method-error', `Failed to parse method declaration: ${declaration}`)
+    debugLog('process-method-error', `Failed to parse method declaration: ${declaration}`)
     return {
       name: declaration.split('(')[0].trim().replace(/^async\s+/, ''),
       signature: '() => unknown',
@@ -2408,7 +2470,7 @@ function processObjectMethod(declaration: string): ProcessedMethod {
     returnType = `Promise<${returnType}>`
   }
 
-  // debugLog('process-method-parsed', `Name: ${name}, Generics: ${generics}, Params: ${params}, ReturnType: ${returnType}`)
+  debugLog('process-method-parsed', `Name: ${name}, Generics: ${generics}, Params: ${params}, ReturnType: ${returnType}`)
 
   const cleanParams = cleanParameterTypes(params || '')
   const signature = [
@@ -2421,12 +2483,12 @@ function processObjectMethod(declaration: string): ProcessedMethod {
     .join(' ')
     .trim()
 
-  // debugLog('process-method-result', `Generated signature for ${name}: ${signature}`)
+  debugLog('process-method-result', `Generated signature for ${name}: ${signature}`)
   return { name, signature }
 }
 
 function processObjectProperties(content: string, state?: ProcessingState, indentLevel = 0): Array<{ key: string, value: string }> {
-  // debugLog('process-props', `Processing object properties at indent level ${indentLevel}`)
+  debugLog('process-props', `Processing object properties at indent level ${indentLevel}`)
   const properties: Array<{ key: string, value: string }> = []
   const cleanContent = content.slice(1, -1).trim()
   if (!cleanContent)
@@ -2467,7 +2529,7 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
         if (char === ':' && !colonFound) {
           colonFound = true
           currentKey = buffer.trim()
-          // debugLog('process-props-key', `Found key: ${currentKey}`)
+          debugLog('process-props-key', `Found key: ${currentKey}`)
           buffer = ''
           isParsingKey = false
           continue
@@ -2475,13 +2537,13 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
         else if ((char === ',' || char === ';') && !isParsingKey) {
           if (currentKey) {
             const trimmedBuffer = buffer.trim()
-            // debugLog('process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
+            debugLog('process-props-value', `Processing value for key ${currentKey}: ${trimmedBuffer.substring(0, 50)}...`)
 
             const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
-            // debugLog('method-check', `Checking if method declaration: ${currentKey}`)
+            debugLog('method-check', `Checking if method declaration: ${currentKey}`)
 
             if (isMethodDecl) {
-              // debugLog('process-props-method', `Detected method: ${currentKey} with body length: ${trimmedBuffer.length}`)
+              debugLog('process-props-method', `Detected method: ${currentKey} with body length: ${trimmedBuffer.length}`)
               const { name, signature } = processObjectMethod(currentKey)
               properties.push({ key: name, value: signature })
             }
@@ -2507,7 +2569,7 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
     const trimmedBuffer = buffer.trim()
     const isMethodDecl = currentKey.includes('(') || currentKey.match(/^\s*(?:async\s+)?\w+\s*(?:<[^>]+>)?\s*\(/)
     if (isMethodDecl) {
-      // debugLog('process-props-method', `Detected final method: ${currentKey}`)
+      debugLog('process-props-method', `Detected final method: ${currentKey}`)
       const { name, signature } = processObjectMethod(currentKey)
       properties.push({ key: name, value: signature })
     }
@@ -2517,35 +2579,35 @@ function processObjectProperties(content: string, state?: ProcessingState, inden
     }
   }
 
-  // debugLog('process-props', `Processed ${properties.length} properties`)
+  debugLog('process-props', `Processed ${properties.length} properties`)
   return properties
 }
 
 function processPropertyValue(value: string, indentLevel: number, state?: ProcessingState): string {
   const trimmed = value.trim()
-  // debugLog('process-value', `Processing value: ${trimmed.substring(0, 100)}...`)
+  debugLog('process-value', `Processing value: ${trimmed.substring(0, 100)}...`)
 
   // Check if this is an object with method declarations first
   if (trimmed.startsWith('{') && trimmed.includes('(') && trimmed.includes(')') && trimmed.includes(':')) {
-    // debugLog('process-value', 'Detected potential object with methods')
+    debugLog('process-value', 'Detected potential object with methods')
     return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
   // Handle arrays before methods since they might contain method-like structures
   if (trimmed.startsWith('[')) {
-    // debugLog('process-value', 'Detected array')
+    debugLog('process-value', 'Detected array')
     return inferArrayType(trimmed, state, true)
   }
 
   // Handle regular objects
   if (trimmed.startsWith('{')) {
-    // debugLog('process-value', 'Detected object')
+    debugLog('process-value', 'Detected object')
     return inferComplexObjectType(trimmed, state, indentLevel)
   }
 
   // Handle function expressions
   if (trimmed.includes('=>') || trimmed.includes('function')) {
-    // debugLog('process-value', 'Detected function expression')
+    debugLog('process-value', 'Detected function expression')
     const funcType = extractFunctionType(trimmed)
     return funcType || '(...args: any[]) => unknown'
   }
@@ -2563,31 +2625,41 @@ function processPropertyValue(value: string, indentLevel: number, state?: Proces
  * Track type usage in declarations
  */
 function trackTypeUsage(content: string, state: ImportTrackingState): void {
-  // Existing pattern for types in declarations
-  const typePattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
+  const typeRefPattern = /(?:extends|implements|:|<)\s*([A-Z][a-zA-Z0-9]*(?:<[^>]+>)?)/g
+  const paramTypePattern = /(?:^|[\s<,])\s*([A-Z][a-zA-Z0-9]*)(?:[<>,\s]|$)/g
 
-  // Pattern for parameterized types like Partial<T>
-  const parameterizedTypePattern = /(?:^|[\s<,])\s*([A-Z][a-zA-Z0-9]*)(?:[<>,\s]|$)/g
+  // Add new pattern for Promise generic parameters
+  const promiseGenericPattern = /Promise<([A-Z][a-zA-Z0-9]*)>/g
+  let match: RegExpExecArray | null
 
-  // Track both patterns
-  let match
-  while ((match = typePattern.exec(content)) !== null) {
-    const typeName = match[1].split('<')[0] // Handle generic types
-    state.usedTypes.add(typeName)
-  }
-
-  while ((match = parameterizedTypePattern.exec(content)) !== null) {
+  // Track Promise generic parameters
+  while ((match = promiseGenericPattern.exec(content)) !== null) {
     const typeName = match[1]
-    state.usedTypes.add(typeName)
+    if (Array.from(state.typeImports.values()).some(types => types.has(typeName))) {
+      state.usedTypes.add(typeName)
+    }
   }
 
-  // special handling for types used in Partial<T> and similar constructs
-  const partialPattern = /Partial<([^>]+)>/g
-  while ((match = partialPattern.exec(content)) !== null) {
-    const innerType = match[1].trim()
-    if (/^[A-Z]/.test(innerType)) { // Only track if it starts with capital letter
-      state.usedTypes.add(innerType)
+  // Rest of existing tracking logic...
+  while ((match = typeRefPattern.exec(content)) !== null) {
+    const typeName = match[1].split('<')[0]
+    if (Array.from(state.typeImports.values()).some(types => types.has(typeName))) {
+      state.usedTypes.add(typeName)
     }
+  }
+
+  while ((match = paramTypePattern.exec(content)) !== null) {
+    const typeName = match[1]
+    if (Array.from(state.typeImports.values()).some(types => types.has(typeName))) {
+      state.usedTypes.add(typeName)
+    }
+  }
+
+  // Track exported types
+  const exportedTypePattern = /export\s+(?:type|interface)\s+([A-Z][a-zA-Z0-9]*)/g
+  while ((match = exportedTypePattern.exec(content)) !== null) {
+    const typeName = match[1]
+    state.exportedTypes.add(typeName)
   }
 }
 
@@ -2595,40 +2667,48 @@ function trackTypeUsage(content: string, state: ImportTrackingState): void {
  * Track value usage in declarations
  */
 function trackValueUsage(content: string, state: ImportTrackingState): void {
-  // Track exports
+  // Track exported values
   const exportMatch = content.match(/export\s*\{([^}]+)\}/)
   if (exportMatch) {
     const exports = exportMatch[1].split(',').map(e => e.trim())
-    exports.forEach((e) => {
-      const [name] = e.split(/\s+as\s+/)
+    exports.forEach((exp) => {
+      const [name] = exp.split(/\s+as\s+/)
       state.exportedValues.add(name.trim())
     })
   }
 
-  // Track values in declarations
-  const patterns = [
-    /export\s+declare\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
-    /export\s+declare\s+(?:const|function|class)\s+([a-zA-Z_$][\w$]*)/g,
-    /export\s+\{\s*([^}\s]+)(?:\s*,\s*[^}\s]+)*\s*\}/g,
-  ]
+  // Track default exports
+  const defaultExportMatch = content.match(/export\s+default\s+([a-zA-Z_$][\w$]*)/)
+  if (defaultExportMatch) {
+    state.defaultExportValue = defaultExportMatch[1]
+    state.exportedValues.add(defaultExportMatch[1])
+  }
 
-  for (const pattern of patterns) {
-    let match
-    while ((match = pattern.exec(content)) !== null) {
-      const values = match[1].split(',').map(v => v.trim())
-      values.forEach((value) => {
-        if (!['type', 'interface', 'declare', 'extends', 'implements', 'function', 'const', 'let', 'var'].includes(value)) {
-          state.usedValues.add(value)
-        }
-      })
+  // Track used values
+  const valuePattern = /\b([a-z_$][\w$]*)\b(?!\s*:)/g
+  let match: RegExpExecArray | null
+  while ((match = valuePattern.exec(content)) !== null) {
+    const valueName = match[1]
+    // Only add to usedValues if it's an imported value
+    if (state.importSources.has(valueName)) {
+      state.usedValues.add(valueName)
     }
   }
 }
 
 function debugLog(category: string, message: string): void {
-  if (config.verbose) {
+  if (config.verbose === true) {
     // eslint-disable-next-line no-console
     console.debug(`[dtsx:${category}] ${message}`)
+  }
+
+  if (Array.isArray(config.verbose)) {
+    // Check if any of the verbose categories match the prefix
+    const matches = config.verbose.some(prefix => category.startsWith(prefix))
+    if (matches) {
+      // eslint-disable-next-line no-console
+      console.log(`[dtsx:${category}] ${message}`)
+    }
   }
 }
 
@@ -2691,7 +2771,7 @@ function splitArrayElements(content: string): string[] {
       else if (char === ',' && depth === 0) {
         const trimmed = current.trim()
         if (trimmed) {
-          // debugLog('array-split', `Found element: ${trimmed}`)
+          debugLog('array-split', `Found element: ${trimmed}`)
           elements.push(trimmed)
         }
         current = ''
@@ -2705,7 +2785,7 @@ function splitArrayElements(content: string): string[] {
   // Add final element
   const trimmed = current.trim()
   if (trimmed) {
-    // debugLog('array-split', `Found element: ${trimmed}`)
+    debugLog('array-split', `Found element: ${trimmed}`)
     elements.push(trimmed)
   }
 
