@@ -1,4 +1,6 @@
-import { actionsPath } from '@stacksjs/path';
+import forge, { pki, tls } from 'node-forge';
+import { generate } from '@stacksjs/dtsx';
+import { something as dts } from './generate';
 
 declare type ParsedPath,
   relative,
@@ -17,4 +19,4 @@ export declare function homeDir(path?: string): string;
 export declare function libraryEntryPath(type: LibraryType): string;
 export declare function examplesPath(type?: 'vue-components' | 'web-components'): string;
 
-export { basename, delimiter, dirname, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }
+export { basename, forge, generate, pki, tls, delimiter, dirname, dts, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }

@@ -14,6 +14,11 @@ import {
   toNamespacedPath,
 } from 'node:path'
 import process from 'node:process'
+import { someUnusedImport, something as dts } from './generate';
+import { generate } from '@stacksjs/dtsx'
+import forge, { pki, tls } from 'node-forge'
+import { runCommandSync } from '@stacksjs/cli'
+import { log } from '@stacksjs/logging'
 
 /**
  * Returns the path to the `actions` directory. The `actions` directory
@@ -136,4 +141,5 @@ export const path: Path = {
   sep: () => sep,
 }
 
-export { basename, delimiter, dirname, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }
+export { basename, forge, generate, pki, tls, delimiter, dirname, dts, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }
+export default forge

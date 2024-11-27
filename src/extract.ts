@@ -501,17 +501,10 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
   const imports: string[] = []
   const seenImports = new Set<string>()
 
-  debugLog('import-gen', `Generating optimized imports. ${state.exportedTypes.size} exported types`)
-
-  // Handle type imports first
+  // Handle type-only imports first
   for (const [module, types] of state.typeImports) {
-    debugLog('import-type-check', `Checking types from ${module}: ${Array.from(types).join(', ')}`)
     const typeImports = Array.from(types)
-      .filter((t) => {
-        const isUsed = state.exportedTypes.has(t) || state.usedTypes.has(t)
-        debugLog('import-type-filter', `Type ${t}: exported=${state.exportedTypes.has(t)}, used=${state.usedTypes.has(t)}`)
-        return isUsed
-      })
+      .filter(t => state.usedTypes.has(t))
       .map((t) => {
         const alias = state.valueAliases.get(t)
         return alias ? `${t} as ${alias}` : t
@@ -523,41 +516,59 @@ function generateOptimizedImports(state: ImportTrackingState): string[] {
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog('import-add-type', `Added type import: ${importStatement}`)
       }
     }
   }
 
-  // Handle value imports with alias preservation
+  // Handle value imports including default exports
+  const processedModules = new Set()
   for (const [module, values] of state.valueImports) {
-    const moduleAliases = new Map<string, string>()
-    const valueImports = Array.from(values)
+    if (processedModules.has(module))
+      continue
+    processedModules.add(module)
+
+    const defaultImport = Array.from(state.valueAliases.entries())
+      .find(([alias, orig]) =>
+        orig === 'default'
+        && state.importSources.get(alias) === module
+        && state.usedValues.has(alias),
+      )?.[0]
+
+    const namedImports = Array.from(values)
+      .filter(v => v !== 'default')
       .filter((v) => {
-        // Check if value is used directly or through an alias
         const alias = Array.from(state.valueAliases.entries())
           .find(([_, orig]) => orig === v)?.[0]
-        const isUsed = state.exportedValues.has(v)
-          || state.usedValues.has(v)
-          || v === state.defaultExportValue
-          || (alias && (state.exportedValues.has(alias) || alias === state.defaultExportValue))
-
-        if (isUsed && alias) {
-          moduleAliases.set(v, alias)
-        }
-        return isUsed
+        return state.usedValues.has(v) || (alias && state.usedValues.has(alias))
       })
       .map((v) => {
-        const alias = moduleAliases.get(v)
+        const alias = Array.from(state.valueAliases.entries())
+          .find(([_, orig]) => orig === v)?.[0]
         return alias ? `${v} as ${alias}` : v
       })
       .sort()
 
-    if (valueImports.length > 0) {
-      const importStatement = `import { ${valueImports.join(', ')} } from '${module}'`
+    if (defaultImport || namedImports.length > 0) {
+      let importStatement = 'import '
+
+      // Add default import
+      if (defaultImport) {
+        importStatement += defaultImport
+        if (namedImports.length > 0) {
+          importStatement += ', '
+        }
+      }
+
+      // Add named imports if any
+      if (namedImports.length > 0) {
+        importStatement += `{ ${namedImports.join(', ')} }`
+      }
+
+      importStatement += ` from '${module}'`
+
       if (!seenImports.has(importStatement)) {
         imports.push(importStatement)
         seenImports.add(importStatement)
-        debugLog('import-add-value', `Added value import: ${importStatement}`)
       }
     }
   }
@@ -1533,6 +1544,10 @@ function processDefaultExportBlock(cleanDeclaration: string, state: ProcessingSt
     : `${cleanDeclaration};`
 
   state.defaultExports.add(defaultExport)
+
+  // Do not add the default export to `state.dtsLines` to avoid duplication
+  // state.dtsLines.push(defaultExport);
+
   return true
 }
 
@@ -1993,15 +2008,24 @@ function processImports(line: string, state: ImportTrackingState): void {
     return
   }
 
-  // Handle default import with named imports (import X, { Y } from 'z')
+  // Handle default import with named imports
   const defaultWithNamedMatch = line.match(/import\s+([^,{\s]+)\s*,\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (defaultWithNamedMatch) {
     const [, defaultImport, namedImports, module] = defaultWithNamedMatch
-    handleDefaultAndNamedImports(defaultImport, namedImports, module, state)
+    handleDefaultImport(defaultImport, module, state)
+    handleMixedImports(namedImports, module, state)
     return
   }
 
-  // Handle mixed imports (import { type X, Y } from 'z')
+  // Handle default-only imports
+  const defaultOnlyMatch = line.match(/import\s+([^,{\s]+)\s+from\s*['"]([^'"]+)['"]/)
+  if (defaultOnlyMatch && !defaultWithNamedMatch) {
+    const [, defaultImport, module] = defaultOnlyMatch
+    handleDefaultImport(defaultImport, module, state)
+    return
+  }
+
+  // Handle mixed imports
   const mixedImportMatch = line.match(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/)
   if (mixedImportMatch) {
     const [, imports, module] = mixedImportMatch
@@ -2010,90 +2034,54 @@ function processImports(line: string, state: ImportTrackingState): void {
 }
 
 function handleTypeImports(types: string, module: string, state: ImportTrackingState): void {
+  debugLog('type-import', `Handling type imports from ${module}: ${types}`)
+
   if (!state.typeImports.has(module)) {
     state.typeImports.set(module, new Set())
   }
 
-  // Split types by comma and handle multiline
-  const typesList = types.split(',').map(type => type.trim()).filter(Boolean).map((type) => {
-    // Remove line breaks and normalize whitespace
-    return type.replace(/\s+/g, ' ').trim()
-  })
+  const typesList = types
+    .split(',')
+    .map(t => t.trim())
+    .filter(Boolean)
 
   typesList.forEach((type) => {
     const [original, alias] = type.split(/\s+as\s+/).map(t => t.trim())
-
-    // Skip if empty or invalid
-    if (!original || original === '{' || original === '}')
-      return
-
-    // Remove 'type ' prefix if present
     const cleanType = original.replace(/^type\s+/, '')
 
-    state.typeImports.get(module)!.add(cleanType)
-    state.typeExportSources.set(cleanType, module)
+    if (original && cleanType) {
+      state.typeImports.get(module)!.add(cleanType)
+      state.typeExportSources.set(cleanType, module)
 
-    if (alias) {
-      state.valueAliases.set(alias, cleanType)
+      if (alias) {
+        state.valueAliases.set(alias, cleanType)
+      }
     }
   })
 }
 
-function handleDefaultAndNamedImports(
-  defaultImport: string,
-  namedImports: string,
-  module: string,
-  state: ImportTrackingState,
-): void {
-  // Setup module in value imports if not exists
+function handleDefaultImport(defaultImport: string, module: string, state: ImportTrackingState): void {
   if (!state.valueImports.has(module)) {
     state.valueImports.set(module, new Set())
   }
 
-  // Handle default import mapping
+  // Only track the import, but don't mark as used until we confirm it's exported
   state.valueImports.get(module)!.add('default')
-  state.importSources.set('default', module)
+  state.importSources.set(defaultImport, module)
   state.valueAliases.set(defaultImport, 'default')
-
-  // Handle named imports
-  namedImports.split(',').forEach((importItem) => {
-    const item = importItem.trim()
-    if (item.startsWith('type ')) {
-      // Handle inline type import
-      const typeName = item.replace(/^type\s+/, '').trim()
-      const [original, alias] = typeName.split(/\s+as\s+/).map(n => n.trim())
-
-      if (!state.typeImports.has(module)) {
-        state.typeImports.set(module, new Set())
-      }
-      state.typeImports.get(module)!.add(original)
-      state.typeExportSources.set(original, module)
-
-      if (alias) {
-        state.valueAliases.set(alias, original)
-      }
-    }
-    else {
-      // Handle value import
-      const [original, alias] = item.split(/\s+as\s+/).map(n => n.trim())
-      state.valueImports.get(module)!.add(original)
-      state.importSources.set(original, module)
-
-      if (alias) {
-        state.valueAliases.set(alias, original)
-      }
-    }
-  })
 }
 
 function handleMixedImports(imports: string, module: string, state: ImportTrackingState): void {
-  imports.split(',').forEach((importItem) => {
-    const item = importItem.trim()
+  debugLog('mixed-import', `Handling mixed imports from ${module}: ${imports}`)
 
-    if (item.startsWith('type ')) {
+  // Parse imports
+  const importsList = imports.split(',').map(imp => imp.trim()).filter(Boolean)
+
+  importsList.forEach((imp) => {
+    if (imp.startsWith('type ')) {
       // Handle type import
-      const typeName = item.replace(/^type\s+/, '').trim()
-      const [original, alias] = typeName.split(/\s+as\s+/).map(n => n.trim())
+      const typePart = imp.replace(/^type\s+/, '')
+      const [original, alias] = typePart.split(/\s+as\s+/).map(t => t.trim())
 
       if (!state.typeImports.has(module)) {
         state.typeImports.set(module, new Set())
@@ -2103,20 +2091,25 @@ function handleMixedImports(imports: string, module: string, state: ImportTracki
 
       if (alias) {
         state.valueAliases.set(alias, original)
+        debugLog('type-alias', `Added type alias: ${alias} -> ${original}`)
       }
     }
     else {
-      // Handle value import
-      const [original, alias] = item.split(/\s+as\s+/).map(n => n.trim())
+      // Handle value import with potential alias
+      const [original, alias] = imp.split(/\s+as\s+/).map(n => n.trim())
 
       if (!state.valueImports.has(module)) {
         state.valueImports.set(module, new Set())
       }
+
+      // Track the import and its module
       state.valueImports.get(module)!.add(original)
       state.importSources.set(original, module)
 
       if (alias) {
         state.valueAliases.set(alias, original)
+        state.importSources.set(alias, module)
+        debugLog('value-alias', `Added value alias: ${alias} -> ${original} from ${module}`)
       }
     }
   })
@@ -2662,33 +2655,59 @@ function trackTypeUsage(content: string, state: ImportTrackingState): void {
  * Track value usage in declarations
  */
 function trackValueUsage(content: string, state: ImportTrackingState): void {
-  // Track exported values
-  const exportMatch = content.match(/export\s*\{([^}]+)\}/)
-  if (exportMatch) {
-    const exports = exportMatch[1].split(',').map(e => e.trim())
+  debugLog('content', `Processing content:\n${content}`)
+
+  // Track exports first
+  const exportMatches = content.matchAll(/export\s*\{([^}]+)\}/g)
+  for (const match of exportMatches) {
+    const exports = match[1].split(',').map(e => e.trim())
     exports.forEach((exp) => {
-      const [name] = exp.split(/\s+as\s+/)
-      state.exportedValues.add(name.trim())
+      const [name] = exp.split(/\s+as\s+/).map(n => n.trim())
+      if (!name.startsWith('type ')) {
+        state.usedValues.add(name)
+        debugLog('export-tracking', `Added exported value: ${name}`)
+      }
     })
   }
 
-  // Track default exports
-  const defaultExportMatch = content.match(/export\s+default\s+([a-zA-Z_$][\w$]*)/)
-  if (defaultExportMatch) {
-    state.defaultExportValue = defaultExportMatch[1]
-    state.exportedValues.add(defaultExportMatch[1])
-  }
+  // Process default export using defaultExportValue
+  if (state.defaultExportValue) {
+    const defaultExport = state.defaultExportValue
+    debugLog('default-export', `Processing default export: ${defaultExport}`)
+    state.usedValues.add(defaultExport)
 
-  // Track used values
-  const valuePattern = /\b([a-z_$][\w$]*)\b(?!\s*:)/g
-  let match: RegExpExecArray | null
-  while ((match = valuePattern.exec(content)) !== null) {
-    const valueName = match[1]
-    // Only add to usedValues if it's an imported value
-    if (state.importSources.has(valueName)) {
-      state.usedValues.add(valueName)
+    // Look for alias mapping
+    const aliasEntry = Array.from(state.valueAliases.entries()).find(([alias]) => alias === defaultExport)
+
+    if (aliasEntry) {
+      const [alias, originalName] = aliasEntry
+      debugLog('default-export', `Found alias mapping: ${alias} -> ${originalName}`)
+
+      // Mark both the alias and the original as used
+      state.usedValues.add(originalName)
+      state.usedValues.add(alias)
+
+      // Track the module this came from
+      const sourceModule = state.importSources.get(originalName)
+      if (sourceModule) {
+        debugLog('default-export', `Original value ${originalName} comes from module: ${sourceModule}`)
+        if (!state.valueImports.has(sourceModule)) {
+          state.valueImports.set(sourceModule, new Set())
+        }
+        state.valueImports.get(sourceModule)?.add(originalName)
+      }
+    }
+    else {
+      debugLog('default-export', `No alias mapping found for default export ${defaultExport}`)
+      debugLog('default-export', `Current aliases: ${JSON.stringify(Array.from(state.valueAliases.entries()))}`)
     }
   }
+  else {
+    debugLog('default-export', 'No default export found in state.')
+  }
+
+  // Log used values after processing
+  debugLog('values', `Final used values: ${JSON.stringify(Array.from(state.usedValues))}`)
 }
 
 function debugLog(category: string, message: string): void {

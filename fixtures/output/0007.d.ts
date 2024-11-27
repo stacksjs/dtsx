@@ -1,5 +1,5 @@
+import forge, { pki, tls } from 'node-forge';
 import type { CAOptions, CertificateOptions, GenerateCertReturn, TlsOption } from './types';
-import { default as forge, pki, tls } from 'node-forge';
 
 export declare interface Cert {
   certificate: string
