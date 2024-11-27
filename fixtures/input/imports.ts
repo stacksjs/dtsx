@@ -1,18 +1,5 @@
 import os from 'node:os'
-import {
-  basename,
-  delimiter,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  normalize,
-  type ParsedPath,
-  relative,
-  resolve,
-  sep,
-  toNamespacedPath,
-} from 'node:path'
+import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, type ParsedPath, relative, resolve, sep, toNamespacedPath } from 'node:path'
 import process from 'node:process'
 import { someUnusedImport, something as dts } from './generate';
 import { generate } from '@stacksjs/dtsx'
