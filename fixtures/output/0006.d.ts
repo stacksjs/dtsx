@@ -1,5 +1,7 @@
 import type { Collection } from '@stacksjs/collections';
 
+export declare let quotes: Collection<string[]>;
+
 export {
   align,
   box,
@@ -59,6 +61,5 @@ export {
   white,
   yellow,
 } from 'kolorist'
-export declare let quotes: Collection<string[]>;
 
 export * as kolorist from 'kolorist'

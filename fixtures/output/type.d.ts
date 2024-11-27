@@ -1,6 +1,6 @@
 import type { DtsGenerationOption } from '@stacksjs/dtsx';
 
-export type { DtsGenerationOption };
+export type { DtsGenerationOption }
 export declare type AuthStatus = 'authenticated' | 'unauthenticated'
 
 export type ComplexUnionIntersection =

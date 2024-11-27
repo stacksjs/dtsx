@@ -1,6 +1,5 @@
 import { actionsPath } from '@stacksjs/path';
 
-export { basename, delimiter, dirname, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }
 declare type ParsedPath,
   relative,
   resolve,
@@ -17,3 +16,5 @@ export declare function builtUserActionsPath(path?: string, options?: { relative
 export declare function homeDir(path?: string): string;
 export declare function libraryEntryPath(type: LibraryType): string;
 export declare function examplesPath(type?: 'vue-components' | 'web-components'): string;
+
+export { basename, delimiter, dirname, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath }

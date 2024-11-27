@@ -3,9 +3,10 @@ import type { SomeOtherType } from '@stacksjs/types';
 import { dtsConfig } from './config';
 import { generate, something as dts } from './generate';
 
+export type { SomeOtherType }
+export type { BunRegisterPlugin } from 'bun'
+
 export { generate, dtsConfig, type BunPlugin }
-export type { SomeOtherType };
-export type { BunRegisterPlugin } from 'bun';
 export { config } from './config'
 
 export * from './extract'

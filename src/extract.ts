@@ -616,93 +616,75 @@ function extractCompleteObjectContent(value: string): string | null {
  */
 function formatOutput(state: ProcessingState): string {
   const imports = new Set<string>()
+  const declarations: string[] = []
+  const exports: string[] = []
+  const defaultExports: string[] = []
+  const exportAllStatements: string[] = []
 
-  // Deduplicate and format imports
-  state.dtsLines
-    .filter(line => line.startsWith('import'))
-    .forEach(imp => imports.add(imp.replace(/;+$/, '')))
+  // Process all lines and categorize them
+  state.dtsLines.forEach((line) => {
+    const trimmed = line.trim()
+    if (!trimmed)
+      return
 
-  // Get all non-import lines, clean up semicolons and comments
-  const declarations = state.dtsLines
-    .filter(line => !line.startsWith('import'))
-    .map((line) => {
-      // Remove any standalone comment lines
-      if (line.trim().startsWith('/*') || line.trim().startsWith('*') || line.trim().startsWith('//')) {
-        return ''
-      }
-
-      // Clean up any multiple semicolons and ensure all declarations end with one
-      const trimmed = line.trim()
-      if (!trimmed)
-        return ''
-
-      // Don't add semicolons to export * statements or when one already exists
-      if (trimmed.startsWith('export *') || trimmed.endsWith(';')) {
-        return trimmed
-      }
-
-      // Add semicolon to type exports that don't have one
-      if (trimmed.startsWith('export type')) {
-        return `${trimmed};`
-      }
-
-      return trimmed.replace(/;+$/, ';')
-    })
-    .filter(line => line.trim()) // Remove empty lines after comment removal
-
-  // Add default exports from state.defaultExports
-  const defaultExports = Array.from(state.defaultExports)
-    .map(exp => exp.trim().replace(/;+$/, ';'))
-
-  // Organize declarations by type
-  const exportAllStatements = declarations.filter(line => line.trim().startsWith('export *'))
-  const otherDeclarations = declarations.filter(line => !line.trim().startsWith('export *'))
-
-  // Construct the output with proper spacing
-  const parts: string[] = []
-
-  // Add imports with a line break after if there are any
-  if (imports.size > 0) {
-    parts.push(
-      ...Array.from(imports).map(imp => `${imp};`),
-      '',
-    )
-  }
-
-  // Add other declarations
-  if (otherDeclarations.length > 0) {
-    parts.push(...otherDeclarations)
-  }
-
-  // Position export * statements based on whether there's a default export
-  if (exportAllStatements.length > 0) {
-    if (defaultExports.length > 0) {
-      // Add export * statements before default export
-      if (parts.length > 0) {
-        parts.push('')
-      }
-      parts.push(...exportAllStatements)
+    if (trimmed.startsWith('import')) {
+      imports.add(trimmed.replace(/;+$/, ''))
+    }
+    else if (trimmed.startsWith('export {')) {
+      exports.push(trimmed)
+    }
+    else if (trimmed.startsWith('export default')) {
+      defaultExports.push(trimmed)
+    }
+    else if (trimmed.startsWith('export *')) {
+      exportAllStatements.push(trimmed)
     }
     else {
-      // Add export * statements at the end
-      if (parts.length > 0) {
-        parts.push('')
-      }
-      parts.push(...exportAllStatements)
+      declarations.push(trimmed)
     }
+  })
+
+  // Add default exports from state
+  Array.from(state.defaultExports)
+    .forEach(exp => defaultExports.push(exp.trim().replace(/;+$/, ';')))
+
+  // Construct the output with proper ordering
+  const parts: string[] = []
+
+  // 1. Add imports
+  if (imports.size > 0) {
+    parts.push(...Array.from(imports).map(imp => `${imp};`), '')
   }
 
-  // Add default exports last if there are any
-  if (defaultExports.length > 0) {
-    if (parts.length > 0) {
+  // 2. Add declarations
+  if (declarations.length > 0) {
+    parts.push(...declarations)
+  }
+
+  // 3. Add regular exports
+  if (exports.length > 0) {
+    if (parts.length > 0)
       parts.push('')
-    }
+    parts.push(...exports)
+  }
+
+  // 4. Add export * statements
+  if (exportAllStatements.length > 0) {
+    if (parts.length > 0)
+      parts.push('')
+    parts.push(...exportAllStatements)
+  }
+
+  // 5. Add default exports last
+  if (defaultExports.length > 0) {
+    if (parts.length > 0)
+      parts.push('')
     parts.push(...defaultExports)
   }
 
-  // Clean up and return
+  // Clean up comments and join
   return parts
-    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')) // Remove comments
+    .map(line => line.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
     .join('\n')
     .trim()
 }
@@ -2032,14 +2014,27 @@ function handleTypeImports(types: string, module: string, state: ImportTrackingS
     state.typeImports.set(module, new Set())
   }
 
-  types.split(',').forEach((type) => {
-    const [original, alias] = type.trim().split(/\s+as\s+/).map(t => t.trim())
-    // Only track the import source, don't mark as used yet
-    state.typeImports.get(module)!.add(original)
-    state.typeExportSources.set(original, module)
+  // Split types by comma and handle multiline
+  const typesList = types.split(',').map(type => type.trim()).filter(Boolean).map((type) => {
+    // Remove line breaks and normalize whitespace
+    return type.replace(/\s+/g, ' ').trim()
+  })
+
+  typesList.forEach((type) => {
+    const [original, alias] = type.split(/\s+as\s+/).map(t => t.trim())
+
+    // Skip if empty or invalid
+    if (!original || original === '{' || original === '}')
+      return
+
+    // Remove 'type ' prefix if present
+    const cleanType = original.replace(/^type\s+/, '')
+
+    state.typeImports.get(module)!.add(cleanType)
+    state.typeExportSources.set(cleanType, module)
 
     if (alias) {
-      state.valueAliases.set(alias, original)
+      state.valueAliases.set(alias, cleanType)
     }
   })
 }

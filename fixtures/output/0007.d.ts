@@ -1,7 +1,6 @@
 import type { CAOptions, CertificateOptions, GenerateCertReturn, TlsOption } from './types';
 import { default as forge, pki, tls } from 'node-forge';
 
-export { forge, pki, tls }
 export declare interface Cert {
   certificate: string
   privateKey: string
@@ -14,3 +13,5 @@ export declare function generateCertificate(options: CertificateOptions): Promis
 export declare function addCertToSystemTrustStoreAndSaveCert(cert: Cert, caCert: string, options?: TlsOption): Promise<string>;
 export declare function storeCertificate(cert: Cert, options?: TlsOption): string;
 export declare function storeCACertificate(caCert: string, options?: TlsOption): string;
+
+export { forge, pki, tls }
