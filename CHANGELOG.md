@@ -1,6 +1,30 @@
 # Changelog
 
 
+## v0.7.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.7.0...main)
+
+### 🏡 Chore
+
+- Adjust plugin recommendations ([298c328](https://github.com/stacksjs/dtsx/commit/298c328))
+- Adjust release action ([1a69215](https://github.com/stacksjs/dtsx/commit/1a69215))
+- Add failing test ([c4d1510](https://github.com/stacksjs/dtsx/commit/c4d1510))
+- **typo:** Fixes typo ([#26](https://github.com/stacksjs/dtsx/pull/26))
+- Add two more disabled examples ([e475fe6](https://github.com/stacksjs/dtsx/commit/e475fe6))
+- Improve ternary types ([e23f56b](https://github.com/stacksjs/dtsx/commit/e23f56b))
+- Slightly improve output formatting ([568e84e](https://github.com/stacksjs/dtsx/commit/568e84e))
+- Several minor adjustments ([b28c856](https://github.com/stacksjs/dtsx/commit/b28c856))
+- Add placeholder example ([b5ffe42](https://github.com/stacksjs/dtsx/commit/b5ffe42))
+- Improve output structure ([4e0296a](https://github.com/stacksjs/dtsx/commit/4e0296a))
+- Adjust default/mixed import handling ([197ba16](https://github.com/stacksjs/dtsx/commit/197ba16))
+- Wip ([1256d8f](https://github.com/stacksjs/dtsx/commit/1256d8f))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](http://github.com/chrisbbreuer))
+- Jyotirmoy Bandyopadhayaya ([@BRAVO68WEB](http://github.com/BRAVO68WEB))
+
 ## v0.6.2...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.6.2...main)
