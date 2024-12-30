@@ -4,8 +4,8 @@ layout: home
 
 hero:
   name: "dtsx"
-  text: "Empower your TypeScript projects with blazing fast declaration file generation"
-  tagline: "Extremely fast & configurable DTS emitter."
+  text: "Extremely fast & configurable DTS emitter."
+  tagline: "For a better developer experience."
   image: /images/logo-white.png
   actions:
     - theme: brand
@@ -24,7 +24,7 @@ features:
     details: "Easily adjust settings to fit your project's needs."
   - title: "Lightweight Library"
     icon: "📦"
-    details: "Minimal footprint for seamless integration."
+    details: "Minimal footprint for seamless & performant integration."
   - title: "Cross-Platform Binary"
     icon: "🌐"
     details: "Compatible with multiple operating systems."

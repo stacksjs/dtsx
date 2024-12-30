@@ -2,6 +2,7 @@ antfu
 biomejs
 booleanish
 bumpp
+bunfig
 bunx
 changelogen
 changelogithub
@@ -14,6 +15,7 @@ destructurable
 dtsx
 entrypoints
 heroicons
+localtunnels
 lockb
 mkcert
 openweb
@@ -29,6 +31,7 @@ socio
 softprops
 Solana
 stacksjs
+tlsx
 typecheck
 unplugin
 unref
@@ -39,3 +42,4 @@ vitejs
 vitepress
 vue-demi
 vueus
+whois
