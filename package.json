@@ -56,24 +56,34 @@
     "release": "bun run changelog && bunx bumpp package.json --all",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "dev:docs": "bun --bun vitepress dev docs",
+    "build:docs": "bun --bun vitepress build docs",
+    "preview:docs": "bun --bun vitepress preview docs"
   },
   "devDependencies": {
+    "@iconify-json/carbon": "^1.2.5",
+    "@shikijs/vitepress-twoslash": "^1.24.4",
     "@stacksjs/cli": "^0.68.2",
     "@stacksjs/development": "^0.68.2",
-    "@stacksjs/eslint-config": "^3.8.1-beta.2",
+    "@stacksjs/eslint-config": "^3.12.0-beta.4",
     "@types/bun": "^1.1.14",
+    "@vite-pwa/vitepress": "^0.5.3",
     "bun-config": "^0.3.2",
     "bun-plugin-dtsx": "^0.21.8",
     "tinyglobby": "^0.2.10",
+    "unocss": "^0.65.3",
+    "unplugin-icons": "^0.22.0",
+    "unplugin-vue-components": "^0.28.0",
+    "vite-plugin-pwa": "^0.21.1",
     "vitepress": "^1.5.0"
+  },
+  "overrides": {
+    "unconfig": "0.3.10"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
   },
   "lint-staged": {
-    "*.{js,ts}": "bunx eslint . --fix"
+    "*.{js,ts}": "bunx eslint --flag unstable_ts_config . --fix"
   }
 }

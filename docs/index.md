@@ -3,22 +3,31 @@
 layout: home
 
 hero:
-  name: "Reverse Proxy"
-  text: "A better developer environment."
-  tagline: My great project tagline
+  name: "dtsx"
+  text: "Empower your TypeScript projects with blazing fast declaration file generation"
+  tagline: "Extremely fast & configurable DTS emitter."
+  image: /images/logo-white.png
   actions:
     - theme: brand
-      text: Markdown Examples
-      link: /markdown-examples
+      text: Get Started
+      link: /intro
     - theme: alt
-      text: API Examples
-      link: /api-examples
+      text: View on GitHub
+      link: https://github.com/stacksjs/dtsx
 
 features:
-  - title: Feature A
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - title: Feature B
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
-  - title: Feature C
-    details: Lorem ipsum dolor sit amet, consectetur adipiscing elit
+  - title: "Fast .d.ts Generation"
+    icon: "⚡"
+    details: "Generate TypeScript declaration files quickly and efficiently."
+  - title: "Highly Configurable"
+    icon: "🔧"
+    details: "Easily adjust settings to fit your project's needs."
+  - title: "Lightweight Library"
+    icon: "📦"
+    details: "Minimal footprint for seamless integration."
+  - title: "Cross-Platform Binary"
+    icon: "🌐"
+    details: "Compatible with multiple operating systems."
 ---
+
+<Home />
