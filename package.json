@@ -62,14 +62,14 @@
   },
   "devDependencies": {
     "@iconify-json/carbon": "^1.2.5",
-    "@shikijs/vitepress-twoslash": "^1.24.4",
+    "@shikijs/vitepress-twoslash": "^1.26.1",
     "@stacksjs/cli": "^0.68.2",
     "@stacksjs/development": "^0.68.2",
     "@stacksjs/eslint-config": "^3.12.0-beta.4",
     "@types/bun": "^1.1.14",
     "@vite-pwa/vitepress": "^0.5.3",
     "bun-config": "^0.3.2",
-    "bun-plugin-dtsx": "^0.21.8",
+    "bun-plugin-dtsx": "^0.21.9",
     "tinyglobby": "^0.2.10",
     "unocss": "^0.65.3",
     "unplugin-icons": "^0.22.0",
@@ -78,7 +78,7 @@
     "vitepress": "^1.5.0"
   },
   "overrides": {
-    "unconfig": "0.3.10"
+    "unconfig": "0.6.0"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
