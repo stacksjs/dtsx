@@ -1078,6 +1078,7 @@ function inferConstType(value: string, state: ProcessingState): string {
   return value
 }
 
+/* eslint-disable unused-imports/no-unused-vars */
 function inferTypeFromDefaultValue(defaultValue: string): string {
   // Handle string literals
   if (/^['"`].*['"`]$/.test(defaultValue)) {
@@ -1112,6 +1113,7 @@ function inferTypeFromDefaultValue(defaultValue: string): string {
 
   return 'unknown'
 }
+/* eslint-enable unused-imports/no-unused-vars */
 
 /**
  * Check if a line is a JSDoc comment
@@ -2268,7 +2270,7 @@ function formatObjectType(type: string): string {
 
   return `{ ${properties} }`
 }
-
+/* eslint-disable unused-imports/no-unused-vars */
 function formatObjectParams(objectType: string): string {
   const lines = objectType
     .slice(1, -1) // Remove outer braces
@@ -2283,6 +2285,7 @@ function formatObjectParams(objectType: string): string {
     ${lines.join('\n    ')}
   }`
 }
+/* eslint-enable unused-imports/no-unused-vars */
 
 function getCleanDeclaration(declaration: string): string {
   // Remove leading comments while preserving the structure

@@ -35,60 +35,60 @@ You can also try to convince your employer to sponsor Stacks as a business. This
 ___
 
 - **Diamond (USD$2,500/mo):**
-  - Prominent logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Prominent logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
   - Prominent logo placement in sidebar of all content pages.
-  - Prominent logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Prominent logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ___
 
 - **Platinum (USD$1,000/mo):**
-  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
-  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ___
 
 - **Double Gold (USD$500/mo):**
-  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
-  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ___
 
 - **Gold (USD$250/mo):**
-  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
-  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Large logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Large logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ___
 
 - **Silver (USD$100/mo):**
-  - Medium logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
-  - Medium logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
-  - Medium logo placement in the `BACKERS.md` file of>70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Medium logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Medium logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Medium logo placement in the `BACKERS.md` file of>70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ___
 
 - **Bronze (50/mo):**
-  - Small logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
-  - Small logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
-  - Small logo placement in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Small logo placement on the front page of [stacksjs.org](https://stacksjs.org), [docs.stacksjs.org](https://docs.stacksjs.org), [tlsx.sh](https://tlsx.sh), [rpx](https://reverse-proxy.sh), [qrx](https://ts-quick-reaction.netlify.app), [dtsx](https://github.com/stacksjs/dtsx), [localtunnels](https://localtunnel.sh), [bunfig](https://bunfig.netlify.app/), [vite-plugin-local](https://vite-plugin-local.netlify.app/), [ts-collect](https://ts-collect.netlify.app/), [ts-spreadsheets](https://ts-spreadsheets.netlify.app/).
+  - Small logo placement in the README of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Small logo placement in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
----
+___
 
 - **Generous Backer (USD$25/mo):**
   - Private Discord channel invite
   - Free Personal Account for Stacks Dashboard
   - Social media follow
-  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others, above other individual backers.
+  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others, above other individual backers.
 
----
+___
 
 - **Sponsorware Tier (USD$10/mo):**
-  - Get access to all current sponsorware projects.
-  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Get access to all current sponsorware projects *(i.e. the Stacks DynamoDB ORM driver)*
+  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
----
+___
 
 - **Individual Backer (USD$5/mo):**
-  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
+  - Name listed in the `BACKERS.md` file of >70x `stacksjs/core` repos, `stacksjs/stacks`, `tlsx`, `rpx`, `dtsx`, `qrx`, `localtunnels`, `bunfig`, `vite-plugin-local`, `ts-collect`, `ts-spreadsheets`, and few others.
 
 ## Current Sponsors
 
@@ -126,6 +126,6 @@ ___
 
 ___
 
-##### Thanks to Vue.js for the inspiration for this sponsorship page
+##### Thanks to Vue.js for the inspiration of this sponsorship page
 
 *You can find their sponsorship page [here](https://vuejs.org/sponsor/).*

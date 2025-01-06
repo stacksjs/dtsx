@@ -28,10 +28,10 @@ const options: DtsGenerationOptions = {
   /**
    * The entry points for generating the declaration files.
    * Supports glob patterns for flexible selection.
-   * @default ['**/*.ts']
+   * @default ['**\/*.ts']
    * @type {string[]}
    * @example
-   * entrypoints: ['**/*.ts']
+   * entrypoints: ['**\/*.ts']
    */
   entrypoints: ['**/*.ts'],
 
@@ -71,7 +71,7 @@ const options: DtsGenerationOptions = {
   //  * keepComments: true
   //  */
   // keepComments: true, // coming soon
-};
+}
 
 export default options
 ```

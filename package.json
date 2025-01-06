@@ -48,8 +48,8 @@
     "compile:windows-x64": "bun build ./bin/cli.ts --compile --minify --target=bun-windows-x64 --outfile bin/dtsx-windows-x64.exe",
     "compile:darwin-x64": "bun build ./bin/cli.ts --compile --minify --target=bun-darwin-x64 --outfile bin/dtsx-darwin-x64",
     "compile:darwin-arm64": "bun build ./bin/cli.ts --compile --minify --target=bun-darwin-arm64 --outfile bin/dtsx-darwin-arm64",
-    "lint": "bunx eslint .",
-    "lint:fix": "bunx eslint . --fix",
+    "lint": "bunx --bun eslint --flag unstable_ts_config .",
+    "lint:fix": "bunx --bun eslint --flag unstable_ts_config . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
     "changelog": "bunx changelogen --output CHANGELOG.md",
     "prepublishOnly": "bun --bun run build && bun run compile:all",
@@ -78,7 +78,7 @@
     "vitepress": "^1.5.0"
   },
   "overrides": {
-    "unconfig": "0.6.0"
+    "unconfig": "0.3.10"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
