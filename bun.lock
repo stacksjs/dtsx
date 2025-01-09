@@ -15,7 +15,7 @@
         "tinyglobby": "^0.2.10",
         "unocss": "^0.65.3",
         "unplugin-icons": "^0.22.0",
-        "unplugin-vue-components": "^0.28.0",
+        "unplugin-vue-components": "^28.0.0",
         "vite-plugin-pwa": "^0.21.1",
         "vitepress": "^1.5.0",
       },
@@ -1243,7 +1243,7 @@
 
     "fast-fifo": ["fast-fifo@1.3.2", "", {}, "sha512-/d9sfos4yxzpwkDkuN7k2SqFKtYNmCTzgfEpz82x34IM9/zc8KGxQoXg1liNC/izpRM/MBdt44Nmx41ZWqk+FQ=="],
 
-    "fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+    "fast-glob": ["fast-glob@3.3.3", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.8" } }, "sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg=="],
 
     "fast-json-stable-stringify": ["fast-json-stable-stringify@2.1.0", "", {}, "sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw=="],
 
@@ -2167,7 +2167,7 @@
 
     "unplugin-icons": ["unplugin-icons@0.22.0", "", { "dependencies": { "@antfu/install-pkg": "^0.5.0", "@antfu/utils": "^0.7.10", "@iconify/utils": "^2.2.0", "debug": "^4.4.0", "kolorist": "^1.8.0", "local-pkg": "^0.5.1", "unplugin": "^2.1.0" }, "peerDependencies": { "@svgr/core": ">=7.0.0", "@svgx/core": "^1.0.1", "@vue/compiler-sfc": "^3.0.2 || ^2.7.0", "svelte": "^3.0.0 || ^4.0.0 || ^5.0.0", "vue-template-compiler": "^2.6.12", "vue-template-es2015-compiler": "^1.9.0" }, "optionalPeers": ["@svgr/core", "@svgx/core", "@vue/compiler-sfc", "svelte", "vue-template-compiler", "vue-template-es2015-compiler"] }, "sha512-CP+iZq5U7doOifer5bcM0jQ9t3Is7EGybIYt3myVxceI8Zuk8EZEpe1NPtJvh7iqMs1VdbK0L41t9+um9VuuLw=="],
 
-    "unplugin-vue-components": ["unplugin-vue-components@0.28.0", "", { "dependencies": { "@antfu/utils": "^0.7.10", "@rollup/pluginutils": "^5.1.4", "chokidar": "^3.6.0", "debug": "^4.4.0", "fast-glob": "^3.3.2", "local-pkg": "^0.5.1", "magic-string": "^0.30.15", "minimatch": "^9.0.5", "mlly": "^1.7.3", "unplugin": "^2.1.0" }, "peerDependencies": { "@babel/parser": "^7.15.8", "@nuxt/kit": "^3.2.2", "vue": "2 || 3" }, "optionalPeers": ["@babel/parser", "@nuxt/kit"] }, "sha512-jiTGtJ3JsRFBjgvyilfrX7yUoGKScFgbdNw+6p6kEXU+Spf/rhxzgvdfuMcvhCcLmflB/dY3pGQshYBVGOUx7Q=="],
+    "unplugin-vue-components": ["unplugin-vue-components@28.0.0", "", { "dependencies": { "@antfu/utils": "^0.7.10", "@rollup/pluginutils": "^5.1.4", "chokidar": "^3.6.0", "debug": "^4.4.0", "fast-glob": "^3.3.3", "local-pkg": "^0.5.1", "magic-string": "^0.30.17", "minimatch": "^9.0.5", "mlly": "^1.7.3", "unplugin": "^2.1.2" }, "peerDependencies": { "@babel/parser": "^7.15.8", "@nuxt/kit": "^3.2.2", "vue": "2 || 3" }, "optionalPeers": ["@babel/parser", "@nuxt/kit"] }, "sha512-vYe0wSyqTVhyNFIad1iiGyQGhG++tDOMgohqenMDOAooMJP9vvzCdXTqCVx20A0rCQXFNjgoRbSeDAioLPH36Q=="],
 
     "upath": ["upath@1.2.0", "", {}, "sha512-aZwGpamFO61g3OlfT7OQCHqhGnW43ieH9WZeP7QxN/G/jS4jfqUkZxoryvJgVPEcrl5NL/ggHsSmLMHuH64Lhg=="],
 
@@ -2429,6 +2429,8 @@
 
     "@surma/rollup-plugin-off-main-thread/magic-string": ["magic-string@0.25.9", "", { "dependencies": { "sourcemap-codec": "^1.4.8" } }, "sha512-RmF0AsMzgt25qzqqLc1+MbHmhdx0ojF2Fvs4XnOqz2ZOBXzzkEwc/dJQZCYHAn7v1jbVOjAZfK8msRn4BxO4VQ=="],
 
+    "@typescript-eslint/typescript-estree/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@unocss/transformer-attributify-jsx-babel/@unocss/core": ["@unocss/core@0.61.0", "", {}, "sha512-Y/Ly3LPIAzOBlWCdKBVzVzIaaWDsf+oWPIUZlaW7DL++WWypVBCghmxXIT5dyuMGXE560Hj92st4AkXfuVdxGQ=="],
 
     "anymatch/picomatch": ["picomatch@2.3.1", "", {}, "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA=="],
@@ -2569,7 +2571,11 @@
 
     "unimport/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
 
+    "unimport/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "unimport/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
+
+    "unplugin-auto-import/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "unplugin-auto-import/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -2736,6 +2742,8 @@
     "@stacksjs/types/unocss/@unocss/transformer-variant-group": ["@unocss/transformer-variant-group@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0" } }, "sha512-5DHEram3iv+c9jPQW8p629aFyptyzdP5yNnRSMLBZcwyJ672VAKzPUZLYHh5UOUb69eaet3og1cU8uxpHhGKtQ=="],
 
     "@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
+
+    "@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -2979,6 +2987,8 @@
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/query-builder/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/query-builder/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/query-builder/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
@@ -3022,6 +3032,8 @@
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/transformer-variant-group": ["@unocss/transformer-variant-group@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0" } }, "sha512-5DHEram3iv+c9jPQW8p629aFyptyzdP5yNnRSMLBZcwyJ672VAKzPUZLYHh5UOUb69eaet3og1cU8uxpHhGKtQ=="],
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
+
+    "@stacksjs/security/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/security/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -3067,17 +3079,23 @@
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/storage/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/storage/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/storage/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
 
     "@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3092,6 +3110,8 @@
     "@stacksjs/types/unocss/@unocss/vite/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
+
+    "@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
@@ -3139,6 +3159,8 @@
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/utils/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/utils/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/utils/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
@@ -3182,6 +3204,8 @@
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/transformer-variant-group": ["@unocss/transformer-variant-group@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0" } }, "sha512-5DHEram3iv+c9jPQW8p629aFyptyzdP5yNnRSMLBZcwyJ672VAKzPUZLYHh5UOUb69eaet3og1cU8uxpHhGKtQ=="],
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
+
+    "@stacksjs/validation/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/validation/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -3241,6 +3265,8 @@
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
@@ -3284,6 +3310,8 @@
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/transformer-variant-group": ["@unocss/transformer-variant-group@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0" } }, "sha512-5DHEram3iv+c9jPQW8p629aFyptyzdP5yNnRSMLBZcwyJ672VAKzPUZLYHh5UOUb69eaet3og1cU8uxpHhGKtQ=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
+
+    "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -3329,6 +3357,8 @@
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
@@ -3373,6 +3403,8 @@
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
 
+    "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/vitepress/shiki": ["shiki@1.24.4", "", { "dependencies": { "@shikijs/core": "1.24.4", "@shikijs/engine-javascript": "1.24.4", "@shikijs/engine-oniguruma": "1.24.4", "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "@types/hast": "^3.0.4" } }, "sha512-aVGSFAOAr1v26Hh/+GBIsRVDWJ583XYV7CuNURKRWh9gpGv4OdbisZGq96B9arMYTZhTQkmRF5BrShOSTvNqhw=="],
@@ -3389,11 +3421,15 @@
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3409,6 +3445,8 @@
 
     "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/query-builder/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/query-builder/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/query-builder/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3417,11 +3455,15 @@
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/security/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/security/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3437,6 +3479,8 @@
 
     "@stacksjs/security/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/security/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/security/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/security/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3445,11 +3489,15 @@
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/storage/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/storage/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3464,6 +3512,8 @@
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/vite/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/storage/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
+
+    "@stacksjs/storage/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/storage/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
@@ -3483,11 +3533,15 @@
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/utils/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/utils/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3503,6 +3557,8 @@
 
     "@stacksjs/utils/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/utils/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/utils/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/utils/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3511,11 +3567,15 @@
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/validation/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/validation/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3531,6 +3591,8 @@
 
     "@stacksjs/validation/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/validation/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/validation/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/validation/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3545,11 +3607,15 @@
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3565,6 +3631,8 @@
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/actions/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3573,11 +3641,15 @@
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3593,6 +3665,8 @@
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/database/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/database/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3601,11 +3675,15 @@
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3621,6 +3699,8 @@
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
 
+    "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
     "@stacksjs/faker/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-oniguruma": ["@shikijs/engine-oniguruma@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1" } }, "sha512-Do2ry6flp2HWdvpj2XOwwa0ljZBRy15HKZITzPcNIBOGSeprnA8gOooA/bLsSPuy8aJBa+Q/r34dMmC3KNL/zw=="],
@@ -3629,11 +3709,15 @@
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3648,6 +3732,8 @@
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
+
+    "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/logging/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
@@ -3694,6 +3780,8 @@
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/transformer-variant-group": ["@unocss/transformer-variant-group@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0" } }, "sha512-5DHEram3iv+c9jPQW8p629aFyptyzdP5yNnRSMLBZcwyJ672VAKzPUZLYHh5UOUb69eaet3og1cU8uxpHhGKtQ=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite": ["@unocss/vite@0.61.0", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@rollup/pluginutils": "^5.1.0", "@unocss/config": "0.61.0", "@unocss/core": "0.61.0", "@unocss/inspector": "0.61.0", "@unocss/scope": "0.61.0", "@unocss/transformer-directives": "0.61.0", "chokidar": "^3.6.0", "fast-glob": "^3.3.2", "magic-string": "^0.30.10" }, "peerDependencies": { "vite": "^2.9.0 || ^3.0.0-0 || ^4.0.0 || ^5.0.0-0" } }, "sha512-gjxLJrja1hqDwdd8z3QvzfMCcKppGqiL2+A6aHwG/AXfEmZMydA50U7VvJK7Wx8/Enm26G6JQrtGrpu+kK3QpQ=="],
+
+    "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unplugin-vue-components/unplugin": ["unplugin@1.16.0", "", { "dependencies": { "acorn": "^8.14.0", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5liCNPuJW8dqh3+DM6uNM2EI3MLLpCKp/KY+9pB5M2S2SR2qvvDHhKgBOaTWEbZTAws3CXfB0rKTIolWKL05VQ=="],
 
@@ -3795,11 +3883,15 @@
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
+    "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/cli/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
+
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/postcss/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/preset-mini/@unocss/rule-utils": ["@unocss/rule-utils@0.61.0", "", { "dependencies": { "@unocss/core": "^0.61.0", "magic-string": "^0.30.10" } }, "sha512-MCdmfhE6Q9HSWjWqi2sx5/nnKyOEhfhoo+pVumHIqkHQICQ/LuKioFf7Y7e5ycqjFE/7dC2hKGZJ8WTMGIOMwA=="],
 
@@ -3814,6 +3906,8 @@
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/config": ["@unocss/config@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "unconfig": "^0.3.13" } }, "sha512-k8uV4n8eMti4S6BFeAkc9QBXJefDIlPyOWrdKykUMOHLIWVAIS53JixW9FJNgJRw0RVI6B7UR+rOznWwKpORPA=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/@unocss/inspector": ["@unocss/inspector@0.61.0", "", { "dependencies": { "@unocss/core": "0.61.0", "@unocss/rule-utils": "0.61.0", "gzip-size": "^6.0.0", "sirv": "^2.0.4" } }, "sha512-gpL2RNw6Cp145kTxWN0BG/tWd4x3LVbgkZfyUlh5IAZHWKAq9MWA0jIifV2RU94h4rbSBNHxz50bodYtkzeM8A=="],
+
+    "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/unocss/@unocss/vite/fast-glob": ["fast-glob@3.3.2", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.4" } }, "sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow=="],
 
     "@stacksjs/path/@stacksjs/logging/@stacksjs/cli/@stacksjs/types/vitepress/shiki/@shikijs/engine-javascript": ["@shikijs/engine-javascript@1.24.4", "", { "dependencies": { "@shikijs/types": "1.24.4", "@shikijs/vscode-textmate": "^9.3.1", "oniguruma-to-es": "0.8.1" } }, "sha512-TClaQOLvo9WEMJv6GoUsykQ6QdynuKszuORFWCke8qvi6PeLm7FcD9+7y45UenysxEWYpDL5KJaVXTngTE+2BA=="],
 
