@@ -71,7 +71,7 @@
     "bun-config": "^0.3.2",
     "bun-plugin-dtsx": "^0.21.9",
     "tinyglobby": "^0.2.10",
-    "unocss": "^0.65.4",
+    "unocss": "^65.4.0",
     "unplugin-icons": "^0.22.0",
     "unplugin-vue-components": "^28.0.0",
     "vite-plugin-pwa": "^0.21.1",
