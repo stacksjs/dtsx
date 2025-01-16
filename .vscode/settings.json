@@ -7,11 +7,6 @@
     "source.fixAll.eslint": "explicit",
     "source.organizeImports": "never"
   },
-  "eslint.options": {
-    "flags": [
-      "unstable_ts_config"
-    ]
-  },
 
   "eslint.rules.customizations": [
     { "rule": "style/*", "severity": "off", "fixable": true },
