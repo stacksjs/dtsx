@@ -10,8 +10,8 @@
         "@stacksjs/eslint-config": "^3.13.1-beta.2",
         "@types/bun": "^1.1.17",
         "@vite-pwa/vitepress": "^0.5.3",
-        "bun-config": "^0.3.2",
         "bun-plugin-dtsx": "^0.21.9",
+        "bunfig": "^0.5.3",
         "tinyglobby": "^0.2.10",
         "unocss": "^65.4.2",
         "unplugin-icons": "^22.0.0",
@@ -957,8 +957,6 @@
 
     "builtin-modules": ["builtin-modules@3.3.0", "", {}, "sha512-zhaCDicdLuWN5UbN5IMnFqNMhNfo919sH85y2/ea+5Yg9TsTkeZxpL+JLbp6cgYFS4sRLp3YV4S6yDuqVWHYOw=="],
 
-    "bun-config": ["bun-config@0.3.2", "", {}, "sha512-PMkLs0UWW4m0blb32YNgEOndYYVSi0i33msasgqB/uQTIp1fvOzw3DiyBRXNE7NfZjRDXLCVA9iGD0pw+3OksQ=="],
-
     "bun-plugin-dtsx": ["bun-plugin-dtsx@0.21.9", "", { "dependencies": { "@stacksjs/dtsx": "^0.8.0" } }, "sha512-ZEGVuJllTxvTGGa+fcKst0/FvShPsdll209PVWgGalEeLxsp5NfGbmmPAHsHHLxNlffxizdY+cGwI7ZmmWUpRw=="],
 
     "bun-plugin-env": ["bun-plugin-env@0.4.1", "", {}, "sha512-g0CNc7eVw+W8zPQDWccRI8wVNMdeYAURVxWFNAFteWfJaGW7dPkvjug/uB0R0yq7VRkscAYIQzwoGA3SkaQz5A=="],
@@ -968,6 +966,8 @@
     "bun-types": ["bun-types@1.1.44", "", { "dependencies": { "@types/node": "~20.12.8", "@types/ws": "~8.5.10" } }, "sha512-jtcekoZeSINgEcHSISzhR13w/cyE+Fankw2Cpl4c0fN3lRmKVAX0i9ay4FyK4lOxUK1HG4HkuIlrPvXKz4Y7sw=="],
 
     "bundle-name": ["bundle-name@4.1.0", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q=="],
+
+    "bunfig": ["bunfig@0.5.3", "", {}, "sha512-QJ3HPCSVWqFfjeprgFhSPkLmFm31d94GFDCrE6iMM5E7vM2zIFYJeToYvaX+A7XEEGtpNvNYHauW3l6DSjFZfQ=="],
 
     "cac": ["cac@6.7.14", "", {}, "sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ=="],
 

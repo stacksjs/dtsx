@@ -1,8 +1,9 @@
 import type { DtsGenerationConfig } from './types'
 import process from 'node:process'
-import { loadConfig } from 'bun-config'
+import { loadConfig } from 'bunfig'
 
 // Get loaded config
+// @ts-expect-error dtsx error
 // eslint-disable-next-line antfu/no-top-level-await
 export const config: DtsGenerationConfig = await loadConfig({
   name: 'dts',
