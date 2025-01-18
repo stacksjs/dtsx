@@ -47,7 +47,7 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
     }
 
     for (const file of files) {
-      const fileDeclarations = await extract(file)
+      const fileDeclarations = await extract(file, options?.verbose)
 
       if (fileDeclarations) {
         const relativePath = relative(options?.root ?? './src', file)
