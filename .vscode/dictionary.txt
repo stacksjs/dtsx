@@ -15,6 +15,7 @@ destructurable
 dtsx
 entrypoints
 heroicons
+iconify
 localtunnels
 lockb
 mkcert
@@ -27,12 +28,16 @@ Postcardware
 postcompile
 prefetch
 preinstall
+shikijs
 socio
 softprops
 Solana
 stacksjs
 tlsx
+twoslash
 typecheck
+unconfig
+unocss
 unplugin
 unref
 upath

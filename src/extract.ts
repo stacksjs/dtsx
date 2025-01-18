@@ -196,7 +196,7 @@ function extractFunctionSignature(declaration: string, verbose?: boolean | strin
   rest = restAfterGenerics.trim()
   debugLog('signature-after-generics', `Remaining content: ${rest}`, verbose)
 
-  // Extract parameters
+  // Extract parameters with full object type support
   const { params, rest: restAfterParams } = extractParams(rest, verbose)
   rest = restAfterParams.trim()
   debugLog('signature-after-params', `Remaining content: ${rest}`, verbose)
@@ -205,10 +205,20 @@ function extractFunctionSignature(declaration: string, verbose?: boolean | strin
   const { returnType } = extractReturnType(rest)
   debugLog('signature-return', `Extracted return type: ${returnType}`, verbose)
 
+  // Handle object parameter types
+  let processedParams = params
+  if (params.includes('{')) {
+    const objectMatch = params.match(/\{([^}]+)\}:\s*([^)]+)/)
+    if (objectMatch) {
+      const [, paramList, typeRef] = objectMatch
+      processedParams = `{ ${paramList} }: ${typeRef}`
+    }
+  }
+
   const signature = {
     name,
     generics,
-    params,
+    params: processedParams,
     returnType,
   }
 
@@ -2046,12 +2056,89 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true, verbose?: boolean | string[]): string {
-  const normalizedDeclaration = declaration.trim().replace(/\s+/g, ' ')
+  const normalizedDeclaration = declaration.trim()
   const signature = extractFunctionSignature(normalizedDeclaration, verbose)
 
-  // Clean up params
+  // Clean up all parameters - both object destructuring and regular parameters
   if (signature.params) {
-    signature.params = cleanParameterTypes(signature.params)
+    // Handle regular parameters
+    if (!signature.params.includes('{')) {
+      const cleanedParams = signature.params
+        .split(',')
+        .map((param) => {
+          const paramTrimmed = param.trim()
+          if (!paramTrimmed)
+            return null
+
+          // Handle parameters with default values and type annotations
+          if (paramTrimmed.includes('=')) {
+            const [paramPart] = paramTrimmed.split(/\s*=\s*/)
+            const paramWithoutDefault = paramPart.trim()
+
+            // If there's an explicit type annotation, use it
+            if (paramWithoutDefault.includes(':')) {
+              const [paramName, paramType] = paramWithoutDefault.split(':').map(p => p.trim())
+              return `${paramName}?: ${paramType}`
+            }
+
+            // Infer type from default value if no explicit type
+            const defaultValue = paramTrimmed.split(/\s*=\s*/)[1].trim()
+            const inferredType = defaultValue === '{}'
+              ? paramTrimmed.includes(':') ? paramTrimmed.split(':')[1].trim().split('=')[0].trim() : 'Record<string, unknown>'
+              : defaultValue === ''
+                ? 'string'
+                : typeof eval(defaultValue)
+
+            return `${paramWithoutDefault}?: ${inferredType}`
+          }
+
+          // Handle parameters without default values
+          if (paramTrimmed.includes(':')) {
+            const [paramName, paramType] = paramTrimmed.split(':').map(p => p.trim())
+            const isOptional = paramName.endsWith('?')
+            const cleanName = paramName.replace(/\?$/, '')
+            return `${cleanName}${isOptional ? '?' : ''}: ${paramType}`
+          }
+
+          return paramTrimmed
+        })
+        .filter(Boolean)
+        .join(', ')
+
+      signature.params = cleanedParams
+    }
+    // Handle object destructuring (existing code)
+    else {
+      const paramMatch = declaration.match(/\{([^}]+)\}:\s*([^)]+)/)
+      if (paramMatch) {
+        const [, paramList, typeRef] = paramMatch
+
+        const cleanedParams = paramList
+          .split(',')
+          .map((param) => {
+            const paramTrimmed = param.trim()
+            if (!paramTrimmed)
+              return null
+
+            const hasDefaultValue = paramTrimmed.includes('=')
+            const [paramName] = paramTrimmed.split(/\s*=\s*/)
+            const nameOnly = paramName.trim()
+
+            const isOptional = hasDefaultValue || nameOnly.endsWith('?')
+            const cleanName = nameOnly.replace(/\?$/, '')
+
+            if (cleanName.includes(':')) {
+              const [name, type] = cleanName.split(':').map(p => p.trim())
+              return `${name}${isOptional ? '?' : ''}: ${type}`
+            }
+
+            return `${cleanName}${isOptional ? '?' : ''}`
+          })
+          .filter(Boolean)
+
+        signature.params = `{ ${cleanedParams.join(', ')} }: ${typeRef.trim()}`
+      }
+    }
   }
 
   // Preserve type predicates and complete return types
