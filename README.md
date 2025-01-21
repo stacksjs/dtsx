@@ -8,10 +8,10 @@
 
 ## Features
 
-- Fast .d.ts generation
-- Highly configurable
-- Lightweight library
-- Cross-platform binary
+- ⚡ Extremely fast .d.ts generation
+- ⚙️ Highly configurable
+- 🪶 Lightweight library
+- 🤖 Cross-platform binary
 
 ## Install
 
