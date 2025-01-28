@@ -62,20 +62,20 @@
   },
   "devDependencies": {
     "@iconify-json/carbon": "^1.2.5",
-    "@shikijs/vitepress-twoslash": "^2.0.3",
+    "@shikijs/vitepress-twoslash": "^2.1.0",
     "@stacksjs/cli": "^0.68.2",
     "@stacksjs/development": "^0.68.2",
     "@stacksjs/eslint-config": "^3.13.1-beta.2",
-    "@types/bun": "^1.1.18",
+    "@types/bun": "^1.2.1",
     "@vite-pwa/vitepress": "^0.5.3",
     "bun-plugin-dtsx": "^0.21.9",
     "bunfig": "^0.5.3",
     "tinyglobby": "^0.2.10",
-    "unocss": "^65.4.2",
+    "unocss": "^65.4.3",
     "unplugin-icons": "^22.0.0",
     "unplugin-vue-components": "^28.0.0",
     "vite-plugin-pwa": "^0.21.1",
-    "vitepress": "^1.6.1"
+    "vitepress": "^1.6.3"
   },
   "overrides": {
     "unconfig": "0.3.10"
