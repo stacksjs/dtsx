@@ -65,7 +65,7 @@
     "@shikijs/vitepress-twoslash": "^2.1.0",
     "@stacksjs/cli": "^0.68.2",
     "@stacksjs/development": "^0.68.2",
-    "@stacksjs/eslint-config": "^3.13.1-beta.2",
+    "@stacksjs/eslint-config": "^3.15.1-beta.4",
     "@types/bun": "^1.2.1",
     "@vite-pwa/vitepress": "^0.5.3",
     "bun-plugin-dtsx": "^0.21.9",
