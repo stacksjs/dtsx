@@ -11,9 +11,9 @@ export declare function calculateValidityDates(options: {
   validityYears?: number
   notBeforeDays?: number
   verbose?: boolean
-}): void;
+});
 declare function generateCertificateExtensions(options: CertificateOptions): void;
-export declare function createRootCA(options: CAOptions = {}): Promise<GenerateCertReturn>;
+export declare function createRootCA(options?: CAOptions): Promise<GenerateCertReturn>;
 export declare function generateCertificate(options: CertificateOptions): Promise<GenerateCertReturn>;
 export declare function addCertToSystemTrustStoreAndSaveCert(cert: Cert, caCert: string, options?: TlsOption): Promise<string>;
 export declare function storeCertificate(cert: Cert, options?: TlsOption): string;

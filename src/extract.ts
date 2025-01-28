@@ -234,170 +234,327 @@ function extractFunctionName(declaration: string): string {
   return functionMatch[1]
 }
 
-function extractGenerics(rest: string, verbose?: boolean | string[]): { generics: string, rest: string } {
+function extractGenerics(declaration: string): { generics: string, rest: string } {
   let generics = ''
-  if (rest.startsWith('<')) {
-    let depth = 1 // Start at 1 since we're starting with an opening bracket
-    let pos = 0
-    let buffer = '<' // Start buffer with opening bracket
+  let rest = declaration
+
+  if (declaration.startsWith('<')) {
+    let depth = 1
+    let pos = 1
+    let buffer = '<'
     let inString = false
     let stringChar = ''
 
-    debugLog('generics-input', `Starting generic extraction with: ${rest}`, verbose)
+    for (; pos < declaration.length; pos++) {
+      const char = declaration[pos]
+      const prevChar = pos > 0 ? declaration[pos - 1] : ''
 
-    // Start from position 1 since we already handled the first '<'
-    for (let i = 1; i < rest.length; i++) {
-      const char = rest[i]
-      const nextChar = i < rest.length - 1 ? rest[i + 1] : ''
-      const prevChar = i > 0 ? rest[i - 1] : ''
-
-      debugLog('generics-char', `Processing char: ${char}, next char: ${nextChar}, depth: ${depth}, pos: ${i}`, verbose)
-
-      // Handle string boundaries
       if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
         if (!inString) {
           inString = true
           stringChar = char
-          debugLog('generics-string', `Entering string with ${stringChar}`, verbose)
         }
         else if (char === stringChar) {
           inString = false
-          debugLog('generics-string', 'Exiting string', verbose)
         }
       }
 
-      // Track depth when not in string
       if (!inString) {
-        if (char === '<') {
+        if (char === '<')
           depth++
-          debugLog('generics-depth', `Increasing depth to ${depth} at pos ${i}`, verbose)
-        }
-        else if (char === '>') {
+        if (char === '>') {
           depth--
-          debugLog('generics-depth', `Decreasing depth to ${depth} at pos ${i}`, verbose)
-
-          // If we hit zero depth and the next char is also '>', include both
-          if (depth === 0 && nextChar === '>') {
-            buffer += '>>' // Add both closing brackets
-            pos = i + 1 // Skip the next '>' since we've included it
-            debugLog('generics-complete', `Found double closing bracket at pos ${i}, final buffer: ${buffer}`, verbose)
+          if (depth === 0) {
+            buffer += char
+            pos++
             break
           }
-          else if (depth === 0) {
-            buffer += '>'
-            pos = i
-            debugLog('generics-complete', `Found single closing bracket at pos ${i}, final buffer: ${buffer}`, verbose)
-            break
-          }
-        }
-      }
-
-      if (depth > 0) { // Only add to buffer if we're still inside generic parameters
-        buffer += char
-        debugLog('generics-buffer', `Current buffer: ${buffer}`, verbose)
-      }
-    }
-
-    if (buffer) {
-      generics = buffer
-      rest = rest.slice(pos + 1)
-      debugLog('generics-success', `Successfully extracted generics: ${generics}`, verbose)
-      debugLog('generics-rest', `Remaining text: ${rest}`, verbose)
-    }
-    else {
-      debugLog('generics-fail', `Failed to extract generics from: ${rest}`, verbose)
-    }
-  }
-  return { generics, rest }
-}
-
-function extractParams(rest: string, verbose?: boolean | string[]): { params: string, rest: string } {
-  let params = ''
-
-  if (rest.includes('(')) {
-    const start = rest.indexOf('(')
-    let depth = 1
-    let pos = start + 1
-    let buffer = ''
-
-    debugLog('params-extraction-start', `Starting params extraction from pos ${pos}: ${rest}`, verbose)
-
-    for (; pos < rest.length; pos++) {
-      const char = rest[pos]
-
-      if (char === '(')
-        depth++
-      if (char === ')') {
-        depth--
-        if (depth === 0) {
-          debugLog('params-depth-zero', `Found closing parenthesis at pos ${pos}`, verbose)
-          break
         }
       }
 
       buffer += char
     }
 
-    params = buffer.trim()
-    rest = rest.slice(pos + 1).trim()
-    debugLog('signature-params', `Extracted params: ${params}`, verbose)
+    generics = buffer
+    rest = declaration.slice(pos)
   }
 
-  return { params, rest }
+  return { generics, rest: rest.trim() }
 }
 
-function extractReturnType(rest: string): { returnType: string } {
-  if (!rest.startsWith(':'))
-    return { returnType: 'void' }
+function inferTypeFromDefaultValue(defaultValue: string): string {
+  defaultValue = defaultValue.trim()
 
-  rest = rest.slice(1).trim()
+  // Handle primitive literals
+  if (defaultValue === 'true' || defaultValue === 'false') return 'boolean'
+  if (defaultValue === '""' || defaultValue === "''") return 'string'
+  if (/^-?\d*\.?\d+$/.test(defaultValue)) return 'number'
+  if (defaultValue === 'null') return 'null'
+  if (defaultValue === 'undefined') return 'undefined'
 
-  // Handle type predicates (e.g., "value is User")
-  if (rest.includes('value is ')) {
-    return { returnType: rest.trim() }
+  // Handle common literals
+  if (defaultValue === '[]') return 'any[]'
+  if (defaultValue === '{}') return 'Record<string, unknown>'
+
+  // Handle string literals
+  if (/^(['"`]).*\1$/.test(defaultValue)) return 'string'
+
+  // Infer from contextual clues
+  if (defaultValue.includes('=>')) return '(...args: any[]) => unknown'
+  if (defaultValue.startsWith('new ')) return 'unknown'
+  if (defaultValue.includes('function')) return '(...args: any[]) => unknown'
+
+  // Handle array and object literals
+  if (defaultValue.startsWith('[')) return 'any[]'
+  if (defaultValue.startsWith('{')) return 'Record<string, unknown>'
+
+  return 'unknown'
+}
+
+function extractParams(declaration: string): { params: string, rest: string } {
+  let params = ''
+  let rest = declaration
+
+  if (declaration.includes('(')) {
+    const start = declaration.indexOf('(')
+    let depth = 1
+    let pos = start + 1
+    let buffer = ''
+    let inString = false
+    let stringChar = ''
+
+    for (; pos < declaration.length; pos++) {
+      const char = declaration[pos]
+      const prevChar = pos > 0 ? declaration[pos - 1] : ''
+
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!inString) {
+          inString = true
+          stringChar = char
+        }
+        else if (char === stringChar) {
+          inString = false
+        }
+      }
+
+      if (!inString) {
+        if (char === '(') depth++
+        if (char === ')') {
+          depth--
+          if (depth === 0) break
+        }
+      }
+
+      buffer += char
+    }
+
+    params = buffer
+    rest = declaration.slice(pos + 1)
   }
 
-  // Handle array types with object members
-  if (rest.startsWith('Array<') || rest.startsWith('Promise<')) {
-    let depth = 1
-    let i = rest.indexOf('<') + 1
-    let buffer = rest.slice(0, i)
+  // Clean up parameters while preserving complex types
+  const cleanedParams = params.split(',')
+    .map(param => {
+      const paramTrimmed = param.trim()
+      if (!paramTrimmed) return null
 
-    while (i < rest.length && depth > 0) {
-      const char = rest[i]
+      // Handle parameters with default values
+      if (paramTrimmed.includes('=')) {
+        const [paramPart, defaultValue] = paramTrimmed.split(/\s*=\s*/)
+        const paramWithoutDefault = paramPart.trim()
+
+        // If there's an explicit type annotation, use it
+        if (paramWithoutDefault.includes(':')) {
+          const [paramName, paramType] = paramWithoutDefault.split(':').map(p => p.trim())
+          const fullType = extractComplexType(paramType)
+          return `${paramName}?: ${fullType}`
+        }
+
+        // Otherwise infer the type from the default value
+        const inferredType = inferTypeFromDefaultValue(defaultValue.trim())
+        return `${paramWithoutDefault}?: ${inferredType}`
+      }
+
+      // Handle parameters with type annotations
+      if (paramTrimmed.includes(':')) {
+        const colonIndex = paramTrimmed.indexOf(':')
+        const paramName = paramTrimmed.slice(0, colonIndex).trim()
+        const rawType = paramTrimmed.slice(colonIndex + 1).trim()
+        const fullType = extractComplexType(rawType)
+        const isOptional = paramName.endsWith('?')
+        const cleanName = paramName.replace(/\?$/, '')
+        return `${cleanName}${isOptional ? '?' : ''}: ${fullType}`
+      }
+
+      return paramTrimmed
+    })
+    .filter(Boolean)
+    .join(', ')
+
+  return { params: cleanedParams, rest: rest.trim() }
+}
+
+function extractComplexType(typeStr: string): string {
+  let result = ''
+  let depth = 0
+  let curlyDepth = 0
+  let angleDepth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < typeStr.length; i++) {
+    const char = typeStr[i]
+    const prevChar = i > 0 ? typeStr[i - 1] : ''
+
+    // Handle string boundaries
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+    }
+
+    if (!inString) {
+      if (char === '{') curlyDepth++
+      if (char === '}') curlyDepth--
+      if (char === '<') angleDepth++
+      if (char === '>') angleDepth--
+      if (char === '(') depth++
+      if (char === ')') depth--
+    }
+
+    result += char
+
+    // Track if we've completed a type expression
+    if (curlyDepth === 0 && angleDepth === 0 && depth === 0) {
+      const nextChar = i < typeStr.length - 1 ? typeStr[i + 1] : ''
+      // Only break if we're at a type boundary
+      if (nextChar === ',' || nextChar === ')' || nextChar === ';') break
+    }
+  }
+
+  // Handle any unclosed type expressions
+  const cleanResult = result.trim()
+  if (curlyDepth > 0) cleanResult.concat('}'.repeat(curlyDepth))
+  if (angleDepth > 0) cleanResult.concat('>'.repeat(angleDepth))
+  if (depth > 0) cleanResult.concat(')'.repeat(depth))
+
+  return cleanResult
+}
+
+function parseObjectType(typeStr: string): string {
+  let depth = 0
+  let cleaned = ''
+
+  for (let i = 0; i < typeStr.length; i++) {
+    const char = typeStr[i]
+    if (char === '{' || char === '<')
+      depth++
+    if (char === '}' || char === '>')
+      depth--
+    cleaned += char
+
+    // Break if we've closed all brackets and hit a stopping point
+    if (depth === 0 && (char === '}' || char === '>'))
+      break
+  }
+
+  return cleaned
+}
+
+function parseType(typeStr: string): string {
+  // Handle generic types
+  if (typeStr.includes('<')) {
+    let depth = 0
+    let fullType = ''
+
+    for (let i = 0; i < typeStr.length; i++) {
+      const char = typeStr[i]
       if (char === '<')
         depth++
       if (char === '>')
         depth--
-      buffer += char
-      i++
+      fullType += char
+
+      if (depth === 0 && fullType.includes('>'))
+        break
     }
 
-    return { returnType: buffer }
+    return fullType.trim()
   }
 
-  // Handle object types
-  if (rest.startsWith('{')) {
-    let depth = 1
-    let i = 1
-    let buffer = '{'
+  // Handle intersection and union types
+  if (typeStr.includes('&') || typeStr.includes('|')) {
+    return typeStr.split(/\s*[&|]\s*/)
+      .map(t => parseType(t.trim()))
+      .join(typeStr.includes('&') ? ' & ' : ' | ')
+  }
 
-    while (i < rest.length && depth > 0) {
-      const char = rest[i]
-      if (char === '{')
-        depth++
-      if (char === '}')
-        depth--
-      buffer += char
-      i++
+  return typeStr.trim()
+}
+
+function extractReturnType(declaration: string): { returnType: string } {
+  if (!declaration.startsWith(':'))
+    return { returnType: 'void' }
+
+  const rest = declaration.slice(1).trim()
+
+  // Handle complex return types
+  let depth = 0
+  let curlyDepth = 0
+  let angleDepth = 0
+  let fullType = ''
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < rest.length; i++) {
+    const char = rest[i]
+    const prevChar = i > 0 ? rest[i - 1] : ''
+
+    // Handle strings
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
     }
 
-    return { returnType: buffer }
+    if (!inString) {
+      if (char === '{') curlyDepth++
+      if (char === '}') curlyDepth--
+      if (char === '<') angleDepth++
+      if (char === '>') angleDepth--
+      depth = curlyDepth + angleDepth
+
+      // Only break if we're at the actual end of the type
+      if (depth === 0 && (char === ';' || char === '{' || char === '}')) {
+        // Don't include the terminating character
+        break
+      }
+    }
+
+    fullType += char
   }
 
-  // Handle simple types
-  const match = rest.match(/^([^{;]+)/)
-  return { returnType: match ? match[1].trim() : 'void' }
+  let returnType = fullType.trim()
+
+  // Special handling for object return types
+  if (returnType.startsWith('{')) {
+    const objectContent = returnType.slice(1, -1).trim()
+    if (objectContent) {
+      // Format object properties
+      const properties = objectContent.split(',').map(prop => prop.trim()).join(', ')
+      returnType = `{ ${properties} }`
+    }
+  }
+
+  return { returnType }
 }
 
 function extractFunctionType(value: string, verbose?: boolean | string[]): string | null {
@@ -874,6 +1031,51 @@ function indentMultilineType(type: string, baseIndent: string, isLast: boolean):
   return formattedLines.join('\n')
 }
 
+function inferTypeFromDefault(defaultValue: string): string {
+  if (defaultValue === '""' || defaultValue === '\'\'')
+    return 'string'
+  if (defaultValue === 'true' || defaultValue === 'false')
+    return 'boolean'
+  if (defaultValue === '0' || !isNaN(Number(defaultValue)))
+    return 'number'
+  if (defaultValue === '[]')
+    return 'any[]'
+  if (defaultValue === '{}')
+    return 'Record<string, unknown>'
+  if (defaultValue === 'null')
+    return 'null'
+  if (defaultValue === 'undefined')
+    return 'undefined'
+  return 'unknown'
+}
+
+function extractGenerics(rest: string): { generics: string, rest: string } {
+  if (!rest.startsWith('<'))
+    return { generics: '', rest }
+
+  let depth = 1
+  let pos = 1
+  let generics = '<'
+
+  for (; pos < rest.length; pos++) {
+    const char = rest[pos]
+    if (char === '<')
+      depth++
+    if (char === '>')
+      depth--
+    generics += char
+    if (depth === 0) {
+      pos++
+      break
+    }
+  }
+
+  return {
+    generics,
+    rest: rest.slice(pos).trim(),
+  }
+}
+
 function inferValueType(value: string): string {
   const normalizedValue = value.split('\n').map(line => line.trim()).join(' ')
 
@@ -1250,9 +1452,17 @@ function normalizeTypeReference(value: string): string {
 function processBlock(lines: string[], comments: string[], state: ProcessingState, verbose?: boolean | string[]): void {
   debugLog('block-processing', 'Starting block processing', verbose)
 
-  // Clean up comments from the block content
-  const cleanedLines = lines.filter((line) => {
+  // Join lines to handle potential JSDoc
+  const fullContent = lines.join('\n')
+  const { jsDoc, remainingContent } = extractJSDocComment(fullContent)
+
+  // Split remaining content back into lines
+  const contentLines = remainingContent.split('\n')
+
+  // Clean up content lines but preserve non-JSDoc structure
+  const cleanedLines = contentLines.filter((line) => {
     const trimmed = line.trim()
+    // Only filter out comment lines, not other structural elements
     return !trimmed.startsWith('/*') && !trimmed.startsWith('*') && !trimmed.startsWith('//')
   })
 
@@ -1293,7 +1503,7 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     }
   }
 
-  // Split declarations if multiple are found and they're functions
+  // Split declarations for multiple functions
   if (cleanDeclaration.includes('\n\nexport function') || cleanDeclaration.includes('\n\nfunction')) {
     const declarations = splitFunctionDeclarations(cleanDeclaration)
     if (declarations.length > 1) {
@@ -1306,23 +1516,22 @@ function processBlock(lines: string[], comments: string[], state: ProcessingStat
     }
   }
 
-  const processed
-    // Try each processor in order
-    = processFunctionBlock(cleanDeclaration, state, verbose)
+  // Try each processor in order, with JSDoc awareness
+  const processed = processFunctionBlock(jsDoc + cleanDeclaration, state, verbose)
+    ? undefined
+    : processVariableBlock(cleanDeclaration, lines, state, verbose)
       ? undefined
-      : processVariableBlock(cleanDeclaration, lines, state, verbose)
+      : processTypeBlock(cleanDeclaration, declarationText, state)
         ? undefined
-        : processTypeBlock(cleanDeclaration, declarationText, state)
+        : processDefaultExportBlock(cleanDeclaration, state)
           ? undefined
-          : processDefaultExportBlock(cleanDeclaration, state)
+          : processExportAllBlock(cleanDeclaration, state)
             ? undefined
-            : processExportAllBlock(cleanDeclaration, state)
+            : processExportBlock(cleanDeclaration, declarationText, state, verbose)
               ? undefined
-              : processExportBlock(cleanDeclaration, declarationText, state, verbose)
+              : processModuleBlock(cleanDeclaration, declarationText, state)
                 ? undefined
-                : processModuleBlock(cleanDeclaration, declarationText, state)
-                  ? undefined
-                  : undefined
+                : undefined
 
   if (processed === undefined) {
     debugLog('processing', `Unhandled declaration type: ${cleanDeclaration.split('\n')[0]}`, verbose)
@@ -1366,20 +1575,24 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState, 
     }
   }
 
+  // Extract potential JSDoc and actual declaration
+  const jsDocRegex = /\/\*\*\s*([\s\S]*?)\s*\*\//
+  const jsDocMatch = cleanDeclaration.match(jsDocRegex)
+  const actualDeclaration = cleanDeclaration.replace(jsDocRegex, '').trim()
+
   // Check for function declarations
-  if (!/^(?:export\s+)?(?:async\s+)?function\s+[a-zA-Z_$][\w$]*/.test(cleanDeclaration))
+  if (!/^(?:export\s+)?(?:async\s+)?function\s+[a-zA-Z_$][\w$]*/.test(actualDeclaration))
     return false
 
   debugLog('block-processing', 'Processing function declaration', verbose)
 
-  // Handle potential overloads by splitting on newlines and semicolons
-  const declarations = cleanDeclaration
+  // Handle potential overloads
+  const declarations = actualDeclaration
     .split(/[\n;]/)
     .map(d => d.trim())
     .filter(d => d.startsWith('export function') || d.startsWith('function'))
 
   if (declarations.length > 1) {
-    // Process each overload separately
     declarations.forEach((declaration) => {
       if (!declaration.endsWith('{')) { // Skip implementation
         const processed = processFunction(declaration, state.usedTypes, declaration.startsWith('export'), verbose)
@@ -1391,25 +1604,61 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState, 
   }
 
   // Extract signature for non-overloaded functions
+  const signatureEnd = findSignatureEnd(actualDeclaration)
+  const signaturePart = actualDeclaration.slice(0, signatureEnd).trim()
+
+  debugLog('signature-extraction', `Extracted signature: ${signaturePart}`, verbose)
+
+  const isExported = signaturePart.startsWith('export')
+  // Reconstruct with JSDoc if present
+  const fullDeclaration = jsDocMatch
+    ? `${jsDocMatch[0]}\n${signaturePart}`
+    : signaturePart
+
+  const processed = processFunction(fullDeclaration, state.usedTypes, isExported, verbose)
+
+  if (processed) {
+    debugLog('function-processed', `Generated declaration: ${processed}`, verbose)
+    state.dtsLines.push(processed)
+  }
+
+  return true
+}
+
+function findSignatureEnd(declaration: string): number {
   let signatureEnd = 0
   let parenDepth = 0
   let angleDepth = 0
+  let inString = false
+  let stringChar = ''
 
-  for (let i = 0; i < cleanDeclaration.length; i++) {
-    const char = cleanDeclaration[i]
+  for (let i = 0; i < declaration.length; i++) {
+    const char = declaration[i]
+    const prevChar = i > 0 ? declaration[i - 1] : ''
 
-    if (char === '(')
-      parenDepth++
-    if (char === ')')
-      parenDepth--
+    // Handle string boundaries
+    if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      }
+      else if (char === stringChar) {
+        inString = false
+      }
+      continue
+    }
 
-    if (char === '<')
-      angleDepth++
-    if (char === '>')
-      angleDepth--
+    if (!inString) {
+      if (char === '(')
+        parenDepth++
+      if (char === ')')
+        parenDepth--
+      if (char === '<')
+        angleDepth++
+      if (char === '>')
+        angleDepth--
 
-    if (char === '{') {
-      if (parenDepth === 0 && angleDepth === 0) {
+      if (char === '{' && parenDepth === 0 && angleDepth === 0) {
         signatureEnd = i
         break
       }
@@ -1417,21 +1666,7 @@ function processFunctionBlock(cleanDeclaration: string, state: ProcessingState, 
   }
 
   // If we didn't find '{', set signatureEnd to the end of the declaration
-  if (signatureEnd === 0)
-    signatureEnd = cleanDeclaration.length
-
-  const signaturePart = cleanDeclaration.slice(0, signatureEnd).trim()
-
-  debugLog('signature-extraction', `Extracted signature: ${signaturePart}`, verbose)
-
-  const isExported = signaturePart.startsWith('export')
-  const processed = processFunction(signaturePart, state.usedTypes, isExported, verbose)
-  if (processed) {
-    debugLog('function-processed', `Generated declaration: ${processed}`, verbose)
-    state.dtsLines.push(processed)
-  }
-
-  return true
+  return signatureEnd || declaration.length
 }
 
 function processInterfaceBlock(cleanDeclaration: string, declarationText: string, state: ProcessingState, verbose?: boolean | string[]): boolean {
@@ -2056,13 +2291,49 @@ function processVariable(declaration: string, isExported: boolean, state: Proces
  * Process function declarations with overloads
  */
 function processFunction(declaration: string, usedTypes?: Set<string>, isExported = true, verbose?: boolean | string[]): string {
-  const normalizedDeclaration = declaration.trim()
-  const signature = extractFunctionSignature(normalizedDeclaration, verbose)
+  debugLog('function-processing', `Processing function with potential JSDoc:\n${declaration}`, verbose)
 
-  // Clean up all parameters - both object destructuring and regular parameters
+  // Extract JSDoc if present
+  const jsDocRegex = /\/\*\*\s*([\s\S]*?)\s*\*\//
+  const jsDocMatch = declaration.match(jsDocRegex)
+  const actualDeclaration = declaration.replace(jsDocRegex, '').trim()
+
+  const signature = extractFunctionSignature(actualDeclaration, verbose)
+
+  // Clean up parameters
   if (signature.params) {
-    // Handle regular parameters
-    if (!signature.params.includes('{')) {
+    if (signature.params.includes('{')) {
+      const paramMatch = actualDeclaration.match(/\{([^}]+)\}:\s*([^)]+)/)
+      if (paramMatch) {
+        const [, paramList, typeRef] = paramMatch
+        // Clean up destructured parameters while preserving type information
+        const cleanedParams = paramList
+          .split(',')
+          .map((p) => {
+            const paramTrimmed = p.trim()
+            if (!paramTrimmed)
+              return null
+
+            // Remove default values but preserve type annotations
+            const [paramPart] = paramTrimmed.split('=')
+            const paramName = paramPart.trim()
+
+            // If parameter has type annotation, preserve it
+            if (paramName.includes(':')) {
+              const [name, type] = paramName.split(':').map(p => p.trim())
+              return `${name}: ${type}`
+            }
+
+            return paramName
+          })
+          .filter(Boolean)
+          .join(', ')
+
+        signature.params = `{ ${cleanedParams} }: ${typeRef.trim()}`
+      }
+    }
+    else {
+      // Handle regular parameters
       const cleanedParams = signature.params
         .split(',')
         .map((param) => {
@@ -2070,79 +2341,33 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
           if (!paramTrimmed)
             return null
 
-          // Handle parameters with default values and type annotations
-          if (paramTrimmed.includes('=')) {
-            const [paramPart] = paramTrimmed.split(/\s*=\s*/)
-            const paramWithoutDefault = paramPart.trim()
+          // Remove default values but preserve type annotations
+          const [paramPart] = paramTrimmed.split('=')
+          const paramWithoutDefault = paramPart.trim()
 
-            // If there's an explicit type annotation, use it
-            if (paramWithoutDefault.includes(':')) {
-              const [paramName, paramType] = paramWithoutDefault.split(':').map(p => p.trim())
-              return `${paramName}?: ${paramType}`
-            }
-
-            // Infer type from default value if no explicit type
-            const defaultValue = paramTrimmed.split(/\s*=\s*/)[1].trim()
-            const inferredType = defaultValue === '{}'
-              ? paramTrimmed.includes(':') ? paramTrimmed.split(':')[1].trim().split('=')[0].trim() : 'Record<string, unknown>'
-              : defaultValue === ''
-                ? 'string'
-                : typeof eval(defaultValue)
-
-            return `${paramWithoutDefault}?: ${inferredType}`
+          // If parameter has type annotation, preserve it
+          if (paramWithoutDefault.includes(':')) {
+            const [paramName, paramType] = paramWithoutDefault.split(':').map(p => p.trim())
+            return `${paramName}: ${paramType}`
           }
 
-          // Handle parameters without default values
-          if (paramTrimmed.includes(':')) {
-            const [paramName, paramType] = paramTrimmed.split(':').map(p => p.trim())
-            const isOptional = paramName.endsWith('?')
-            const cleanName = paramName.replace(/\?$/, '')
-            return `${cleanName}${isOptional ? '?' : ''}: ${paramType}`
-          }
-
-          return paramTrimmed
+          return paramWithoutDefault
         })
         .filter(Boolean)
         .join(', ')
 
       signature.params = cleanedParams
     }
-    // Handle object destructuring (existing code)
-    else {
-      const paramMatch = declaration.match(/\{([^}]+)\}:\s*([^)]+)/)
-      if (paramMatch) {
-        const [, paramList, typeRef] = paramMatch
-
-        const cleanedParams = paramList
-          .split(',')
-          .map((param) => {
-            const paramTrimmed = param.trim()
-            if (!paramTrimmed)
-              return null
-
-            const hasDefaultValue = paramTrimmed.includes('=')
-            const [paramName] = paramTrimmed.split(/\s*=\s*/)
-            const nameOnly = paramName.trim()
-
-            const isOptional = hasDefaultValue || nameOnly.endsWith('?')
-            const cleanName = nameOnly.replace(/\?$/, '')
-
-            if (cleanName.includes(':')) {
-              const [name, type] = cleanName.split(':').map(p => p.trim())
-              return `${name}${isOptional ? '?' : ''}: ${type}`
-            }
-
-            return `${cleanName}${isOptional ? '?' : ''}`
-          })
-          .filter(Boolean)
-
-        signature.params = `{ ${cleanedParams.join(', ')} }: ${typeRef.trim()}`
-      }
-    }
   }
 
-  // Preserve type predicates and complete return types
-  const parts = [
+  // Construct the output
+  let output = ''
+
+  if (jsDocMatch) {
+    output += `${jsDocMatch[0]}\n`
+  }
+
+  output += [
     isExported ? 'export ' : '',
     'declare function ',
     signature.name,
@@ -2150,9 +2375,21 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
     `(${signature.params})`,
     signature.returnType ? `: ${signature.returnType}` : '',
     ';',
-  ].filter(Boolean)
+  ].filter(Boolean).join('')
 
-  return parts.join('')
+  return output
+}
+
+// Helper function to extract JSDoc comments (keep as is)
+function extractJSDocComment(content: string): { jsDoc: string, remainingContent: string } {
+  const jsDocMatch = content.match(/^(\s*\/\*\*[\s\S]*?\*\/\s*)/)
+  if (!jsDocMatch) {
+    return { jsDoc: '', remainingContent: content }
+  }
+
+  const jsDoc = jsDocMatch[1]
+  const remainingContent = content.slice(jsDocMatch[0].length)
+  return { jsDoc, remainingContent }
 }
 
 function formatObjectType(type: string): string {
@@ -2201,57 +2438,56 @@ function getCleanDeclaration(declaration: string): string {
   return lines.slice(startIndex).join('\n').trim()
 }
 
-function processGeneratorFunction(declaration: string, verbose?: boolean | string[]): string {
-  debugLog('generator-function', `Processing generator function: ${declaration}`, verbose)
+function processGeneratorFunction(declaration: string): string {
+  const jsDocRegex = /\/\*\*\s*([\s\S]*?)\s*\*\//
+  const jsDocMatch = declaration.match(jsDocRegex)
+  const actualDeclaration = declaration.replace(jsDocRegex, '').trim()
 
-  // Clean up the declaration but keep info for processing
-  const cleanDeclaration = declaration
-    .replace(/^export\s+/, '')
-    .replace(/^async\s+/, '')
-    .trim()
-
-  // Extract function name
-  const nameMatch = cleanDeclaration.match(/function\*\s+([^(<\s]+)/)
-  if (!nameMatch) {
-    debugLog('generator-function', 'Failed to match generator function name', verbose)
+  const nameMatch = actualDeclaration.match(/function\*\s+([^(<\s]+)/)
+  if (!nameMatch)
     return ''
-  }
 
   const [, name] = nameMatch
-  let rest = cleanDeclaration.slice(cleanDeclaration.indexOf(name) + name.length).trim()
+  let rest = actualDeclaration.slice(actualDeclaration.indexOf(name) + name.length).trim()
 
-  // Extract generics if present
+  // Extract generics
   let generics = ''
   if (rest.startsWith('<')) {
     let depth = 1
     let pos = 1
+    let buffer = '<'
+
     for (; pos < rest.length && depth > 0; pos++) {
-      if (rest[pos] === '<')
+      const char = rest[pos]
+      if (char === '<')
         depth++
-      if (rest[pos] === '>')
+      if (char === '>')
         depth--
+      buffer += char
     }
-    generics = rest.slice(0, pos)
+
+    generics = buffer
     rest = rest.slice(pos).trim()
   }
 
-  // Extract parameters
+  // Extract parameters and clean them
   let params = ''
   if (rest.startsWith('(')) {
     let depth = 1
     let pos = 1
     for (; pos < rest.length && depth > 0; pos++) {
-      if (rest[pos] === '(')
+      const char = rest[pos]
+      if (char === '(')
         depth++
-      if (rest[pos] === ')')
+      if (char === ')')
         depth--
     }
     params = rest.slice(1, pos - 1).trim()
     rest = rest.slice(pos).trim()
   }
 
-  // Extract return type - use exact return type if specified
-  let returnType = 'any' // Default to 'any' if no return type specified
+  // Extract return type
+  let returnType = 'any'
   if (rest.startsWith(':')) {
     rest = rest.slice(1).trim()
     const match = rest.match(/([^{;]+)/)
@@ -2260,18 +2496,27 @@ function processGeneratorFunction(declaration: string, verbose?: boolean | strin
     }
   }
 
-  // Construct the declaration with proper spacing
-  return [
-    'export declare function ', // Added space after function
+  // Clean up parameters - remove default values but keep types
+  const cleanedParams = params.split(',')
+    .map((param) => {
+      const [paramPart] = param.trim().split('=')
+      return paramPart.trim()
+    })
+    .join(', ')
+
+  // Construct the declaration
+  const parts = [
+    jsDocMatch ? jsDocMatch[0] : '',
+    'export declare function*',
     name,
-    generics ? `${generics}` : '',
-    `(${params})`,
-    ': ', // Added space after colon
+    generics,
+    `(${cleanedParams})`,
+    `:`,
     returnType,
+    ';',
   ]
-    .filter(Boolean)
-    .join('')
-    .concat(';')
+
+  return parts.filter(Boolean).join(' ')
 }
 
 function processModule(declaration: string): string {
