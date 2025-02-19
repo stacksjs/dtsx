@@ -2083,11 +2083,24 @@ function processFunction(declaration: string, usedTypes?: Set<string>, isExporte
 
             // Infer type from default value if no explicit type
             const defaultValue = paramTrimmed.split(/\s*=\s*/)[1].trim()
-            const inferredType = defaultValue === '{}'
-              ? paramTrimmed.includes(':') ? paramTrimmed.split(':')[1].trim().split('=')[0].trim() : 'Record<string, unknown>'
-              : defaultValue === ''
-                ? 'string'
-                : typeof eval(defaultValue)
+            let inferredType = 'any'
+
+            if (defaultValue === '{}')
+              inferredType = paramTrimmed.includes(':') ? paramTrimmed.split(':')[1].trim().split('=')[0].trim() : 'Record<string, unknown>'
+            else if (defaultValue === '')
+              inferredType = 'string'
+            else if (defaultValue === 'true' || defaultValue === 'false')
+              inferredType = 'boolean'
+            else if (!Number.isNaN(Number(defaultValue)))
+              inferredType = 'number'
+            else if (defaultValue.startsWith('"') || defaultValue.startsWith('\''))
+              inferredType = 'string'
+            else if (defaultValue.startsWith('['))
+              inferredType = 'any[]'
+            else if (defaultValue.startsWith('{'))
+              inferredType = 'Record<string, unknown>'
+            else
+              inferredType = 'any'
 
             return `${paramWithoutDefault}?: ${inferredType}`
           }

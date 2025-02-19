@@ -1,0 +1,11 @@
+---
+description: Error Handling and Validation specifics
+globs: 
+---
+## Error Handling and Validation
+
+- Prioritize error handling: handle errors and edge cases early
+- Use early returns and guard clauses
+- Implement proper error logging and user-friendly messages
+- Use error boundaries for unexpected errors
+- when `neverthrow` is available, ensure errors are typed
