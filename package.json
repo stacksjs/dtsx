@@ -62,13 +62,13 @@
   },
   "devDependencies": {
     "@stacksjs/docs": "^0.69.3",
-    "@stacksjs/cli": "^0.68.2",
-    "@stacksjs/development": "^0.68.2",
+    "@stacksjs/cli": "^0.69.3",
+    "@stacksjs/development": "^0.69.3",
     "@stacksjs/eslint-config": "^3.15.1-beta.4",
-    "@types/bun": "^1.2.1",
+    "@types/bun": "^1.2.5",
     "bun-plugin-dtsx": "^0.21.9",
-    "bunfig": "^0.5.3",
-    "tinyglobby": "^0.2.10",
+    "bunfig": "^0.8.2",
+    "tinyglobby": "^0.2.12",
     "unocss": "^66.0.0"
   },
   "overrides": {
