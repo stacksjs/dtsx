@@ -1,4 +1,4 @@
-<p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.png?raw=true" alt="Social Card of this repo"></p>
+<p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
 
 [![npm version][npm-version-src]][npm-version-href]
 [![GitHub Actions][github-actions-src]][github-actions-href]
@@ -19,7 +19,7 @@
 bun install -d @stacksjs/dtsx
 ```
 
-_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
+<_@npmjs.com>, please allow us to use the `dtsx` package name 🙏_
 
 <!-- _Alternatively, you can install:_
 
