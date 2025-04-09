@@ -52,13 +52,20 @@
     "lint:fix": "bunx --bun eslint . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
     "changelog": "bunx changelogen --output CHANGELOG.md",
-    "prepublishOnly": "bun --bun run build && bun run compile:all",
+    "prepublishOnly": "bun --bun run build && bun run compile:all && bun run zip",
     "release": "bun run changelog && bunx bumpp package.json --all",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
     "dev:docs": "bun --bun vitepress dev docs",
     "build:docs": "bun --bun vitepress build docs",
-    "preview:docs": "bun --bun vitepress preview docs"
+    "preview:docs": "bun --bun vitepress preview docs",
+    "zip": "bun run zip:all",
+    "zip:all": "bun run zip:linux-x64 && bun run zip:linux-arm64 && bun run zip:windows-x64 && bun run zip:darwin-x64 && bun run zip:darwin-arm64",
+    "zip:linux-x64": "zip -j bin/dtsx-linux-x64.zip bin/dtsx-linux-x64",
+    "zip:linux-arm64": "zip -j bin/dtsx-linux-arm64.zip bin/dtsx-linux-arm64",
+    "zip:windows-x64": "zip -j bin/dtsx-windows-x64.zip bin/dtsx-windows-x64.exe",
+    "zip:darwin-x64": "zip -j bin/dtsx-darwin-x64.zip bin/dtsx-darwin-x64",
+    "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "devDependencies": {
     "@stacksjs/docs": "^0.70.10",

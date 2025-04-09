@@ -1,4 +1,4 @@
-## Postcardware
+# Postcardware
 
 You will always be free to use any of the Stacks OSS software. We would also love to see which parts of the world Stacks ends up in. _Receiving postcards makes us happy—and we will publish them on our website._
 
