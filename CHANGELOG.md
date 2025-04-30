@@ -1,6 +1,90 @@
 # Changelog
 
 
+## v0.8.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.0...main)
+
+### 🚀 Enhancements
+
+- **ci:** Add publish-commit workflow ([d084ecf](https://github.com/stacksjs/dtsx/commit/d084ecf))
+
+### 📖 Documentation
+
+- Improve dtsx docs ([fee64dd](https://github.com/stacksjs/dtsx/commit/fee64dd))
+- Several minor updates ([ef24b18](https://github.com/stacksjs/dtsx/commit/ef24b18))
+- Link to projects ([f24372a](https://github.com/stacksjs/dtsx/commit/f24372a))
+- Improve sponsors ([7a06301](https://github.com/stacksjs/dtsx/commit/7a06301))
+- Use github code theme ([34d8ecc](https://github.com/stacksjs/dtsx/commit/34d8ecc))
+
+### 🏡 Chore
+
+- Minor adjustments ([729d2b5](https://github.com/stacksjs/dtsx/commit/729d2b5))
+- Update renovate config ([0d80cba](https://github.com/stacksjs/dtsx/commit/0d80cba))
+- Improve sponsor.md ([8ce298c](https://github.com/stacksjs/dtsx/commit/8ce298c))
+- Add bunfig example ([2dfd9ce](https://github.com/stacksjs/dtsx/commit/2dfd9ce))
+- Use bunfig ([cebb053](https://github.com/stacksjs/dtsx/commit/cebb053))
+- Improve debug logs ([ccf56ac](https://github.com/stacksjs/dtsx/commit/ccf56ac))
+- Wip ([8dc5b80](https://github.com/stacksjs/dtsx/commit/8dc5b80))
+- Update readme ([7d2d441](https://github.com/stacksjs/dtsx/commit/7d2d441))
+- Update deps ([28e0498](https://github.com/stacksjs/dtsx/commit/28e0498))
+- Sponsor changes ([6bf4424](https://github.com/stacksjs/dtsx/commit/6bf4424))
+- Improve dictionary ([60f535e](https://github.com/stacksjs/dtsx/commit/60f535e))
+- Add github funding ([7ff10b0](https://github.com/stacksjs/dtsx/commit/7ff10b0))
+- Add stacks docs and cursor rules ([c9c4611](https://github.com/stacksjs/dtsx/commit/c9c4611))
+- Update cover ([a2ea621](https://github.com/stacksjs/dtsx/commit/a2ea621))
+- Bin build changes and stargazers ([75e9be5](https://github.com/stacksjs/dtsx/commit/75e9be5))
+- Dep updates ([3ae7fff](https://github.com/stacksjs/dtsx/commit/3ae7fff))
+- Improve build.ts and generate.ts ([029098f](https://github.com/stacksjs/dtsx/commit/029098f))
+
+### ❤️ Contributors
+
+- Cab-mikee ([@cab-mikee](https://github.com/cab-mikee))
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+- Test User ([@osintorg](https://github.com/osintorg))
+
+## v0.8.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.0...main)
+
+### 🚀 Enhancements
+
+- **ci:** Add publish-commit workflow ([d084ecf](https://github.com/stacksjs/dtsx/commit/d084ecf))
+
+### 📖 Documentation
+
+- Improve dtsx docs ([fee64dd](https://github.com/stacksjs/dtsx/commit/fee64dd))
+- Several minor updates ([ef24b18](https://github.com/stacksjs/dtsx/commit/ef24b18))
+- Link to projects ([f24372a](https://github.com/stacksjs/dtsx/commit/f24372a))
+- Improve sponsors ([7a06301](https://github.com/stacksjs/dtsx/commit/7a06301))
+- Use github code theme ([34d8ecc](https://github.com/stacksjs/dtsx/commit/34d8ecc))
+
+### 🏡 Chore
+
+- Minor adjustments ([729d2b5](https://github.com/stacksjs/dtsx/commit/729d2b5))
+- Update renovate config ([0d80cba](https://github.com/stacksjs/dtsx/commit/0d80cba))
+- Improve sponsor.md ([8ce298c](https://github.com/stacksjs/dtsx/commit/8ce298c))
+- Add bunfig example ([2dfd9ce](https://github.com/stacksjs/dtsx/commit/2dfd9ce))
+- Use bunfig ([cebb053](https://github.com/stacksjs/dtsx/commit/cebb053))
+- Improve debug logs ([ccf56ac](https://github.com/stacksjs/dtsx/commit/ccf56ac))
+- Wip ([8dc5b80](https://github.com/stacksjs/dtsx/commit/8dc5b80))
+- Update readme ([7d2d441](https://github.com/stacksjs/dtsx/commit/7d2d441))
+- Update deps ([28e0498](https://github.com/stacksjs/dtsx/commit/28e0498))
+- Sponsor changes ([6bf4424](https://github.com/stacksjs/dtsx/commit/6bf4424))
+- Improve dictionary ([60f535e](https://github.com/stacksjs/dtsx/commit/60f535e))
+- Add github funding ([7ff10b0](https://github.com/stacksjs/dtsx/commit/7ff10b0))
+- Add stacks docs and cursor rules ([c9c4611](https://github.com/stacksjs/dtsx/commit/c9c4611))
+- Update cover ([a2ea621](https://github.com/stacksjs/dtsx/commit/a2ea621))
+- Bin build changes and stargazers ([75e9be5](https://github.com/stacksjs/dtsx/commit/75e9be5))
+- Dep updates ([3ae7fff](https://github.com/stacksjs/dtsx/commit/3ae7fff))
+- Improve build.ts and generate.ts ([029098f](https://github.com/stacksjs/dtsx/commit/029098f))
+
+### ❤️ Contributors
+
+- Cab-mikee ([@cab-mikee](https://github.com/cab-mikee))
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+- Test User ([@osintorg](https://github.com/osintorg))
+
 ## v0.7.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.7.0...main)
