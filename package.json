@@ -68,14 +68,14 @@
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "devDependencies": {
-    "@stacksjs/docs": "^0.70.10",
-    "@stacksjs/cli": "^0.70.10",
-    "@stacksjs/development": "^0.70.10",
+    "@stacksjs/docs": "^0.70.23",
+    "@stacksjs/cli": "^0.70.23",
+    "@stacksjs/development": "^0.70.23",
     "@stacksjs/eslint-config": "^3.15.1-beta.4",
-    "@types/bun": "^1.2.5",
+    "@types/bun": "^1.2.11",
     "bun-plugin-dtsx": "^0.21.9",
-    "bunfig": "^0.8.2",
-    "tinyglobby": "^0.2.12",
+    "bunfig": "^0.8.4",
+    "tinyglobby": "^0.2.13",
     "unocss": "^66.0.0"
   },
   "overrides": {
