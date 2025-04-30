@@ -1,6 +1,6 @@
 import { log } from '@stacksjs/cli'
-import { fs } from '@stacksjs/storage'
 import { dts } from 'bun-plugin-dtsx'
+import fs from 'node:fs/promises'
 
 log.info('Building...')
 
@@ -16,9 +16,9 @@ await Bun.build({
 })
 
 // prepare dist for publishing
-await fs.move('./dist/bin/cli.js', './dist/cli.js')
-await fs.move('./dist/src/index.js', './dist/index.js')
-await fs.remove('./dist/src')
-await fs.remove('./dist/bin')
+await fs.rename('./dist/bin/cli.js', './dist/cli.js')
+await fs.rename('./dist/src/index.js', './dist/index.js')
+await fs.rm('./dist/src', { recursive: true, force: true })
+await fs.rm('./dist/bin', { recursive: true, force: true })
 
 log.success('Built')
