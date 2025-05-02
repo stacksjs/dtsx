@@ -12,6 +12,10 @@ export interface DtsGenerationConfig {
   clean: boolean
   tsconfigPath: string
   verbose: boolean | string[]
+  /**
+   * Output structure: 'mirror' to mirror src folders, 'flat' for flat output
+   */
+  outputStructure?: 'mirror' | 'flat'
 }
 
 /**

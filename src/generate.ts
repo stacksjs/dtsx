@@ -52,7 +52,11 @@ export async function generateDeclarationsFromFiles(options?: DtsGenerationConfi
       if (fileDeclarations) {
         const relativePath = relative(options?.root ?? './src', file)
         const parsedPath = parse(relativePath)
-        const outputPath = join(options?.outdir ?? './dist', parsedPath.dir, `${parsedPath.name}.d.ts`)
+        // Use string option for outputStructure: 'mirror' | 'flat'
+        const outputStructure = options?.outputStructure ?? 'mirror'
+        const outputPath = outputStructure === 'mirror'
+          ? join(options?.outdir ?? './dist', parsedPath.dir, `${parsedPath.name}.d.ts`)
+          : join(options?.outdir ?? './dist', `${parsedPath.name}.d.ts`)
 
         await mkdir(dirname(outputPath), { recursive: true }) // Ensure the directory exists
         await writeToFile(outputPath, fileDeclarations) // Write the declarations without additional formatting

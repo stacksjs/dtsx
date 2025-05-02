@@ -18,6 +18,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat',
     }
 
     await generate(config)
@@ -39,6 +40,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat',
     }
 
     await generate(config)
@@ -60,6 +62,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat',
     }
 
     await generate(config)
@@ -81,6 +84,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -102,6 +106,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -123,6 +128,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -144,6 +150,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -165,6 +172,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -186,6 +194,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -207,6 +216,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -228,6 +238,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)
@@ -249,6 +260,7 @@ describe('dts-generation', () => {
       outdir: generatedDir,
       clean: false,
       tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat'
     }
 
     await generate(config)

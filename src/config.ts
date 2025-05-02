@@ -15,5 +15,6 @@ export const config: DtsGenerationConfig = await loadConfig({
     keepComments: true,
     clean: true,
     tsconfigPath: './tsconfig.json',
+    outputStructure: 'mirror',
   },
 })
