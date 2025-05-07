@@ -10,7 +10,7 @@
         "@stacksjs/eslint-config": "^4.10.2-beta.3",
         "@types/bun": "^1.2.12",
         "bun-plugin-dtsx": "^0.21.12",
-        "bunfig": "^0.8.4",
+        "bunfig": "^0.8.5",
         "tinyglobby": "^0.2.13",
         "unocss": "^66.1.0",
       },
@@ -760,7 +760,7 @@
 
     "bun-types": ["bun-types@1.2.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-tvWMx5vPqbRXgE8WUZI94iS1xAYs8bkqESR9cxBB1Wi+urvfTrF1uzuDgBHFAdO0+d2lmsbG3HmeKMvUyj6pWA=="],
 
-    "bunfig": ["bunfig@0.8.4", "", { "bin": { "bunfig": "bin/cli.js" } }, "sha512-q9GAe4EA7ers2o1tQiEa7czqW7oKztCbC1nNP5K/L9q7NHPix6uZPxlCo6t6sH1IMyUDSyZ0gvwb88F5EaQH1g=="],
+    "bunfig": ["bunfig@0.8.5", "", { "bin": { "bunfig": "bin/cli.js" } }, "sha512-tf7aKzhGwqUt8OryK7wUu/YpzbN9SdTxkbQrUZ/DnltA+u7u2lIiA5NvbmuAlLpy1M9aVOAjTj6j2us1T7u0Kg=="],
 
     "cac": ["cac@6.7.14", "", {}, "sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ=="],
 
