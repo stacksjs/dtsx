@@ -74,7 +74,7 @@
     "@stacksjs/eslint-config": "^4.10.2-beta.3",
     "@types/bun": "^1.2.12",
     "bun-plugin-dtsx": "^0.21.12",
-    "bunfig": "^0.8.4",
+    "bunfig": "^0.8.5",
     "tinyglobby": "^0.2.13",
     "unocss": "^66.1.0"
   },
