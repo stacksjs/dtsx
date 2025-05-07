@@ -72,11 +72,11 @@
     "@stacksjs/cli": "^0.70.23",
     "@stacksjs/development": "^0.70.23",
     "@stacksjs/eslint-config": "^4.10.2-beta.3",
-    "@types/bun": "^1.2.11",
-    "bun-plugin-dtsx": "^0.21.9",
+    "@types/bun": "^1.2.12",
+    "bun-plugin-dtsx": "^0.21.12",
     "bunfig": "^0.8.4",
     "tinyglobby": "^0.2.13",
-    "unocss": "^66.0.0"
+    "unocss": "^66.1.0"
   },
   "overrides": {
     "unconfig": "0.3.10"
