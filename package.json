@@ -76,7 +76,7 @@
     "bun-plugin-dtsx": "^0.21.12",
     "bunfig": "^0.8.5",
     "tinyglobby": "^0.2.13",
-    "unocss": "^66.1.0"
+    "unocss": "^66.1.1"
   },
   "overrides": {
     "unconfig": "0.3.10"
