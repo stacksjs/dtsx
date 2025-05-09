@@ -1,6 +1,6 @@
+import fs from 'node:fs/promises'
 import { log } from '@stacksjs/cli'
 import { dts } from 'bun-plugin-dtsx'
-import fs from 'node:fs/promises'
 
 log.info('Building...')
 
