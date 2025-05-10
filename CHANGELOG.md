@@ -1,6 +1,24 @@
 # Changelog
 
 
+## v0.8.1...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.1...main)
+
+### 🚀 Enhancements
+
+- Add output structure ([92bc1fa](https://github.com/stacksjs/dtsx/commit/92bc1fa))
+
+### 🏡 Chore
+
+- Add test 0010 example ([ec1ba90](https://github.com/stacksjs/dtsx/commit/ec1ba90))
+- Lint ([c44ec28](https://github.com/stacksjs/dtsx/commit/c44ec28))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+- Cab-mikee ([@cab-mikee](https://github.com/cab-mikee))
+
 ## v0.8.0...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.0...main)
