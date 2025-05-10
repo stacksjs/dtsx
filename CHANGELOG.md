@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.8.2...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.2...main)
+
+### 🏡 Chore
+
+- Use stacks action releaser ([522b35e](https://github.com/stacksjs/dtsx/commit/522b35e))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+
 ## v0.8.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.1...main)
