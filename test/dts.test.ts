@@ -1,8 +1,8 @@
 import type { DtsGenerationOption } from '../src/types'
 import { afterEach, describe, expect, it } from 'bun:test'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { generate } from '../src/generate'
-import { rm } from 'node:fs/promises'
 
 describe('dts-generation', () => {
   const testDir = join(__dirname, '../fixtures')
