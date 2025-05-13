@@ -12,7 +12,9 @@ await Bun.build({
   format: 'esm',
   target: 'bun',
   minify: true,
-  plugins: [dts()],
+  plugins: [
+    dts(),
+  ],
 })
 
 // prepare dist for publishing

@@ -60,6 +60,26 @@ const sidebar = [
       { text: 'Config', link: '/config' },
     ],
   },
+  {
+    text: 'Features',
+    items: [
+      { text: 'Overview', link: '/features/' },
+      { text: 'Type Support', link: '/features/type-support' },
+      { text: 'Import Optimization', link: '/features/import-optimization' },
+      { text: 'Type Inference', link: '/features/type-inference' },
+    ],
+  },
+  {
+    text: 'Advanced',
+    items: [
+      { text: 'Overview', link: '/advanced/' },
+      { text: 'Type Processing', link: '/advanced/type-processing' },
+      { text: 'Performance', link: '/advanced/performance' },
+      { text: 'Integration', link: '/advanced/integration' },
+      { text: 'Troubleshooting', link: '/advanced/troubleshooting' },
+    ],
+  },
+  { text: 'API Reference', link: '/api-reference' },
   { text: 'Showcase', link: '/Showcase' },
 ]
 const description = 'Extremely fast & configurable DTS emitter.'
