@@ -7,35 +7,53 @@ import { parseFunctionDeclaration, extractLeadingComments, isExportStatement, pa
 export function extractDeclarations(sourceCode: string, filePath: string): Declaration[] {
   const declarations: Declaration[] = []
 
+  // Extract modules first to avoid extracting their contents separately
+  const modules = extractModules(sourceCode)
+  declarations.push(...modules)
+
+  // Create a set of lines that are inside modules to skip them in other extractions
+  const moduleLines = new Set<number>()
+  for (const module of modules) {
+    const moduleText = module.text
+    const lines = sourceCode.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      if (moduleText.includes(lines[i])) {
+        moduleLines.add(i)
+      }
+    }
+  }
+
+  // Extract other declarations, but skip lines that are inside modules
+  const filteredSourceCode = sourceCode.split('\n')
+    .map((line, index) => moduleLines.has(index) ? '' : line)
+    .join('\n')
+
   // Extract functions
-  declarations.push(...extractFunctions(sourceCode))
+  declarations.push(...extractFunctions(filteredSourceCode))
 
   // Extract variables
-  declarations.push(...extractVariables(sourceCode))
+  declarations.push(...extractVariables(filteredSourceCode))
 
   // Extract interfaces
-  declarations.push(...extractInterfaces(sourceCode))
+  declarations.push(...extractInterfaces(filteredSourceCode))
 
   // Extract types
-  declarations.push(...extractTypes(sourceCode))
+  declarations.push(...extractTypes(filteredSourceCode))
 
   // Extract classes
-  declarations.push(...extractClasses(sourceCode))
+  declarations.push(...extractClasses(filteredSourceCode))
 
   // Extract enums
-  declarations.push(...extractEnums(sourceCode))
+  declarations.push(...extractEnums(filteredSourceCode))
 
   // Extract namespaces
-  declarations.push(...extractNamespaces(sourceCode))
-
-  // Extract modules
-  declarations.push(...extractModules(sourceCode))
+  declarations.push(...extractNamespaces(filteredSourceCode))
 
   // Extract imports
-  declarations.push(...extractImports(sourceCode))
+  declarations.push(...extractImports(sourceCode)) // Use original source for imports
 
   // Extract exports
-  declarations.push(...extractExports(sourceCode))
+  declarations.push(...extractExports(sourceCode)) // Use original source for exports
 
   return declarations
 }
@@ -562,8 +580,8 @@ export function extractInterfaces(sourceCode: string): Declaration[] {
         lines.slice(commentStartIndex, i).join('\n').length
       )
 
-      // Extract generics and extends
-      const headerMatch = declaration.match(/interface\s+\w+\s*(<[^>]+>)?\s*(extends\s+[^{]+)?/)
+      // Extract generics and extends - improved regex to handle complex generics
+      const headerMatch = declaration.match(/interface\s+\w+\s*(<[^{]+>)?\s*(extends\s+[^{]+)?/)
       let generics = ''
       let extendsClause = ''
 

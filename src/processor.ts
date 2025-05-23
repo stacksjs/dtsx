@@ -23,10 +23,10 @@ export function processDeclarations(
   // Process imports first
   for (const decl of imports) {
     const processed = processImportDeclaration(decl)
-    if (processed) output.push(processed)
+    if (processed && processed.trim()) output.push(processed)
   }
 
-  if (imports.length > 0 && output.length > 0) output.push('') // Add blank line after imports
+  if (output.length > 0) output.push('') // Add blank line after imports
 
   // Process other declarations
   const otherDecls = [...functions, ...variables, ...interfaces, ...types, ...classes, ...enums, ...modules]
@@ -65,10 +65,14 @@ export function processDeclarations(
     }
   }
 
-  // Process exports last
+  // Process exports last - deduplicate similar exports
+  const processedExports = new Set<string>()
   for (const decl of exports) {
     const processed = processExportDeclaration(decl)
-    if (processed) output.push(processed)
+    if (processed && processed.trim() && !processedExports.has(processed.trim())) {
+      processedExports.add(processed.trim())
+      output.push(processed)
+    }
   }
 
   return output.filter(line => line !== '').join('\n')
@@ -106,8 +110,14 @@ export function processFunctionDeclaration(decl: Declaration): string {
         cleanOverload = cleanOverload.replace(/^export\s+/, '')
       }
 
-      // Add the function signature
-      result += cleanOverload
+      // Remove any existing declare keyword to avoid duplication
+      cleanOverload = cleanOverload.replace(/^declare\s+/, '')
+
+      // Remove function keyword if present since we'll add it back
+      cleanOverload = cleanOverload.replace(/^function\s+/, '')
+
+      // Add the function signature with function keyword
+      result += 'function ' + cleanOverload
 
       // Ensure it ends with semicolon
       if (!result.endsWith(';')) {
@@ -308,12 +318,8 @@ export function processTypeDeclaration(decl: Declaration): string {
     result += 'export '
   }
 
-  // Special case: The first type declaration uses 'declare type'
-  // This seems to be a quirk of the expected output
-  if (decl.name === 'AuthStatus' && decl.isExported) {
-    result += 'declare '
-  } else if (!decl.isExported) {
-    // Only add declare for non-exported types
+  // Only add declare for non-exported type aliases
+  if (!decl.isExported && !decl.text.includes(' from ')) {
     result += 'declare '
   }
 
@@ -428,6 +434,11 @@ export function processEnumDeclaration(decl: Declaration): string {
  * Process import statement
  */
 export function processImportDeclaration(decl: Declaration): string {
+  // Only include type imports in .d.ts files
+  if (!decl.isTypeOnly) {
+    return '' // Filter out non-type imports
+  }
+
   // Import statements remain the same in .d.ts files
   // Just ensure they end with semicolon
   let result = decl.text.trim()
