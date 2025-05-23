@@ -34,6 +34,9 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
   // Extract imports
   declarations.push(...extractImports(sourceCode))
 
+  // Extract exports
+  declarations.push(...extractExports(sourceCode))
+
   return declarations
 }
 
@@ -43,12 +46,19 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
 export function extractFunctions(sourceCode: string): Declaration[] {
   const declarations: Declaration[] = []
   const lines = sourceCode.split('\n')
+  const processedLines = new Set<number>() // Track which lines we've already processed
 
   // Regex to match function declarations
   const functionRegex = /^(\s*)(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)/
 
   let i = 0
   while (i < lines.length) {
+    // Skip if we've already processed this line (as part of an overload)
+    if (processedLines.has(i)) {
+      i++
+      continue
+    }
+
     const line = lines[i]
     const match = line.match(functionRegex)
 
@@ -95,6 +105,9 @@ export function extractFunctions(sourceCode: string): Declaration[] {
         continue
       }
 
+      // Mark this line as processed
+      processedLines.add(i)
+
       // Collect the full function declaration
       let declaration = line
       let braceCount = 0
@@ -120,7 +133,7 @@ export function extractFunctions(sourceCode: string): Declaration[] {
         }
 
         // Check if this is just a declaration (no body)
-        if (!inBody && currentLine.includes(';')) {
+        if (!inBody && (currentLine.includes(';') || j === lines.length - 1)) {
           break
         }
 
@@ -132,20 +145,16 @@ export function extractFunctions(sourceCode: string): Declaration[] {
         j++
       }
 
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10) // Look back up to 10 lines
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
+      // Check if this is an overload (no function body) or implementation
+      const isOverload = !inBody && !declaration.includes('{')
 
-      // Parse the function signature
-      const signature = parseFunctionDeclaration(declaration)
-
-      if (signature) {
-        // Check for overloads by looking ahead
-        const overloads: string[] = []
+      // If this is an overload, look for the implementation
+      if (isOverload) {
+        // Look ahead for more overloads and the implementation
+        const allOverloads: string[] = [declaration.trim()]
         let k = j + 1
+        let implementationFound = false
+        let implementationDeclaration = ''
 
         while (k < lines.length) {
           const nextLine = lines[k].trim()
@@ -156,33 +165,81 @@ export function extractFunctions(sourceCode: string): Declaration[] {
             continue
           }
 
-          // Check if it's an overload of the same function
+          // Check if it's another overload or the implementation
           const overloadMatch = nextLine.match(functionRegex)
           if (overloadMatch && overloadMatch[5] === functionName) {
-            // Extract just the signature line for overloads
-            let overloadSig = lines[k]
-            let m = k + 1
+            // Mark this line as processed
+            processedLines.add(k)
 
-            // Continue until we find a semicolon or opening brace
+            // Extract this function signature
+            let funcSig = lines[k]
+            let m = k + 1
+            let hasBodyHere = false
+
+            // Continue until we find the end of the signature or body
             while (m < lines.length) {
-              const checkLine = lines[m]
-              if (checkLine.includes(';')) {
-                overloadSig += '\n' + checkLine.substring(0, checkLine.indexOf(';') + 1)
-                break
-              }
+              const checkLine = lines[m].trim()
+
+              // Check if this line has a brace (function body)
               if (checkLine.includes('{')) {
-                // This is the implementation, stop before it
+                hasBodyHere = true
+                // This is the implementation, collect the full body
+                let implBraceCount = 0
+                let implInBody = false
+
+                for (let n = k; n < lines.length; n++) {
+                  const implLine = lines[n]
+
+                  if (n > k) {
+                    funcSig += '\n' + implLine
+                  }
+
+                  // Count braces
+                  for (const char of implLine) {
+                    if (char === '{') {
+                      implBraceCount++
+                      implInBody = true
+                    } else if (char === '}') {
+                      implBraceCount--
+                    }
+                  }
+
+                  // Mark all lines as processed
+                  processedLines.add(n)
+
+                  // Check if we've closed all braces
+                  if (implInBody && implBraceCount === 0) {
+                    break
+                  }
+                }
+
+                implementationDeclaration = funcSig
+                implementationFound = true
                 break
               }
-              overloadSig += '\n' + checkLine
+
+              // Check if next line is another function or statement
+              if (checkLine.match(/^(export|const|let|var|function|class|interface|type|enum|import)/)) {
+                // This overload is complete
+                break
+              }
+
+              // If line has content, add it to the signature
+              if (checkLine && !checkLine.startsWith('//')) {
+                funcSig += '\n' + lines[m]
+              }
+
               m++
             }
 
-            // Only add if it ends with semicolon (it's a signature, not implementation)
-            if (overloadSig.includes(';')) {
-              overloads.push(overloadSig.trim())
+            if (!hasBodyHere) {
+              // This is another overload
+              allOverloads.push(funcSig.trim())
+              k = m - 1 // Back up one line since we'll increment k at the end
+            } else {
+              // This is the implementation
+              break
             }
-            k = m
           } else {
             break
           }
@@ -190,23 +247,76 @@ export function extractFunctions(sourceCode: string): Declaration[] {
           k++
         }
 
-        declarations.push({
-          kind: 'function',
-          name: functionName,
-          text: declaration,
-          leadingComments,
-          isExported,
-          modifiers: signature.modifiers,
-          generics: signature.generics,
-          parameters: signature.parameters.split(',').map(p => ({ name: p.trim() })),
-          returnType: signature.returnType,
-          isAsync,
-          isGenerator,
-          overloads
-        })
+        // If we found an implementation, use it as the main declaration with overloads
+        if (implementationFound) {
+          declaration = implementationDeclaration
+
+          // Extract leading comments
+          const commentStartIndex = Math.max(0, i - 10)
+          const leadingComments = extractLeadingComments(
+            lines.slice(commentStartIndex, i).join('\n'),
+            lines.slice(commentStartIndex, i).join('\n').length
+          )
+
+          // Parse the implementation signature
+          const signature = parseFunctionDeclaration(declaration)
+
+          if (signature) {
+            declarations.push({
+              kind: 'function',
+              name: functionName,
+              text: declaration,
+              leadingComments,
+              isExported,
+              modifiers: signature.modifiers,
+              generics: signature.generics,
+              parameters: signature.parameters.split(',').map(p => ({ name: p.trim() })),
+              returnType: signature.returnType,
+              isAsync,
+              isGenerator,
+              overloads: allOverloads
+            })
+          }
+
+          i = k
+          continue
+        } else {
+          // No implementation found, treat as regular function
+          // This shouldn't happen in well-formed TypeScript
+        }
       }
 
-      i = j
+      // Handle regular functions (not overloads)
+      if (!isOverload) {
+        // Extract leading comments
+        const commentStartIndex = Math.max(0, i - 10)
+        const leadingComments = extractLeadingComments(
+          lines.slice(commentStartIndex, i).join('\n'),
+          lines.slice(commentStartIndex, i).join('\n').length
+        )
+
+        // Parse the function signature
+        const signature = parseFunctionDeclaration(declaration)
+
+        if (signature) {
+          declarations.push({
+            kind: 'function',
+            name: functionName,
+            text: declaration,
+            leadingComments,
+            isExported,
+            modifiers: signature.modifiers,
+            generics: signature.generics,
+            parameters: signature.parameters.split(',').map(p => ({ name: p.trim() })),
+            returnType: signature.returnType,
+            isAsync,
+            isGenerator,
+            overloads: []
+          })
+        }
+
+        i = j
+      }
     }
 
     i++
@@ -228,74 +338,105 @@ export function extractVariables(sourceCode: string): Declaration[] {
   let i = 0
   while (i < lines.length) {
     const line = lines[i]
-    const match = line.match(variableRegex)
 
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const kind = match[3] as 'const' | 'let' | 'var'
-      const variableName = match[4]
+    // Check if we're inside a function or class body by looking at previous lines
+    let isInsideFunction = false
+    let lookback = Math.max(0, i - 20) // Look back up to 20 lines
+    let functionDepth = 0
 
-      // Check if this is a simple single-line declaration
-      const hasValue = line.includes('=')
-      const hasSemicolon = line.includes(';')
-      const hasOpenBrace = line.includes('{')
-      const hasOpenBracket = line.includes('[')
-
-      let declaration = ''
-      let endLine = i
-
-      // Simple case: single line with no complex structures
-      if (!hasOpenBrace && !hasOpenBracket && (hasSemicolon || !hasValue)) {
-        declaration = line
+    for (let j = lookback; j < i; j++) {
+      const checkLine = lines[j]
+      // Check for function/class/method declarations
+      if (checkLine.match(/^\s*(export\s+)?(async\s+)?(function|class)\s+/) ||
+          checkLine.match(/^\s*(async\s+)?[a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^)]*\)\s*{/) ||
+          checkLine.match(/^\s*(get|set)\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*\(/) ||
+          checkLine.match(/^\s*constructor\s*\(/)) {
+        functionDepth++
       }
-      // Single line with value but no semicolon
-      else if (!hasOpenBrace && !hasOpenBracket && hasValue) {
-        // Check if next line continues the declaration
-        if (i < lines.length - 1) {
-          const nextLine = lines[i + 1].trim()
-          // If next line starts with a new statement, current line is complete
-          if (nextLine.match(/^(export|const|let|var|function|class|interface|type|enum|\/\/|\/\*|\*|import)/)) {
-            declaration = line
-          } else {
-            // Need to do complex parsing
-            declaration = extractCompleteDeclaration(lines, i)
-            endLine = i + declaration.split('\n').length - 1
-          }
-        } else {
+
+      // Count braces to track depth
+      for (const char of checkLine) {
+        if (char === '{') functionDepth++
+        if (char === '}') functionDepth--
+      }
+    }
+
+    // If we're at depth > 0, we're inside a function/class
+    if (functionDepth > 0) {
+      isInsideFunction = true
+    }
+
+    // Only process top-level declarations (not inside functions/classes)
+    if (!isInsideFunction) {
+      const match = line.match(variableRegex)
+
+      if (match) {
+        const leadingWhitespace = match[1]
+        const isExported = !!match[2]
+        const kind = match[3] as 'const' | 'let' | 'var'
+        const variableName = match[4]
+
+        // Check if this is a simple single-line declaration
+        const hasValue = line.includes('=')
+        const hasSemicolon = line.includes(';')
+        const hasOpenBrace = line.includes('{')
+        const hasOpenBracket = line.includes('[')
+
+        let declaration = ''
+        let endLine = i
+
+        // Simple case: single line with no complex structures
+        if (!hasOpenBrace && !hasOpenBracket && (hasSemicolon || !hasValue)) {
           declaration = line
         }
+        // Single line with value but no semicolon
+        else if (!hasOpenBrace && !hasOpenBracket && hasValue) {
+          // Check if next line continues the declaration
+          if (i < lines.length - 1) {
+            const nextLine = lines[i + 1].trim()
+            // If next line starts with a new statement, current line is complete
+            if (nextLine.match(/^(export|const|let|var|function|class|interface|type|enum|\/\/|\/\*|\*|import)/)) {
+              declaration = line
+            } else {
+              // Need to do complex parsing
+              declaration = extractCompleteDeclaration(lines, i)
+              endLine = i + declaration.split('\n').length - 1
+            }
+          } else {
+            declaration = line
+          }
+        }
+        // Complex case: multi-line declaration
+        else {
+          declaration = extractCompleteDeclaration(lines, i)
+          endLine = i + declaration.split('\n').length - 1
+        }
+
+        // Extract leading comments
+        const commentStartIndex = Math.max(0, i - 10)
+        const leadingComments = extractLeadingComments(
+          lines.slice(commentStartIndex, i).join('\n'),
+          lines.slice(commentStartIndex, i).join('\n').length
+        )
+
+        // Parse the variable declaration
+        const parsed = parseVariableDeclaration(declaration)
+
+        if (parsed) {
+          declarations.push({
+            kind: 'variable',
+            name: variableName,
+            text: declaration,
+            leadingComments,
+            isExported,
+            modifiers: [kind],
+            typeAnnotation: parsed.typeAnnotation,
+            value: parsed.value
+          })
+        }
+
+        i = endLine
       }
-      // Complex case: multi-line declaration
-      else {
-        declaration = extractCompleteDeclaration(lines, i)
-        endLine = i + declaration.split('\n').length - 1
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      // Parse the variable declaration
-      const parsed = parseVariableDeclaration(declaration)
-
-      if (parsed) {
-        declarations.push({
-          kind: 'variable',
-          name: variableName,
-          text: declaration,
-          leadingComments,
-          isExported,
-          modifiers: [kind],
-          typeAnnotation: parsed.typeAnnotation,
-          value: parsed.value
-        })
-      }
-
-      i = endLine
     }
 
     i++
@@ -872,8 +1013,93 @@ export function extractImports(sourceCode: string): Declaration[] {
  * Extract export statements
  */
 export function extractExports(sourceCode: string): Declaration[] {
-  // TODO: Implement export extraction
-  return []
+  const declarations: Declaration[] = []
+  const lines = sourceCode.split('\n')
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Check for various export patterns
+    // export { ... }
+    if (/^export\s*\{/.test(line)) {
+      let declaration = line
+      let j = i
+
+      // Continue until we find the closing brace
+      if (!line.includes('}')) {
+        j++
+        while (j < lines.length && !lines[j].includes('}')) {
+          declaration += '\n' + lines[j]
+          j++
+        }
+        if (j < lines.length) {
+          declaration += '\n' + lines[j]
+        }
+      }
+
+      declarations.push({
+        kind: 'export',
+        name: 'export',
+        text: declaration.trim(),
+        leadingComments: [],
+        isExported: true,
+        isTypeOnly: declaration.includes('export type {')
+      })
+
+      i = j
+    }
+    // export * from ...
+    else if (/^export\s*\*\s*from/.test(line)) {
+      declarations.push({
+        kind: 'export',
+        name: 'export',
+        text: line.trim(),
+        leadingComments: [],
+        isExported: true,
+        isTypeOnly: false
+      })
+    }
+    // export default ...
+    else if (/^export\s+default\s+/.test(line)) {
+      declarations.push({
+        kind: 'export',
+        name: 'export',
+        text: line.trim(),
+        leadingComments: [],
+        isExported: true,
+        isDefault: true
+      })
+    }
+    // export type { ... } from ...
+    else if (/^export\s+type\s*\{/.test(line)) {
+      let declaration = line
+      let j = i
+
+      // Continue until complete
+      while (j < lines.length && !lines[j].includes(';') && !lines[j].endsWith('"') && !lines[j].endsWith("'")) {
+        j++
+        if (j < lines.length) {
+          declaration += '\n' + lines[j]
+        }
+      }
+
+      declarations.push({
+        kind: 'export',
+        name: 'export',
+        text: declaration.trim(),
+        leadingComments: [],
+        isExported: true,
+        isTypeOnly: true
+      })
+
+      i = j
+    }
+
+    i++
+  }
+
+  return declarations
 }
 
 /**
@@ -954,3 +1180,4 @@ export function extractModules(sourceCode: string): Declaration[] {
 
   return declarations
 }
+
