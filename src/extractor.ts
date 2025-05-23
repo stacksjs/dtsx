@@ -217,9 +217,9 @@ function buildFunctionSignature(node: ts.FunctionDeclaration): string {
 
   // Add parameters (no space before)
   const params = node.parameters.map(param => {
-    const name = param.name.getText()
+    const name = getParameterName(param)
     const type = param.type?.getText() || 'any'
-    const optional = param.questionToken ? '?' : ''
+    const optional = param.questionToken || param.initializer ? '?' : ''
     return `${name}${optional}: ${type}`
   }).join(', ')
   result += `(${params})`
@@ -511,6 +511,41 @@ function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string
  */
 function getNodeText(node: ts.Node, sourceCode: string): string {
   return sourceCode.slice(node.getStart(), node.getEnd())
+}
+
+/**
+ * Get parameter name without default values for DTS
+ */
+function getParameterName(param: ts.ParameterDeclaration): string {
+  if (ts.isObjectBindingPattern(param.name)) {
+    // For destructured parameters like { name, cwd, defaultConfig }
+    // We need to reconstruct without default values
+    const elements = param.name.elements.map(element => {
+      if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+        // Don't include default values in DTS
+        return element.name.getText()
+      }
+      return ''
+    }).filter(Boolean)
+
+    // Format on multiple lines if there are multiple elements
+    if (elements.length > 3) {
+      return `{\n  ${elements.join(',\n  ')},\n}`
+    }
+    return `{ ${elements.join(', ')} }`
+  } else if (ts.isArrayBindingPattern(param.name)) {
+    // For array destructuring parameters
+    const elements = param.name.elements.map(element => {
+      if (element && ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+        return element.name.getText()
+      }
+      return ''
+    }).filter(Boolean)
+    return `[${elements.join(', ')}]`
+  } else {
+    // Simple parameter name
+    return param.name.getText()
+  }
 }
 
 /**

@@ -1,6 +1,41 @@
 import type { Declaration, ProcessingContext } from './types'
 
 /**
+ * Extract all imported items from an import statement
+ */
+function extractAllImportedItems(importText: string): string[] {
+  const items: string[] = []
+
+  // Handle mixed imports: import defaultName, { a, b } from 'module'
+  const mixedMatch = importText.match(/import\s+([^{,\s]+),\s*\{?\s*([^}]+)\s*\}?\s+from/)
+  if (mixedMatch) {
+    // Add default import
+    items.push(mixedMatch[1].trim())
+    // Add named imports
+    const namedItems = mixedMatch[2].split(',').map(item => item.replace(/^type\s+/, '').trim())
+    items.push(...namedItems)
+    return items
+  }
+
+  // Handle named imports: import { a, b } from 'module'
+  const namedMatch = importText.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+  if (namedMatch) {
+    const namedItems = namedMatch[1].split(',').map(item => item.replace(/^type\s+/, '').trim())
+    items.push(...namedItems)
+    return items
+  }
+
+  // Handle default imports: import defaultName from 'module'
+  const defaultMatch = importText.match(/import\s+(?:type\s+)?([^{,\s]+)\s+from/)
+  if (defaultMatch) {
+    items.push(defaultMatch[1].trim())
+    return items
+  }
+
+  return items
+}
+
+/**
  * Process declarations and convert them to narrow DTS format
  */
 export function processDeclarations(
@@ -60,16 +95,16 @@ export function processDeclarations(
   // Check which imports are needed based on exported functions and types
   for (const func of functions) {
     if (func.isExported) {
-      // Check function signature for imported types (only in the function signature, not the body)
-      const funcDeclaration = func.text.split('{')[0] // Only check the signature part
+      // Check the entire function signature for imported types
+      const funcDeclaration = func.text
       for (const imp of imports) {
-        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-        if (importMatch) {
-          const importedItems = importMatch[1].split(',').map(item => item.trim())
-          for (const item of importedItems) {
-            if (funcDeclaration.includes(item)) {
-              usedImportItems.add(item)
-            }
+        // Handle all import patterns: named, default, and mixed
+        const allImportedItems = extractAllImportedItems(imp.text)
+        for (const item of allImportedItems) {
+          // Use word boundary regex to match exact identifiers, not substrings
+          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+          if (regex.test(funcDeclaration)) {
+            usedImportItems.add(item)
           }
         }
       }
@@ -85,11 +120,12 @@ export function processDeclarations(
         const typeMatches = importText.match(/type\s+([A-Za-z_$][A-Za-z0-9_$]*)/g)
         const valueMatches = importText.match(/import\s+\{([^}]+)\}/)
 
-        // Check type imports
+                // Check type imports
         if (typeMatches) {
           for (const typeMatch of typeMatches) {
             const typeName = typeMatch.replace('type ', '').trim()
-            if (variable.text.includes(typeName)) {
+            const regex = new RegExp(`\\b${typeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+            if (regex.test(variable.text)) {
               usedImportItems.add(typeName)
             }
           }
@@ -101,7 +137,8 @@ export function processDeclarations(
             item.replace(/type\s+/, '').trim()
           )
           for (const importName of imports) {
-            if (variable.text.includes(importName)) {
+            const regex = new RegExp(`\\b${importName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+            if (regex.test(variable.text)) {
               usedImportItems.add(importName)
             }
           }
@@ -119,13 +156,11 @@ export function processDeclarations(
 
     if (iface.isExported || isReferencedByExports) {
       for (const imp of imports) {
-        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-        if (importMatch) {
-          const importedItems = importMatch[1].split(',').map(item => item.trim())
-          for (const item of importedItems) {
-            if (iface.text.includes(item)) {
-              usedImportItems.add(item)
-            }
+        const allImportedItems = extractAllImportedItems(imp.text)
+        for (const item of allImportedItems) {
+          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+          if (regex.test(iface.text)) {
+            usedImportItems.add(item)
           }
         }
       }
@@ -135,13 +170,11 @@ export function processDeclarations(
   for (const type of types) {
     if (type.isExported) {
       for (const imp of imports) {
-        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-        if (importMatch) {
-          const importedItems = importMatch[1].split(',').map(item => item.trim())
-          for (const item of importedItems) {
-            if (type.text.includes(item)) {
-              usedImportItems.add(item)
-            }
+        const allImportedItems = extractAllImportedItems(imp.text)
+        for (const item of allImportedItems) {
+          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+          if (regex.test(type.text)) {
+            usedImportItems.add(item)
           }
         }
       }
@@ -151,16 +184,10 @@ export function processDeclarations(
   // Check which imports are needed for re-exports
   for (const item of exportedItems) {
     for (const imp of imports) {
-      if (imp.text.includes(item)) {
-        // Extract the specific items from this import
-        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-        if (importMatch) {
-          const importedItems = importMatch[1].split(',').map(item => item.trim())
-          for (const importedItem of importedItems) {
-            if (item === importedItem) {
-              usedImportItems.add(importedItem)
-            }
-          }
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const importedItem of allImportedItems) {
+        if (item === importedItem) {
+          usedImportItems.add(importedItem)
         }
       }
     }
@@ -169,33 +196,63 @@ export function processDeclarations(
   // Also check for value imports that are re-exported
   for (const exp of exports) {
     for (const imp of imports) {
-      const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-      if (importMatch) {
-        const importedItems = importMatch[1].split(',').map(item => item.trim())
-        for (const importedItem of importedItems) {
-          if (exp.text.includes(importedItem)) {
-            usedImportItems.add(importedItem)
-          }
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const importedItem of allImportedItems) {
+        // Use word boundary regex to match exact identifiers in export statements
+        const regex = new RegExp(`\\b${importedItem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        if (regex.test(exp.text)) {
+          usedImportItems.add(importedItem)
         }
       }
     }
   }
 
-    // Create filtered imports based on actually used items
+      // Create filtered imports based on actually used items
   const processedImports: string[] = []
   for (const imp of imports) {
-    const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from\s+['"]([^'"]+)['"]/)
-    if (importMatch) {
-      const importedItems = importMatch[1].split(',').map(item => item.trim())
+    // Handle different import patterns - check mixed imports first
+    const mixedImportMatch = imp.text.match(/import\s+([^{,\s]+),\s*\{?\s*([^}]+)\s*\}?\s+from\s+['"]([^'"]+)['"]/)
+    const namedImportMatch = imp.text.match(/import\s+(?:type\s+)?\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"]/)
+    const defaultImportMatch = imp.text.match(/import\s+(?:type\s+)?([^{,\s]+)\s+from\s+['"]([^'"]+)['"]/)
+
+    if (mixedImportMatch) {
+      // Mixed import: import defaultName, { a, b } from 'module'
+      const defaultName = mixedImportMatch[1].trim()
+      const namedItems = mixedImportMatch[2].split(',').map(item => item.trim())
+      const source = mixedImportMatch[3]
+
+      const usedDefault = usedImportItems.has(defaultName)
+      const usedNamed = namedItems.filter(item => {
+        const cleanItem = item.replace(/^type\s+/, '').trim()
+        return usedImportItems.has(cleanItem)
+      })
+
+      if (usedDefault || usedNamed.length > 0) {
+        const isOriginalTypeOnly = imp.text.includes('import type')
+
+        let importStatement = 'import '
+        if (isOriginalTypeOnly) {
+          importStatement += 'type '
+        }
+
+        const parts = []
+        if (usedDefault) parts.push(defaultName)
+        if (usedNamed.length > 0) parts.push(`{ ${usedNamed.join(', ')} }`)
+
+        importStatement += `${parts.join(', ')} from '${source}';`
+
+        processedImports.push(importStatement)
+      }
+    } else if (namedImportMatch && !defaultImportMatch) {
+      // Named imports only: import { a, b } from 'module'
+      const importedItems = namedImportMatch[1].split(',').map(item => item.trim())
       const usedItems = importedItems.filter(item => {
         const cleanItem = item.replace(/^type\s+/, '').trim()
         return usedImportItems.has(cleanItem)
       })
 
       if (usedItems.length > 0) {
-        const source = importMatch[2]
-
-        // Check if original import was type-only
+        const source = namedImportMatch[2]
         const isOriginalTypeOnly = imp.text.includes('import type')
 
         let importStatement = 'import '
@@ -203,6 +260,22 @@ export function processDeclarations(
           importStatement += 'type '
         }
         importStatement += `{ ${usedItems.join(', ')} } from '${source}';`
+
+        processedImports.push(importStatement)
+      }
+    } else if (defaultImportMatch && !namedImportMatch) {
+      // Default import only: import defaultName from 'module'
+      const defaultName = defaultImportMatch[1].trim()
+      const source = defaultImportMatch[2]
+
+      if (usedImportItems.has(defaultName)) {
+        const isOriginalTypeOnly = imp.text.includes('import type')
+
+        let importStatement = 'import '
+        if (isOriginalTypeOnly) {
+          importStatement += 'type '
+        }
+        importStatement += `${defaultName} from '${source}';`
 
         processedImports.push(importStatement)
       }
