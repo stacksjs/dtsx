@@ -16,3 +16,4 @@ fixtures/generated
 bin/dtsx*
 /test/temp-output
 test/debug
+/test/fixtures/generated

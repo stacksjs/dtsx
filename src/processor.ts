@@ -214,22 +214,22 @@ export function processFunctionDeclaration(decl: Declaration): string {
  * Process variable declaration to DTS format
  */
 export function processVariableDeclaration(decl: Declaration): string {
-  const parts: string[] = []
+  let result = ''
 
   // Add export if needed
   if (decl.isExported) {
-    parts.push('export')
+    result += 'export '
   }
 
   // Add declare keyword
-  parts.push('declare')
+  result += 'declare '
 
   // Add variable kind (const, let, var)
   const kind = decl.modifiers?.[0] || 'const'
-  parts.push(kind)
+  result += kind + ' '
 
   // Add variable name
-  parts.push(decl.name)
+  result += decl.name
 
   // Add type annotation
   let typeAnnotation = decl.typeAnnotation
@@ -245,15 +245,7 @@ export function processVariableDeclaration(decl: Declaration): string {
     typeAnnotation = 'any'
   }
 
-  parts.push(':')
-  parts.push(typeAnnotation)
-
-  // Combine parts
-  let result = parts.join(' ')
-  result = result.replace(' : ', ': ')
-
-  // Add semicolon
-  result += ';'
+  result += `: ${typeAnnotation};`
 
   return result
 }
@@ -275,7 +267,7 @@ export function processInterfaceDeclaration(decl: Declaration): string {
   // Add interface name
   result += decl.name
 
-  // Add generics if present
+  // Add generics if present (no space before)
   if (decl.generics) {
     result += decl.generics
   }
@@ -327,7 +319,7 @@ export function processTypeDeclaration(decl: Declaration): string {
     // Fallback to simple format
     result += 'type ' + decl.name
     if (decl.generics) {
-      result += decl.generics
+      result += decl.generics  // No space before generics
     }
     result += ' = any'
   }

@@ -198,37 +198,37 @@ function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: st
  * Build clean function signature for DTS output
  */
 function buildFunctionSignature(node: ts.FunctionDeclaration): string {
-  const parts: string[] = []
+  let result = ''
 
   // Add modifiers
-  if (hasExportModifier(node)) parts.push('export')
-  parts.push('declare')
-  if (node.asteriskToken) parts.push('function*')
-  else parts.push('function')
+  if (hasExportModifier(node)) result += 'export '
+  result += 'declare '
+  if (node.asteriskToken) result += 'function* '
+  else result += 'function '
 
-  // Add name
-  if (node.name) parts.push(node.name.getText())
+  // Add name (no space before)
+  if (node.name) result += node.name.getText()
 
-  // Add generics
+  // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    parts.push(`<${generics}>`)
+    result += `<${generics}>`
   }
 
-  // Add parameters
+  // Add parameters (no space before)
   const params = node.parameters.map(param => {
     const name = param.name.getText()
     const type = param.type?.getText() || 'any'
     const optional = param.questionToken ? '?' : ''
     return `${name}${optional}: ${type}`
   }).join(', ')
-  parts.push(`(${params})`)
+  result += `(${params})`
 
-  // Add return type
+  // Add return type (no space before colon)
   const returnType = node.type?.getText() || 'void'
-  parts.push(`: ${returnType}`)
+  result += `: ${returnType}`
 
-  return parts.join(' ') + ';'
+  return result + ';'
 }
 
 /**
@@ -271,18 +271,18 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
  * Build clean variable declaration for DTS
  */
 function buildVariableDeclaration(name: string, type: string | undefined, kind: string, isExported: boolean): string {
-  const parts: string[] = []
+  let result = ''
 
-  if (isExported) parts.push('export')
-  parts.push('declare')
-  parts.push(kind)
-  parts.push(name)
+  if (isExported) result += 'export '
+  result += 'declare '
+  result += kind + ' '
+  result += name
 
   if (type) {
-    parts.push(`: ${type}`)
+    result += `: ${type}`
   }
 
-  return parts.join(' ') + ';'
+  return result + ';'
 }
 
 /**
@@ -319,17 +319,17 @@ function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: 
  * Build clean interface declaration for DTS
  */
 function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: boolean): string {
-  const parts: string[] = []
+  let result = ''
 
-  if (isExported) parts.push('export')
-  parts.push('declare')
-  parts.push('interface')
-  parts.push(node.name.getText())
+  if (isExported) result += 'export '
+  result += 'declare '
+  result += 'interface '
+  result += node.name.getText()
 
-  // Add generics
+  // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    parts.push(`<${generics}>`)
+    result += `<${generics}>`
   }
 
   // Add extends
@@ -339,15 +339,15 @@ function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: bo
     )
     if (extendsClause) {
       const types = extendsClause.types.map(type => type.getText()).join(', ')
-      parts.push(`extends ${types}`)
+      result += ` extends ${types}`
     }
   }
 
   // Add body (simplified)
   const body = getInterfaceBody(node)
-  parts.push(body)
+  result += ' ' + body
 
-  return parts.join(' ')
+  return result
 }
 
 /**
@@ -406,22 +406,22 @@ function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: 
  * Build clean type declaration for DTS
  */
 function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean): string {
-  const parts: string[] = []
+  let result = ''
 
-  if (isExported) parts.push('export')
-  parts.push('type')
-  parts.push(node.name.getText())
+  if (isExported) result += 'export '
+  result += 'type '
+  result += node.name.getText()
 
-  // Add generics
+  // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    parts.push(`<${generics}>`)
+    result += `<${generics}>`
   }
 
-  parts.push('=')
-  parts.push(node.type.getText())
+  result += ' = '
+  result += node.type.getText()
 
-  return parts.join(' ')
+  return result
 }
 
 /**
