@@ -2,7 +2,7 @@ import { extractDeclarations } from './src/extractor'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const filePath = join(__dirname, 'test/fixtures/input/example/0002.ts')
+const filePath = join(__dirname, 'test/fixtures/input/example/0003.ts')
 const sourceCode = await readFile(filePath, 'utf-8')
 
 console.log('Source code:')

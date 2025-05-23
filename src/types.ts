@@ -59,6 +59,8 @@ export interface Declaration {
   isAsync?: boolean
   isGenerator?: boolean
   overloads?: string[] // for function overloads
+  start?: number // AST node start position
+  end?: number // AST node end position
 }
 
 /**

@@ -75,6 +75,37 @@ export function processDeclarations(
     }
   }
 
+  // Check which imports are needed for interfaces and types (check all, not just exported)
+  for (const iface of interfaces) {
+    for (const imp of imports) {
+      const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+      if (importMatch) {
+        const importedItems = importMatch[1].split(',').map(item => item.trim())
+        for (const item of importedItems) {
+          if (iface.text.includes(item)) {
+            usedImports.add(imp.text)
+          }
+        }
+      }
+    }
+  }
+
+  for (const type of types) {
+    if (type.isExported) {
+      for (const imp of imports) {
+        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+        if (importMatch) {
+          const importedItems = importMatch[1].split(',').map(item => item.trim())
+          for (const item of importedItems) {
+            if (type.text.includes(item)) {
+              usedImports.add(imp.text)
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Check which imports are needed for re-exports
   for (const item of exportedItems) {
     for (const imp of imports) {
@@ -175,138 +206,8 @@ export function processDeclarations(
  * Process function declaration to DTS format
  */
 export function processFunctionDeclaration(decl: Declaration): string {
-  // Handle overloads first
-  if (decl.overloads && decl.overloads.length > 0) {
-    const overloadResults: string[] = []
-
-    for (const overload of decl.overloads) {
-      // Clean up the overload string
-      let cleanOverload = overload.trim()
-
-      // Remove any trailing semicolon
-      cleanOverload = cleanOverload.replace(/;+$/, '')
-
-      // Check if it already starts with export
-      const hasExport = cleanOverload.startsWith('export')
-
-      // Build the proper overload declaration
-      let result = ''
-
-      if (hasExport || decl.isExported) {
-        result += 'export '
-      }
-
-      result += 'declare '
-
-      // Remove export from the original if present
-      if (hasExport) {
-        cleanOverload = cleanOverload.replace(/^export\s+/, '')
-      }
-
-      // Remove any existing declare keyword to avoid duplication
-      cleanOverload = cleanOverload.replace(/^declare\s+/, '')
-
-      // Remove function keyword if present since we'll add it back
-      cleanOverload = cleanOverload.replace(/^function\s+/, '')
-
-      // Add the function signature with function keyword
-      result += 'function ' + cleanOverload
-
-      // Ensure it ends with semicolon
-      if (!result.endsWith(';')) {
-        result += ';'
-      }
-
-      overloadResults.push(result)
-    }
-
-    // Add the implementation signature
-    const parts: string[] = []
-    if (decl.isExported) parts.push('export')
-    parts.push('declare')
-    if (decl.isAsync) parts.push('async')
-    parts.push('function')
-    if (decl.isGenerator) parts.push('*')
-    parts.push(decl.name)
-    if (decl.generics) parts.push(decl.generics)
-
-    const params = decl.parameters?.map(p => p.name).join(', ') || ''
-    parts.push(`(${params})`)
-    parts.push(':')
-    parts.push(decl.returnType || 'void')
-
-    let implementationSig = parts.join(' ').replace(' : ', ': ').replace('function *', 'function*')
-    implementationSig += ';'
-
-    // Return overloads followed by the implementation signature
-    return [...overloadResults, implementationSig].join('\n')
-  }
-
-  // Regular function without overloads
-  const parts: string[] = []
-
-  // Add export if needed
-  if (decl.isExported) {
-    parts.push('export')
-  }
-
-  // Add declare keyword
-  parts.push('declare')
-
-  // Add async if needed
-  if (decl.isAsync) {
-    parts.push('async')
-  }
-
-  // Add function keyword
-  parts.push('function')
-
-  // Add generator star if needed
-  if (decl.isGenerator) {
-    parts.push('*')
-  }
-
-  // Add function name
-  parts.push(decl.name)
-
-  // Add generics if present
-  if (decl.generics) {
-    parts.push(decl.generics)
-  }
-
-  // Add parameters - extract from the parsed parameters
-  const params = decl.parameters?.map(p => p.name).join(', ') || ''
-  parts.push(`(${params})`)
-
-  // Add return type
-  const returnType = decl.returnType || 'void'
-  parts.push(':')
-  parts.push(returnType)
-
-  // Combine parts properly
-  let result = parts[0] // export or declare
-  for (let i = 1; i < parts.length; i++) {
-    const part = parts[i]
-
-    // Handle special cases for spacing
-    if (part === '*') {
-      result += '*'
-    } else if (part === ':') {
-      result += ':'
-    } else if (part.startsWith('<') || part.startsWith('(')) {
-      result += part
-    } else if (i === parts.length - 1 && parts[i - 1] === ':') {
-      // Don't add space after colon for return type
-      result += ' ' + part
-    } else {
-      result += ' ' + part
-    }
-  }
-
-  // Add semicolon
-  result += ';'
-
-  return result
+  // The extractor already provides the correct DTS signature, just return it
+  return decl.text
 }
 
 /**

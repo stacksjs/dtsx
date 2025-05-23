@@ -1,1201 +1,551 @@
+import * as ts from 'typescript'
 import type { Declaration } from './types'
-import { parseFunctionDeclaration, extractLeadingComments, isExportStatement, parseVariableDeclaration } from './parser'
+
+// Performance optimization: Cache compiled regexes
+const DECLARATION_PATTERNS = {
+  import: /^import\s+/m,
+  export: /^export\s+/m,
+  function: /^(export\s+)?(async\s+)?function\s+/m,
+  variable: /^(export\s+)?(const|let|var)\s+/m,
+  interface: /^(export\s+)?interface\s+/m,
+  type: /^(export\s+)?type\s+/m,
+  class: /^(export\s+)?(abstract\s+)?class\s+/m,
+  enum: /^(export\s+)?(const\s+)?enum\s+/m,
+  module: /^(export\s+)?(declare\s+)?(module|namespace)\s+/m
+} as const
 
 /**
- * Extract all declarations from TypeScript source code
+ * Extract only public API declarations from TypeScript source code
+ * This focuses on what should be in .d.ts files, not implementation details
  */
 export function extractDeclarations(sourceCode: string, filePath: string): Declaration[] {
   const declarations: Declaration[] = []
 
-  // Extract modules first to avoid extracting their contents separately
-  const modules = extractModules(sourceCode)
-  declarations.push(...modules)
+  // Create TypeScript source file
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceCode,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  )
 
-  // Create a set of lines that are inside modules to skip them in other extractions
-  const moduleLines = new Set<number>()
-  for (const module of modules) {
-    const moduleText = module.text
-    const lines = sourceCode.split('\n')
-    for (let i = 0; i < lines.length; i++) {
-      if (moduleText.includes(lines[i])) {
-        moduleLines.add(i)
-      }
-    }
-  }
-
-  // Extract other declarations, but skip lines that are inside modules
-  const filteredSourceCode = sourceCode.split('\n')
-    .map((line, index) => moduleLines.has(index) ? '' : line)
-    .join('\n')
-
-  // Extract functions
-  declarations.push(...extractFunctions(filteredSourceCode))
-
-  // Extract variables
-  declarations.push(...extractVariables(filteredSourceCode))
-
-  // Extract interfaces
-  declarations.push(...extractInterfaces(filteredSourceCode))
-
-  // Extract types
-  declarations.push(...extractTypes(filteredSourceCode))
-
-  // Extract classes
-  declarations.push(...extractClasses(filteredSourceCode))
-
-  // Extract enums
-  declarations.push(...extractEnums(filteredSourceCode))
-
-  // Extract namespaces
-  declarations.push(...extractNamespaces(filteredSourceCode))
-
-  // Extract imports
-  declarations.push(...extractImports(sourceCode)) // Use original source for imports
-
-  // Extract exports
-  declarations.push(...extractExports(sourceCode)) // Use original source for exports
-
-  return declarations
-}
-
-/**
- * Extract function declarations including overloads
- */
-export function extractFunctions(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
-  const processedLines = new Set<number>() // Track which lines we've already processed
-
-  // Regex to match function declarations
-  const functionRegex = /^(\s*)(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)/
-
-  let i = 0
-  while (i < lines.length) {
-    // Skip if we've already processed this line (as part of an overload)
-    if (processedLines.has(i)) {
-      i++
-      continue
+    // Visit only top-level declarations
+  function visitTopLevel(node: ts.Node) {
+    // Only process top-level declarations, skip function bodies and implementation details
+    if (node.parent && node.parent !== sourceFile) {
+      return // Skip nested declarations
     }
 
-    const line = lines[i]
-    const match = line.match(functionRegex)
-
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const isAsync = !!match[3]
-      const isGenerator = !!match[4]
-      const functionName = match[5]
-
-      // Skip if this appears to be inside an array or object literal
-      // Look back to see if we're inside a structure
-      let isInsideStructure = false
-      let lookback = Math.max(0, i - 5)
-      let openBraces = 0
-      let openBrackets = 0
-
-      for (let k = lookback; k < i; k++) {
-        const checkLine = lines[k]
-        for (const char of checkLine) {
-          if (char === '{') openBraces++
-          if (char === '}') openBraces--
-          if (char === '[') openBrackets++
-          if (char === ']') openBrackets--
-        }
-
-        // Check for variable assignment with array/object
-        if (checkLine.match(/=\s*[\[{]/) || checkLine.match(/:\s*[\[{]/)) {
-          if (openBraces > 0 || openBrackets > 0) {
-            isInsideStructure = true
-          }
-        }
-      }
-
-      // Skip if inside a structure
-      if (isInsideStructure || (openBraces > 0 || openBrackets > 0)) {
-        i++
-        continue
-      }
-
-      // Also skip if the line before has a comma (likely in an array/object)
-      if (i > 0 && lines[i - 1].trim().endsWith(',')) {
-        i++
-        continue
-      }
-
-      // Mark this line as processed
-      processedLines.add(i)
-
-      // Collect the full function declaration
-      let declaration = line
-      let braceCount = 0
-      let inBody = false
-      let j = i
-
-      // Find the start of the function body or the end of declaration
-      while (j < lines.length) {
-        const currentLine = lines[j]
-
-        // Count braces to find where function ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            inBody = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        if (j > i) {
-          declaration += '\n' + currentLine
-        }
-
-        // Check if this is just a declaration (no body)
-        if (!inBody && (currentLine.includes(';') || j === lines.length - 1)) {
-          break
-        }
-
-        // Check if we've closed all braces
-        if (inBody && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Check if this is an overload (no function body) or implementation
-      const isOverload = !inBody && !declaration.includes('{')
-
-      // If this is an overload, look for the implementation
-      if (isOverload) {
-        // Look ahead for more overloads and the implementation
-        const allOverloads: string[] = [declaration.trim()]
-        let k = j + 1
-        let implementationFound = false
-        let implementationDeclaration = ''
-
-        while (k < lines.length) {
-          const nextLine = lines[k].trim()
-
-          // Skip empty lines and comments
-          if (!nextLine || nextLine.startsWith('//') || nextLine.startsWith('/*')) {
-            k++
-            continue
-          }
-
-          // Check if it's another overload or the implementation
-          const overloadMatch = nextLine.match(functionRegex)
-          if (overloadMatch && overloadMatch[5] === functionName) {
-            // Mark this line as processed
-            processedLines.add(k)
-
-            // Extract this function signature
-            let funcSig = lines[k]
-            let m = k + 1
-            let hasBodyHere = false
-
-            // Continue until we find the end of the signature or body
-            while (m < lines.length) {
-              const checkLine = lines[m].trim()
-
-              // Check if this line has a brace (function body)
-              if (checkLine.includes('{')) {
-                hasBodyHere = true
-                // This is the implementation, collect the full body
-                let implBraceCount = 0
-                let implInBody = false
-
-                for (let n = k; n < lines.length; n++) {
-                  const implLine = lines[n]
-
-                  if (n > k) {
-                    funcSig += '\n' + implLine
-                  }
-
-                  // Count braces
-                  for (const char of implLine) {
-                    if (char === '{') {
-                      implBraceCount++
-                      implInBody = true
-                    } else if (char === '}') {
-                      implBraceCount--
-                    }
-                  }
-
-                  // Mark all lines as processed
-                  processedLines.add(n)
-
-                  // Check if we've closed all braces
-                  if (implInBody && implBraceCount === 0) {
-                    break
-                  }
-                }
-
-                implementationDeclaration = funcSig
-                implementationFound = true
-                break
-              }
-
-              // Check if next line is another function or statement
-              if (checkLine.match(/^(export|const|let|var|function|class|interface|type|enum|import)/)) {
-                // This overload is complete
-                break
-              }
-
-              // If line has content, add it to the signature
-              if (checkLine && !checkLine.startsWith('//')) {
-                funcSig += '\n' + lines[m]
-              }
-
-              m++
-            }
-
-            if (!hasBodyHere) {
-              // This is another overload
-              allOverloads.push(funcSig.trim())
-              k = m - 1 // Back up one line since we'll increment k at the end
-            } else {
-              // This is the implementation
-              break
-            }
-          } else {
-            break
-          }
-
-          k++
-        }
-
-        // If we found an implementation, use it as the main declaration with overloads
-        if (implementationFound) {
-          declaration = implementationDeclaration
-
-          // Extract leading comments
-          const commentStartIndex = Math.max(0, i - 10)
-          const leadingComments = extractLeadingComments(
-            lines.slice(commentStartIndex, i).join('\n'),
-            lines.slice(commentStartIndex, i).join('\n').length
-          )
-
-          // Parse the implementation signature
-          const signature = parseFunctionDeclaration(declaration)
-
-          if (signature) {
-            declarations.push({
-              kind: 'function',
-              name: functionName,
-              text: declaration,
-              leadingComments,
-              isExported,
-              modifiers: signature.modifiers,
-              generics: signature.generics,
-              parameters: signature.parameters.split(',').map(p => ({ name: p.trim() })),
-              returnType: signature.returnType,
-              isAsync,
-              isGenerator,
-              overloads: allOverloads
-            })
-          }
-
-          i = k
-          continue
-        } else {
-          // No implementation found, treat as regular function
-          // This shouldn't happen in well-formed TypeScript
-        }
-      }
-
-      // Handle regular functions (not overloads)
-      if (!isOverload) {
-        // Extract leading comments
-        const commentStartIndex = Math.max(0, i - 10)
-        const leadingComments = extractLeadingComments(
-          lines.slice(commentStartIndex, i).join('\n'),
-          lines.slice(commentStartIndex, i).join('\n').length
-        )
-
-        // Parse the function signature
-        const signature = parseFunctionDeclaration(declaration)
-
-        if (signature) {
-          declarations.push({
-            kind: 'function',
-            name: functionName,
-            text: declaration,
-            leadingComments,
-            isExported,
-            modifiers: signature.modifiers,
-            generics: signature.generics,
-            parameters: signature.parameters.split(',').map(p => ({ name: p.trim() })),
-            returnType: signature.returnType,
-            isAsync,
-            isGenerator,
-            overloads: []
-          })
-        }
-
-        i = j
-      }
-    }
-
-    i++
-  }
-
-  return declarations
-}
-
-/**
- * Extract variable declarations
- */
-export function extractVariables(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
-
-  // Regex to match variable declarations
-  const variableRegex = /^(\s*)(export\s+)?(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
-
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-
-    // Check if we're inside a function or class body by looking at previous lines
-    let isInsideFunction = false
-    let lookback = Math.max(0, i - 20) // Look back up to 20 lines
-    let functionDepth = 0
-
-    for (let j = lookback; j < i; j++) {
-      const checkLine = lines[j]
-      // Check for function/class/method declarations
-      if (checkLine.match(/^\s*(export\s+)?(async\s+)?(function|class)\s+/) ||
-          checkLine.match(/^\s*(async\s+)?[a-zA-Z_$][a-zA-Z0-9_$]*\s*\([^)]*\)\s*{/) ||
-          checkLine.match(/^\s*(get|set)\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*\(/) ||
-          checkLine.match(/^\s*constructor\s*\(/)) {
-        functionDepth++
-      }
-
-      // Count braces to track depth
-      for (const char of checkLine) {
-        if (char === '{') functionDepth++
-        if (char === '}') functionDepth--
-      }
-    }
-
-    // If we're at depth > 0, we're inside a function/class
-    if (functionDepth > 0) {
-      isInsideFunction = true
-    }
-
-    // Only process top-level declarations (not inside functions/classes)
-    if (!isInsideFunction) {
-      const match = line.match(variableRegex)
-
-      if (match) {
-        const leadingWhitespace = match[1]
-        const isExported = !!match[2]
-        const kind = match[3] as 'const' | 'let' | 'var'
-        const variableName = match[4]
-
-        // Check if this is a simple single-line declaration
-        const hasValue = line.includes('=')
-        const hasSemicolon = line.includes(';')
-        const hasOpenBrace = line.includes('{')
-        const hasOpenBracket = line.includes('[')
-
-        let declaration = ''
-        let endLine = i
-
-        // Simple case: single line with no complex structures
-        if (!hasOpenBrace && !hasOpenBracket && (hasSemicolon || !hasValue)) {
-          declaration = line
-        }
-        // Single line with value but no semicolon
-        else if (!hasOpenBrace && !hasOpenBracket && hasValue) {
-          // Check if next line continues the declaration
-          if (i < lines.length - 1) {
-            const nextLine = lines[i + 1].trim()
-            // If next line starts with a new statement, current line is complete
-            if (nextLine.match(/^(export|const|let|var|function|class|interface|type|enum|\/\/|\/\*|\*|import)/)) {
-              declaration = line
-            } else {
-              // Need to do complex parsing
-              declaration = extractCompleteDeclaration(lines, i)
-              endLine = i + declaration.split('\n').length - 1
-            }
-          } else {
-            declaration = line
-          }
-        }
-        // Complex case: multi-line declaration
-        else {
-          declaration = extractCompleteDeclaration(lines, i)
-          endLine = i + declaration.split('\n').length - 1
-        }
-
-        // Extract leading comments
-        const commentStartIndex = Math.max(0, i - 10)
-        const leadingComments = extractLeadingComments(
-          lines.slice(commentStartIndex, i).join('\n'),
-          lines.slice(commentStartIndex, i).join('\n').length
-        )
-
-        // Parse the variable declaration
-        const parsed = parseVariableDeclaration(declaration)
-
-        if (parsed) {
-          declarations.push({
-            kind: 'variable',
-            name: variableName,
-            text: declaration,
-            leadingComments,
-            isExported,
-            modifiers: [kind],
-            typeAnnotation: parsed.typeAnnotation,
-            value: parsed.value
-          })
-        }
-
-        i = endLine
-      }
-    }
-
-    i++
-  }
-
-  return declarations
-}
-
-/**
- * Extract a complete multi-line declaration
- */
-function extractCompleteDeclaration(lines: string[], startIndex: number): string {
-  let declaration = ''
-  let braceCount = 0
-  let bracketCount = 0
-  let parenCount = 0
-  let inString = false
-  let stringChar = ''
-  let foundEquals = false
-  let foundSemicolon = false
-
-  for (let j = startIndex; j < lines.length; j++) {
-    const currentLine = lines[j]
-    declaration += (j > startIndex ? '\n' : '') + currentLine
-
-    // Track string literals to avoid counting brackets inside strings
-    for (let k = 0; k < currentLine.length; k++) {
-      const char = currentLine[k]
-      const prevChar = k > 0 ? currentLine[k - 1] : ''
-
-      if (!inString && (char === '"' || char === "'" || char === '`')) {
-        inString = true
-        stringChar = char
-      } else if (inString && char === stringChar && prevChar !== '\\') {
-        inString = false
-      }
-
-      if (!inString) {
-        if (char === '=') foundEquals = true
-        if (char === '{') braceCount++
-        if (char === '}') braceCount--
-        if (char === '[') bracketCount++
-        if (char === ']') bracketCount--
-        if (char === '(') parenCount++
-        if (char === ')') parenCount--
-        if (char === ';') foundSemicolon = true
-      }
-    }
-
-    // Check for end of declaration
-    if (braceCount === 0 && bracketCount === 0 && parenCount === 0) {
-      // If we found a semicolon, we're done
-      if (foundSemicolon) {
+    switch (node.kind) {
+      case ts.SyntaxKind.ImportDeclaration:
+        declarations.push(extractImportDeclaration(node as ts.ImportDeclaration, sourceCode))
         break
-      }
 
-      // If we have an equals sign and the next line starts a new statement
-      if (foundEquals && j < lines.length - 1) {
-        const nextLine = lines[j + 1].trim()
-        if (nextLine && nextLine.match(/^(export|const|let|var|function|class|interface|type|enum|\/\/|\/\*|\*|import)/)) {
-          break
+      case ts.SyntaxKind.ExportDeclaration:
+        declarations.push(extractExportDeclaration(node as ts.ExportDeclaration, sourceCode))
+        break
+
+      case ts.SyntaxKind.ExportAssignment:
+        declarations.push(extractExportAssignment(node as ts.ExportAssignment, sourceCode))
+        break
+
+      case ts.SyntaxKind.FunctionDeclaration:
+        const funcDecl = extractFunctionDeclaration(node as ts.FunctionDeclaration, sourceCode)
+        // Only include exported functions or functions that are referenced by exported items
+        if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
+          declarations.push(funcDecl)
         }
-      }
+        break
+
+      case ts.SyntaxKind.VariableStatement:
+        const varDecls = extractVariableStatement(node as ts.VariableStatement, sourceCode)
+        declarations.push(...varDecls)
+        break
+
+      case ts.SyntaxKind.InterfaceDeclaration:
+        const interfaceDecl = extractInterfaceDeclaration(node as ts.InterfaceDeclaration, sourceCode)
+        // Include interfaces that are exported or referenced by exported items
+        if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
+          declarations.push(interfaceDecl)
+        }
+        break
+
+      case ts.SyntaxKind.TypeAliasDeclaration:
+        declarations.push(extractTypeAliasDeclaration(node as ts.TypeAliasDeclaration, sourceCode))
+        break
+
+      case ts.SyntaxKind.ClassDeclaration:
+        declarations.push(extractClassDeclaration(node as ts.ClassDeclaration, sourceCode))
+        break
+
+      case ts.SyntaxKind.EnumDeclaration:
+        declarations.push(extractEnumDeclaration(node as ts.EnumDeclaration, sourceCode))
+        break
+
+      case ts.SyntaxKind.ModuleDeclaration:
+        declarations.push(extractModuleDeclaration(node as ts.ModuleDeclaration, sourceCode))
+        break
     }
+
+    // Continue visiting only top-level child nodes
+    ts.forEachChild(node, visitTopLevel)
   }
 
-  return declaration
+  visitTopLevel(sourceFile)
+  return declarations
 }
 
 /**
- * Extract interface declarations
+ * Extract import declaration
  */
-export function extractInterfaces(sourceCode: string): Declaration[] {
+function extractImportDeclaration(node: ts.ImportDeclaration, sourceCode: string): Declaration {
+  const text = getNodeText(node, sourceCode)
+  const isTypeOnly = !!(node.importClause?.isTypeOnly)
+
+  return {
+    kind: 'import',
+    name: '', // Imports don't have a single name
+    text,
+    isExported: false,
+    isTypeOnly,
+    source: node.moduleSpecifier.getText().slice(1, -1), // Remove quotes
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Extract export declaration
+ */
+function extractExportDeclaration(node: ts.ExportDeclaration, sourceCode: string): Declaration {
+  const text = getNodeText(node, sourceCode)
+  const isTypeOnly = !!node.isTypeOnly
+
+  return {
+    kind: 'export',
+    name: '', // Export declarations don't have a single name
+    text,
+    isExported: true,
+    isTypeOnly,
+    source: node.moduleSpecifier?.getText().slice(1, -1), // Remove quotes if present
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Extract export assignment (export default)
+ */
+function extractExportAssignment(node: ts.ExportAssignment, sourceCode: string): Declaration {
+  const text = getNodeText(node, sourceCode)
+
+  return {
+    kind: 'export',
+    name: 'default',
+    text,
+    isExported: true,
+    isTypeOnly: false,
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Extract function declaration with proper signature
+ */
+function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: string): Declaration | null {
+  if (!node.name) return null // Skip anonymous functions
+
+  const name = node.name.getText()
+  const isExported = hasExportModifier(node)
+  const isAsync = hasAsyncModifier(node)
+  const isGenerator = !!node.asteriskToken
+
+  // Build clean function signature for DTS
+  const signature = buildFunctionSignature(node)
+
+  // Extract parameters with types
+  const parameters = node.parameters.map(param => ({
+    name: param.name.getText(),
+    type: param.type?.getText() || 'any',
+    optional: !!param.questionToken,
+    defaultValue: param.initializer?.getText()
+  }))
+
+  // Extract return type
+  const returnType = node.type?.getText() || (isAsync ? 'Promise<void>' : 'void')
+
+  // Extract generics
+  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
+
+  return {
+    kind: 'function',
+    name,
+    text: signature,
+    isExported,
+    isAsync,
+    isGenerator,
+    parameters,
+    returnType,
+    generics: generics ? `<${generics}>` : undefined,
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Build clean function signature for DTS output
+ */
+function buildFunctionSignature(node: ts.FunctionDeclaration): string {
+  const parts: string[] = []
+
+  // Add modifiers
+  if (hasExportModifier(node)) parts.push('export')
+  parts.push('declare')
+  if (node.asteriskToken) parts.push('function*')
+  else parts.push('function')
+
+  // Add name
+  if (node.name) parts.push(node.name.getText())
+
+  // Add generics
+  if (node.typeParameters) {
+    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    parts.push(`<${generics}>`)
+  }
+
+  // Add parameters
+  const params = node.parameters.map(param => {
+    const name = param.name.getText()
+    const type = param.type?.getText() || 'any'
+    const optional = param.questionToken ? '?' : ''
+    return `${name}${optional}: ${type}`
+  }).join(', ')
+  parts.push(`(${params})`)
+
+  // Add return type
+  const returnType = node.type?.getText() || 'void'
+  parts.push(`: ${returnType}`)
+
+  return parts.join(' ') + ';'
+}
+
+/**
+ * Extract variable statement (only exported ones for DTS)
+ */
+function extractVariableStatement(node: ts.VariableStatement, sourceCode: string): Declaration[] {
   const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+  const isExported = hasExportModifier(node)
 
-  // Regex to match interface declarations
-  const interfaceRegex = /^(\s*)(export\s+)?interface\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
+  // Only include exported variables in DTS
+  if (!isExported) return declarations
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const match = line.match(interfaceRegex)
+  for (const declaration of node.declarationList.declarations) {
+    if (!declaration.name || !ts.isIdentifier(declaration.name)) continue
 
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const interfaceName = match[3]
+    const name = declaration.name.getText()
+    const typeAnnotation = declaration.type?.getText()
+    const kind = node.declarationList.flags & ts.NodeFlags.Const ? 'const' :
+                 node.declarationList.flags & ts.NodeFlags.Let ? 'let' : 'var'
 
-      // Collect the full interface declaration
-      let declaration = ''
-      let braceCount = 0
-      let foundOpenBrace = false
-      let j = i
+    // Build clean variable declaration for DTS
+    const dtsText = buildVariableDeclaration(name, typeAnnotation, kind, true)
 
-      // Find the complete interface body
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Count braces to find where interface ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            foundOpenBrace = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        // Check if we've closed all braces
-        if (foundOpenBrace && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      // Extract generics and extends - improved regex to handle complex generics
-      const headerMatch = declaration.match(/interface\s+\w+\s*(<[^{]+>)?\s*(extends\s+[^{]+)?/)
-      let generics = ''
-      let extendsClause = ''
-
-      if (headerMatch) {
-        generics = headerMatch[1] || ''
-        extendsClause = headerMatch[2]?.replace('extends', '').trim() || ''
-      }
-
-      declarations.push({
-        kind: 'interface',
-        name: interfaceName,
-        text: declaration,
-        leadingComments,
-        isExported,
-        generics,
-        extends: extendsClause
-      })
-
-      i = j
-    }
-
-    i++
+    declarations.push({
+      kind: 'variable',
+      name,
+      text: dtsText,
+      isExported: true,
+      typeAnnotation,
+      modifiers: [kind],
+      start: node.getStart(),
+      end: node.getEnd()
+    })
   }
 
   return declarations
 }
 
 /**
- * Extract type alias declarations
+ * Build clean variable declaration for DTS
  */
-export function extractTypes(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function buildVariableDeclaration(name: string, type: string | undefined, kind: string, isExported: boolean): string {
+  const parts: string[] = []
 
-  // Regex to match type declarations
-  const typeRegex = /^(\s*)(export\s+)?type\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
-  const typeExportRegex = /^(\s*)export\s+type\s+\{[^}]+\}/
+  if (isExported) parts.push('export')
+  parts.push('declare')
+  parts.push(kind)
+  parts.push(name)
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-
-    // Check for type re-export first (e.g., export type { Foo })
-    if (typeExportRegex.test(line)) {
-      declarations.push({
-        kind: 'export',
-        name: 'export',
-        text: line,
-        leadingComments: [],
-        isExported: true,
-        isTypeOnly: true
-      })
-      i++
-      continue
-    }
-
-    const match = line.match(typeRegex)
-
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const typeName = match[3]
-
-      // Collect the full type declaration
-      let declaration = ''
-      let j = i
-      let foundEquals = false
-      let depth = 0
-      let inString = false
-      let stringChar = ''
-
-      // Find the complete type declaration
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Track depth for complex type definitions
-        for (const char of currentLine) {
-          if (!inString && (char === '"' || char === "'" || char === '`')) {
-            inString = true
-            stringChar = char
-          } else if (inString && char === stringChar) {
-            inString = false
-          }
-
-          if (!inString) {
-            if (char === '=') foundEquals = true
-            if (char === '{' || char === '[' || char === '(') depth++
-            if (char === '}' || char === ']' || char === ')') depth--
-          }
-        }
-
-        // Check if declaration is complete
-        if (foundEquals && depth === 0) {
-          // Check for semicolon or next declaration
-          if (currentLine.includes(';') || (j < lines.length - 1 &&
-              lines[j + 1].trim().match(/^(export|const|let|var|function|class|interface|type|enum|\/\/|\/\*|\*|import)/))) {
-            break
-          }
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      // Extract generics
-      const headerMatch = declaration.match(/type\s+\w+\s*(<[^=]+>)?/)
-      const generics = headerMatch?.[1] || ''
-
-      declarations.push({
-        kind: 'type',
-        name: typeName,
-        text: declaration,
-        leadingComments,
-        isExported,
-        generics
-      })
-
-      i = j
-    }
-
-    i++
+  if (type) {
+    parts.push(`: ${type}`)
   }
 
-  return declarations
+  return parts.join(' ') + ';'
 }
 
 /**
- * Extract class declarations
+ * Extract interface declaration
  */
-export function extractClasses(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: string): Declaration {
+  const name = node.name.getText()
+  const isExported = hasExportModifier(node)
 
-  // Regex to match class declarations
-  const classRegex = /^(\s*)(export\s+)?(abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
+  // Build clean interface declaration
+  const text = buildInterfaceDeclaration(node, isExported)
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const match = line.match(classRegex)
+  // Extract extends clause
+  const extendsClause = node.heritageClauses?.find(clause =>
+    clause.token === ts.SyntaxKind.ExtendsKeyword
+  )?.types.map(type => type.getText()).join(', ')
 
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const isAbstract = !!match[3]
-      const className = match[4]
+  // Extract generics
+  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
-      // Collect the full class declaration
-      let declaration = ''
-      let braceCount = 0
-      let foundOpenBrace = false
-      let j = i
-
-      // Find the complete class body
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Count braces to find where class ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            foundOpenBrace = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        // Check if we've closed all braces
-        if (foundOpenBrace && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      // Extract generics, extends, and implements
-      const headerMatch = declaration.match(/class\s+\w+\s*(<[^>]+>)?\s*(extends\s+[^{]+)?\s*(implements\s+[^{]+)?/)
-      let generics = ''
-      let extendsClause = ''
-      let implementsClause: string[] = []
-
-      if (headerMatch) {
-        generics = headerMatch[1] || ''
-        extendsClause = headerMatch[2]?.replace('extends', '').trim() || ''
-        const implementsStr = headerMatch[3]?.replace('implements', '').trim() || ''
-        if (implementsStr) {
-          implementsClause = implementsStr.split(',').map(s => s.trim())
-        }
-      }
-
-      const modifiers: string[] = []
-      if (isAbstract) modifiers.push('abstract')
-
-      declarations.push({
-        kind: 'class',
-        name: className,
-        text: declaration,
-        leadingComments,
-        isExported,
-        modifiers,
-        generics,
-        extends: extendsClause,
-        implements: implementsClause
-      })
-
-      i = j
-    }
-
-    i++
+  return {
+    kind: 'interface',
+    name,
+    text,
+    isExported,
+    extends: extendsClause,
+    generics: generics ? `<${generics}>` : undefined,
+    start: node.getStart(),
+    end: node.getEnd()
   }
-
-  return declarations
 }
 
 /**
- * Extract enum declarations
+ * Build clean interface declaration for DTS
  */
-export function extractEnums(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: boolean): string {
+  const parts: string[] = []
 
-  // Regex to match enum declarations
-  const enumRegex = /^(\s*)(export\s+)?(const\s+)?enum\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
+  if (isExported) parts.push('export')
+  parts.push('declare')
+  parts.push('interface')
+  parts.push(node.name.getText())
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const match = line.match(enumRegex)
-
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const isConst = !!match[3]
-      const enumName = match[4]
-
-      // Collect the full enum declaration
-      let declaration = ''
-      let braceCount = 0
-      let foundOpenBrace = false
-      let j = i
-
-      // Find the complete enum body
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Count braces to find where enum ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            foundOpenBrace = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        // Check if we've closed all braces
-        if (foundOpenBrace && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      const modifiers: string[] = []
-      if (isConst) modifiers.push('const')
-
-      declarations.push({
-        kind: 'enum',
-        name: enumName,
-        text: declaration,
-        leadingComments,
-        isExported,
-        modifiers
-      })
-
-      i = j
-    }
-
-    i++
+  // Add generics
+  if (node.typeParameters) {
+    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    parts.push(`<${generics}>`)
   }
 
-  return declarations
+  // Add extends
+  if (node.heritageClauses) {
+    const extendsClause = node.heritageClauses.find(clause =>
+      clause.token === ts.SyntaxKind.ExtendsKeyword
+    )
+    if (extendsClause) {
+      const types = extendsClause.types.map(type => type.getText()).join(', ')
+      parts.push(`extends ${types}`)
+    }
+  }
+
+  // Add body (simplified)
+  const body = getInterfaceBody(node)
+  parts.push(body)
+
+  return parts.join(' ')
 }
 
 /**
- * Extract namespace declarations
+ * Get interface body with proper formatting
  */
-export function extractNamespaces(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function getInterfaceBody(node: ts.InterfaceDeclaration): string {
+  const members: string[] = []
 
-  // Regex to match namespace declarations
-  const namespaceRegex = /^(\s*)(export\s+)?(declare\s+)?namespace\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
-
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const match = line.match(namespaceRegex)
-
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const isDeclare = !!match[3]
-      const namespaceName = match[4]
-
-      // Collect the full namespace declaration
-      let declaration = ''
-      let braceCount = 0
-      let foundOpenBrace = false
-      let j = i
-
-      // Find the complete namespace body
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Count braces to find where namespace ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            foundOpenBrace = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        // Check if we've closed all braces
-        if (foundOpenBrace && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      declarations.push({
-        kind: 'module',
-        name: namespaceName,
-        text: declaration,
-        leadingComments,
-        isExported,
-        modifiers: isDeclare ? ['declare'] : []
-      })
-
-      i = j
+  for (const member of node.members) {
+    if (ts.isPropertySignature(member)) {
+      const name = member.name?.getText() || ''
+      const type = member.type?.getText() || 'any'
+      const optional = member.questionToken ? '?' : ''
+      members.push(`  ${name}${optional}: ${type}`)
+    } else if (ts.isMethodSignature(member)) {
+      const name = member.name?.getText() || ''
+      const params = member.parameters.map(param => {
+        const paramName = param.name.getText()
+        const paramType = param.type?.getText() || 'any'
+        const optional = param.questionToken ? '?' : ''
+        return `${paramName}${optional}: ${paramType}`
+      }).join(', ')
+      const returnType = member.type?.getText() || 'void'
+      members.push(`  ${name}(${params}): ${returnType}`)
     }
-
-    i++
   }
 
-  return declarations
+  return `{\n${members.join('\n')}\n}`
 }
 
 /**
- * Extract import statements
+ * Extract type alias declaration
  */
-export function extractImports(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: string): Declaration {
+  const name = node.name.getText()
+  const isExported = hasExportModifier(node)
 
-  // Regex to match import statements
-  const importRegex = /^(\s*)import\s+/
+  // Build clean type declaration
+  const text = buildTypeDeclaration(node, isExported)
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
+  // Extract generics
+  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
-    if (importRegex.test(line)) {
-      let declaration = line
-      let j = i
-
-      // Single line import with 'from' clause
-      if (line.includes(' from ')) {
-        // This is a complete import on one line
-        declaration = line
-      } else {
-        // Multi-line import - continue until we find 'from' and the closing quote/semicolon
-        j++
-        while (j < lines.length) {
-          declaration += '\n' + lines[j]
-
-          // Check if we've completed the import statement
-          if (lines[j].includes(' from ') &&
-              (lines[j].includes('"') || lines[j].includes("'") || lines[j].includes('`'))) {
-            // Check if the quote is closed
-            const quoteMatch = lines[j].match(/from\s+(['"`])([^'"`]+)\1/)
-            if (quoteMatch) {
-              // Import is complete
-              break
-            }
-          }
-          j++
-        }
-      }
-
-      // Determine import type
-      const isTypeImport = declaration.includes('import type') || declaration.includes('import { type')
-
-      declarations.push({
-        kind: 'import',
-        name: 'import',
-        text: declaration.trim(),
-        leadingComments: [],
-        isExported: false,
-        isTypeOnly: isTypeImport
-      })
-
-      i = j
-    }
-
-    i++
+  return {
+    kind: 'type',
+    name,
+    text,
+    isExported,
+    generics: generics ? `<${generics}>` : undefined,
+    start: node.getStart(),
+    end: node.getEnd()
   }
-
-  return declarations
 }
 
 /**
- * Extract export statements
+ * Build clean type declaration for DTS
  */
-export function extractExports(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean): string {
+  const parts: string[] = []
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
+  if (isExported) parts.push('export')
+  parts.push('type')
+  parts.push(node.name.getText())
 
-    // Check for various export patterns
-    // export { ... }
-    if (/^export\s*\{/.test(line)) {
-      let declaration = line
-      let j = i
-
-      // Continue until we find the closing brace
-      if (!line.includes('}')) {
-        j++
-        while (j < lines.length && !lines[j].includes('}')) {
-          declaration += '\n' + lines[j]
-          j++
-        }
-        if (j < lines.length) {
-          declaration += '\n' + lines[j]
-        }
-      }
-
-      declarations.push({
-        kind: 'export',
-        name: 'export',
-        text: declaration.trim(),
-        leadingComments: [],
-        isExported: true,
-        isTypeOnly: declaration.includes('export type {')
-      })
-
-      i = j
-    }
-    // export * from ...
-    else if (/^export\s*\*\s*from/.test(line)) {
-      declarations.push({
-        kind: 'export',
-        name: 'export',
-        text: line.trim(),
-        leadingComments: [],
-        isExported: true,
-        isTypeOnly: false
-      })
-    }
-    // export default ...
-    else if (/^export\s+default\s+/.test(line)) {
-      declarations.push({
-        kind: 'export',
-        name: 'export',
-        text: line.trim(),
-        leadingComments: [],
-        isExported: true,
-        isDefault: true
-      })
-    }
-    // export type { ... } from ...
-    else if (/^export\s+type\s*\{/.test(line)) {
-      let declaration = line
-      let j = i
-
-      // Continue until complete
-      while (j < lines.length && !lines[j].includes(';') && !lines[j].endsWith('"') && !lines[j].endsWith("'")) {
-        j++
-        if (j < lines.length) {
-          declaration += '\n' + lines[j]
-        }
-      }
-
-      declarations.push({
-        kind: 'export',
-        name: 'export',
-        text: declaration.trim(),
-        leadingComments: [],
-        isExported: true,
-        isTypeOnly: true
-      })
-
-      i = j
-    }
-
-    i++
+  // Add generics
+  if (node.typeParameters) {
+    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    parts.push(`<${generics}>`)
   }
 
-  return declarations
+  parts.push('=')
+  parts.push(node.type.getText())
+
+  return parts.join(' ')
 }
 
 /**
- * Extract module declarations and augmentations
+ * Extract class declaration
  */
-export function extractModules(sourceCode: string): Declaration[] {
-  const declarations: Declaration[] = []
-  const lines = sourceCode.split('\n')
+function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string): Declaration {
+  const name = node.name?.getText() || 'AnonymousClass'
+  const isExported = hasExportModifier(node)
+  const text = getNodeText(node, sourceCode)
 
-  // Regex to match module declarations
-  const moduleRegex = /^(\s*)(export\s+)?(declare\s+)?module\s+(['"`][^'"`]+['"`]|[a-zA-Z_$][a-zA-Z0-9_$]*)/
+  // Extract extends clause
+  const extendsClause = node.heritageClauses?.find(clause =>
+    clause.token === ts.SyntaxKind.ExtendsKeyword
+  )?.types[0]?.getText()
 
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const match = line.match(moduleRegex)
+  // Extract implements clause
+  const implementsClause = node.heritageClauses?.find(clause =>
+    clause.token === ts.SyntaxKind.ImplementsKeyword
+  )?.types.map(type => type.getText())
 
-    if (match) {
-      const leadingWhitespace = match[1]
-      const isExported = !!match[2]
-      const isDeclare = !!match[3]
-      const moduleName = match[4]
+  // Extract generics
+  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
-      // Check if this is an ambient module or augmentation
-      const isAmbient = moduleName.startsWith('"') || moduleName.startsWith("'") || moduleName.startsWith('`')
+  // Check for abstract modifier
+  const isAbstract = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
 
-      // Collect the full module declaration
-      let declaration = ''
-      let braceCount = 0
-      let foundOpenBrace = false
-      let j = i
-
-      // Find the complete module body
-      while (j < lines.length) {
-        const currentLine = lines[j]
-        declaration += (j > i ? '\n' : '') + currentLine
-
-        // Count braces to find where module ends
-        for (const char of currentLine) {
-          if (char === '{') {
-            braceCount++
-            foundOpenBrace = true
-          } else if (char === '}') {
-            braceCount--
-          }
-        }
-
-        // Check if we've closed all braces
-        if (foundOpenBrace && braceCount === 0) {
-          break
-        }
-
-        j++
-      }
-
-      // Extract leading comments
-      const commentStartIndex = Math.max(0, i - 10)
-      const leadingComments = extractLeadingComments(
-        lines.slice(commentStartIndex, i).join('\n'),
-        lines.slice(commentStartIndex, i).join('\n').length
-      )
-
-      declarations.push({
-        kind: 'module',
-        name: moduleName,
-        text: declaration,
-        leadingComments,
-        isExported,
-        modifiers: isDeclare ? ['declare'] : [],
-        source: isAmbient ? moduleName : undefined
-      })
-
-      i = j
-    }
-
-    i++
+  return {
+    kind: 'class',
+    name,
+    text,
+    isExported,
+    extends: extendsClause,
+    implements: implementsClause,
+    generics: generics ? `<${generics}>` : undefined,
+    modifiers: isAbstract ? ['abstract'] : undefined,
+    start: node.getStart(),
+    end: node.getEnd()
   }
+}
 
-  return declarations
+/**
+ * Extract enum declaration
+ */
+function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string): Declaration {
+  const name = node.name.getText()
+  const isExported = hasExportModifier(node)
+  const text = getNodeText(node, sourceCode)
+
+  // Check for const modifier
+  const isConst = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ConstKeyword)
+
+  return {
+    kind: 'enum',
+    name,
+    text,
+    isExported,
+    modifiers: isConst ? ['const'] : undefined,
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Extract module/namespace declaration
+ */
+function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string): Declaration {
+  const name = node.name.getText()
+  const isExported = hasExportModifier(node)
+  const text = getNodeText(node, sourceCode)
+
+  // Check if this is an ambient module (quoted name)
+  const isAmbient = ts.isStringLiteral(node.name)
+
+  return {
+    kind: 'module',
+    name,
+    text,
+    isExported,
+    source: isAmbient ? name.slice(1, -1) : undefined, // Remove quotes for ambient modules
+    start: node.getStart(),
+    end: node.getEnd()
+  }
+}
+
+/**
+ * Get the text of a node from source code
+ */
+function getNodeText(node: ts.Node, sourceCode: string): string {
+  return sourceCode.slice(node.getStart(), node.getEnd())
+}
+
+/**
+ * Check if a node has export modifier
+ */
+function hasExportModifier(node: ts.Node): boolean {
+  if (!('modifiers' in node) || !node.modifiers) return false
+  const modifiers = node.modifiers as readonly ts.Modifier[]
+  return modifiers.some((mod: ts.Modifier) => mod.kind === ts.SyntaxKind.ExportKeyword)
+}
+
+/**
+ * Check if a function has async modifier
+ */
+function hasAsyncModifier(node: ts.FunctionDeclaration): boolean {
+  return node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AsyncKeyword) || false
+}
+
+/**
+ * Check if a non-exported function should be included (e.g., if it's referenced by exported items)
+ */
+function shouldIncludeNonExportedFunction(functionName: string, sourceCode: string): boolean {
+  // For now, don't include non-exported functions
+  // In the future, we could analyze if they're referenced by exported functions
+  return false
+}
+
+/**
+ * Check if a non-exported interface should be included (e.g., if it's used by exported items)
+ */
+function shouldIncludeNonExportedInterface(interfaceName: string, sourceCode: string): boolean {
+  // Check if the interface is used in exported function signatures or other exported types
+  const exportedFunctionPattern = new RegExp(`export\\s+.*?:\\s*.*?${interfaceName}`, 'g')
+  const exportedTypePattern = new RegExp(`export\\s+.*?${interfaceName}`, 'g')
+
+  return exportedFunctionPattern.test(sourceCode) || exportedTypePattern.test(sourceCode)
 }
 
