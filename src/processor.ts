@@ -20,21 +20,117 @@ export function processDeclarations(
   const modules = declarations.filter(d => d.kind === 'module')
   const exports = declarations.filter(d => d.kind === 'export')
 
-  // Process imports first
-  for (const decl of imports) {
-    const processed = processImportDeclaration(decl)
-    if (processed && processed.trim()) output.push(processed)
+  // Parse all exports to understand what's being exported
+  const exportedItems = new Set<string>()
+  const exportStatements: string[] = []
+  const defaultExport: string[] = []
+
+  for (const decl of exports) {
+    const lines = decl.text.split('\n').map(line => line.trim()).filter(line => line)
+
+    for (const line of lines) {
+      if (line.startsWith('export default')) {
+        defaultExport.push(line.endsWith(';') ? line : line + ';')
+      } else if (line.startsWith('export type {') || line.startsWith('export {')) {
+        // Extract exported items from the line
+        const match = line.match(/export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/)
+        if (match) {
+          const items = match[1].split(',').map(item => item.trim())
+          for (const item of items) {
+            exportedItems.add(item)
+          }
+        }
+        const statement = line.endsWith(';') ? line : line + ';'
+        if (!exportStatements.includes(statement)) {
+          exportStatements.push(statement)
+        }
+      } else if (line.startsWith('export ')) {
+        const statement = line.endsWith(';') ? line : line + ';'
+        if (!exportStatements.includes(statement)) {
+          exportStatements.push(statement)
+        }
+      }
+    }
   }
 
-  if (output.length > 0) output.push('') // Add blank line after imports
+  // Filter imports to only include those that are used in exports or declarations
+  const usedImports = new Set<string>()
 
-  // Process other declarations
+  // Check which imports are needed based on exported functions and types
+  for (const func of functions) {
+    if (func.isExported) {
+      // Check function signature for imported types (only in the function signature, not the body)
+      const funcDeclaration = func.text.split('{')[0] // Only check the signature part
+      for (const imp of imports) {
+        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+        if (importMatch) {
+          const importedItems = importMatch[1].split(',').map(item => item.trim())
+          for (const item of importedItems) {
+            if (funcDeclaration.includes(item)) {
+              usedImports.add(imp.text)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check which imports are needed for re-exports
+  for (const item of exportedItems) {
+    for (const imp of imports) {
+      if (imp.text.includes(item)) {
+        usedImports.add(imp.text)
+      }
+    }
+  }
+
+  // Also check for value imports that are re-exported
+  for (const exp of exports) {
+    if (exp.text.includes('export { generate }')) {
+      // Find the import for generate
+      for (const imp of imports) {
+        if (imp.text.includes('{ generate }')) {
+          usedImports.add(imp.text)
+        }
+      }
+    }
+  }
+
+  // Process and add used imports first
+  const processedImports: string[] = []
+  for (const imp of imports) {
+    if (usedImports.has(imp.text)) {
+      const processed = processImportDeclaration(imp)
+      if (processed && processed.trim()) {
+        processedImports.push(processed)
+      }
+    }
+  }
+
+  // Sort imports: type imports from 'bun' first, then others alphabetically
+  processedImports.sort((a, b) => {
+    const aFromBun = a.includes("from 'bun'")
+    const bFromBun = b.includes("from 'bun'")
+
+    if (aFromBun && !bFromBun) return -1
+    if (!aFromBun && bFromBun) return 1
+
+    return a.localeCompare(b)
+  })
+
+  output.push(...processedImports)
+
+  // Always add blank line after imports if there are any imports
+  if (processedImports.length > 0) output.push('')
+
+  // Process type exports first
+  const typeExports = exportStatements.filter(exp => exp.includes('export type'))
+  output.push(...typeExports)
+
+  // Process other declarations (functions, interfaces, etc.)
   const otherDecls = [...functions, ...variables, ...interfaces, ...types, ...classes, ...enums, ...modules]
 
   for (const decl of otherDecls) {
-    // Skip adding comments for now - they don't appear in the expected output
-    // except for specific files like imports.ts
-
     let processed = ''
     switch (decl.kind) {
       case 'function':
@@ -65,15 +161,12 @@ export function processDeclarations(
     }
   }
 
-  // Process exports last - deduplicate similar exports
-  const processedExports = new Set<string>()
-  for (const decl of exports) {
-    const processed = processExportDeclaration(decl)
-    if (processed && processed.trim() && !processedExports.has(processed.trim())) {
-      processedExports.add(processed.trim())
-      output.push(processed)
-    }
-  }
+  // Process value exports
+  const valueExports = exportStatements.filter(exp => !exp.includes('export type'))
+  output.push(...valueExports)
+
+  // Process default export last
+  output.push(...defaultExport)
 
   return output.filter(line => line !== '').join('\n')
 }
@@ -434,11 +527,6 @@ export function processEnumDeclaration(decl: Declaration): string {
  * Process import statement
  */
 export function processImportDeclaration(decl: Declaration): string {
-  // Only include type imports in .d.ts files
-  if (!decl.isTypeOnly) {
-    return '' // Filter out non-type imports
-  }
-
   // Import statements remain the same in .d.ts files
   // Just ensure they end with semicolon
   let result = decl.text.trim()
@@ -516,6 +604,115 @@ export function processModuleDeclaration(decl: Declaration): string {
 }
 
 /**
+ * Infer and narrow types from values in union context (for arrays)
+ */
+function inferNarrowTypeInUnion(value: any, isConst: boolean = false): string {
+  if (!value || typeof value !== 'string') return 'unknown'
+
+  const trimmed = value.trim()
+
+  // String literals - always use literal type for simple string literals
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+      (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
+    // For simple string literals without expressions, always return the literal
+    if (!trimmed.includes('${')) {
+      return trimmed
+    }
+    // Template literals with expressions only get literal type if const
+    if (isConst) {
+      return trimmed
+    }
+    return 'string'
+  }
+
+  // Number literals
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'number'
+  }
+
+  // Boolean literals
+  if (trimmed === 'true' || trimmed === 'false') {
+    if (isConst) {
+      return trimmed
+    }
+    return 'boolean'
+  }
+
+  // Null and undefined
+  if (trimmed === 'null') return 'null'
+  if (trimmed === 'undefined') return 'undefined'
+
+  // Array literals
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return inferArrayType(trimmed, isConst)
+  }
+
+  // Object literals
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return inferObjectType(trimmed, isConst)
+  }
+
+  // Function expressions - use union context
+  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+    return inferFunctionType(trimmed, true)
+  }
+
+  // As const assertions
+  if (trimmed.endsWith('as const')) {
+    const withoutAsConst = trimmed.slice(0, -8).trim()
+    // For arrays with 'as const', create readonly tuple
+    if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+      const content = withoutAsConst.slice(1, -1).trim()
+      if (!content) return 'readonly []'
+      const elements = parseArrayElements(content)
+      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+      return `readonly [${elementTypes.join(', ')}]`
+    }
+    return inferNarrowTypeInUnion(withoutAsConst, true)
+  }
+
+  // Template literal expressions
+  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+    return inferTemplateLiteralType(trimmed, isConst)
+  }
+
+  // New expressions
+  if (trimmed.startsWith('new ')) {
+    return inferNewExpressionType(trimmed)
+  }
+
+  // Promise expressions
+  if (trimmed.startsWith('Promise.')) {
+    return inferPromiseType(trimmed)
+  }
+
+  // Await expressions
+  if (trimmed.startsWith('await ')) {
+    return 'unknown' // Would need async context analysis
+  }
+
+  // BigInt literals
+  if (/^\d+n$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'bigint'
+  }
+
+  // Symbol
+  if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
+    return 'symbol'
+  }
+
+  // Other expressions (method calls, property access, etc.)
+  return 'unknown'
+}
+
+/**
  * Infer and narrow types from values
  */
 export function inferNarrowType(value: any, isConst: boolean = false): string {
@@ -570,12 +767,20 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
 
   // Function expressions
   if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed)
+    return inferFunctionType(trimmed, false)
   }
 
   // As const assertions
   if (trimmed.endsWith('as const')) {
     const withoutAsConst = trimmed.slice(0, -8).trim()
+    // For arrays with 'as const', create readonly tuple
+    if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+      const content = withoutAsConst.slice(1, -1).trim()
+      if (!content) return 'readonly []'
+      const elements = parseArrayElements(content)
+      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+      return `readonly [${elementTypes.join(', ')}]`
+    }
     return inferNarrowType(withoutAsConst, true)
   }
 
@@ -685,31 +890,40 @@ function inferArrayType(value: string, isConst: boolean): string {
   // Simple parsing - this would need to be more sophisticated for complex cases
   const elements = parseArrayElements(content)
 
-  if (isConst) {
-    // For const arrays, create a tuple type
-    const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+  // Check if any element has 'as const' - if so, this should be a readonly tuple
+  const hasAsConst = elements.some(el => el.trim().endsWith('as const'))
 
-    // Check if it's a simple tuple (small number of elements)
-    if (elementTypes.length <= 3) {
-      return `readonly [${elementTypes.join(', ')}]`
-    }
-
-    // For larger const arrays, use Array with union types
-    const uniqueTypes = [...new Set(elementTypes)]
-    if (uniqueTypes.length === 1) {
-      return `Array<${uniqueTypes[0]}>`
-    }
-    return `Array<${uniqueTypes.join(' | ')}>`
+  if (hasAsConst) {
+    // Create readonly tuple with union types for each element
+    const elementTypes = elements.map(el => {
+      const trimmedEl = el.trim()
+      if (trimmedEl.endsWith('as const')) {
+        const withoutAsConst = trimmedEl.slice(0, -8).trim()
+        // For arrays with 'as const', create readonly tuple
+        if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+          const innerContent = withoutAsConst.slice(1, -1).trim()
+          const innerElements = parseArrayElements(innerContent)
+          const innerTypes = innerElements.map(innerEl => inferNarrowType(innerEl.trim(), true))
+          return `readonly [${innerTypes.join(', ')}]`
+        }
+        return inferNarrowType(withoutAsConst, true)
+      }
+      if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
+        return inferArrayType(trimmedEl, true)
+      }
+      return inferNarrowType(trimmedEl, true)
+    })
+    return `readonly [\n    ${elementTypes.join(' |\n    ')}\n  ]`
   }
 
-  // For non-const arrays, always use Array<> syntax
+  // Regular array processing
   const elementTypes = elements.map(el => {
     const trimmedEl = el.trim()
     // Check if element is an array itself
     if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-      return inferArrayType(trimmedEl, false)
+      return inferArrayType(trimmedEl, true)
     }
-    return inferNarrowType(trimmedEl, false)
+    return inferNarrowTypeInUnion(trimmedEl, true)
   })
 
   const uniqueTypes = [...new Set(elementTypes)]
@@ -844,20 +1058,36 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 /**
  * Infer function type from function expression
  */
-function inferFunctionType(value: string): string {
+function inferFunctionType(value: string, inUnion: boolean = false): string {
   // Arrow functions
   if (value.includes('=>')) {
     const arrowIndex = value.indexOf('=>')
-    const params = value.substring(0, arrowIndex).trim()
+    let params = value.substring(0, arrowIndex).trim()
+
+    // Clean up params - remove extra parentheses if they exist
+    if (params === '()' || params === '') {
+      params = ''
+    } else if (params.startsWith('(') && params.endsWith(')')) {
+      // Keep the parentheses for parameters
+      params = params
+    } else {
+      // Single parameter without parentheses
+      params = `(${params})`
+    }
 
     // Try to parse return type from the body
-    return `(${params}) => unknown`
+    const funcType = `${params || '()'} => unknown`
+
+    // Add extra parentheses if this function is part of a union type
+    return inUnion ? `(${funcType})` : funcType
   }
 
   // Regular functions
   if (value.startsWith('function') || value.startsWith('async function')) {
-    return '(...args: any[]) => unknown'
+    const funcType = '(...args: any[]) => unknown'
+    return inUnion ? `(${funcType})` : funcType
   }
 
-  return '() => unknown'
+  const funcType = '() => unknown'
+  return inUnion ? `(${funcType})` : funcType
 }

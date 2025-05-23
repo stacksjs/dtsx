@@ -60,17 +60,26 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
   const rootPath = resolve(config.cwd, config.root)
 
   for (const pattern of config.entrypoints) {
-    const glob = new Glob(pattern)
+    // Check if pattern is an absolute path to a specific file
+    if (pattern.startsWith('/') && pattern.endsWith('.ts')) {
+      // It's an absolute file path
+      if (!pattern.endsWith('.d.ts') && !pattern.includes('node_modules')) {
+        files.push(pattern)
+      }
+    } else {
+      // It's a glob pattern
+      const glob = new Glob(pattern)
 
-    // Scan for matching files
-    for await (const file of glob.scan({
-      cwd: rootPath,
-      absolute: true,
-      onlyFiles: true
-    })) {
-      // Skip .d.ts files and node_modules
-      if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
-        files.push(file)
+      // Scan for matching files
+      for await (const file of glob.scan({
+        cwd: rootPath,
+        absolute: true,
+        onlyFiles: true
+      })) {
+        // Skip .d.ts files and node_modules
+        if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
+          files.push(file)
+        }
       }
     }
   }
