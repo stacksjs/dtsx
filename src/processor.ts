@@ -110,9 +110,14 @@ export function processDeclarations(
     }
   }
 
-  // Check which imports are needed for interfaces and types (only exported ones)
+  // Check which imports are needed for interfaces and types (including non-exported ones that are referenced by exported items)
   for (const iface of interfaces) {
-    if (iface.isExported) {
+    // Include interface if it's exported OR if it's referenced by exported functions
+    const isReferencedByExports = functions.some(func =>
+      func.isExported && func.text.includes(iface.name)
+    )
+
+    if (iface.isExported || isReferencedByExports) {
       for (const imp of imports) {
         const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
         if (importMatch) {
@@ -176,7 +181,7 @@ export function processDeclarations(
     }
   }
 
-  // Create filtered imports based on actually used items
+    // Create filtered imports based on actually used items
   const processedImports: string[] = []
   for (const imp of imports) {
     const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from\s+['"]([^'"]+)['"]/)
@@ -189,11 +194,12 @@ export function processDeclarations(
 
       if (usedItems.length > 0) {
         const source = importMatch[2]
-        const hasTypeImports = usedItems.some(item => item.startsWith('type '))
-        const hasValueImports = usedItems.some(item => !item.startsWith('type '))
+
+        // Check if original import was type-only
+        const isOriginalTypeOnly = imp.text.includes('import type')
 
         let importStatement = 'import '
-        if (hasTypeImports && !hasValueImports) {
+        if (isOriginalTypeOnly) {
           importStatement += 'type '
         }
         importStatement += `{ ${usedItems.join(', ')} } from '${source}';`

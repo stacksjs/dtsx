@@ -1,4 +1,4 @@
-import { ProcessingState } from './types';
+import type { ProcessingState } from './types';
 export declare function extract(filePath: string): Promise<string>;
 export declare function extractDtsTypes(sourceCode: string): string;
 export declare function isFunctionType(type: string): boolean;

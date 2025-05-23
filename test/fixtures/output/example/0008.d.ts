@@ -1,6 +1,6 @@
-import { CertDetails } from './types';
 import { os } from 'node:os';
 import { pki } from 'node-forge';
+import type { CertDetails } from './types';
 export declare function isCertValidForDomain(certPemOrPath: string, domain: string): boolean;
 export declare function readCertFromFile(certPath: string): string;
 export declare function parseCertDetails(certPemOrPath: string): CertDetails;

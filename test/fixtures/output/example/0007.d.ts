@@ -1,6 +1,6 @@
-import { CAOptions, CertificateOptions, GenerateCertReturn, TlsOption } from './types';
 import { forge, tls } from 'node-forge';
 import { os } from 'node:os';
+import type { CAOptions, CertificateOptions, GenerateCertReturn, TlsOption } from './types';
 export declare function generateRandomSerial(verbose?: boolean): string;
 export declare function calculateValidityDates(options: {
   validityDays?: number

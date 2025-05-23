@@ -1,4 +1,4 @@
-import type { type Collection } from '@stacksjs/collections';
+import { type Collection } from '@stacksjs/collections';
 export declare const quotes: Collection<string[]>;
 export {
   align,
