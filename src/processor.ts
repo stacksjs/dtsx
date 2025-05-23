@@ -26,35 +26,36 @@ export function processDeclarations(
   const defaultExport: string[] = []
 
   for (const decl of exports) {
-    const lines = decl.text.split('\n').map(line => line.trim()).filter(line => line)
+    if (decl.text.startsWith('export default')) {
+      const statement = decl.text.endsWith(';') ? decl.text : decl.text + ';'
+      defaultExport.push(statement)
+    } else {
+      // Handle multi-line export statements properly
+      let exportText = decl.text.trim()
 
-    for (const line of lines) {
-      if (line.startsWith('export default')) {
-        defaultExport.push(line.endsWith(';') ? line : line + ';')
-      } else if (line.startsWith('export type {') || line.startsWith('export {')) {
-        // Extract exported items from the line
-        const match = line.match(/export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/)
-        if (match) {
-          const items = match[1].split(',').map(item => item.trim())
-          for (const item of items) {
-            exportedItems.add(item)
-          }
+      // Clean up the export text and ensure it ends with semicolon
+      if (!exportText.endsWith(';')) {
+        exportText += ';'
+      }
+
+      // Extract exported items for tracking
+      const match = exportText.match(/export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/)
+      if (match) {
+        const items = match[1].split(',').map(item => item.trim())
+        for (const item of items) {
+          exportedItems.add(item)
         }
-        const statement = line.endsWith(';') ? line : line + ';'
-        if (!exportStatements.includes(statement)) {
-          exportStatements.push(statement)
-        }
-      } else if (line.startsWith('export ')) {
-        const statement = line.endsWith(';') ? line : line + ';'
-        if (!exportStatements.includes(statement)) {
-          exportStatements.push(statement)
-        }
+      }
+
+      if (!exportStatements.includes(exportText)) {
+        exportStatements.push(exportText)
       }
     }
   }
 
   // Filter imports to only include those that are used in exports or declarations
   const usedImports = new Set<string>()
+  const usedImportItems = new Set<string>()
 
   // Check which imports are needed based on exported functions and types
   for (const func of functions) {
@@ -67,7 +68,7 @@ export function processDeclarations(
           const importedItems = importMatch[1].split(',').map(item => item.trim())
           for (const item of importedItems) {
             if (funcDeclaration.includes(item)) {
-              usedImports.add(imp.text)
+              usedImportItems.add(item)
             }
           }
         }
@@ -75,15 +76,51 @@ export function processDeclarations(
     }
   }
 
-  // Check which imports are needed for interfaces and types (check all, not just exported)
+    // Check which imports are needed for exported variables
+  for (const variable of variables) {
+    if (variable.isExported) {
+      for (const imp of imports) {
+        // Handle mixed imports like: import { collect, type Collection } from 'module'
+        const importText = imp.text
+        const typeMatches = importText.match(/type\s+([A-Za-z_$][A-Za-z0-9_$]*)/g)
+        const valueMatches = importText.match(/import\s+\{([^}]+)\}/)
+
+        // Check type imports
+        if (typeMatches) {
+          for (const typeMatch of typeMatches) {
+            const typeName = typeMatch.replace('type ', '').trim()
+            if (variable.text.includes(typeName)) {
+              usedImportItems.add(typeName)
+            }
+          }
+        }
+
+        // Check value imports
+        if (valueMatches) {
+          const imports = valueMatches[1].split(',').map(item =>
+            item.replace(/type\s+/, '').trim()
+          )
+          for (const importName of imports) {
+            if (variable.text.includes(importName)) {
+              usedImportItems.add(importName)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check which imports are needed for interfaces and types (only exported ones)
   for (const iface of interfaces) {
-    for (const imp of imports) {
-      const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
-      if (importMatch) {
-        const importedItems = importMatch[1].split(',').map(item => item.trim())
-        for (const item of importedItems) {
-          if (iface.text.includes(item)) {
-            usedImports.add(imp.text)
+    if (iface.isExported) {
+      for (const imp of imports) {
+        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+        if (importMatch) {
+          const importedItems = importMatch[1].split(',').map(item => item.trim())
+          for (const item of importedItems) {
+            if (iface.text.includes(item)) {
+              usedImportItems.add(item)
+            }
           }
         }
       }
@@ -98,7 +135,7 @@ export function processDeclarations(
           const importedItems = importMatch[1].split(',').map(item => item.trim())
           for (const item of importedItems) {
             if (type.text.includes(item)) {
-              usedImports.add(imp.text)
+              usedImportItems.add(item)
             }
           }
         }
@@ -110,30 +147,58 @@ export function processDeclarations(
   for (const item of exportedItems) {
     for (const imp of imports) {
       if (imp.text.includes(item)) {
-        usedImports.add(imp.text)
+        // Extract the specific items from this import
+        const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+        if (importMatch) {
+          const importedItems = importMatch[1].split(',').map(item => item.trim())
+          for (const importedItem of importedItems) {
+            if (item === importedItem) {
+              usedImportItems.add(importedItem)
+            }
+          }
+        }
       }
     }
   }
 
   // Also check for value imports that are re-exported
   for (const exp of exports) {
-    if (exp.text.includes('export { generate }')) {
-      // Find the import for generate
-      for (const imp of imports) {
-        if (imp.text.includes('{ generate }')) {
-          usedImports.add(imp.text)
+    for (const imp of imports) {
+      const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from/)
+      if (importMatch) {
+        const importedItems = importMatch[1].split(',').map(item => item.trim())
+        for (const importedItem of importedItems) {
+          if (exp.text.includes(importedItem)) {
+            usedImportItems.add(importedItem)
+          }
         }
       }
     }
   }
 
-  // Process and add used imports first
+  // Create filtered imports based on actually used items
   const processedImports: string[] = []
   for (const imp of imports) {
-    if (usedImports.has(imp.text)) {
-      const processed = processImportDeclaration(imp)
-      if (processed && processed.trim()) {
-        processedImports.push(processed)
+    const importMatch = imp.text.match(/import\s+(?:type\s+)?\{?\s*([^}]+)\s*\}?\s+from\s+['"]([^'"]+)['"]/)
+    if (importMatch) {
+      const importedItems = importMatch[1].split(',').map(item => item.trim())
+      const usedItems = importedItems.filter(item => {
+        const cleanItem = item.replace(/^type\s+/, '').trim()
+        return usedImportItems.has(cleanItem)
+      })
+
+      if (usedItems.length > 0) {
+        const source = importMatch[2]
+        const hasTypeImports = usedItems.some(item => item.startsWith('type '))
+        const hasValueImports = usedItems.some(item => !item.startsWith('type '))
+
+        let importStatement = 'import '
+        if (hasTypeImports && !hasValueImports) {
+          importStatement += 'type '
+        }
+        importStatement += `{ ${usedItems.join(', ')} } from '${source}';`
+
+        processedImports.push(importStatement)
       }
     }
   }

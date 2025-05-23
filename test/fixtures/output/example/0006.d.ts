@@ -1,7 +1,5 @@
-import type { Collection } from '@stacksjs/collections';
-
-export declare let quotes: Collection<string[]>;
-
+import type { type Collection } from '@stacksjs/collections';
+export declare const quotes: Collection<string[]>;
 export {
   align,
   box,
@@ -12,7 +10,8 @@ export {
   leftAlign,
   rightAlign,
   stripAnsi,
-} from 'consola/utils'
+} from 'consola/utils';
+export * as kolorist from 'kolorist';
 export {
   ansi256,
   ansi256Bg,
@@ -60,6 +59,4 @@ export {
   underline,
   white,
   yellow,
-} from 'kolorist'
-
-export * as kolorist from 'kolorist'
+} from 'kolorist';

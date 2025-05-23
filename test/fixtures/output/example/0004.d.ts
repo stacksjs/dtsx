@@ -8,52 +8,46 @@ export declare interface DtsGenerationConfig {
   tsconfigPath: string
   verbose: boolean
 }
-export declare type DtsGenerationOption = Partial<DtsGenerationConfig>
-
-export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
-
-export interface RegexPatterns {
-  readonly typeImport: RegExp
-  readonly regularImport: RegExp
-  readonly bracketOpen: RegExp
-  readonly bracketClose: RegExp
-  readonly functionReturn: RegExp
-  readonly typeAnnotation: RegExp
-  readonly asyncFunction: RegExp
-  readonly genericParams: RegExp
-  readonly functionParams: RegExp
-  readonly functionReturnType: RegExp
-  readonly destructuredParams: RegExp
-  readonly typePattern: RegExp
-  readonly valueReference: RegExp
-  readonly typeReference: RegExp
-  readonly functionName: RegExp
-  readonly exportCleanup: RegExp
-  readonly defaultExport: RegExp
-  readonly complexType: RegExp
-  readonly unionIntersection: RegExp
-  readonly mappedType: RegExp
-  readonly conditionalType: RegExp
-  readonly genericConstraints: RegExp
-  readonly functionOverload: RegExp
-  readonly moduleDeclaration: RegExp
-  readonly moduleAugmentation: RegExp
+export declare interface RegexPatterns {
+  typeImport: RegExp
+  regularImport: RegExp
+  bracketOpen: RegExp
+  bracketClose: RegExp
+  functionReturn: RegExp
+  typeAnnotation: RegExp
+  asyncFunction: RegExp
+  genericParams: RegExp
+  functionParams: RegExp
+  functionReturnType: RegExp
+  destructuredParams: RegExp
+  typePattern: RegExp
+  valueReference: RegExp
+  typeReference: RegExp
+  functionName: RegExp
+  exportCleanup: RegExp
+  defaultExport: RegExp
+  complexType: RegExp
+  unionIntersection: RegExp
+  mappedType: RegExp
+  conditionalType: RegExp
+  genericConstraints: RegExp
+  functionOverload: RegExp
+  moduleDeclaration: RegExp
+  moduleAugmentation: RegExp
 }
-
-export interface ImportTrackingState {
-  typeImports: Map<string, Set<string>> 
-  valueImports: Map<string, Set<string>> 
-  usedTypes: Set<string> 
-  usedValues: Set<string> 
-  exportedTypes: Set<string> 
-  exportedValues: Set<string> 
-  valueAliases: Map<string, string> 
-  importSources: Map<string, string> 
-  typeExportSources: Map<string, string> 
-  defaultExportValue?: string 
+export declare interface ImportTrackingState {
+  typeImports: Map<string, Set<string>>
+  valueImports: Map<string, Set<string>>
+  usedTypes: Set<string>
+  usedValues: Set<string>
+  exportedTypes: Set<string>
+  exportedValues: Set<string>
+  valueAliases: Map<string, string>
+  importSources: Map<string, string>
+  typeExportSources: Map<string, string>
+  defaultExportValue?: string
 }
-
-export interface ProcessingState {
+export declare interface ProcessingState {
   dtsLines: string[]
   imports: string[]
   usedTypes: Set<string>
@@ -78,38 +72,35 @@ export interface ProcessingState {
   defaultExports: Set<string>
   currentScope: 'top' | 'function'
 }
-
-export interface MethodSignature {
+export declare interface MethodSignature {
   name: string
   async: boolean
   generics: string
   params: string
   returnType: string
 }
-
-export interface PropertyInfo {
+export declare interface PropertyInfo {
   key: string
   value: string
   type: string
   nested?: PropertyInfo[]
   method?: MethodSignature
 }
-
-export interface ImportInfo {
+export declare interface ImportInfo {
   kind: 'type' | 'value' | 'mixed'
   usedTypes: Set<string>
   usedValues: Set<string>
   source: string
 }
-
-export interface FunctionSignature {
+export declare interface FunctionSignature {
   name: string
   params: string
   returnType: string
   generics: string
 }
-
-export interface ProcessedMethod {
+export declare interface ProcessedMethod {
   name: string
   signature: string
 }
+export type DtsGenerationOption = Partial<DtsGenerationConfig>
+export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]

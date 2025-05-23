@@ -1,12 +1,13 @@
-import type { Config } from './types';
-
+import { Config } from './types';
 export declare function loadConfig<T>({
   name,
   cwd,
   defaultConfig,
   endpoint,
-  headers,
+  headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  },
 }: Config<T>): Promise<T>;
-
-export * from './types'
-export * from './utils'
+export * from './types';
+export * from './utils';

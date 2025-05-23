@@ -1,6 +1,6 @@
-import type { CertDetails } from './types';
+import { CertDetails } from './types';
+import { os } from 'node:os';
 import { pki } from 'node-forge';
-
 export declare function isCertValidForDomain(certPemOrPath: string, domain: string): boolean;
 export declare function readCertFromFile(certPath: string): string;
 export declare function parseCertDetails(certPemOrPath: string): CertDetails;
@@ -9,5 +9,4 @@ export declare function getCertificateFromCertPemOrPath(certPemOrPath: string): 
 export declare function listCertsInDirectory(dirPath?: string): string[];
 export declare function makeNumberPositive(hexString: string): string;
 export declare function findFoldersWithFile(rootDir: string, fileName: string): string[];
-declare function search(dir: string): void;
 export declare function debugLog(category: string, message: string, verbose?: boolean): void;

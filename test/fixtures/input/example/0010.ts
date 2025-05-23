@@ -12,7 +12,7 @@ export interface FormatPhoneOptions {
 
 export const DefaultPhoneRegion = 'US'
 
-const PHONE_PATTERNS: Record<string, number[]> = {
+export const PHONE_PATTERNS: Record<string, number[]> = {
   US: [3, 3, 4],
   GB: [4, 3, 3],
   FR: [2, 2, 2, 2, 2],
@@ -25,7 +25,7 @@ const PHONE_PATTERNS: Record<string, number[]> = {
   CA: [3, 3, 4],
 } as const
 
-const COUNTRY_CODES: Record<string, string> = {
+export const COUNTRY_CODES: Record<string, string> = {
   US: '+1',
   GB: '+44',
   FR: '+33',
