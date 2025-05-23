@@ -1,4 +1,5 @@
 import type { CertDetails } from './types';
+import { pki } from 'node-forge';
 
 export declare function isCertValidForDomain(certPemOrPath: string, domain: string): boolean;
 export declare function readCertFromFile(certPath: string): string;

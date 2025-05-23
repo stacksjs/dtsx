@@ -1,12 +1,12 @@
 export declare const bunshPackage: {
-  name: unknown;
-  domain: unknown;
-  description: unknown;
-  packageYmlUrl: unknown;
-  homepageUrl: unknown;
-  githubUrl: unknown;
-  installCommand: unknown;
-  programs: readonly ['bun', 'bunx', ''];
+  name: 'bun';
+  domain: 'bun.sh';
+  description: 'Incredibly fast JavaScript runtime, bundler, test runner, and package manager – all in one';
+  packageYmlUrl: 'https://github.com/pkgxdev/pantry/tree/main/projects/bun.sh/package.yml';
+  homepageUrl: '';
+  githubUrl: 'https://github.com/pkgxdev/pantry/';
+  installCommand: 'sh <(curl https://pkgx.sh) +bun.sh -- $SHELL -i';
+  programs: readonly ['bun', 'bunx'];
   companions: readonly [''];
   dependencies: readonly [''];
   versions: readonly [
@@ -127,9 +127,8 @@ export declare const bunshPackage: {
     '0.6.1' |
     '0.6.0' |
     '0.5.9' |
-    '0.5.6' |
-    ''
+    '0.5.6'
   ];
-  fullPath: unknown;
-  aliases: readonly ['bun', '']
+  fullPath: 'bun.sh';
+  aliases: readonly ['bun']
 };

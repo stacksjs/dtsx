@@ -1,4 +1,3 @@
-
 export type DelimiterType = string
 export const DefaultPhoneDelimiter: DelimiterType = '-'
 export const DefaultPhonePattern: number[] = [3, 3, 4]

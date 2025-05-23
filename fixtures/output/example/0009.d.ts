@@ -5,10 +5,7 @@ export declare function loadConfig<T>({
   cwd,
   defaultConfig,
   endpoint,
-  headers = {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  },
+  headers,
 }: Config<T>): Promise<T>;
 
 export * from './types'
