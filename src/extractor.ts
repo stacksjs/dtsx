@@ -25,6 +25,12 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
   // Extract enums
   declarations.push(...extractEnums(sourceCode))
 
+  // Extract namespaces
+  declarations.push(...extractNamespaces(sourceCode))
+
+  // Extract modules
+  declarations.push(...extractModules(sourceCode))
+
   // Extract imports
   declarations.push(...extractImports(sourceCode))
 
@@ -155,17 +161,27 @@ export function extractFunctions(sourceCode: string): Declaration[] {
           if (overloadMatch && overloadMatch[5] === functionName) {
             // Extract just the signature line for overloads
             let overloadSig = lines[k]
-            let m = k
+            let m = k + 1
 
             // Continue until we find a semicolon or opening brace
-            while (m < lines.length && !lines[m].includes(';') && !lines[m].includes('{')) {
-              m++
-              if (m < lines.length) {
-                overloadSig += '\n' + lines[m]
+            while (m < lines.length) {
+              const checkLine = lines[m]
+              if (checkLine.includes(';')) {
+                overloadSig += '\n' + checkLine.substring(0, checkLine.indexOf(';') + 1)
+                break
               }
+              if (checkLine.includes('{')) {
+                // This is the implementation, stop before it
+                break
+              }
+              overloadSig += '\n' + checkLine
+              m++
             }
 
-            overloads.push(overloadSig.trim())
+            // Only add if it ends with semicolon (it's a signature, not implementation)
+            if (overloadSig.includes(';')) {
+              overloads.push(overloadSig.trim())
+            }
             k = m
           } else {
             break
@@ -715,6 +731,81 @@ export function extractEnums(sourceCode: string): Declaration[] {
 }
 
 /**
+ * Extract namespace declarations
+ */
+export function extractNamespaces(sourceCode: string): Declaration[] {
+  const declarations: Declaration[] = []
+  const lines = sourceCode.split('\n')
+
+  // Regex to match namespace declarations
+  const namespaceRegex = /^(\s*)(export\s+)?(declare\s+)?namespace\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const match = line.match(namespaceRegex)
+
+    if (match) {
+      const leadingWhitespace = match[1]
+      const isExported = !!match[2]
+      const isDeclare = !!match[3]
+      const namespaceName = match[4]
+
+      // Collect the full namespace declaration
+      let declaration = ''
+      let braceCount = 0
+      let foundOpenBrace = false
+      let j = i
+
+      // Find the complete namespace body
+      while (j < lines.length) {
+        const currentLine = lines[j]
+        declaration += (j > i ? '\n' : '') + currentLine
+
+        // Count braces to find where namespace ends
+        for (const char of currentLine) {
+          if (char === '{') {
+            braceCount++
+            foundOpenBrace = true
+          } else if (char === '}') {
+            braceCount--
+          }
+        }
+
+        // Check if we've closed all braces
+        if (foundOpenBrace && braceCount === 0) {
+          break
+        }
+
+        j++
+      }
+
+      // Extract leading comments
+      const commentStartIndex = Math.max(0, i - 10)
+      const leadingComments = extractLeadingComments(
+        lines.slice(commentStartIndex, i).join('\n'),
+        lines.slice(commentStartIndex, i).join('\n').length
+      )
+
+      declarations.push({
+        kind: 'module',
+        name: namespaceName,
+        text: declaration,
+        leadingComments,
+        isExported,
+        modifiers: isDeclare ? ['declare'] : []
+      })
+
+      i = j
+    }
+
+    i++
+  }
+
+  return declarations
+}
+
+/**
  * Extract import statements
  */
 export function extractImports(sourceCode: string): Declaration[] {
@@ -783,4 +874,83 @@ export function extractImports(sourceCode: string): Declaration[] {
 export function extractExports(sourceCode: string): Declaration[] {
   // TODO: Implement export extraction
   return []
+}
+
+/**
+ * Extract module declarations and augmentations
+ */
+export function extractModules(sourceCode: string): Declaration[] {
+  const declarations: Declaration[] = []
+  const lines = sourceCode.split('\n')
+
+  // Regex to match module declarations
+  const moduleRegex = /^(\s*)(export\s+)?(declare\s+)?module\s+(['"`][^'"`]+['"`]|[a-zA-Z_$][a-zA-Z0-9_$]*)/
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const match = line.match(moduleRegex)
+
+    if (match) {
+      const leadingWhitespace = match[1]
+      const isExported = !!match[2]
+      const isDeclare = !!match[3]
+      const moduleName = match[4]
+
+      // Check if this is an ambient module or augmentation
+      const isAmbient = moduleName.startsWith('"') || moduleName.startsWith("'") || moduleName.startsWith('`')
+
+      // Collect the full module declaration
+      let declaration = ''
+      let braceCount = 0
+      let foundOpenBrace = false
+      let j = i
+
+      // Find the complete module body
+      while (j < lines.length) {
+        const currentLine = lines[j]
+        declaration += (j > i ? '\n' : '') + currentLine
+
+        // Count braces to find where module ends
+        for (const char of currentLine) {
+          if (char === '{') {
+            braceCount++
+            foundOpenBrace = true
+          } else if (char === '}') {
+            braceCount--
+          }
+        }
+
+        // Check if we've closed all braces
+        if (foundOpenBrace && braceCount === 0) {
+          break
+        }
+
+        j++
+      }
+
+      // Extract leading comments
+      const commentStartIndex = Math.max(0, i - 10)
+      const leadingComments = extractLeadingComments(
+        lines.slice(commentStartIndex, i).join('\n'),
+        lines.slice(commentStartIndex, i).join('\n').length
+      )
+
+      declarations.push({
+        kind: 'module',
+        name: moduleName,
+        text: declaration,
+        leadingComments,
+        isExported,
+        modifiers: isDeclare ? ['declare'] : [],
+        source: isAmbient ? moduleName : undefined
+      })
+
+      i = j
+    }
+
+    i++
+  }
+
+  return declarations
 }

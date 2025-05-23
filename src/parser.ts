@@ -18,18 +18,92 @@ export function extractLeadingComments(source: string, position: number): string
   const comments: string[] = []
 
   // Look backwards for comments
-  for (let i = lines.length - 1; i >= 0; i--) {
+  let i = lines.length - 1
+  let inMultilineComment = false
+  let multilineCommentLines: string[] = []
+
+  while (i >= 0) {
     const line = lines[i].trim()
-    if (line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) {
+
+    // Check for end of multiline comment
+    if (line.endsWith('*/') && !inMultilineComment) {
+      inMultilineComment = true
+      multilineCommentLines.unshift(line)
+    }
+    // Check for start of multiline comment
+    else if (line.startsWith('/*') && inMultilineComment) {
+      multilineCommentLines.unshift(line)
+      comments.unshift(...multilineCommentLines)
+      multilineCommentLines = []
+      inMultilineComment = false
+    }
+    // Inside multiline comment
+    else if (inMultilineComment) {
+      multilineCommentLines.unshift(line)
+    }
+    // Single line comment
+    else if (line.startsWith('//')) {
       comments.unshift(line)
-    } else if (line === '') {
-      continue
-    } else {
+    }
+    // JSDoc style comment line
+    else if (line.startsWith('*') && (i > 0 && lines[i-1].trim().startsWith('/*'))) {
+      comments.unshift(line)
+    }
+    // Empty line between declaration and comments
+    else if (line === '' && comments.length > 0) {
+      // Continue to look for more comments
+    }
+    // Non-comment, non-empty line - stop
+    else if (line !== '') {
       break
     }
+
+    i--
   }
 
   return comments
+}
+
+/**
+ * Extract trailing comments from a line
+ */
+export function extractTrailingComment(line: string): string | null {
+  // Find comment outside of strings
+  let inString = false
+  let stringChar = ''
+  let escaped = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+
+    if (!escaped && !inString && (char === '"' || char === "'" || char === '`')) {
+      inString = true
+      stringChar = char
+    } else if (!escaped && inString && char === stringChar) {
+      inString = false
+    } else if (char === '\\' && !escaped) {
+      escaped = true
+      continue
+    } else if (!inString && char === '/' && i < line.length - 1) {
+      if (line[i + 1] === '/') {
+        return line.substring(i)
+      }
+    }
+
+    escaped = false
+  }
+
+  return null
+}
+
+/**
+ * Format comments for output
+ */
+export function formatComments(comments: string[]): string[] {
+  return comments.map(comment => {
+    // Preserve indentation and format
+    return comment
+  })
 }
 
 /**

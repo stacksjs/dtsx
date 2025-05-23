@@ -1,13 +1,3 @@
-*
-* @param path - The relative path to the file or directory.
-* @returns The absolute path to the file or directory.
-* @example
-* ```ts
-* import { actionsPath } from '@stacksjs/path'
-*
-* console.log(actionsPath('path/to/action.ts')) // Outputs the absolute path to 'path/to/action.ts' within the `actions` directory
-* ```
-*/
 export declare function actionsPath(path?: string): string;
 export declare function corePath(path?: string): string;
 export declare function frameworkPath(path?: string, options?: { relative?: boolean, cwd?: string }): string;

@@ -1,5 +1,5 @@
 import type { DtsGenerationOption } from '@stacksjs/dtsx';
-export type AuthStatus = 'authenticated' | 'unauthenticated'
+export declare type AuthStatus = 'authenticated' | 'unauthenticated'
 // Intersection and Union Types
 export type ComplexUnionIntersection =
   | (User & { role: 'admin' })
@@ -67,3 +67,4 @@ export type RecordMerge<T, U> = IsEmptyType<U> extends true
                   : never
             }
           : U
+export type { DtsGenerationOption }

@@ -17,6 +17,7 @@ export function processDeclarations(
   const types = declarations.filter(d => d.kind === 'type')
   const classes = declarations.filter(d => d.kind === 'class')
   const enums = declarations.filter(d => d.kind === 'enum')
+  const modules = declarations.filter(d => d.kind === 'module')
   const exports = declarations.filter(d => d.kind === 'export')
 
   // Process imports first
@@ -28,7 +29,7 @@ export function processDeclarations(
   if (imports.length > 0 && output.length > 0) output.push('') // Add blank line after imports
 
   // Process other declarations
-  const otherDecls = [...functions, ...variables, ...interfaces, ...types, ...classes, ...enums]
+  const otherDecls = [...functions, ...variables, ...interfaces, ...types, ...classes, ...enums, ...modules]
 
   for (const decl of otherDecls) {
     // Add leading comments if they exist
@@ -56,6 +57,9 @@ export function processDeclarations(
       case 'enum':
         processed = processEnumDeclaration(decl)
         break
+      case 'module':
+        processed = processModuleDeclaration(decl)
+        break
     }
 
     if (processed) {
@@ -76,6 +80,59 @@ export function processDeclarations(
  * Process function declaration to DTS format
  */
 export function processFunctionDeclaration(decl: Declaration): string {
+  // Handle overloads first
+  if (decl.overloads && decl.overloads.length > 0) {
+    const overloadResults: string[] = []
+
+    for (const overload of decl.overloads) {
+      // Each overload needs to be processed as a separate declaration
+      const overloadParts: string[] = []
+
+      // Add export if needed
+      if (decl.isExported) {
+        overloadParts.push('export')
+      }
+
+      // Add declare
+      overloadParts.push('declare')
+
+      // Parse the overload signature
+      const overloadMatch = overload.match(/^(\s*)(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(.*)/)
+      if (overloadMatch) {
+        if (overloadMatch[2]) overloadParts.push('async')
+        overloadParts.push('function')
+        if (overloadMatch[3]) overloadParts.push('*')
+
+        const funcName = overloadMatch[4]
+        const rest = overloadMatch[5].trim()
+
+        // Add the rest of the signature
+        overloadResults.push(overloadParts.join(' ') + ' ' + funcName + rest)
+      }
+    }
+
+    // Add the implementation signature
+    const parts: string[] = []
+    if (decl.isExported) parts.push('export')
+    parts.push('declare')
+    if (decl.isAsync) parts.push('async')
+    parts.push('function')
+    if (decl.isGenerator) parts.push('*')
+    parts.push(decl.name)
+    if (decl.generics) parts.push(decl.generics)
+
+    const params = decl.parameters?.map(p => p.name).join(', ') || ''
+    parts.push(`(${params})`)
+    parts.push(':')
+    parts.push(decl.returnType || 'void')
+
+    const implementationSig = parts.join(' ').replace(' : ', ': ').replace('* ', '*') + ';'
+
+    // Return overloads followed by the implementation signature
+    return [...overloadResults, implementationSig].join('\n')
+  }
+
+  // Regular function without overloads
   const parts: string[] = []
 
   // Add export if needed
@@ -113,7 +170,7 @@ export function processFunctionDeclaration(decl: Declaration): string {
 
   // Add return type
   const returnType = decl.returnType || 'void'
-  parts.push(`:`)
+  parts.push(':')
   parts.push(returnType)
 
   // Combine parts properly
@@ -138,21 +195,6 @@ export function processFunctionDeclaration(decl: Declaration): string {
 
   // Add semicolon
   result += ';'
-
-  // Handle overloads
-  if (decl.overloads && decl.overloads.length > 0) {
-    const overloadResults: string[] = []
-
-    for (const overload of decl.overloads) {
-      // Parse each overload and format it
-      const overloadDecl = { ...decl, text: overload }
-      const processed = processFunctionDeclaration(overloadDecl)
-      overloadResults.push(processed)
-    }
-
-    // Return overloads followed by the implementation signature
-    return [...overloadResults, result].join('\n')
-  }
 
   return result
 }
@@ -183,6 +225,7 @@ export function processVariableDeclaration(decl: Declaration): string {
 
   // If no explicit type annotation, try to infer from value
   if (!typeAnnotation && decl.value) {
+    // Only infer literal types for const declarations
     typeAnnotation = inferNarrowType(decl.value, kind === 'const')
   }
 
@@ -405,6 +448,39 @@ export function processExportDeclaration(decl: Declaration): string {
 }
 
 /**
+ * Process module/namespace declaration to DTS format
+ */
+export function processModuleDeclaration(decl: Declaration): string {
+  let result = ''
+
+  // Add export if needed
+  if (decl.isExported) {
+    result += 'export '
+  }
+
+  // Add declare if not already present
+  if (!decl.modifiers?.includes('declare')) {
+    result += 'declare '
+  }
+
+  // Add namespace keyword
+  result += 'namespace '
+
+  // Add namespace name
+  result += decl.name
+
+  // Extract the body from the original text
+  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
+  if (bodyMatch) {
+    result += ' ' + bodyMatch[0]
+  } else {
+    result += ' {}'
+  }
+
+  return result
+}
+
+/**
  * Infer and narrow types from values
  */
 export function inferNarrowType(value: any, isConst: boolean = false): string {
@@ -464,8 +540,98 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
     return inferNarrowType(withoutAsConst, true)
   }
 
+  // Template literal expressions
+  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+    return inferTemplateLiteralType(trimmed, isConst)
+  }
+
+  // New expressions
+  if (trimmed.startsWith('new ')) {
+    return inferNewExpressionType(trimmed)
+  }
+
+  // Promise expressions
+  if (trimmed.startsWith('Promise.')) {
+    return inferPromiseType(trimmed)
+  }
+
+  // Await expressions
+  if (trimmed.startsWith('await ')) {
+    return 'unknown' // Would need async context analysis
+  }
+
+  // BigInt literals
+  if (/^\d+n$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'bigint'
+  }
+
+  // Symbol
+  if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
+    return 'symbol'
+  }
+
   // Other expressions (method calls, property access, etc.)
   return 'unknown'
+}
+
+/**
+ * Infer type from template literal
+ */
+function inferTemplateLiteralType(value: string, isConst: boolean): string {
+  if (!isConst) return 'string'
+
+  // Simple template literal without expressions
+  if (!value.includes('${')) {
+    return value
+  }
+
+  // Complex template literal - would need more sophisticated parsing
+  return 'string'
+}
+
+/**
+ * Infer type from new expression
+ */
+function inferNewExpressionType(value: string): string {
+  const match = value.match(/^new\s+([A-Z][a-zA-Z0-9]*)/);
+  if (match) {
+    const className = match[1];
+    // Common built-in types
+    switch(className) {
+      case 'Date': return 'Date';
+      case 'Map': return 'Map<any, any>';
+      case 'Set': return 'Set<any>';
+      case 'WeakMap': return 'WeakMap<any, any>';
+      case 'WeakSet': return 'WeakSet<any>';
+      case 'RegExp': return 'RegExp';
+      case 'Error': return 'Error';
+      case 'Array': return 'any[]';
+      case 'Object': return 'object';
+      case 'Function': return 'Function';
+      case 'Promise': return 'Promise<any>';
+      default: return className;
+    }
+  }
+  return 'unknown';
+}
+
+/**
+ * Infer type from Promise expression
+ */
+function inferPromiseType(value: string): string {
+  if (value.startsWith('Promise.resolve(')) {
+    return 'Promise<unknown>'
+  }
+  if (value.startsWith('Promise.reject(')) {
+    return 'Promise<never>'
+  }
+  if (value.startsWith('Promise.all(')) {
+    return 'Promise<unknown[]>'
+  }
+  return 'Promise<unknown>'
 }
 
 /**
