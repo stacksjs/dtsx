@@ -132,3 +132,5 @@ export declare const bunshPackage: {
   fullPath: 'bun.sh';
   aliases: readonly ['bun']
 };
+
+export type BunshPackage = typeof bunshPackage;
