@@ -1,6 +1,5 @@
 import type { BunPlugin } from 'bun';
 import type { DtsGenerationOption } from '@stacksjs/dtsx';
-
 export declare function fetchUsers(): Promise<ResponseData>;
 export declare function getProduct(id: number): Promise<ApiResponse<Product>>;
 export declare function authenticate(user: string, password: string): Promise<AuthResponse>;

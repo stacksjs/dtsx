@@ -6,8 +6,8 @@ import { generate } from '../src/generator'
 
 describe('dts-generation', () => {
   const testDir = join(__dirname, 'fixtures')
-  const inputDir = join(testDir, 'input', 'example')
-  const outputDir = join(testDir, 'output', 'example')
+  const inputDir = join(testDir, 'input')
+  const outputDir = join(testDir, 'output')
   const generatedDir = join(testDir, 'generated')
 
   // List of all example files to test
@@ -25,11 +25,27 @@ describe('dts-generation', () => {
     '0011'
   ]
 
+  // List of all fixture files to test (excluding checker.ts which is too large)
+  const fixtures = [
+    'class',
+    'edge-cases',
+    'enum',
+    'exports',
+    'function',
+    'function-types',
+    'imports',
+    'interface',
+    'module',
+    'namespace',
+    'type',
+    'variable'
+  ]
+
   // Generate a test for each example file
   examples.forEach((example) => {
     it(`should properly generate types for example ${example}`, async () => {
       const config: DtsGenerationOption = {
-        entrypoints: [join(inputDir, `${example}.ts`)],
+        entrypoints: [join(inputDir, 'example', `${example}.ts`)],
         outdir: generatedDir,
         clean: false,
         tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
@@ -38,8 +54,31 @@ describe('dts-generation', () => {
 
       await generate(config)
 
-      const outputPath = join(outputDir, `${example}.d.ts`)
+      const outputPath = join(outputDir, 'example', `${example}.d.ts`)
       const generatedPath = join(generatedDir, `${example}.d.ts`)
+
+      const expectedContent = await Bun.file(outputPath).text()
+      const generatedContent = await Bun.file(generatedPath).text()
+
+      expect(generatedContent).toBe(expectedContent)
+    })
+  })
+
+  // Generate a test for each fixture file
+  fixtures.forEach((fixture) => {
+    it(`should properly generate types for fixture ${fixture}`, async () => {
+      const config: DtsGenerationOption = {
+        entrypoints: [join(inputDir, `${fixture}.ts`)],
+        outdir: generatedDir,
+        clean: false,
+        tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+        outputStructure: 'flat',
+      }
+
+      await generate(config)
+
+      const outputPath = join(outputDir, `${fixture}.d.ts`)
+      const generatedPath = join(generatedDir, `${fixture}.d.ts`)
 
       const expectedContent = await Bun.file(outputPath).text()
       const generatedContent = await Bun.file(generatedPath).text()

@@ -21,11 +21,6 @@ export declare interface AuthResponse {
   token: string
   expiresIn: number
 }
-declare interface Options<T> {
-  name: string
-  cwd?: string
-  defaultConfig: T
-}
 export declare interface ComplexGeneric<T extends Record<string, unknown>, K extends keyof T> {
   data: T
   key: K
@@ -33,11 +28,7 @@ export declare interface ComplexGeneric<T extends Record<string, unknown>, K ext
   transform: (input: T[K]) => string
   nested: Array<Partial<T>>
 }
-export declare interface DefaultGeneric<
-  T = string,
-  K extends keyof any = string,
-  V extends Record<K, T> = Record<K, T>
-> {
+export declare interface DefaultGeneric<T = string, K extends keyof any = string, V extends Record<K, T> = Record<K, T>> {
   key: K
   value: T
   record: V

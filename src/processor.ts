@@ -1240,8 +1240,12 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
       const innerFuncType = inferFunctionType(body, false)
       returnType = innerFuncType
     } else {
-      // Expression body - try to infer
-      returnType = inferNarrowType(body, false)
+      // Expression body - try to infer, but be conservative in union contexts
+      if (inUnion) {
+        returnType = 'unknown'
+      } else {
+        returnType = inferNarrowType(body, false)
+      }
     }
 
     const funcType = `${generics}${params} => ${returnType}`

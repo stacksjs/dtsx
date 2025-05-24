@@ -1,12 +1,11 @@
 declare module '@stacksjs/some-module' {
   interface DtsGenerationConfig {
-    customPlugins?: Array<{
+  customPlugins?: Array<{
       name: string
       transform: (code: string) => string
     }>
-  }
-
+}
   interface DtsGenerationResult {
-    customPluginResults?: Record<string, string>
-  }
+  customPluginResults?: Record<string, string>
+}
 }
