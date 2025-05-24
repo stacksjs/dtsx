@@ -41,7 +41,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun --filter './packages/*' build",
+    "build": "bun --filter './packages/dtsx' build",
     "lint": "bunx --bun eslint .",
     "lint:fix": "bunx --bun eslint . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
