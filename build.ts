@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises'
-import { log } from '@stacksjs/cli'
 import { dts } from 'bun-plugin-dtsx'
 
-log.info('Building...')
+console.log('Building...')
 
 await fs.rm('./dist', { recursive: true, force: true })
 
@@ -23,4 +22,4 @@ await fs.rename('./dist/src/index.js', './dist/index.js')
 await fs.rm('./dist/src', { recursive: true, force: true })
 await fs.rm('./dist/bin', { recursive: true, force: true })
 
-log.success('Built')
+console.log('Built!')
