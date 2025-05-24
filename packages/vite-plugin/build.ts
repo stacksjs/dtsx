@@ -1,19 +1,25 @@
-import fs from 'node:fs/promises'
-import dts from '../bun-plugin/src/index'
+import process from 'node:process'
+import dts from 'bun-plugin-dtsx'
 
 console.log('Building...')
 
-await fs.rm('./dist', { recursive: true, force: true })
-
-await Bun.build({
-  entrypoints: ['./src/index.ts', './bin/cli.ts'],
-  outdir: './dist',
-  format: 'esm',
+const result = await Bun.build({
+  entrypoints: ['src/index.ts'],
+  outdir: 'dist',
   target: 'bun',
-  minify: true,
-  plugins: [
-    dts(),
-  ],
+  external: ['@stacksjs/dtsx'],
+  // minify: true,
+  plugins: [dts()],
 })
 
-console.log('Built!')
+if (!result.success) {
+  console.error('Build failed')
+
+  for (const message of result.logs) {
+    console.error(message)
+  }
+
+  process.exit(1)
+}
+
+console.log('Build complete')
