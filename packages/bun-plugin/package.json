@@ -20,6 +20,7 @@
     "isolated declarations",
     "development",
     "bun",
+    "plugin",
     "stacks",
     "typescript",
     "javascript"

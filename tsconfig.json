@@ -8,7 +8,15 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "paths": {
-      "@stacksjs/dtsx": ["./packages/dtsx/src/index.ts"]
+      "@stacksjs/dtsx": [
+        "./packages/dtsx/src/index.ts"
+      ],
+      "bun-plugin-dtsx": [
+        "./packages/bun-plugin/src/index.ts"
+      ],
+      "vite-plugin-dtsx": [
+        "./packages/vite-plugin/src/index.ts"
+      ]
     },
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
@@ -24,10 +32,5 @@
     "verbatimModuleSyntax": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true
-  },
-  "exclude": [
-    "**/fixtures",
-    "**/example",
-    "**/dist"
-  ]
+  }
 }

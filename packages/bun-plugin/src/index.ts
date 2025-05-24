@@ -1,5 +1,6 @@
 import type { DtsGenerationOption } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
+import process from 'node:process'
 import { generate } from '@stacksjs/dtsx'
 
 /**
@@ -49,9 +50,9 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
 
   return {
     ...options,
-    cwd: options.cwd,
+    cwd: options.cwd || process.cwd(),
     root,
-    entrypoints: options.entrypoints,
+    entrypoints: options.entrypoints || ['**/*.ts'],
     outdir,
     clean: options.clean,
     tsconfigPath: options.tsconfigPath,
