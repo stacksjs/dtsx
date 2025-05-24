@@ -2,78 +2,53 @@
   "name": "bun-plugin-dtsx",
   "type": "module",
   "version": "0.9.3",
-  "private": true,
-  "description": "A modern, fast .d.ts generation tool, powered by Bun.",
-  "author": "Chris Breuer <chris@stacksjs.org>",
+  "description": "A Bun Bundler plugin that auto generates your DTS types extremely fast.",
+  "author": "Chris Breuer <chris@ow3.org>",
   "license": "MIT",
-  "homepage": "https://github.com/stacksjs/dtsx#readme",
+  "homepage": "https://github.com/stacksjs/dtsx/tree/main/packages/bun-plugin#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/stacksjs/dtsx.git"
   },
   "bugs": {
-    "url": "https://github.com/stacksjs/dtsx/issues"
+    "url": "https://github.com/stacksjs/bun-plugin-dtsx/issues"
   },
   "keywords": [
     "dts",
+    "dtsx",
+    "emit",
     "generation",
-    "isolated declarations",
-    "development",
+    "typescript",
+    "types",
+    "auto",
+    "stacks",
     "bun",
     "plugin",
-    "stacks",
-    "typescript",
-    "javascript"
+    "package"
   ],
   "exports": {
     ".": {
-      "import": "./dist/src/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./*": {
       "import": "./dist/*"
     }
   },
-  "module": "./dist/src/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "dtsx": "./dist/bin/cli.js"
-  },
   "files": [
+    "LICENSE.md",
+    "README.md",
     "dist"
   ],
   "scripts": {
-    "build": "bun build.ts && bun run compile",
-    "compile": "bun build ./bin/cli.ts --compile --minify --outfile bin/dtsx",
-    "compile:all": "bun run compile:linux-x64 && bun run compile:linux-arm64 && bun run compile:windows-x64 && bun run compile:darwin-x64 && bun run compile:darwin-arm64",
-    "compile:linux-x64": "bun build ./bin/cli.ts --compile --minify --target=bun-linux-x64 --outfile bin/dtsx-linux-x64",
-    "compile:linux-arm64": "bun build ./bin/cli.ts --compile --minify --target=bun-linux-arm64 --outfile bin/dtsx-linux-arm64",
-    "compile:windows-x64": "bun build ./bin/cli.ts --compile --minify --target=bun-windows-x64 --outfile bin/dtsx-windows-x64.exe",
-    "compile:darwin-x64": "bun build ./bin/cli.ts --compile --minify --target=bun-darwin-x64 --outfile bin/dtsx-darwin-x64",
-    "compile:darwin-arm64": "bun build ./bin/cli.ts --compile --minify --target=bun-darwin-arm64 --outfile bin/dtsx-darwin-arm64",
-    "lint": "bunx --bun eslint .",
-    "lint:fix": "bunx --bun eslint . --fix",
-    "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
-    "changelog": "bunx changelogen --output CHANGELOG.md",
-    "prepublishOnly": "bun --bun run build && bun run compile:all && bun run zip",
-    "release": "bun run changelog && bunx bumpp package.json --all",
+    "build": "bun build.ts",
+    "prepublishOnly": "bun run build",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit",
-    "zip": "bun run zip:all",
-    "zip:all": "bun run zip:linux-x64 && bun run zip:linux-arm64 && bun run zip:windows-x64 && bun run zip:darwin-x64 && bun run zip:darwin-arm64",
-    "zip:linux-x64": "zip -j bin/dtsx-linux-x64.zip bin/dtsx-linux-x64",
-    "zip:linux-arm64": "zip -j bin/dtsx-linux-arm64.zip bin/dtsx-linux-arm64",
-    "zip:windows-x64": "zip -j bin/dtsx-windows-x64.zip bin/dtsx-windows-x64.exe",
-    "zip:darwin-x64": "zip -j bin/dtsx-darwin-x64.zip bin/dtsx-darwin-x64",
-    "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
+    "typecheck": "bun tsc --noEmit"
   },
-  "devDependencies": {
+  "dependencies": {
     "@stacksjs/dtsx": "workspace:*"
-  },
-  "git-hooks": {
-    "pre-commit": {
-      "staged-lint": {
-        "*.{js,ts,json,yaml,yml,md}": "bunx --bun eslint . --fix"
-      }
-    }
   }
 }
