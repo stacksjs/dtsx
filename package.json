@@ -46,7 +46,7 @@
     "lint:fix": "bunx --bun eslint . --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
     "changelog": "bunx changelogen --output CHANGELOG.md",
-    "release": "bun run changelog && bunx bumpp package.json --all",
+    "release": "bun run changelog && bunx bumpp -r --all",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
     "dev:docs": "bun --bun vitepress dev docs",
