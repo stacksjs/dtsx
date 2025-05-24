@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { readFile } from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
 import { extractDeclarations } from './src/extractor'

@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 import type { DtsGenerationConfig, ProcessingContext } from './types'
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'

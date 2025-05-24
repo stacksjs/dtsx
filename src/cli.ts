@@ -2,6 +2,7 @@
 
 import type { DtsGenerationOption } from './types'
 import { resolve } from 'node:path'
+import process from 'node:process'
 import { parseArgs } from 'node:util'
 import { config as defaultConfig } from './config'
 import { generate } from './generator'

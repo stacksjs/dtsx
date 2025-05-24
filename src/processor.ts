@@ -1,3 +1,4 @@
+/* eslint-disable regexp/no-super-linear-backtracking, regexp/no-misleading-capturing-group, regexp/optimal-quantifier-concatenation */
 import type { Declaration, ProcessingContext } from './types'
 
 /**

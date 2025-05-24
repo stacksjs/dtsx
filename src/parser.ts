@@ -1,6 +1,4 @@
-/**
- * Parser utilities for TypeScript syntax
- */
+/* eslint-disable regexp/no-super-linear-backtracking */
 
 /**
  * Remove leading comments from a declaration
@@ -129,7 +127,7 @@ export function extractBalancedSymbols(
 
   for (i = 0; i < text.length; i++) {
     const char = text[i]
-    const prevChar = i > 0 ? text[i - 1] : ''
+    const _prevChar = i > 0 ? text[i - 1] : ''
 
     // Handle string literals
     if (!escaped && (char === '"' || char === '\'' || char === '`')) {
