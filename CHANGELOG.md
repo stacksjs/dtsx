@@ -1,6 +1,21 @@
 # Changelog
 
 
+## v0.9.2...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.2...main)
+
+### 🏡 Chore
+
+- Wip ([dd7d749](https://github.com/stacksjs/dtsx/commit/dd7d749))
+- Wip ([8cad5b6](https://github.com/stacksjs/dtsx/commit/8cad5b6))
+- Wip ([ae68c4e](https://github.com/stacksjs/dtsx/commit/ae68c4e))
+- Wip ([1310a30](https://github.com/stacksjs/dtsx/commit/1310a30))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+
 ## v0.9.1...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.1...main)
