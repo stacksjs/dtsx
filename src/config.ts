@@ -1,5 +1,6 @@
 import type { DtsGenerationConfig } from './types'
 import process from 'node:process'
+// @ts-expect-error current issue with bunfig and dtsx
 import { loadConfig } from 'bunfig'
 
 export const defaultConfig: DtsGenerationConfig = {
