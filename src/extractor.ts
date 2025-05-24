@@ -80,6 +80,12 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
   }
 
   visitTopLevel(sourceFile)
+  
+  // Second pass: Find referenced types that aren't imported or declared
+  const referencedTypes = findReferencedTypes(declarations, sourceCode)
+  const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode)
+  declarations.push(...additionalDeclarations)
+  
   return declarations
 }
 
@@ -1049,4 +1055,184 @@ function shouldIncludeNonExportedInterface(interfaceName: string, sourceCode: st
   const exportedTypePattern = new RegExp(`export\\s+.*?${interfaceName}`, 'g')
 
   return exportedFunctionPattern.test(sourceCode) || exportedTypePattern.test(sourceCode)
+}
+
+/**
+ * Find types that are referenced in declarations but not imported or declared
+ */
+function findReferencedTypes(declarations: Declaration[], sourceCode: string): Set<string> {
+  const referencedTypes = new Set<string>()
+  const importedTypes = new Set<string>()
+  const declaredTypes = new Set<string>()
+
+  // Collect imported types
+  for (const decl of declarations) {
+    if (decl.kind === 'import') {
+      // Extract imported type names from import statements
+      const importMatches = decl.text.match(/import\s+(?:type\s+)?\{([^}]+)\}/g)
+      if (importMatches) {
+        for (const match of importMatches) {
+          const items = match.replace(/import\s+(?:type\s+)?\{([^}]+)\}/, '$1').split(',')
+          for (const item of items) {
+            const cleanItem = item.replace(/^type\s+/, '').trim()
+            importedTypes.add(cleanItem)
+          }
+        }
+      }
+    }
+  }
+
+  // Collect declared types (including those within modules/namespaces)
+  for (const decl of declarations) {
+    if (['interface', 'type', 'class', 'enum'].includes(decl.kind)) {
+      declaredTypes.add(decl.name)
+    }
+    // Also scan module/namespace bodies for declared types
+    if (decl.kind === 'module') {
+      const moduleTypes = extractTypesFromModuleText(decl.text)
+      moduleTypes.forEach((type: string) => declaredTypes.add(type))
+    }
+  }
+
+  // Find referenced types in declaration texts
+  for (const decl of declarations) {
+    if (decl.kind !== 'import' && decl.kind !== 'export') {
+      // Look for type references in the declaration text
+      const typeReferences = decl.text.match(/:\s*([A-Z][a-zA-Z0-9]*)/g) || []
+      for (const ref of typeReferences) {
+        const typeName = ref.replace(/:\s*/, '')
+        // Only add if it's not imported, not declared, and not a built-in type
+        if (!importedTypes.has(typeName) && !declaredTypes.has(typeName) && !isBuiltInType(typeName)) {
+          referencedTypes.add(typeName)
+        }
+      }
+    }
+  }
+
+  return referencedTypes
+}
+
+/**
+ * Extract declarations for referenced types by searching the entire source file
+ */
+function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referencedTypes: Set<string>, sourceCode: string): Declaration[] {
+  const additionalDeclarations: Declaration[] = []
+
+  if (referencedTypes.size === 0) {
+    return additionalDeclarations
+  }
+
+  // Visit all nodes in the source file to find interface/type/class/enum declarations
+  function visitAllNodes(node: ts.Node) {
+    switch (node.kind) {
+      case ts.SyntaxKind.InterfaceDeclaration:
+        const interfaceNode = node as ts.InterfaceDeclaration
+        const interfaceName = interfaceNode.name.getText()
+        if (referencedTypes.has(interfaceName)) {
+          const decl = extractInterfaceDeclaration(interfaceNode, sourceCode)
+          additionalDeclarations.push(decl)
+          referencedTypes.delete(interfaceName) // Remove to avoid duplicates
+        }
+        break
+
+      case ts.SyntaxKind.TypeAliasDeclaration:
+        const typeNode = node as ts.TypeAliasDeclaration
+        const typeName = typeNode.name.getText()
+        if (referencedTypes.has(typeName)) {
+          const decl = extractTypeAliasDeclaration(typeNode, sourceCode)
+          additionalDeclarations.push(decl)
+          referencedTypes.delete(typeName)
+        }
+        break
+
+      case ts.SyntaxKind.ClassDeclaration:
+        const classNode = node as ts.ClassDeclaration
+        if (classNode.name) {
+          const className = classNode.name.getText()
+          if (referencedTypes.has(className)) {
+            const decl = extractClassDeclaration(classNode, sourceCode)
+            additionalDeclarations.push(decl)
+            referencedTypes.delete(className)
+          }
+        }
+        break
+
+      case ts.SyntaxKind.EnumDeclaration:
+        const enumNode = node as ts.EnumDeclaration
+        const enumName = enumNode.name.getText()
+        if (referencedTypes.has(enumName)) {
+          const decl = extractEnumDeclaration(enumNode, sourceCode)
+          additionalDeclarations.push(decl)
+          referencedTypes.delete(enumName)
+        }
+        break
+    }
+
+    // Continue visiting child nodes
+    ts.forEachChild(node, visitAllNodes)
+  }
+
+  visitAllNodes(sourceFile)
+  return additionalDeclarations
+}
+
+/**
+ * Extract type names from module/namespace text
+ */
+function extractTypesFromModuleText(moduleText: string): string[] {
+  const types: string[] = []
+  
+  // Look for interface declarations
+  const interfaceMatches = moduleText.match(/(?:export\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (interfaceMatches) {
+    interfaceMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?interface\s+/, '')
+      types.push(name)
+    })
+  }
+  
+  // Look for type alias declarations
+  const typeMatches = moduleText.match(/(?:export\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (typeMatches) {
+    typeMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?type\s+/, '')
+      types.push(name)
+    })
+  }
+  
+  // Look for class declarations
+  const classMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (classMatches) {
+    classMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
+      types.push(name)
+    })
+  }
+  
+  // Look for enum declarations
+  const enumMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (enumMatches) {
+    enumMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
+      types.push(name)
+    })
+  }
+  
+  return types
+}
+
+/**
+ * Check if a type is a built-in TypeScript type
+ */
+function isBuiltInType(typeName: string): boolean {
+  const builtInTypes = new Set([
+    'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
+    'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
+    'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
+    'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
+    'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet',
+    // Common generic type parameters
+    'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z'
+  ])
+  return builtInTypes.has(typeName)
 }

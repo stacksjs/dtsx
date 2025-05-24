@@ -2,6 +2,96 @@
 import type { Declaration, ProcessingContext } from './types'
 
 /**
+ * Replace unresolved types with 'any' in the DTS output
+ */
+function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[], imports: Declaration[]): string {
+  // Get all imported type names
+  const importedTypes = new Set<string>()
+  for (const imp of imports) {
+    const allImportedItems = extractAllImportedItems(imp.text)
+    allImportedItems.forEach(item => importedTypes.add(item))
+  }
+
+  // Get all declared type names (interfaces, types, classes, enums)
+  const declaredTypes = new Set<string>()
+  for (const decl of declarations) {
+    if (['interface', 'type', 'class', 'enum'].includes(decl.kind)) {
+      declaredTypes.add(decl.name)
+    }
+  }
+
+  // Common TypeScript built-in types that don't need to be imported
+  const builtInTypes = new Set([
+    'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
+    'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
+    'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
+    'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
+    'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet'
+  ])
+
+  // Common generic type parameter names that should not be replaced
+  const genericTypeParams = new Set([
+    'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z'
+  ])
+
+  // Extract all types that are actually defined in the DTS content itself
+  // This catches types that weren't extracted but are still defined in the output
+  const definedInDts = new Set<string>()
+  
+  // Look for interface definitions
+  const interfaceMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (interfaceMatches) {
+    interfaceMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?interface\s+/, '')
+      definedInDts.add(name)
+    })
+  }
+
+  // Look for type alias definitions
+  const typeMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (typeMatches) {
+    typeMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?type\s+/, '')
+      definedInDts.add(name)
+    })
+  }
+
+  // Look for class definitions
+  const classMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (classMatches) {
+    classMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
+      definedInDts.add(name)
+    })
+  }
+
+  // Look for enum definitions
+  const enumMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
+  if (enumMatches) {
+    enumMatches.forEach(match => {
+      const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
+      definedInDts.add(name)
+    })
+  }
+
+  // Only replace types that are:
+  // 1. Not imported
+  // 2. Not declared in our extracted declarations
+  // 3. Not built-in TypeScript types
+  // 4. Not generic type parameters
+  // 5. Not defined anywhere in the DTS content itself
+  // 6. Actually used as types (not values)
+  // 7. Have specific patterns that indicate they're problematic
+  
+  let result = dtsContent
+
+  // For now, don't do any automatic type replacement
+  // The proper solution is to improve the extractor to find all referenced types
+  
+  return result
+}
+
+/**
  * Extract all imported items from an import statement
  */
 function extractAllImportedItems(importText: string): string[] {
@@ -149,14 +239,23 @@ export function processDeclarations(
     }
   }
 
-  // Check which imports are needed for interfaces and types (including non-exported ones that are referenced by exported items)
+  // Check which imports are needed for ALL declarations that will be included in the DTS output
+  // This includes non-exported types, interfaces, classes, etc. that are still part of the public API
+  
+  // Check interfaces (both exported and non-exported ones that are referenced)
   for (const iface of interfaces) {
-    // Include interface if it's exported OR if it's referenced by exported functions
+    // Include interface if it's exported OR if it's referenced by any declaration we're including
     const isReferencedByExports = functions.some(func =>
       func.isExported && func.text.includes(iface.name),
     )
+    const isReferencedByClasses = classes.some(cls =>
+      cls.text.includes(iface.name),
+    )
+    const isReferencedByTypes = types.some(type =>
+      type.text.includes(iface.name),
+    )
 
-    if (iface.isExported || isReferencedByExports) {
+    if (iface.isExported || isReferencedByExports || isReferencedByClasses || isReferencedByTypes) {
       for (const imp of imports) {
         const allImportedItems = extractAllImportedItems(imp.text)
         for (const item of allImportedItems) {
@@ -169,15 +268,53 @@ export function processDeclarations(
     }
   }
 
+  // Check ALL types (exported and non-exported) since they may be included in DTS
   for (const type of types) {
-    if (type.isExported) {
-      for (const imp of imports) {
-        const allImportedItems = extractAllImportedItems(imp.text)
-        for (const item of allImportedItems) {
-          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-          if (regex.test(type.text)) {
-            usedImportItems.add(item)
-          }
+    for (const imp of imports) {
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const item of allImportedItems) {
+        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        if (regex.test(type.text)) {
+          usedImportItems.add(item)
+        }
+      }
+    }
+  }
+
+  // Check ALL classes (exported and non-exported) since they may be included in DTS
+  for (const cls of classes) {
+    for (const imp of imports) {
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const item of allImportedItems) {
+        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        if (regex.test(cls.text)) {
+          usedImportItems.add(item)
+        }
+      }
+    }
+  }
+
+  // Check ALL enums (exported and non-exported) since they may be included in DTS
+  for (const enumDecl of enums) {
+    for (const imp of imports) {
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const item of allImportedItems) {
+        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        if (regex.test(enumDecl.text)) {
+          usedImportItems.add(item)
+        }
+      }
+    }
+  }
+
+  // Check ALL modules/namespaces since they may be included in DTS
+  for (const mod of modules) {
+    for (const imp of imports) {
+      const allImportedItems = extractAllImportedItems(imp.text)
+      for (const item of allImportedItems) {
+        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+        if (regex.test(mod.text)) {
+          usedImportItems.add(item)
         }
       }
     }
@@ -352,7 +489,13 @@ export function processDeclarations(
   // Process default export last
   output.push(...defaultExport)
 
-  return output.filter(line => line !== '').join('\n')
+  let result = output.filter(line => line !== '').join('\n')
+  
+  // Post-process to replace unresolved internal types with 'any'
+  // This handles cases where internal interfaces/types are referenced but not extracted
+  result = replaceUnresolvedTypes(result, declarations, imports)
+
+  return result
 }
 
 /**

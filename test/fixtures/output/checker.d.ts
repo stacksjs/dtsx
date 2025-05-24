@@ -1,10 +1,36 @@
-import { ModuleDeclaration, Node, Signature, Symbol, SymbolId, TypeChecker, TypeCheckerHost,  } from './_namespaces/ts.js';
+import { and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter,  } from './_namespaces/ts.js';
 export declare function getNodeId(node: Node): number;
 export declare function getSymbolId(symbol: Symbol): SymbolId;
 export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): void;
 export declare function createTypeChecker(host: TypeCheckerHost): TypeChecker;
 export declare function signatureHasRestParameter(s: Signature): void;
 export declare function signatureHasLiteralTypes(s: Signature): void;
+declare interface NodeBuilderContext {
+  enclosingDeclaration: Node | undefined
+  enclosingFile: SourceFile | undefined
+  flags: NodeBuilderFlags
+  tracker: SymbolTrackerImpl
+  encounteredError: boolean
+  reportedDiagnostic: boolean
+  trackedSymbols: TrackedSymbol[] | undefined
+  visitedTypes: Set<number> | undefined
+  symbolDepth: Map<string, number> | undefined
+  inferTypeParameters: TypeParameter[] | undefined
+  approximateLength: number
+  truncating: boolean
+  mustCreateTypeParameterSymbolList: boolean
+  typeParameterSymbolList: Set<number> | undefined
+  mustCreateTypeParametersNamesLookups: boolean
+  typeParameterNames: Map<TypeId, Identifier> | undefined
+  typeParameterNamesByText: Set<string> | undefined
+  typeParameterNamesByTextNextNameCount: Map<string, number> | undefined
+  usedSymbolNames: Set<string> | undefined
+  remappedSymbolNames: Map<SymbolId, string> | undefined
+  remappedSymbolReferences: Map<SymbolId, Symbol> | undefined
+  reverseMappedStack: ReverseMappedSymbol[] | undefined
+  bundled: boolean
+  mapper: TypeMapper | undefined
+}
 declare type TypeSystemEntity = Node | Symbol | Type | Signature
 declare type AddUnusedDiagnostic = (containingNode: Node, type: UnusedKind, diagnostic: DiagnosticWithLocation) => void
 declare class SymbolTrackerImpl implements SymbolTracker {
