@@ -3,38 +3,30 @@ export declare let test: 'test';
 export declare var helloWorld: 'Hello World';
 export declare const someObject: {
   someString: 'Stacks';
-  someNumber: number;
-  someBoolean: boolean;
-  someFalse: boolean;
+  someNumber: 1000;
+  someBoolean: true;
+  someFalse: false;
   someFunction: () => unknown;
   anotherOne: () => unknown;
-  someArray: Array<number>;
-  someNestedArray: Array<Array<number>>;
-  someNestedArray2: Array<Array<number> | 'dummy value'>;
-  someNestedArray3: Array<Array<number> | 'dummy value'>;
-  someOtherNestedArray: Array<Array<'some text' | number | unknown | (() => unknown)> | Array<number>>;
-  someComplexArray: Array<Array<{
+  someArray: readonly [1, 2, 3];
+  someNestedArray: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10]];
+  someNestedArray2: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10], 'dummy value'];
+  someNestedArray3: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10], 'dummy value', readonly [11, 12, 13]];
+  someOtherNestedArray: readonly [readonly ['some text', 2, unknown, (() => unknown), unknown], readonly [4, 5, 6, 7, 8, 9, 10]];
+  someComplexArray: readonly [readonly [{
   key: 'value'
-}> | Array<{
+}], readonly [{
   key2: 'value2'
-} | 'test' | number> | Array<'some string' | unknown>>;
+}, 'test', 1000], readonly ['some string', unknown, unknown]];
   someObject: {
   key: 'value'
 };
-  someNestedObject: {
-  key: {
-  nestedKey: 'value'
-};
-  otherKey: {
-  nestedKey: unknown;
-  nestedKey2: () => unknown
-}
-};
-  someNestedObjectArray: Array<{
+  someNestedObject: { key: { nestedKey: 'value' }; otherKey: { nestedKey: unknown; nestedKey2: () => unknown } };
+  someNestedObjectArray: readonly [{
   key: 'value'
-} | {
+}, {
   key2: 'value2'
-}>;
+}];
   someOtherObject: unknown;
   someInlineCall2: unknown;
   someInlineCall3: unknown
@@ -48,30 +40,25 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  // TODO: () => any
+  // TODO: (get this part to generate correctly mixedArrays: [ new Date(), Promise.resolve('async'), ()) => unknown
 };
 export declare const complexObject: {
   handlers: {
-  async onSuccess<T>(data: T): unknown;
+  onSuccess<T>(data: T): unknown;
   onError(error: Error & { code?: number }): unknown
 };
-  utils: {
-  formatters: {
-  date: (input: Date) => unknown;
-  currency: (amount: number, currency = 'USD') => any
-}
-}
+  utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
 };
 export declare const methodDecorator: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
-) => any;
+) => unknown;
 export declare const methodDecoratorWithExplicitType: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
-) => any;
+) => SomeType;
 export declare const CONFIG_MAP: {
   development: {
   features: {
@@ -97,6 +84,6 @@ export declare const CONFIG_MAP: {
 }
 };
 export declare const command: {
-  run: () => unknown;
-  runSync: () => unknown
+  run: unknown;
+  runSync: unknown
 };

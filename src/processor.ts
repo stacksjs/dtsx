@@ -381,15 +381,13 @@ export function processVariableDeclaration(decl: Declaration): string {
   // If we have a value, check if it has 'as const' - if so, infer from value instead of type annotation
   if (decl.value && decl.value.includes('as const')) {
     typeAnnotation = inferNarrowType(decl.value, true)
-  } else if (decl.value && kind === 'const') {
-    // For const declarations, always try to infer a more specific type from the value
-    const inferredType = inferNarrowType(decl.value, false)
-
-    // Use the inferred type if it's more specific than a generic Record type
-    if (!typeAnnotation ||
-        typeAnnotation.startsWith('Record<') ||
-        typeAnnotation === 'any' ||
-        typeAnnotation === 'object') {
+  } else if (!typeAnnotation && decl.value && kind === 'const') {
+    // For const declarations WITHOUT explicit type annotation, infer narrow types from the value
+    typeAnnotation = inferNarrowType(decl.value, true)
+  } else if (typeAnnotation && decl.value && kind === 'const' && isGenericType(typeAnnotation)) {
+    // For const declarations with generic type annotations (Record, any, object), prefer narrow inference
+    const inferredType = inferNarrowType(decl.value, true)
+    if (inferredType !== 'unknown') {
       typeAnnotation = inferredType
     }
   } else if (!typeAnnotation && decl.value) {
@@ -755,20 +753,14 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
     return 'string'
   }
 
-  // Number literals
+  // Number literals - ALWAYS use literal types for const declarations
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    if (isConst) {
-      return trimmed
-    }
-    return 'number'
+    return trimmed  // Always return literal number
   }
 
-  // Boolean literals
+  // Boolean literals - ALWAYS use literal types for const declarations
   if (trimmed === 'true' || trimmed === 'false') {
-    if (isConst) {
-      return trimmed
-    }
-    return 'boolean'
+    return trimmed  // Always return literal boolean
   }
 
   // Null and undefined
@@ -975,12 +967,24 @@ function inferArrayType(value: string, isConst: boolean): string {
     return inferNarrowTypeInUnion(trimmedEl, isConst)
   })
 
-  // For const arrays, create readonly tuples instead of union types
+  // For const arrays, ALWAYS create readonly tuples for better type safety
   if (isConst) {
     return `readonly [${elementTypes.join(', ')}]`
   }
 
+  // For simple arrays with all same literal types, also create tuples
   const uniqueTypes = [...new Set(elementTypes)]
+  const allLiterals = elementTypes.every(type =>
+    /^-?\d+(\.\d+)?$/.test(type) || // numbers
+    type === 'true' || type === 'false' || // booleans
+    (type.startsWith('"') && type.endsWith('"')) || // strings
+    (type.startsWith("'") && type.endsWith("'"))
+  )
+
+  if (allLiterals && elementTypes.length <= 10) {
+    // Create tuple for small arrays with literal types
+    return `readonly [${elementTypes.join(', ')}]`
+  }
 
   if (uniqueTypes.length === 1) {
     return `Array<${uniqueTypes[0]}>`
@@ -1044,12 +1048,46 @@ function inferObjectType(value: string, isConst: boolean): string {
   const properties = parseObjectProperties(content)
   const propTypes: string[] = []
 
-  for (const [key, val] of properties) {
-    const valueType = inferNarrowType(val, isConst)
+    for (const [key, val] of properties) {
+    let valueType = inferNarrowType(val, isConst)
+
+    // Handle method signatures - clean up async and parameter defaults
+    if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
+      valueType = cleanMethodSignature(valueType)
+    }
+
     propTypes.push(`${key}: ${valueType}`)
   }
 
   return `{\n  ${propTypes.join(';\n  ')}\n}`
+}
+
+/**
+ * Clean method signatures for declaration files
+ */
+function cleanMethodSignature(signature: string): string {
+  // Remove async modifier from method signatures (including in object methods)
+  let cleaned = signature.replace(/^async\s+/, '').replace(/\basync\s+/g, '')
+
+  // Remove parameter default values (e.g., currency = 'USD' becomes currency?)
+  cleaned = cleaned.replace(/(\w+)\s*=\s*[^,)]+/g, (match, paramName) => {
+    return `${paramName}?`
+  })
+
+  // Clean up extra spaces
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+
+  return cleaned
+}
+
+/**
+ * Clean parameter defaults from function parameters
+ */
+function cleanParameterDefaults(params: string): string {
+  // Remove parameter default values and make them optional
+  return params.replace(/(\w+)\s*=\s*[^,)]+/g, (match, paramName) => {
+    return `${paramName}?`
+  })
 }
 
 /**
@@ -1086,9 +1124,30 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         currentKey = current.trim()
         current = ''
         inKey = false
+      } else if (char === '(' && depth === 0 && inKey) {
+        // This might be a method definition like: methodName(params) or async methodName<T>(params)
+        currentKey = current.trim()
+        // Remove 'async' from the key if present
+        if (currentKey.startsWith('async ')) {
+          currentKey = currentKey.slice(6).trim()
+        }
+        current = char // Start with the opening parenthesis
+        inKey = false
+        depth = 1 // We're now inside the method definition
       } else if (char === ',' && depth === 0) {
-        if (currentKey && current.trim()) {
-          properties.push([currentKey, current.trim()])
+                if (currentKey && current.trim()) {
+          // Clean method signatures before storing
+          let value = current.trim()
+
+          // Check if this is a method definition (starts with parentheses)
+          if (value.startsWith('(')) {
+            // This is a method definition like: (params): ReturnType { ... }
+            value = convertMethodToFunctionType(currentKey, value)
+          } else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
+            value = cleanMethodSignature(value)
+          }
+
+          properties.push([currentKey, value])
         }
         current = ''
         currentKey = ''
@@ -1101,12 +1160,62 @@ function parseObjectProperties(content: string): Array<[string, string]> {
     }
   }
 
-  // Don't forget the last property
+    // Don't forget the last property
   if (currentKey && current.trim()) {
-    properties.push([currentKey, current.trim()])
+    let value = current.trim()
+
+    // Check if this is a method definition (starts with parentheses)
+    if (value.startsWith('(')) {
+      // This is a method definition like: (params): ReturnType { ... }
+      value = convertMethodToFunctionType(currentKey, value)
+    } else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
+      value = cleanMethodSignature(value)
+    }
+
+    properties.push([currentKey, value])
   }
 
   return properties
+}
+
+/**
+ * Convert method definition to function type signature
+ */
+function convertMethodToFunctionType(methodName: string, methodDef: string): string {
+  // Remove async modifier if present
+  let cleaned = methodDef.replace(/^async\s+/, '')
+
+  // Extract generics, parameters, and return type
+  const genericMatch = cleaned.match(/^<([^>]+)>/)
+  const generics = genericMatch ? genericMatch[0] : ''
+  if (generics) {
+    cleaned = cleaned.slice(generics.length).trim()
+  }
+
+  // Find parameter list
+  const paramStart = cleaned.indexOf('(')
+  const paramEnd = findMatchingBracket(cleaned, paramStart, '(', ')')
+
+  if (paramStart === -1 || paramEnd === -1) {
+    return '() => unknown'
+  }
+
+  const params = cleaned.slice(paramStart, paramEnd + 1)
+  let returnType = 'unknown'
+
+  // Check for explicit return type annotation
+  const afterParams = cleaned.slice(paramEnd + 1).trim()
+  if (afterParams.startsWith(':')) {
+    const returnTypeMatch = afterParams.match(/^:\s*([^{]+)/)
+    if (returnTypeMatch) {
+      returnType = returnTypeMatch[1].trim()
+    }
+  }
+
+  // Clean parameter defaults
+  const cleanedParams = cleanParameterDefaults(params)
+
+  return `${generics}${cleanedParams} => ${returnType}`
 }
 
 /**
@@ -1134,24 +1243,10 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
   const trimmed = value.trim()
 
     // Handle very complex function types early (but not function expressions)
-  if ((trimmed.length > 100 || (trimmed.match(/=>/g) || []).length > 2) && !trimmed.startsWith('function')) {
-    // Extract just the basic signature pattern
-    const genericMatch = trimmed.match(/^<[^>]+>/)
-    const generics = genericMatch ? genericMatch[0] : ''
-
-    // Look for first parameter pattern - need to find the complete parameter list
-    let paramStart = trimmed.indexOf('(')
-    if (paramStart !== -1) {
-      let paramEnd = findMatchingBracket(trimmed, paramStart, '(', ')')
-      if (paramEnd !== -1) {
-        const params = trimmed.substring(paramStart, paramEnd + 1)
-        const funcType = `${generics}${params} => any`
-        return inUnion ? `(${funcType})` : funcType
-      }
-    }
-
-    // Fallback if parameter extraction fails
-    const funcType = `${generics}(...args: any[]) => any`
+  // Only simplify if it's truly complex AND looks like a problematic signature
+  if (trimmed.length > 200 && (trimmed.match(/=>/g) || []).length > 2 && (trimmed.match(/</g) || []).length > 5 && !trimmed.startsWith('function')) {
+    // For extremely complex types, use a simple signature
+    const funcType = '(...args: any[]) => any'
     return inUnion ? `(${funcType})` : funcType
   }
 
@@ -1161,6 +1256,9 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
     const arrowIndex = asyncRemoved.indexOf('=>')
     let params = asyncRemoved.substring(0, arrowIndex).trim()
     let body = asyncRemoved.substring(arrowIndex + 2).trim()
+
+    // Clean up params - remove default values
+    params = cleanParameterDefaults(params)
 
     // Clean up params
     if (params === '()' || params === '') {
@@ -1217,6 +1315,9 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
       explicitReturnType = returnTypeMatch[1].trim()
       params = params.substring(0, params.lastIndexOf('):'))  + ')'
     }
+
+    // Clean up params - remove default values
+    params = cleanParameterDefaults(params)
 
     // Clean up params
     if (params === '()' || params === '') {
