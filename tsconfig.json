@@ -27,6 +27,7 @@
   },
   "exclude": [
     "**/fixtures",
+    "**/example",
     "**/dist"
   ]
 }

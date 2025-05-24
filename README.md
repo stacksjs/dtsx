@@ -23,7 +23,7 @@
 bun install -d @stacksjs/dtsx
 ```
 
-<_@npmjs.com>, please allow us to use the `dtsx` package name 🙏_
+_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
 <!-- _Alternatively, you can install:_
 
