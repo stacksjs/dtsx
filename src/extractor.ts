@@ -203,8 +203,8 @@ function buildFunctionSignature(node: ts.FunctionDeclaration): string {
   // Add modifiers
   if (hasExportModifier(node)) result += 'export '
   result += 'declare '
-  if (node.asteriskToken) result += 'function* '
-  else result += 'function '
+  // Note: Generator functions in declaration files should not have the asterisk
+  result += 'function '
 
   // Add name (no space before)
   if (node.name) result += node.name.getText()

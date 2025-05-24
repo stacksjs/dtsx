@@ -725,6 +725,21 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
 
   const trimmed = value.trim()
 
+  // BigInt expressions (check early)
+  if (trimmed.startsWith('BigInt(')) {
+    return 'bigint'
+  }
+
+  // Symbol.for expressions (check early)
+  if (trimmed.startsWith('Symbol.for(')) {
+    return 'symbol'
+  }
+
+  // Tagged template literals (check early)
+  if (trimmed.includes('.raw`') || trimmed.includes('String.raw`')) {
+    return 'string'
+  }
+
   // String literals - always use literal type for simple string literals
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
       (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
@@ -830,6 +845,11 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
  * Infer type from template literal
  */
 function inferTemplateLiteralType(value: string, isConst: boolean): string {
+  // Handle tagged template literals like String.raw`...`
+  if (value.includes('.raw`') || value.includes('String.raw`')) {
+    return 'string'
+  }
+
   if (!isConst) return 'string'
 
   // Simple template literal without expressions
@@ -872,12 +892,36 @@ function inferNewExpressionType(value: string): string {
  */
 function inferPromiseType(value: string): string {
   if (value.startsWith('Promise.resolve(')) {
+    // Try to extract the argument type
+    const match = value.match(/Promise\.resolve\(([^)]+)\)/)
+    if (match) {
+      const arg = match[1].trim()
+      const argType = inferNarrowType(arg, false)
+      return `Promise<${argType}>`
+    }
     return 'Promise<unknown>'
   }
   if (value.startsWith('Promise.reject(')) {
     return 'Promise<never>'
   }
   if (value.startsWith('Promise.all(')) {
+    // Try to extract array argument types
+    const match = value.match(/Promise\.all\(\[([^\]]+)\]\)/)
+    if (match) {
+      const arrayContent = match[1].trim()
+      const elements = parseArrayElements(arrayContent)
+      const elementTypes = elements.map(el => {
+        const trimmed = el.trim()
+        if (trimmed.startsWith('Promise.resolve(')) {
+          const promiseType = inferPromiseType(trimmed)
+          // Extract the inner type from Promise<T>
+          const innerMatch = promiseType.match(/Promise<(.+)>/)
+          return innerMatch ? innerMatch[1] : 'unknown'
+        }
+        return inferNarrowType(trimmed, false)
+      })
+      return `Promise<[${elementTypes.join(', ')}]>`
+    }
     return 'Promise<unknown[]>'
   }
   return 'Promise<unknown>'
