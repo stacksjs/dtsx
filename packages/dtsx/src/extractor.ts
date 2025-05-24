@@ -1,6 +1,7 @@
 /* eslint-disable no-case-declarations, regexp/no-contradiction-with-assertion */
 import type { Declaration } from './types'
-import * as ts from 'typescript'
+import type { Node, ImportDeclaration, ParameterDeclaration, ExportDeclaration, ExportAssignment, FunctionDeclaration, InterfaceDeclaration, TypeAliasDeclaration, SourceFile, ClassDeclaration, VariableStatement, EnumDeclaration, ModuleDeclaration, Modifier } from 'typescript'
+import { createSourceFile, ScriptTarget, SyntaxKind, isEnumMember, isMethodSignature, isPropertySignature, isCallSignatureDeclaration, isConstructSignatureDeclaration, isConstructorDeclaration, ScriptKind, forEachChild, isIdentifier, NodeFlags, isMethodDeclaration, isPropertyDeclaration, isVariableStatement, isFunctionDeclaration, isStringLiteral, isInterfaceDeclaration, isTypeAliasDeclaration, isEnumDeclaration, isModuleDeclaration, isExportAssignment, isModuleBlock, isObjectBindingPattern, isBindingElement, isArrayBindingPattern } from 'typescript'
 
 /**
  * Extract only public API declarations from TypeScript source code
@@ -10,74 +11,74 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
   const declarations: Declaration[] = []
 
   // Create TypeScript source file
-  const sourceFile = ts.createSourceFile(
+  const sourceFile = createSourceFile(
     filePath,
     sourceCode,
-    ts.ScriptTarget.Latest,
+    ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TS,
+    ScriptKind.TS,
   )
 
   // Visit only top-level declarations
-  function visitTopLevel(node: ts.Node) {
+  function visitTopLevel(node: Node) {
     // Only process top-level declarations, skip function bodies and implementation details
     if (node.parent && node.parent !== sourceFile) {
       return // Skip nested declarations
     }
 
     switch (node.kind) {
-      case ts.SyntaxKind.ImportDeclaration:
-        declarations.push(extractImportDeclaration(node as ts.ImportDeclaration, sourceCode))
+      case SyntaxKind.ImportDeclaration:
+        declarations.push(extractImportDeclaration(node as ImportDeclaration, sourceCode))
         break
 
-      case ts.SyntaxKind.ExportDeclaration:
-        declarations.push(extractExportDeclaration(node as ts.ExportDeclaration, sourceCode))
+      case SyntaxKind.ExportDeclaration:
+        declarations.push(extractExportDeclaration(node as ExportDeclaration, sourceCode))
         break
 
-      case ts.SyntaxKind.ExportAssignment:
-        declarations.push(extractExportAssignment(node as ts.ExportAssignment, sourceCode))
+      case SyntaxKind.ExportAssignment:
+        declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode))
         break
 
-      case ts.SyntaxKind.FunctionDeclaration:
-        const funcDecl = extractFunctionDeclaration(node as ts.FunctionDeclaration, sourceCode, sourceFile, keepComments)
+      case SyntaxKind.FunctionDeclaration:
+        const funcDecl = extractFunctionDeclaration(node as FunctionDeclaration, sourceCode, sourceFile, keepComments)
         // Only include exported functions or functions that are referenced by exported items
         if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
           declarations.push(funcDecl)
         }
         break
 
-      case ts.SyntaxKind.VariableStatement:
-        const varDecls = extractVariableStatement(node as ts.VariableStatement, sourceCode, sourceFile, keepComments)
+      case SyntaxKind.VariableStatement:
+        const varDecls = extractVariableStatement(node as VariableStatement, sourceCode, sourceFile, keepComments)
         declarations.push(...varDecls)
         break
 
-      case ts.SyntaxKind.InterfaceDeclaration:
-        const interfaceDecl = extractInterfaceDeclaration(node as ts.InterfaceDeclaration, sourceCode, sourceFile, keepComments)
+      case SyntaxKind.InterfaceDeclaration:
+        const interfaceDecl = extractInterfaceDeclaration(node as InterfaceDeclaration, sourceCode, sourceFile, keepComments)
         // Include interfaces that are exported or referenced by exported items
         if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
           declarations.push(interfaceDecl)
         }
         break
 
-      case ts.SyntaxKind.TypeAliasDeclaration:
-        declarations.push(extractTypeAliasDeclaration(node as ts.TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.TypeAliasDeclaration:
+        declarations.push(extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
         break
 
-      case ts.SyntaxKind.ClassDeclaration:
-        declarations.push(extractClassDeclaration(node as ts.ClassDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.ClassDeclaration:
+        declarations.push(extractClassDeclaration(node as ClassDeclaration, sourceCode, sourceFile, keepComments))
         break
 
-      case ts.SyntaxKind.EnumDeclaration:
-        declarations.push(extractEnumDeclaration(node as ts.EnumDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.EnumDeclaration:
+        declarations.push(extractEnumDeclaration(node as EnumDeclaration, sourceCode, sourceFile, keepComments))
         break
 
-      case ts.SyntaxKind.ModuleDeclaration:
-        declarations.push(extractModuleDeclaration(node as ts.ModuleDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.ModuleDeclaration:
+        declarations.push(extractModuleDeclaration(node as ModuleDeclaration, sourceCode, sourceFile, keepComments))
         break
     }
 
     // Continue visiting only top-level child nodes
-    ts.forEachChild(node, visitTopLevel)
+    forEachChild(node, visitTopLevel)
   }
 
   visitTopLevel(sourceFile)
@@ -93,7 +94,7 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
 /**
  * Extract import declaration
  */
-function extractImportDeclaration(node: ts.ImportDeclaration, sourceCode: string): Declaration {
+function extractImportDeclaration(node: ImportDeclaration, sourceCode: string): Declaration {
   const text = getNodeText(node, sourceCode)
   const isTypeOnly = !!(node.importClause?.isTypeOnly)
 
@@ -112,7 +113,7 @@ function extractImportDeclaration(node: ts.ImportDeclaration, sourceCode: string
 /**
  * Extract export declaration
  */
-function extractExportDeclaration(node: ts.ExportDeclaration, sourceCode: string): Declaration {
+function extractExportDeclaration(node: ExportDeclaration, sourceCode: string): Declaration {
   const text = getNodeText(node, sourceCode)
   const isTypeOnly = !!node.isTypeOnly
 
@@ -131,7 +132,7 @@ function extractExportDeclaration(node: ts.ExportDeclaration, sourceCode: string
 /**
  * Extract export assignment (export default)
  */
-function extractExportAssignment(node: ts.ExportAssignment, sourceCode: string): Declaration {
+function extractExportAssignment(node: ExportAssignment, sourceCode: string): Declaration {
   const text = getNodeText(node, sourceCode)
 
   return {
@@ -148,7 +149,7 @@ function extractExportAssignment(node: ts.ExportAssignment, sourceCode: string):
 /**
  * Extract function declaration with proper signature
  */
-function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration | null {
+function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration | null {
   if (!node.name)
     return null // Skip anonymous functions
 
@@ -196,7 +197,7 @@ function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: st
 /**
  * Build clean function signature for DTS output
  */
-function buildFunctionSignature(node: ts.FunctionDeclaration): string {
+function buildFunctionSignature(node: FunctionDeclaration): string {
   let result = ''
 
   // Add modifiers
@@ -240,7 +241,7 @@ function buildFunctionSignature(node: ts.FunctionDeclaration): string {
 /**
  * Extract variable statement (only exported ones for DTS)
  */
-function extractVariableStatement(node: ts.VariableStatement, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration[] {
+function extractVariableStatement(node: VariableStatement, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration[] {
   const declarations: Declaration[] = []
   const isExported = hasExportModifier(node)
 
@@ -249,15 +250,15 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
     return declarations
 
   for (const declaration of node.declarationList.declarations) {
-    if (!declaration.name || !ts.isIdentifier(declaration.name))
+    if (!declaration.name || !isIdentifier(declaration.name))
       continue
 
     const name = declaration.name.getText()
     const typeAnnotation = declaration.type?.getText()
     const initializer = declaration.initializer?.getText()
-    const kind = node.declarationList.flags & ts.NodeFlags.Const
+    const kind = node.declarationList.flags & NodeFlags.Const
       ? 'const'
-      : node.declarationList.flags & ts.NodeFlags.Let ? 'let' : 'var'
+      : node.declarationList.flags & NodeFlags.Let ? 'let' : 'var'
 
     // Build clean variable declaration for DTS
     const dtsText = buildVariableDeclaration(name, typeAnnotation, kind, true)
@@ -304,7 +305,7 @@ function buildVariableDeclaration(name: string, type: string | undefined, kind: 
 /**
  * Extract interface declaration
  */
-function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
+function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -313,7 +314,7 @@ function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: 
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
-    clause.token === ts.SyntaxKind.ExtendsKeyword,
+    clause.token === SyntaxKind.ExtendsKeyword,
   )?.types.map(type => type.getText()).join(', ')
 
   // Extract generics
@@ -338,7 +339,7 @@ function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: 
 /**
  * Build clean interface declaration for DTS
  */
-function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: boolean): string {
+function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported: boolean): string {
   let result = ''
 
   if (isExported)
@@ -356,7 +357,7 @@ function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: bo
   // Add extends
   if (node.heritageClauses) {
     const extendsClause = node.heritageClauses.find(clause =>
-      clause.token === ts.SyntaxKind.ExtendsKeyword,
+      clause.token === SyntaxKind.ExtendsKeyword,
     )
     if (extendsClause) {
       const types = extendsClause.types.map(type => type.getText()).join(', ')
@@ -374,17 +375,17 @@ function buildInterfaceDeclaration(node: ts.InterfaceDeclaration, isExported: bo
 /**
  * Get interface body with proper formatting
  */
-function getInterfaceBody(node: ts.InterfaceDeclaration): string {
+function getInterfaceBody(node: InterfaceDeclaration): string {
   const members: string[] = []
 
   for (const member of node.members) {
-    if (ts.isPropertySignature(member)) {
+    if (isPropertySignature(member)) {
       const name = member.name?.getText() || ''
       const type = member.type?.getText() || 'any'
       const optional = member.questionToken ? '?' : ''
       members.push(`  ${name}${optional}: ${type}`)
     }
-    else if (ts.isMethodSignature(member)) {
+    else if (isMethodSignature(member)) {
       const name = member.name?.getText() || ''
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
@@ -400,7 +401,7 @@ function getInterfaceBody(node: ts.InterfaceDeclaration): string {
       const returnType = member.type?.getText() || 'void'
       members.push(`  ${name}(${params}): ${returnType}`)
     }
-    else if (ts.isCallSignatureDeclaration(member)) {
+    else if (isCallSignatureDeclaration(member)) {
       // Call signature: (param: type) => returnType
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
@@ -416,7 +417,7 @@ function getInterfaceBody(node: ts.InterfaceDeclaration): string {
       const returnType = member.type?.getText() || 'void'
       members.push(`  (${params}): ${returnType}`)
     }
-    else if (ts.isConstructSignatureDeclaration(member)) {
+    else if (isConstructSignatureDeclaration(member)) {
       // Constructor signature: new (param: type) => returnType
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
@@ -440,7 +441,7 @@ function getInterfaceBody(node: ts.InterfaceDeclaration): string {
 /**
  * Extract type alias declaration
  */
-function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
+function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -468,7 +469,7 @@ function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: 
 /**
  * Build clean type declaration for DTS
  */
-function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean): string {
+function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boolean): string {
   let result = ''
 
   if (isExported)
@@ -491,7 +492,7 @@ function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean
 /**
  * Extract class declaration
  */
-function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
+function extractClassDeclaration(node: ClassDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name?.getText() || 'AnonymousClass'
   const isExported = hasExportModifier(node)
 
@@ -500,19 +501,19 @@ function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string, 
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
-    clause.token === ts.SyntaxKind.ExtendsKeyword,
+    clause.token === SyntaxKind.ExtendsKeyword,
   )?.types[0]?.getText()
 
   // Extract implements clause
   const implementsClause = node.heritageClauses?.find(clause =>
-    clause.token === ts.SyntaxKind.ImplementsKeyword,
+    clause.token === SyntaxKind.ImplementsKeyword,
   )?.types.map(type => type.getText())
 
   // Extract generics
   const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
   // Check for abstract modifier
-  const isAbstract = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+  const isAbstract = node.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -535,7 +536,7 @@ function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string, 
 /**
  * Build clean class declaration for DTS
  */
-function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): string {
+function buildClassDeclaration(node: ClassDeclaration, isExported: boolean): string {
   let result = ''
 
   // Add export if needed
@@ -544,7 +545,7 @@ function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): 
   result += 'declare '
 
   // Add abstract modifier if present
-  const isAbstract = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+  const isAbstract = node.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
   if (isAbstract)
     result += 'abstract '
 
@@ -559,7 +560,7 @@ function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): 
 
   // Add extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
-    clause.token === ts.SyntaxKind.ExtendsKeyword,
+    clause.token === SyntaxKind.ExtendsKeyword,
   )?.types[0]?.getText()
   if (extendsClause) {
     result += ` extends ${extendsClause}`
@@ -567,7 +568,7 @@ function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): 
 
   // Add implements clause
   const implementsClause = node.heritageClauses?.find(clause =>
-    clause.token === ts.SyntaxKind.ImplementsKeyword,
+    clause.token === SyntaxKind.ImplementsKeyword,
   )?.types.map(type => type.getText())
   if (implementsClause && implementsClause.length > 0) {
     result += ` implements ${implementsClause.join(', ')}`
@@ -582,11 +583,11 @@ function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): 
 /**
  * Build clean class body for DTS (signatures only, no implementations)
  */
-function buildClassBody(node: ts.ClassDeclaration): string {
+function buildClassBody(node: ClassDeclaration): string {
   const members: string[] = []
 
   for (const member of node.members) {
-    if (ts.isConstructorDeclaration(member)) {
+    if (isConstructorDeclaration(member)) {
       // First, add property declarations for parameter properties
       for (const param of member.parameters) {
         if (param.modifiers && param.modifiers.length > 0) {
@@ -618,13 +619,13 @@ function buildClassBody(node: ts.ClassDeclaration): string {
 
       members.push(`  constructor(${params});`)
     }
-    else if (ts.isMethodDeclaration(member)) {
+    else if (isMethodDeclaration(member)) {
       // Method signature without implementation
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.StaticKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
 
       let signature = '  '
       if (isStatic)
@@ -659,14 +660,14 @@ function buildClassBody(node: ts.ClassDeclaration): string {
 
       members.push(signature)
     }
-    else if (ts.isPropertyDeclaration(member)) {
+    else if (isPropertyDeclaration(member)) {
       // Property declaration
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.StaticKeyword)
-      const isReadonly = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ReadonlyKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
+      const isReadonly = member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
 
       let signature = '  '
       if (isStatic)
@@ -698,13 +699,13 @@ function buildClassBody(node: ts.ClassDeclaration): string {
 /**
  * Extract enum declaration
  */
-function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
+function extractEnumDeclaration(node: EnumDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
   const text = getNodeText(node, sourceCode)
 
   // Check for const modifier
-  const isConst = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ConstKeyword)
+  const isConst = node.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -724,7 +725,7 @@ function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string, so
 /**
  * Extract module/namespace declaration
  */
-function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
+function extractModuleDeclaration(node: ModuleDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -732,7 +733,7 @@ function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string
   const text = buildModuleDeclaration(node, isExported)
 
   // Check if this is an ambient module (quoted name)
-  const isAmbient = ts.isStringLiteral(node.name)
+  const isAmbient = isStringLiteral(node.name)
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -752,7 +753,7 @@ function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string
 /**
  * Build clean module declaration for DTS
  */
-function buildModuleDeclaration(node: ts.ModuleDeclaration, isExported: boolean): string {
+function buildModuleDeclaration(node: ModuleDeclaration, isExported: boolean): string {
   let result = ''
 
   // Add export if needed
@@ -764,7 +765,7 @@ function buildModuleDeclaration(node: ts.ModuleDeclaration, isExported: boolean)
   result += 'declare '
 
   // Check if this is a namespace or module
-  const isNamespace = node.flags & ts.NodeFlags.Namespace
+  const isNamespace = node.flags & NodeFlags.Namespace
   if (isNamespace) {
     result += 'namespace '
   }
@@ -784,14 +785,14 @@ function buildModuleDeclaration(node: ts.ModuleDeclaration, isExported: boolean)
 /**
  * Build clean module body for DTS (signatures only, no implementations)
  */
-function buildModuleBody(node: ts.ModuleDeclaration): string {
+function buildModuleBody(node: ModuleDeclaration): string {
   if (!node.body)
     return '{}'
 
   const members: string[] = []
 
-  function processModuleElement(element: ts.Node) {
-    if (ts.isFunctionDeclaration(element)) {
+  function processModuleElement(element: Node) {
+    if (isFunctionDeclaration(element)) {
       // Function signature without implementation (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name?.getText() || ''
@@ -823,17 +824,17 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
 
       members.push(signature)
     }
-    else if (ts.isVariableStatement(element)) {
+    else if (isVariableStatement(element)) {
       // Variable declarations
       const isExported = hasExportModifier(element)
       for (const declaration of element.declarationList.declarations) {
-        if (declaration.name && ts.isIdentifier(declaration.name)) {
+        if (declaration.name && isIdentifier(declaration.name)) {
           const name = declaration.name.getText()
           const typeAnnotation = declaration.type?.getText()
           const initializer = declaration.initializer?.getText()
-          const kind = element.declarationList.flags & ts.NodeFlags.Const
+          const kind = element.declarationList.flags & NodeFlags.Const
             ? 'const'
-            : element.declarationList.flags & ts.NodeFlags.Let ? 'let' : 'var'
+            : element.declarationList.flags & NodeFlags.Let ? 'let' : 'var'
 
           let varDecl = '  '
           if (isExported)
@@ -869,7 +870,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
         }
       }
     }
-    else if (ts.isInterfaceDeclaration(element)) {
+    else if (isInterfaceDeclaration(element)) {
       // Interface declaration (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
@@ -889,7 +890,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
       // Add extends
       if (element.heritageClauses) {
         const extendsClause = element.heritageClauses.find(clause =>
-          clause.token === ts.SyntaxKind.ExtendsKeyword,
+          clause.token === SyntaxKind.ExtendsKeyword,
         )
         if (extendsClause) {
           const types = extendsClause.types.map(type => type.getText()).join(', ')
@@ -903,7 +904,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
 
       members.push(interfaceDecl)
     }
-    else if (ts.isTypeAliasDeclaration(element)) {
+    else if (isTypeAliasDeclaration(element)) {
       // Type alias declaration (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
@@ -925,11 +926,11 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
 
       members.push(typeDecl)
     }
-    else if (ts.isEnumDeclaration(element)) {
+    else if (isEnumDeclaration(element)) {
       // Enum declaration
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
-      const isConst = element.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ConstKeyword)
+      const isConst = element.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
 
       let enumDecl = '  '
       if (isExported)
@@ -942,7 +943,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
       // Build enum body
       const enumMembers: string[] = []
       for (const member of element.members) {
-        if (ts.isEnumMember(member)) {
+        if (isEnumMember(member)) {
           const memberName = member.name.getText()
           if (member.initializer) {
             const value = member.initializer.getText()
@@ -957,7 +958,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
       enumDecl += ` {\n${enumMembers.join(',\n')}\n  }`
       members.push(enumDecl)
     }
-    else if (ts.isModuleDeclaration(element)) {
+    else if (isModuleDeclaration(element)) {
       // Nested namespace/module (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
@@ -967,7 +968,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
         nestedDecl += 'export '
 
       // Check if this is a namespace or module
-      const isNamespace = element.flags & ts.NodeFlags.Namespace
+      const isNamespace = element.flags & NodeFlags.Namespace
       if (isNamespace) {
         nestedDecl += 'namespace '
       }
@@ -980,7 +981,7 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
 
       members.push(nestedDecl)
     }
-    else if (ts.isExportAssignment(element)) {
+    else if (isExportAssignment(element)) {
       // Export default statement
       let exportDecl = '  export default '
       if (element.expression) {
@@ -991,13 +992,13 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
     }
   }
 
-  if (ts.isModuleBlock(node.body)) {
+  if (isModuleBlock(node.body)) {
     // Module block with statements
     for (const statement of node.body.statements) {
       processModuleElement(statement)
     }
   }
-  else if (ts.isModuleDeclaration(node.body)) {
+  else if (isModuleDeclaration(node.body)) {
     // Nested module
     processModuleElement(node.body)
   }
@@ -1008,14 +1009,14 @@ function buildModuleBody(node: ts.ModuleDeclaration): string {
 /**
  * Get the text of a node from source code
  */
-function getNodeText(node: ts.Node, sourceCode: string): string {
+function getNodeText(node: Node, sourceCode: string): string {
   return sourceCode.slice(node.getStart(), node.getEnd())
 }
 
 /**
  * Extract JSDoc comments from a node
  */
-function extractJSDocComments(node: ts.Node, sourceFile: ts.SourceFile): string[] {
+function extractJSDocComments(node: Node, sourceFile: SourceFile): string[] {
   const comments: string[] = []
 
   // Get leading trivia (comments before the node)
@@ -1068,12 +1069,12 @@ function extractJSDocComments(node: ts.Node, sourceFile: ts.SourceFile): string[
 /**
  * Get parameter name without default values for DTS
  */
-function getParameterName(param: ts.ParameterDeclaration): string {
-  if (ts.isObjectBindingPattern(param.name)) {
+function getParameterName(param: ParameterDeclaration): string {
+  if (isObjectBindingPattern(param.name)) {
     // For destructured parameters like { name, cwd, defaultConfig }
     // We need to reconstruct without default values
     const elements = param.name.elements.map((element) => {
-      if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+      if (isBindingElement(element) && isIdentifier(element.name)) {
         // Don't include default values in DTS
         return element.name.getText()
       }
@@ -1086,10 +1087,10 @@ function getParameterName(param: ts.ParameterDeclaration): string {
     }
     return `{ ${elements.join(', ')} }`
   }
-  else if (ts.isArrayBindingPattern(param.name)) {
+  else if (isArrayBindingPattern(param.name)) {
     // For array destructuring parameters
     const elements = param.name.elements.map((element) => {
-      if (element && ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+      if (element && isBindingElement(element) && isIdentifier(element.name)) {
         return element.name.getText()
       }
       return ''
@@ -1105,18 +1106,18 @@ function getParameterName(param: ts.ParameterDeclaration): string {
 /**
  * Check if a node has export modifier
  */
-function hasExportModifier(node: ts.Node): boolean {
+function hasExportModifier(node: Node): boolean {
   if (!('modifiers' in node) || !node.modifiers)
     return false
-  const modifiers = node.modifiers as readonly ts.Modifier[]
-  return modifiers.some((mod: ts.Modifier) => mod.kind === ts.SyntaxKind.ExportKeyword)
+  const modifiers = node.modifiers as readonly Modifier[]
+  return modifiers.some((mod: Modifier) => mod.kind === SyntaxKind.ExportKeyword)
 }
 
 /**
  * Check if a function has async modifier
  */
-function hasAsyncModifier(node: ts.FunctionDeclaration): boolean {
-  return node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AsyncKeyword) || false
+function hasAsyncModifier(node: FunctionDeclaration): boolean {
+  return node.modifiers?.some(mod => mod.kind === SyntaxKind.AsyncKeyword) || false
 }
 
 /**
@@ -1197,7 +1198,7 @@ function findReferencedTypes(declarations: Declaration[], _sourceCode: string): 
 /**
  * Extract declarations for referenced types by searching the entire source file
  */
-function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referencedTypes: Set<string>, sourceCode: string): Declaration[] {
+function extractReferencedTypeDeclarations(sourceFile: SourceFile, referencedTypes: Set<string>, sourceCode: string): Declaration[] {
   const additionalDeclarations: Declaration[] = []
 
   if (referencedTypes.size === 0) {
@@ -1205,10 +1206,10 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
   }
 
   // Visit all nodes in the source file to find interface/type/class/enum declarations
-  function visitAllNodes(node: ts.Node) {
+  function visitAllNodes(node: Node) {
     switch (node.kind) {
-      case ts.SyntaxKind.InterfaceDeclaration:
-        const interfaceNode = node as ts.InterfaceDeclaration
+      case SyntaxKind.InterfaceDeclaration:
+        const interfaceNode = node as InterfaceDeclaration
         const interfaceName = interfaceNode.name.getText()
         if (referencedTypes.has(interfaceName)) {
           const decl = extractInterfaceDeclaration(interfaceNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
@@ -1217,8 +1218,8 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         }
         break
 
-      case ts.SyntaxKind.TypeAliasDeclaration:
-        const typeNode = node as ts.TypeAliasDeclaration
+      case SyntaxKind.TypeAliasDeclaration:
+        const typeNode = node as TypeAliasDeclaration
         const typeName = typeNode.name.getText()
         if (referencedTypes.has(typeName)) {
           const decl = extractTypeAliasDeclaration(typeNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
@@ -1227,8 +1228,8 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         }
         break
 
-      case ts.SyntaxKind.ClassDeclaration:
-        const classNode = node as ts.ClassDeclaration
+      case SyntaxKind.ClassDeclaration:
+        const classNode = node as ClassDeclaration
         if (classNode.name) {
           const className = classNode.name.getText()
           if (referencedTypes.has(className)) {
@@ -1239,8 +1240,8 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         }
         break
 
-      case ts.SyntaxKind.EnumDeclaration:
-        const enumNode = node as ts.EnumDeclaration
+      case SyntaxKind.EnumDeclaration:
+        const enumNode = node as EnumDeclaration
         const enumName = enumNode.name.getText()
         if (referencedTypes.has(enumName)) {
           const decl = extractEnumDeclaration(enumNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
@@ -1251,7 +1252,7 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
     }
 
     // Continue visiting child nodes
-    ts.forEachChild(node, visitAllNodes)
+    forEachChild(node, visitAllNodes)
   }
 
   visitAllNodes(sourceFile)
