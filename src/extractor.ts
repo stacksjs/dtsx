@@ -207,6 +207,11 @@ function buildFunctionSignature(node: ts.FunctionDeclaration): string {
     const name = getParameterName(param)
     const type = param.type?.getText() || 'any'
     const optional = param.questionToken || param.initializer ? '?' : ''
+    const isRest = !!param.dotDotDotToken
+
+    if (isRest) {
+      return `...${name}: ${type}`
+    }
     return `${name}${optional}: ${type}`
   }).join(', ')
   result += `(${params})`
@@ -357,10 +362,45 @@ function getInterfaceBody(node: ts.InterfaceDeclaration): string {
         const paramName = param.name.getText()
         const paramType = param.type?.getText() || 'any'
         const optional = param.questionToken ? '?' : ''
+        const isRest = !!param.dotDotDotToken
+
+        if (isRest) {
+          return `...${paramName}: ${paramType}`
+        }
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
       const returnType = member.type?.getText() || 'void'
       members.push(`  ${name}(${params}): ${returnType}`)
+    } else if (ts.isCallSignatureDeclaration(member)) {
+      // Call signature: (param: type) => returnType
+      const params = member.parameters.map(param => {
+        const paramName = param.name.getText()
+        const paramType = param.type?.getText() || 'any'
+        const optional = param.questionToken ? '?' : ''
+        const isRest = !!param.dotDotDotToken
+
+        if (isRest) {
+          return `...${paramName}: ${paramType}`
+        }
+        return `${paramName}${optional}: ${paramType}`
+      }).join(', ')
+      const returnType = member.type?.getText() || 'void'
+      members.push(`  (${params}): ${returnType}`)
+    } else if (ts.isConstructSignatureDeclaration(member)) {
+      // Constructor signature: new (param: type) => returnType
+      const params = member.parameters.map(param => {
+        const paramName = param.name.getText()
+        const paramType = param.type?.getText() || 'any'
+        const optional = param.questionToken ? '?' : ''
+        const isRest = !!param.dotDotDotToken
+
+        if (isRest) {
+          return `...${paramName}: ${paramType}`
+        }
+        return `${paramName}${optional}: ${paramType}`
+      }).join(', ')
+      const returnType = member.type?.getText() || 'any'
+      members.push(`  new (${params}): ${returnType}`)
     }
   }
 

@@ -1110,36 +1110,206 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 }
 
 /**
+ * Find matching bracket for nested structures
+ */
+function findMatchingBracket(str: string, start: number, openChar: string, closeChar: string): number {
+  let depth = 0
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === openChar) {
+      depth++
+    } else if (str[i] === closeChar) {
+      depth--
+      if (depth === 0) {
+        return i
+      }
+    }
+  }
+  return -1
+}
+
+/**
  * Infer function type from function expression
  */
 function inferFunctionType(value: string, inUnion: boolean = false): string {
-  // Arrow functions
-  if (value.includes('=>')) {
-    const arrowIndex = value.indexOf('=>')
-    let params = value.substring(0, arrowIndex).trim()
+  const trimmed = value.trim()
 
-    // Clean up params - remove extra parentheses if they exist
+    // Handle very complex function types early (but not function expressions)
+  if ((trimmed.length > 100 || (trimmed.match(/=>/g) || []).length > 2) && !trimmed.startsWith('function')) {
+    // Extract just the basic signature pattern
+    const genericMatch = trimmed.match(/^<[^>]+>/)
+    const generics = genericMatch ? genericMatch[0] : ''
+
+    // Look for first parameter pattern - need to find the complete parameter list
+    let paramStart = trimmed.indexOf('(')
+    if (paramStart !== -1) {
+      let paramEnd = findMatchingBracket(trimmed, paramStart, '(', ')')
+      if (paramEnd !== -1) {
+        const params = trimmed.substring(paramStart, paramEnd + 1)
+        const funcType = `${generics}${params} => any`
+        return inUnion ? `(${funcType})` : funcType
+      }
+    }
+
+    // Fallback if parameter extraction fails
+    const funcType = `${generics}(...args: any[]) => any`
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Handle async arrow functions
+  if (trimmed.startsWith('async ') && trimmed.includes('=>')) {
+    const asyncRemoved = trimmed.slice(5).trim() // Remove 'async '
+    const arrowIndex = asyncRemoved.indexOf('=>')
+    let params = asyncRemoved.substring(0, arrowIndex).trim()
+    let body = asyncRemoved.substring(arrowIndex + 2).trim()
+
+    // Clean up params
     if (params === '()' || params === '') {
-      params = ''
-    } else if (params.startsWith('(') && params.endsWith(')')) {
-      // Keep the parentheses for parameters
-      params = params
-    } else {
+      params = '()'
+    } else if (!params.startsWith('(')) {
       // Single parameter without parentheses
       params = `(${params})`
     }
 
-    // Try to parse return type from the body
-    const funcType = `${params || '()'} => unknown`
+    // Try to infer return type from body
+    let returnType = 'unknown'
+    if (body.startsWith('{')) {
+      // Block body - can't easily infer return type
+      returnType = 'unknown'
+    } else {
+      // Expression body - try to infer
+      returnType = inferNarrowType(body, false)
+    }
 
-    // Add extra parentheses if this function is part of a union type
+    const funcType = `${params} => Promise<${returnType}>`
     return inUnion ? `(${funcType})` : funcType
   }
 
-  // Regular functions
-  if (value.startsWith('function') || value.startsWith('async function')) {
+  // Regular arrow functions
+  if (trimmed.includes('=>')) {
+    // Handle generics at the beginning
+    let generics = ''
+    let remaining = trimmed
+
+    // Check for generics at the start
+    if (trimmed.startsWith('<')) {
+      const genericEnd = findMatchingBracket(trimmed, 0, '<', '>')
+      if (genericEnd !== -1) {
+        generics = trimmed.substring(0, genericEnd + 1)
+        remaining = trimmed.substring(genericEnd + 1).trim()
+      }
+    }
+
+    const arrowIndex = remaining.indexOf('=>')
+    if (arrowIndex === -1) {
+      // Fallback if no arrow found
+      const funcType = '() => unknown'
+      return inUnion ? `(${funcType})` : funcType
+    }
+
+    let params = remaining.substring(0, arrowIndex).trim()
+    let body = remaining.substring(arrowIndex + 2).trim()
+
+    // Handle explicit return type annotations in parameters
+    // Look for pattern like (param: Type): ReturnType
+    let explicitReturnType = ''
+    const returnTypeMatch = params.match(/\):\s*([^=]+)$/)
+    if (returnTypeMatch) {
+      explicitReturnType = returnTypeMatch[1].trim()
+      params = params.substring(0, params.lastIndexOf('):'))  + ')'
+    }
+
+    // Clean up params
+    if (params === '()' || params === '') {
+      params = '()'
+    } else if (!params.startsWith('(')) {
+      // Single parameter without parentheses
+      params = `(${params})`
+    }
+
+    // Try to infer return type from body
+    let returnType = 'unknown'
+    if (explicitReturnType) {
+      // Use explicit return type annotation
+      returnType = explicitReturnType
+    } else if (body.startsWith('{')) {
+      // Block body - can't easily infer return type
+      returnType = 'unknown'
+    } else if (body.includes('=>')) {
+      // This is a higher-order function returning another function
+      // Try to infer the return function type
+      const innerFuncType = inferFunctionType(body, false)
+      returnType = innerFuncType
+    } else {
+      // Expression body - try to infer
+      returnType = inferNarrowType(body, false)
+    }
+
+    const funcType = `${generics}${params} => ${returnType}`
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+    // Function expressions
+  if (trimmed.startsWith('function')) {
+    // Handle generics in function expressions like function* <T>(items: T[])
+    let generics = ''
+    let remaining = trimmed
+
+    // Look for generics after function keyword
+    const genericMatch = trimmed.match(/function\s*\*?\s*(<[^>]+>)/)
+    if (genericMatch) {
+      generics = genericMatch[1]
+    }
+
+    // Try to extract function signature
+    const funcMatch = trimmed.match(/function\s*(\*?)\s*(?:<[^>]+>)?\s*([^(]*)\(([^)]*)\)/)
+    if (funcMatch) {
+      const isGenerator = !!funcMatch[1]
+      const name = funcMatch[2].trim()
+      const params = funcMatch[3].trim()
+
+      let paramTypes = '(...args: any[])'
+      if (params) {
+        // Try to parse parameters
+        paramTypes = `(${params})`
+      } else {
+        paramTypes = '()'
+      }
+
+      if (isGenerator) {
+        // Try to extract return type from the function signature
+        const returnTypeMatch = trimmed.match(/:\s*Generator<([^>]+)>/)
+        if (returnTypeMatch) {
+          const generatorTypes = returnTypeMatch[1]
+          return inUnion ? `(${generics}${paramTypes} => Generator<${generatorTypes}>)` : `${generics}${paramTypes} => Generator<${generatorTypes}>`
+        }
+        return inUnion ? `(${generics}${paramTypes} => Generator<any, any, any>)` : `${generics}${paramTypes} => Generator<any, any, any>`
+      }
+
+      return inUnion ? `(${generics}${paramTypes} => unknown)` : `${generics}${paramTypes} => unknown`
+    }
+
     const funcType = '(...args: any[]) => unknown'
     return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Higher-order functions (functions that return functions)
+  if (trimmed.includes('=>') && trimmed.includes('(') && trimmed.includes(')')) {
+    // For very complex function types, fall back to a simpler signature
+    if (trimmed.length > 100 || (trimmed.match(/=>/g) || []).length > 2) {
+      // Extract just the basic signature pattern
+      const genericMatch = trimmed.match(/^<[^>]+>/)
+      const generics = genericMatch ? genericMatch[0] : ''
+
+      // Look for parameter pattern
+      const paramMatch = trimmed.match(/\([^)]*\)/)
+      const params = paramMatch ? paramMatch[0] : '(...args: any[])'
+
+      const funcType = `${generics}${params} => any`
+      return inUnion ? `(${funcType})` : funcType
+    }
+
+    // This might be a higher-order function, try to preserve the structure
+    return inUnion ? `(${trimmed})` : trimmed
   }
 
   const funcType = '() => unknown'
