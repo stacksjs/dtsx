@@ -63,7 +63,7 @@ const options: DtsGenerationOptions = {
   outdir: './dist', // default: './dist'
   clean: true, // default: false
   verbose: true, // default: false
-  // keepComments: true, // coming soon
+  keepComments: true, // default: true
 }
 
 await generate(options)
