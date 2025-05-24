@@ -378,9 +378,22 @@ export function processVariableDeclaration(decl: Declaration): string {
   // Add type annotation
   let typeAnnotation = decl.typeAnnotation
 
-  // If no explicit type annotation, try to infer from value
-  if (!typeAnnotation && decl.value) {
-    // Only infer literal types for const declarations
+  // If we have a value, check if it has 'as const' - if so, infer from value instead of type annotation
+  if (decl.value && decl.value.includes('as const')) {
+    typeAnnotation = inferNarrowType(decl.value, true)
+  } else if (decl.value && kind === 'const') {
+    // For const declarations, always try to infer a more specific type from the value
+    const inferredType = inferNarrowType(decl.value, false)
+
+    // Use the inferred type if it's more specific than a generic Record type
+    if (!typeAnnotation ||
+        typeAnnotation.startsWith('Record<') ||
+        typeAnnotation === 'any' ||
+        typeAnnotation === 'object') {
+      typeAnnotation = inferredType
+    }
+  } else if (!typeAnnotation && decl.value) {
+    // If no explicit type annotation, try to infer from value
     typeAnnotation = inferNarrowType(decl.value, kind === 'const')
   }
 
@@ -958,10 +971,15 @@ function inferArrayType(value: string, isConst: boolean): string {
     const trimmedEl = el.trim()
     // Check if element is an array itself
     if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-      return inferArrayType(trimmedEl, true)
+      return inferArrayType(trimmedEl, isConst)
     }
-    return inferNarrowTypeInUnion(trimmedEl, true)
+    return inferNarrowTypeInUnion(trimmedEl, isConst)
   })
+
+  // For const arrays, create readonly tuples instead of union types
+  if (isConst) {
+    return `readonly [${elementTypes.join(', ')}]`
+  }
 
   const uniqueTypes = [...new Set(elementTypes)]
 
