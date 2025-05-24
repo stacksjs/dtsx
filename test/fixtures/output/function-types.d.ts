@@ -13,8 +13,8 @@ export declare const arrowSimple: () => 'simple';
 export declare const arrowWithParams: (x: number, y: number) => unknown;
 export declare const arrowAsync: (url: string) => Promise<unknown>;
 export declare const arrowGeneric: <T extends object>(obj: T) => T;
-export declare const createMultiplier: (factor: number) => (value: number) => unknown;
-export declare const pipe: <T>(...fns: Array<(value: T) => T>) => any;
+export declare const createMultiplier: (factor: number) => (value: number) => any;
+export declare const pipe: <T>(...fns: Array<(value: T) => T>) => (value: T) => T;
 export declare const methodDecorator: (target: any, propertyKey: string, descriptor: PropertyDescriptor) => unknown;
 export declare const generatorArrow: <T>(items: T[]) => Generator<T, void, unknown>;
 export declare interface ConstructorExample {

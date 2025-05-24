@@ -355,6 +355,35 @@ export function processFunctionDeclaration(decl: Declaration): string {
 }
 
 /**
+ * Check if a type annotation is a generic/broad type that should be replaced with narrow inference
+ */
+function isGenericType(typeAnnotation: string): boolean {
+  const trimmed = typeAnnotation.trim()
+
+  // Generic types that are less specific than narrow inference
+  if (trimmed === 'any' || trimmed === 'object' || trimmed === 'unknown') {
+    return true
+  }
+
+  // Record types like Record<string, string>, Record<string, any>, etc.
+  if (trimmed.startsWith('Record<') && trimmed.endsWith('>')) {
+    return true
+  }
+
+  // Array types like Array<any>, Array<string>, etc. (but not specific tuples)
+  if (trimmed.startsWith('Array<') && trimmed.endsWith('>')) {
+    return true
+  }
+
+  // Object types like { [key: string]: any }
+  if (trimmed.match(/^\{\s*\[.*\]:\s*(any|string|number|unknown)\s*\}$/)) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Process variable declaration to DTS format
  */
 export function processVariableDeclaration(decl: Declaration): string {
@@ -1135,7 +1164,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         inKey = false
         depth = 1 // We're now inside the method definition
       } else if (char === ',' && depth === 0) {
-                if (currentKey && current.trim()) {
+        if (currentKey && current.trim()) {
           // Clean method signatures before storing
           let value = current.trim()
 
@@ -1237,6 +1266,51 @@ function findMatchingBracket(str: string, start: number, openChar: string, close
 }
 
 /**
+ * Find the main arrow (=>) in a function, ignoring nested arrows in parameter types
+ */
+function findMainArrowIndex(str: string): number {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < str.length - 1; i++) {
+    const char = str[i]
+    const nextChar = str[i + 1]
+    const prevChar = i > 0 ? str[i - 1] : ''
+
+    // Handle string literals
+    if (!inString && (char === '"' || char === "'" || char === '`')) {
+      inString = true
+      stringChar = char
+    } else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      // Track nesting depth - only parentheses and square brackets
+      // Don't track < > as they can be comparison operators or part of generics
+      if (char === '(') {
+        parenDepth++
+      } else if (char === ')') {
+        parenDepth--
+      } else if (char === '[') {
+        bracketDepth++
+      } else if (char === ']') {
+        bracketDepth--
+      }
+
+      // Look for arrow at depth 0 (not nested inside parentheses or brackets)
+      if (char === '=' && nextChar === '>' && parenDepth === 0 && bracketDepth === 0) {
+        return i
+      }
+    }
+  }
+
+  return -1
+}
+
+/**
  * Infer function type from function expression
  */
 function inferFunctionType(value: string, inUnion: boolean = false): string {
@@ -1297,7 +1371,8 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
       }
     }
 
-    const arrowIndex = remaining.indexOf('=>')
+    // Find the main arrow (not nested ones inside parameter types)
+    const arrowIndex = findMainArrowIndex(remaining)
     if (arrowIndex === -1) {
       // Fallback if no arrow found
       const funcType = '() => unknown'
@@ -1337,9 +1412,20 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
       returnType = 'unknown'
     } else if (body.includes('=>')) {
       // This is a higher-order function returning another function
-      // Try to infer the return function type
-      const innerFuncType = inferFunctionType(body, false)
-      returnType = innerFuncType
+      // For complex nested functions, try to extract just the outer function signature
+      const outerFuncMatch = body.match(/^\s*\(([^)]*)\)\s*=>/);
+      if (outerFuncMatch) {
+        const outerParams = outerFuncMatch[1].trim();
+        // For functions like pipe that transform T => T, infer the return type from generics
+        if (generics.includes('T') && outerParams.includes('T')) {
+          returnType = `(${outerParams}) => T`;
+        } else {
+          returnType = `(${outerParams}) => any`;
+        }
+      } else {
+        // Fallback for complex cases
+        returnType = 'any';
+      }
     } else {
       // Expression body - try to infer, but be conservative in union contexts
       if (inUnion) {

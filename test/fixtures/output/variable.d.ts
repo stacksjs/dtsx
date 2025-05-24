@@ -1,4 +1,7 @@
-export declare const conf: { [key: string]: string };
+export declare const conf: {
+  apiUrl: 'https://api.stacksjs.org';
+  timeout: '5000'
+};
 export declare let test: 'test';
 export declare var helloWorld: 'Hello World';
 export declare const someObject: {
@@ -40,7 +43,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  // TODO: (get this part to generate correctly mixedArrays: [ new Date(), Promise.resolve('async'), ()) => unknown
+  // TODO: () => unknown
 };
 export declare const complexObject: {
   handlers: {
