@@ -30,8 +30,8 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "skipDefaultLibCheck": true
+    "skipDefaultLibCheck": true,
+    "skipLibCheck": true
   },
   "include": [
     "packages/*/src/**/*.ts"
