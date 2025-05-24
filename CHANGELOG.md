@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.9.0...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.0...main)
+
+### 🏡 Chore
+
+- Wip ([702a71c](https://github.com/stacksjs/dtsx/commit/702a71c))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+
 ## v0.8.3...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.3...main)
