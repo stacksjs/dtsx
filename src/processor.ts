@@ -488,53 +488,8 @@ export function processTypeDeclaration(decl: Declaration): string {
  * Process class declaration to DTS format
  */
 export function processClassDeclaration(decl: Declaration): string {
-  let result = ''
-
-  // Add export if needed
-  if (decl.isExported) {
-    result += 'export '
-  }
-
-  // Add declare keyword
-  result += 'declare '
-
-  // Add modifiers
-  if (decl.modifiers?.includes('abstract')) {
-    result += 'abstract '
-  }
-
-  // Add class keyword
-  result += 'class '
-
-  // Add class name
-  result += decl.name
-
-  // Add generics if present
-  if (decl.generics) {
-    result += decl.generics
-  }
-
-  // Add extends clause if present
-  if (decl.extends) {
-    result += ' extends ' + decl.extends
-  }
-
-  // Add implements clause if present
-  if (decl.implements && decl.implements.length > 0) {
-    result += ' implements ' + decl.implements.join(', ')
-  }
-
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    // For now, include the whole body
-    // In a more sophisticated implementation, we'd parse and clean method bodies
-    result += ' ' + bodyMatch[0]
-  } else {
-    result += ' {}'
-  }
-
-  return result
+  // The extractor already provides the correct DTS signature, just return it
+  return decl.text
 }
 
 /**

@@ -432,7 +432,9 @@ function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean
 function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string): Declaration {
   const name = node.name?.getText() || 'AnonymousClass'
   const isExported = hasExportModifier(node)
-  const text = getNodeText(node, sourceCode)
+
+  // Build clean class declaration for DTS
+  const text = buildClassDeclaration(node, isExported)
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
@@ -462,6 +464,155 @@ function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string):
     start: node.getStart(),
     end: node.getEnd()
   }
+}
+
+/**
+ * Build clean class declaration for DTS
+ */
+function buildClassDeclaration(node: ts.ClassDeclaration, isExported: boolean): string {
+  let result = ''
+
+  // Add export if needed
+  if (isExported) result += 'export '
+  result += 'declare '
+
+  // Add abstract modifier if present
+  const isAbstract = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+  if (isAbstract) result += 'abstract '
+
+  result += 'class '
+  result += node.name?.getText() || 'AnonymousClass'
+
+  // Add generics (no space before)
+  if (node.typeParameters) {
+    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    result += `<${generics}>`
+  }
+
+  // Add extends clause
+  const extendsClause = node.heritageClauses?.find(clause =>
+    clause.token === ts.SyntaxKind.ExtendsKeyword
+  )?.types[0]?.getText()
+  if (extendsClause) {
+    result += ` extends ${extendsClause}`
+  }
+
+  // Add implements clause
+  const implementsClause = node.heritageClauses?.find(clause =>
+    clause.token === ts.SyntaxKind.ImplementsKeyword
+  )?.types.map(type => type.getText())
+  if (implementsClause && implementsClause.length > 0) {
+    result += ` implements ${implementsClause.join(', ')}`
+  }
+
+  // Build class body with only signatures
+  result += ' ' + buildClassBody(node)
+
+  return result
+}
+
+/**
+ * Build clean class body for DTS (signatures only, no implementations)
+ */
+function buildClassBody(node: ts.ClassDeclaration): string {
+  const members: string[] = []
+
+  for (const member of node.members) {
+    if (ts.isConstructorDeclaration(member)) {
+      // First, add property declarations for parameter properties
+      for (const param of member.parameters) {
+        if (param.modifiers && param.modifiers.length > 0) {
+          // This is a parameter property, add it as a separate property declaration
+          const name = getParameterName(param)
+          const type = param.type?.getText() || 'any'
+          const optional = param.questionToken || param.initializer ? '?' : ''
+
+          let modifiers = ''
+          if (param.modifiers) {
+            const modifierTexts = param.modifiers.map(mod => mod.getText()).join(' ')
+            if (modifierTexts) modifiers = modifierTexts + ' '
+          }
+
+          members.push(`  ${modifiers}${name}${optional}: ${type};`)
+        }
+      }
+
+      // Then add constructor signature without parameter properties
+      const params = member.parameters.map(param => {
+        const name = getParameterName(param)
+        const type = param.type?.getText() || 'any'
+        const optional = param.questionToken || param.initializer ? '?' : ''
+
+        // Don't include access modifiers in constructor signature for DTS
+        return `${name}${optional}: ${type}`
+      }).join(', ')
+
+      members.push(`  constructor(${params});`)
+    } else if (ts.isMethodDeclaration(member)) {
+      // Method signature without implementation
+      const name = member.name?.getText() || ''
+      const isStatic = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.StaticKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+
+      let signature = '  '
+      if (isStatic) signature += 'static '
+      if (isAbstract) signature += 'abstract '
+      if (isPrivate) signature += 'private '
+      else if (isProtected) signature += 'protected '
+
+      signature += name
+
+      // Add generics
+      if (member.typeParameters) {
+        const generics = member.typeParameters.map(tp => tp.getText()).join(', ')
+        signature += `<${generics}>`
+      }
+
+      // Add parameters
+      const params = member.parameters.map(param => {
+        const paramName = getParameterName(param)
+        const paramType = param.type?.getText() || 'any'
+        const optional = param.questionToken || param.initializer ? '?' : ''
+        return `${paramName}${optional}: ${paramType}`
+      }).join(', ')
+      signature += `(${params})`
+
+      // Add return type
+      const returnType = member.type?.getText() || 'void'
+      signature += `: ${returnType};`
+
+      members.push(signature)
+    } else if (ts.isPropertyDeclaration(member)) {
+      // Property declaration
+      const name = member.name?.getText() || ''
+      const isStatic = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.StaticKeyword)
+      const isReadonly = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ReadonlyKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
+
+      let signature = '  '
+      if (isStatic) signature += 'static '
+      if (isAbstract) signature += 'abstract '
+      if (isReadonly) signature += 'readonly '
+      if (isPrivate) signature += 'private '
+      else if (isProtected) signature += 'protected '
+
+      signature += name
+
+      const optional = member.questionToken ? '?' : ''
+      signature += optional
+
+      const type = member.type?.getText() || 'any'
+      signature += `: ${type};`
+
+      members.push(signature)
+    }
+  }
+
+  return `{\n${members.join('\n')}\n}`
 }
 
 /**
