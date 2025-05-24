@@ -46,7 +46,7 @@ export function extractLeadingComments(source: string, position: number): string
       comments.unshift(line)
     }
     // JSDoc style comment line
-    else if (line.startsWith('*') && (i > 0 && lines[i-1].trim().startsWith('/*'))) {
+    else if (line.startsWith('*') && (i > 0 && lines[i - 1].trim().startsWith('/*'))) {
       comments.unshift(line)
     }
     // Empty line between declaration and comments
@@ -76,15 +76,18 @@ export function extractTrailingComment(line: string): string | null {
   for (let i = 0; i < line.length; i++) {
     const char = line[i]
 
-    if (!escaped && !inString && (char === '"' || char === "'" || char === '`')) {
+    if (!escaped && !inString && (char === '"' || char === '\'' || char === '`')) {
       inString = true
       stringChar = char
-    } else if (!escaped && inString && char === stringChar) {
+    }
+    else if (!escaped && inString && char === stringChar) {
       inString = false
-    } else if (char === '\\' && !escaped) {
+    }
+    else if (char === '\\' && !escaped) {
       escaped = true
       continue
-    } else if (!inString && char === '/' && i < line.length - 1) {
+    }
+    else if (!inString && char === '/' && i < line.length - 1) {
       if (line[i + 1] === '/') {
         return line.substring(i)
       }
@@ -100,7 +103,7 @@ export function extractTrailingComment(line: string): string | null {
  * Format comments for output
  */
 export function formatComments(comments: string[]): string[] {
-  return comments.map(comment => {
+  return comments.map((comment) => {
     // Preserve indentation and format
     return comment
   })
@@ -112,8 +115,8 @@ export function formatComments(comments: string[]): string[] {
 export function extractBalancedSymbols(
   text: string,
   openSymbol: string,
-  closeSymbol: string
-): { content: string; rest: string } | null {
+  closeSymbol: string,
+): { content: string, rest: string } | null {
   let depth = 0
   let inString = false
   let stringChar = ''
@@ -129,11 +132,12 @@ export function extractBalancedSymbols(
     const prevChar = i > 0 ? text[i - 1] : ''
 
     // Handle string literals
-    if (!escaped && (char === '"' || char === "'" || char === '`')) {
+    if (!escaped && (char === '"' || char === '\'' || char === '`')) {
       if (!inString) {
         inString = true
         stringChar = char
-      } else if (char === stringChar) {
+      }
+      else if (char === stringChar) {
         inString = false
       }
     }
@@ -149,12 +153,13 @@ export function extractBalancedSymbols(
     if (!inString) {
       if (text.substring(i, i + openSymbol.length) === openSymbol) {
         depth++
-      } else if (text.substring(i, i + closeSymbol.length) === closeSymbol) {
+      }
+      else if (text.substring(i, i + closeSymbol.length) === closeSymbol) {
         depth--
         if (depth === 0) {
           return {
             content: text.substring(0, i + closeSymbol.length),
-            rest: text.substring(i + closeSymbol.length)
+            rest: text.substring(i + closeSymbol.length),
           }
         }
       }
@@ -183,15 +188,19 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
 
   // Match function pattern
   const functionMatch = clean.match(
-    /^(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)/
+    /^(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][\w$]*)/,
   )
 
-  if (!functionMatch) return null
+  if (!functionMatch)
+    return null
 
   const modifiers: string[] = []
-  if (functionMatch[1]) modifiers.push('export')
-  if (functionMatch[2]) modifiers.push('async')
-  if (functionMatch[3]) modifiers.push('generator')
+  if (functionMatch[1])
+    modifiers.push('export')
+  if (functionMatch[2])
+    modifiers.push('async')
+  if (functionMatch[3])
+    modifiers.push('generator')
 
   const name = functionMatch[4]
   let rest = clean.substring(functionMatch[0].length).trim()
@@ -230,7 +239,7 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
     generics,
     parameters,
     returnType,
-    modifiers
+    modifiers,
   }
 }
 
@@ -260,9 +269,10 @@ export function parseVariableDeclaration(text: string): {
   const clean = removeLeadingComments(text).trim()
 
   // First, find the variable kind and name
-  const declarationMatch = clean.match(/^(export\s+)?(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/)
+  const declarationMatch = clean.match(/^(export\s+)?(const|let|var)\s+([a-zA-Z_$][\w$]*)/)
 
-  if (!declarationMatch) return null
+  if (!declarationMatch)
+    return null
 
   const kind = declarationMatch[2] as 'const' | 'let' | 'var'
   const name = declarationMatch[3]
@@ -278,7 +288,8 @@ export function parseVariableDeclaration(text: string): {
     if (equalIndex !== -1) {
       typeAnnotation = rest.substring(1, equalIndex).trim()
       rest = rest.substring(equalIndex).trim()
-    } else {
+    }
+    else {
       typeAnnotation = rest.substring(1).replace(/;?\s*$/, '').trim()
       rest = ''
     }
@@ -294,6 +305,6 @@ export function parseVariableDeclaration(text: string): {
     kind,
     name,
     typeAnnotation,
-    value
+    value,
   }
 }

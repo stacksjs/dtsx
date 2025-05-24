@@ -1,5 +1,5 @@
-import { generate } from './src/generator'
 import { join } from 'node:path'
+import { generate } from './src/generator'
 
 // Test all examples
 const examples = ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011']
@@ -27,15 +27,17 @@ for (const example of examples) {
 
     if (generatedContent === expectedContent) {
       console.log(`✅ ${example}: MATCH`)
-    } else {
+    }
+    else {
       console.log(`❌ ${example}: MISMATCH`)
       console.log(`Generated (${generatedContent.length} chars):`)
       console.log(generatedContent)
       console.log(`\nExpected (${expectedContent.length} chars):`)
       console.log(expectedContent)
-      console.log('\n' + '='.repeat(80))
+      console.log(`\n${'='.repeat(80)}`)
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.log(`❌ ${example}: ERROR - ${error instanceof Error ? error.message : String(error)}`)
   }
 }

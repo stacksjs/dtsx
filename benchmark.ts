@@ -1,6 +1,5 @@
-import { performance } from 'node:perf_hooks'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import { extractDeclarations } from './src/extractor'
 
 async function benchmark() {
@@ -43,8 +42,8 @@ async function benchmark() {
       console.log(`   ⚡ Avg time: ${avgTime.toFixed(2)}ms`)
       console.log(`   📊 Throughput: ${(throughput / 1000).toFixed(1)}k chars/sec`)
       console.log()
-
-    } catch (error) {
+    }
+    catch (error) {
       console.error(`❌ Error processing ${filePath}:`, error instanceof Error ? error.message : String(error))
     }
   }
@@ -67,9 +66,9 @@ function generateLargeTypeScriptFile(lines: number): string {
   const content: string[] = []
 
   // Add imports
-  content.push("import { SomeType } from 'some-module'")
-  content.push("import type { AnotherType } from 'another-module'")
-  content.push("")
+  content.push('import { SomeType } from \'some-module\'')
+  content.push('import type { AnotherType } from \'another-module\'')
+  content.push('')
 
   // Add interfaces
   for (let i = 0; i < lines * 0.1; i++) {
@@ -77,7 +76,7 @@ function generateLargeTypeScriptFile(lines: number): string {
     content.push(`  prop${i}: string`)
     content.push(`  method${i}(): void`)
     content.push(`}`)
-    content.push("")
+    content.push('')
   }
 
   // Add types
@@ -90,7 +89,7 @@ function generateLargeTypeScriptFile(lines: number): string {
     content.push(`export function func${i}(param: Type${i % 100}): Interface${i % 100} {`)
     content.push(`  return {} as Interface${i % 100}`)
     content.push(`}`)
-    content.push("")
+    content.push('')
   }
 
   // Add variables
@@ -104,7 +103,7 @@ function generateLargeTypeScriptFile(lines: number): string {
     content.push(`  prop${i} = 'value'`)
     content.push(`  method${i}() {}`)
     content.push(`}`)
-    content.push("")
+    content.push('')
   }
 
   return content.join('\n')

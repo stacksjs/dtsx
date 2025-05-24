@@ -1,42 +1,42 @@
 #!/usr/bin/env bun
 
-import { parseArgs } from 'util'
-import { generate } from './generator'
 import type { DtsGenerationOption } from './types'
-import { config as defaultConfig } from './config'
 import { resolve } from 'node:path'
+import { parseArgs } from 'node:util'
+import { config as defaultConfig } from './config'
+import { generate } from './generator'
 
 // Parse command line arguments
 const { values, positionals } = parseArgs({
   args: Bun.argv,
   options: {
-    help: {
+    'help': {
       type: 'boolean',
       short: 'h',
     },
-    version: {
+    'version': {
       type: 'boolean',
       short: 'v',
     },
-    root: {
+    'root': {
       type: 'string',
       short: 'r',
     },
-    outdir: {
+    'outdir': {
       type: 'string',
       short: 'o',
     },
-    clean: {
+    'clean': {
       type: 'boolean',
       short: 'c',
     },
     'keep-comments': {
       type: 'boolean',
     },
-    tsconfig: {
+    'tsconfig': {
       type: 'string',
     },
-    verbose: {
+    'verbose': {
       type: 'boolean',
     },
     'output-structure': {
@@ -94,7 +94,7 @@ const options: DtsGenerationOption = {
 // Handle entrypoints
 if (positionals.length > 2) { // First two are bun and script path
   const entrypoints = positionals.slice(2)
-  options.entrypoints = entrypoints.map(e => {
+  options.entrypoints = entrypoints.map((e) => {
     // If it's a file path, convert to glob pattern relative to root
     if (e.endsWith('.ts')) {
       const relativePath = resolve(process.cwd(), e)
@@ -102,14 +102,16 @@ if (positionals.length > 2) { // First two are bun and script path
     }
     return e
   })
-} else {
+}
+else {
   options.entrypoints = defaultConfig.entrypoints
 }
 
 // Run generation
 try {
   await generate(options)
-} catch (error) {
+}
+catch (error) {
   console.error('Error generating .d.ts files:', error)
   process.exit(1)
 }

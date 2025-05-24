@@ -1,11 +1,11 @@
 import type { DtsGenerationConfig, ProcessingContext } from './types'
-import { resolve, relative, join, dirname } from 'node:path'
+import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
+import { config as defaultConfig } from './config'
 import { extractDeclarations } from './extractor'
 import { processDeclarations } from './processor'
-import { writeToFile, getAllTypeScriptFiles } from './utils'
-import { config as defaultConfig } from './config'
-import { Glob } from 'bun'
+import { writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -41,7 +41,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       if (config.verbose) {
         console.log(`Generated: ${outputPath}`)
       }
-    } catch (error) {
+    }
+    catch (error) {
       console.error(`Error processing ${file}:`, error)
       throw error
     }
@@ -66,7 +67,8 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
       if (!pattern.endsWith('.d.ts') && !pattern.includes('node_modules')) {
         files.push(pattern)
       }
-    } else {
+    }
+    else {
       // It's a glob pattern
       const glob = new Glob(pattern)
 
@@ -74,7 +76,7 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
       for await (const file of glob.scan({
         cwd: rootPath,
         absolute: true,
-        onlyFiles: true
+        onlyFiles: true,
       })) {
         // Skip .d.ts files and node_modules
         if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
@@ -99,7 +101,8 @@ function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   if (config.outputStructure === 'mirror') {
     // Mirror the source structure
     return resolve(config.cwd, config.outdir, dtsPath)
-  } else {
+  }
+  else {
     // Flat structure - just use the filename
     const filename = dtsPath.split('/').pop()!
     return resolve(config.cwd, config.outdir, filename)
@@ -111,7 +114,7 @@ function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
  */
 export async function processFile(
   filePath: string,
-  config: DtsGenerationConfig
+  config: DtsGenerationConfig,
 ): Promise<string> {
   // Read the source file
   const sourceCode = await readFile(filePath, 'utf-8')
@@ -126,7 +129,7 @@ export async function processFile(
     declarations,
     imports: new Map(),
     exports: new Set(),
-    usedTypes: new Set()
+    usedTypes: new Set(),
   }
 
   // Process declarations to generate DTS

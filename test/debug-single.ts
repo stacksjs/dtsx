@@ -1,7 +1,7 @@
 import type { DtsGenerationOption } from '../src/types'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { generate } from '../src/generator'
-import { writeFile } from 'node:fs/promises'
 
 async function debugSingle() {
   const testDir = join(__dirname, 'fixtures')
