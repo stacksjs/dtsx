@@ -1,4 +1,4 @@
-/* eslint-disable regexp/no-super-linear-backtracking, regexp/no-misleading-capturing-group, regexp/optimal-quantifier-concatenation */
+/* eslint-disable regexp/no-super-linear-backtracking, regexp/no-misleading-capturing-group, regexp/optimal-quantifier-concatenation, regexp/no-unused-capturing-group */
 import type { Declaration, ProcessingContext } from './types'
 
 /**
@@ -9,12 +9,12 @@ function formatComments(comments: string[] | undefined, keepComments: boolean = 
     return ''
   }
 
-  const formattedComments = comments.map(comment => {
+  const formattedComments = comments.map((comment) => {
     // Ensure proper spacing and formatting
     return comment.trim()
   }).join('\n')
 
-  return formattedComments + '\n'
+  return `${formattedComments}\n`
 }
 
 /**
@@ -37,27 +37,80 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   }
 
   // Common TypeScript built-in types that don't need to be imported
-  const builtInTypes = new Set([
-    'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
-    'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
-    'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
-    'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
-    'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet'
-  ])
+  // const builtInTypes = new Set([
+  //   'string',
+  //   'number',
+  //   'boolean',
+  //   'object',
+  //   'any',
+  //   'unknown',
+  //   'never',
+  //   'void',
+  //   'undefined',
+  //   'null',
+  //   'Array',
+  //   'Promise',
+  //   'Record',
+  //   'Partial',
+  //   'Required',
+  //   'Pick',
+  //   'Omit',
+  //   'Exclude',
+  //   'Extract',
+  //   'NonNullable',
+  //   'ReturnType',
+  //   'Parameters',
+  //   'ConstructorParameters',
+  //   'InstanceType',
+  //   'ThisType',
+  //   'Function',
+  //   'Date',
+  //   'RegExp',
+  //   'Error',
+  //   'Map',
+  //   'Set',
+  //   'WeakMap',
+  //   'WeakSet',
+  // ])
 
-  // Common generic type parameter names that should not be replaced
-  const genericTypeParams = new Set([
-    'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z'
-  ])
+  // // Common generic type parameter names that should not be replaced
+  // const genericTypeParams = new Set([
+  //   'T',
+  //   'K',
+  //   'V',
+  //   'U',
+  //   'R',
+  //   'P',
+  //   'E',
+  //   'A',
+  //   'B',
+  //   'C',
+  //   'D',
+  //   'F',
+  //   'G',
+  //   'H',
+  //   'I',
+  //   'J',
+  //   'L',
+  //   'M',
+  //   'N',
+  //   'O',
+  //   'Q',
+  //   'S',
+  //   'W',
+  //   'X',
+  //   'Y',
+  //   'Z',
+  // ])
 
   // Extract all types that are actually defined in the DTS content itself
   // This catches types that weren't extracted but are still defined in the output
   const definedInDts = new Set<string>()
-  
+
   // Look for interface definitions
   const interfaceMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
   if (interfaceMatches) {
-    interfaceMatches.forEach(match => {
+    interfaceMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?interface\s+/, '')
       definedInDts.add(name)
     })
@@ -66,7 +119,7 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   // Look for type alias definitions
   const typeMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
   if (typeMatches) {
-    typeMatches.forEach(match => {
+    typeMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?type\s+/, '')
       definedInDts.add(name)
     })
@@ -75,7 +128,7 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   // Look for class definitions
   const classMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
   if (classMatches) {
-    classMatches.forEach(match => {
+    classMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
       definedInDts.add(name)
     })
@@ -84,7 +137,7 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   // Look for enum definitions
   const enumMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
   if (enumMatches) {
-    enumMatches.forEach(match => {
+    enumMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
       definedInDts.add(name)
     })
@@ -98,12 +151,12 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   // 5. Not defined anywhere in the DTS content itself
   // 6. Actually used as types (not values)
   // 7. Have specific patterns that indicate they're problematic
-  
-  let result = dtsContent
+
+  const result = dtsContent
 
   // For now, don't do any automatic type replacement
   // The proper solution is to improve the extractor to find all referenced types
-  
+
   return result
 }
 
@@ -198,7 +251,6 @@ export function processDeclarations(
   }
 
   // Filter imports to only include those that are used in exports or declarations
-  const usedImports = new Set<string>()
   const usedImportItems = new Set<string>()
 
   // Check which imports are needed based on exported functions and types
@@ -258,7 +310,7 @@ export function processDeclarations(
 
   // Check which imports are needed for ALL declarations that will be included in the DTS output
   // This includes non-exported types, interfaces, classes, etc. that are still part of the public API
-  
+
   // Check interfaces (both exported and non-exported ones that are referenced)
   for (const iface of interfaces) {
     // Include interface if it's exported OR if it's referenced by any declaration we're including
@@ -507,7 +559,7 @@ export function processDeclarations(
   output.push(...defaultExport)
 
   let result = output.filter(line => line !== '').join('\n')
-  
+
   // Post-process to replace unresolved internal types with 'any'
   // This handles cases where internal interfaces/types are referenced but not extracted
   result = replaceUnresolvedTypes(result, declarations, imports)
@@ -521,7 +573,7 @@ export function processDeclarations(
 export function processFunctionDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   // The extractor already provides the correct DTS signature, just return it
   return comments + decl.text
 }
@@ -561,7 +613,7 @@ function isGenericType(typeAnnotation: string): boolean {
 export function processVariableDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   let result = ''
 
   // Add export if needed
@@ -618,7 +670,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
 export function processInterfaceDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   let result = ''
 
   // Add export if needed
@@ -660,7 +712,7 @@ export function processInterfaceDeclaration(decl: Declaration, keepComments: boo
 export function processTypeDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   // For type exports like export type { Foo }
   if (decl.text.includes('{') && decl.text.includes('}') && decl.text.includes('from')) {
     return comments + decl.text
@@ -703,7 +755,7 @@ export function processTypeDeclaration(decl: Declaration, keepComments: boolean 
 export function processClassDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   // The extractor already provides the correct DTS signature, just return it
   return comments + decl.text
 }
@@ -714,7 +766,7 @@ export function processClassDeclaration(decl: Declaration, keepComments: boolean
 export function processEnumDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   let result = ''
 
   // Add export if needed
@@ -779,7 +831,7 @@ export function processExportDeclaration(decl: Declaration): string {
 export function processModuleDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
-  
+
   // Check if this is an ambient module (quoted name)
   const isAmbientModule = decl.source || (decl.name.startsWith('"') || decl.name.startsWith('\'') || decl.name.startsWith('`'))
 
@@ -1679,7 +1731,7 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
   if (trimmed.startsWith('function')) {
     // Handle generics in function expressions like function* <T>(items: T[])
     let generics = ''
-    const remaining = trimmed
+    // const remaining = trimmed
 
     // Look for generics after function keyword
     const genericMatch = trimmed.match(/function\s*(?:\*\s*)?(<[^>]+>)/)
@@ -1691,7 +1743,7 @@ function inferFunctionType(value: string, inUnion: boolean = false): string {
     const funcMatch = trimmed.match(/function\s*(\*?)\s*(?:<[^>]+>\s*)?([^(]*)\(([^)]*)\)/)
     if (funcMatch) {
       const isGenerator = !!funcMatch[1]
-      const name = funcMatch[2].trim()
+      // const name = funcMatch[2].trim()
       const params = funcMatch[3].trim()
 
       let paramTypes = '(...args: any[])'

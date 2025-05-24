@@ -1,3 +1,4 @@
+/* eslint-disable no-case-declarations, regexp/no-contradiction-with-assertion */
 import type { Declaration } from './types'
 import * as ts from 'typescript'
 
@@ -80,12 +81,12 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
   }
 
   visitTopLevel(sourceFile)
-  
+
   // Second pass: Find referenced types that aren't imported or declared
   const referencedTypes = findReferencedTypes(declarations, sourceCode)
   const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode)
   declarations.push(...additionalDeclarations)
-  
+
   return declarations
 }
 
@@ -1016,49 +1017,51 @@ function getNodeText(node: ts.Node, sourceCode: string): string {
  */
 function extractJSDocComments(node: ts.Node, sourceFile: ts.SourceFile): string[] {
   const comments: string[] = []
-  
+
   // Get leading trivia (comments before the node)
   const fullStart = node.getFullStart()
   const start = node.getStart(sourceFile)
-  
+
   if (fullStart !== start) {
     const triviaText = sourceFile.text.substring(fullStart, start)
-    
+
     // Extract JSDoc comments (/** ... */) and single-line comments (// ...)
     const jsDocMatches = triviaText.match(/\/\*\*[\s\S]*?\*\//g)
     if (jsDocMatches) {
       comments.push(...jsDocMatches)
     }
-    
+
     // Also capture regular block comments (/* ... */) that might be documentation
     const blockCommentMatches = triviaText.match(/\/\*(?!\*)[\s\S]*?\*\//g)
     if (blockCommentMatches) {
       comments.push(...blockCommentMatches)
     }
-    
+
     // Capture single-line comments that appear right before the declaration
     const lines = triviaText.split('\n')
     const commentLines: string[] = []
-    
+
     // Look for consecutive comment lines at the end of the trivia
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim()
       if (line.startsWith('//')) {
         commentLines.unshift(line)
-      } else if (line === '') {
+      }
+      else if (line === '') {
         // Empty line is okay, continue
         continue
-      } else {
+      }
+      else {
         // Non-comment, non-empty line - stop
         break
       }
     }
-    
+
     if (commentLines.length > 0) {
       comments.push(commentLines.join('\n'))
     }
   }
-  
+
   return comments
 }
 
@@ -1119,7 +1122,7 @@ function hasAsyncModifier(node: ts.FunctionDeclaration): boolean {
 /**
  * Check if a non-exported function should be included (e.g., if it's referenced by exported items)
  */
-function shouldIncludeNonExportedFunction(functionName: string, sourceCode: string): boolean {
+function shouldIncludeNonExportedFunction(_functionName?: string, _sourceCode?: string): boolean {
   // For now, don't include non-exported functions
   // In the future, we could analyze if they're referenced by exported functions
   return false
@@ -1139,7 +1142,7 @@ function shouldIncludeNonExportedInterface(interfaceName: string, sourceCode: st
 /**
  * Find types that are referenced in declarations but not imported or declared
  */
-function findReferencedTypes(declarations: Declaration[], sourceCode: string): Set<string> {
+function findReferencedTypes(declarations: Declaration[], _sourceCode: string): Set<string> {
   const referencedTypes = new Set<string>()
   const importedTypes = new Set<string>()
   const declaredTypes = new Set<string>()
@@ -1260,43 +1263,43 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
  */
 function extractTypesFromModuleText(moduleText: string): string[] {
   const types: string[] = []
-  
+
   // Look for interface declarations
   const interfaceMatches = moduleText.match(/(?:export\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
   if (interfaceMatches) {
-    interfaceMatches.forEach(match => {
+    interfaceMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?interface\s+/, '')
       types.push(name)
     })
   }
-  
+
   // Look for type alias declarations
   const typeMatches = moduleText.match(/(?:export\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
   if (typeMatches) {
-    typeMatches.forEach(match => {
+    typeMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?type\s+/, '')
       types.push(name)
     })
   }
-  
+
   // Look for class declarations
   const classMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
   if (classMatches) {
-    classMatches.forEach(match => {
+    classMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
       types.push(name)
     })
   }
-  
+
   // Look for enum declarations
   const enumMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
   if (enumMatches) {
-    enumMatches.forEach(match => {
+    enumMatches.forEach((match) => {
       const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
       types.push(name)
     })
   }
-  
+
   return types
 }
 
@@ -1305,13 +1308,66 @@ function extractTypesFromModuleText(moduleText: string): string[] {
  */
 function isBuiltInType(typeName: string): boolean {
   const builtInTypes = new Set([
-    'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
-    'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
-    'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
-    'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
-    'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet',
+    'string',
+    'number',
+    'boolean',
+    'object',
+    'any',
+    'unknown',
+    'never',
+    'void',
+    'undefined',
+    'null',
+    'Array',
+    'Promise',
+    'Record',
+    'Partial',
+    'Required',
+    'Pick',
+    'Omit',
+    'Exclude',
+    'Extract',
+    'NonNullable',
+    'ReturnType',
+    'Parameters',
+    'ConstructorParameters',
+    'InstanceType',
+    'ThisType',
+    'Function',
+    'Date',
+    'RegExp',
+    'Error',
+    'Map',
+    'Set',
+    'WeakMap',
+    'WeakSet',
     // Common generic type parameters
-    'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z'
+    'T',
+    'K',
+    'V',
+    'U',
+    'R',
+    'P',
+    'E',
+    'A',
+    'B',
+    'C',
+    'D',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'L',
+    'M',
+    'N',
+    'O',
+    'Q',
+    'S',
+    'W',
+    'X',
+    'Y',
+    'Z',
   ])
   return builtInTypes.has(typeName)
 }
