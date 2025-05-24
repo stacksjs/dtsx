@@ -2,7 +2,7 @@ export declare function formatPhone(value: string, options?: FormatPhoneOptions)
 export declare function unformatPhone(value: string): string;
 export declare const DefaultPhoneDelimiter: DelimiterType;
 export declare const DefaultPhonePattern: number[];
-export declare const DefaultPhoneRegion: any;
+export declare const DefaultPhoneRegion: 'US';
 export declare const PHONE_PATTERNS: Record<string, number[]>;
 export declare const COUNTRY_CODES: Record<string, string>;
 export declare interface FormatPhoneOptions {

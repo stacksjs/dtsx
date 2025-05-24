@@ -246,6 +246,7 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
 
     const name = declaration.name.getText()
     const typeAnnotation = declaration.type?.getText()
+    const initializer = declaration.initializer?.getText()
     const kind = node.declarationList.flags & ts.NodeFlags.Const ? 'const' :
                  node.declarationList.flags & ts.NodeFlags.Let ? 'let' : 'var'
 
@@ -258,6 +259,7 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
       text: dtsText,
       isExported: true,
       typeAnnotation,
+      value: initializer,
       modifiers: [kind],
       start: node.getStart(),
       end: node.getEnd()
