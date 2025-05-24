@@ -30,7 +30,21 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedDeclarations": true,
     "verbatimModuleSyntax": true,
-    "skipDefaultLibCheck": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true
+  },
+  "include": [
+    "packages/*/src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "**/node_modules/**",
+    "dist",
+    "**/dist",
+    "**/dist/**",
+    "**/*.d.ts",
+    "**/build/**",
+    "**/coverage/**"
+  ]
 }
