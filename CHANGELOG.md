@@ -1,6 +1,66 @@
 # Changelog
 
 
+## v0.8.3...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.3...main)
+
+### 🏡 Chore
+
+- Improve documentation and add bun-git-hooks ([ecd17ff](https://github.com/stacksjs/dtsx/commit/ecd17ff))
+- Add input 0011 ([bdc64ad](https://github.com/stacksjs/dtsx/commit/bdc64ad))
+- Add `defaultConfig` export ([1cb6e3f](https://github.com/stacksjs/dtsx/commit/1cb6e3f))
+- Wip ([1658c57](https://github.com/stacksjs/dtsx/commit/1658c57))
+- Wip ([a967f7f](https://github.com/stacksjs/dtsx/commit/a967f7f))
+- Wip ([8f0d04c](https://github.com/stacksjs/dtsx/commit/8f0d04c))
+- Wip ([39c4149](https://github.com/stacksjs/dtsx/commit/39c4149))
+- Wip ([2f98a50](https://github.com/stacksjs/dtsx/commit/2f98a50))
+- Wip ([a228a5b](https://github.com/stacksjs/dtsx/commit/a228a5b))
+- Wip ([77778b9](https://github.com/stacksjs/dtsx/commit/77778b9))
+- Wip ([9d33756](https://github.com/stacksjs/dtsx/commit/9d33756))
+- Wip ([53da886](https://github.com/stacksjs/dtsx/commit/53da886))
+- Wip ([db27a06](https://github.com/stacksjs/dtsx/commit/db27a06))
+- Wip ([16f1500](https://github.com/stacksjs/dtsx/commit/16f1500))
+- Wip ([1e3996e](https://github.com/stacksjs/dtsx/commit/1e3996e))
+- Wip ([e808e1a](https://github.com/stacksjs/dtsx/commit/e808e1a))
+- Wip ([d3bba15](https://github.com/stacksjs/dtsx/commit/d3bba15))
+- Wip ([df6846d](https://github.com/stacksjs/dtsx/commit/df6846d))
+- Wip ([d85a010](https://github.com/stacksjs/dtsx/commit/d85a010))
+- Wip ([b2aef11](https://github.com/stacksjs/dtsx/commit/b2aef11))
+- Wip ([08c4044](https://github.com/stacksjs/dtsx/commit/08c4044))
+- Wip ([d9a3e8c](https://github.com/stacksjs/dtsx/commit/d9a3e8c))
+- Wip ([9e465a7](https://github.com/stacksjs/dtsx/commit/9e465a7))
+- Wip ([f25dd3d](https://github.com/stacksjs/dtsx/commit/f25dd3d))
+- Wip ([084920a](https://github.com/stacksjs/dtsx/commit/084920a))
+- Wip ([053bde5](https://github.com/stacksjs/dtsx/commit/053bde5))
+- Wip ([5e4cad4](https://github.com/stacksjs/dtsx/commit/5e4cad4))
+- Wip ([53806e8](https://github.com/stacksjs/dtsx/commit/53806e8))
+- Wip ([1600c87](https://github.com/stacksjs/dtsx/commit/1600c87))
+- Wip ([03d4575](https://github.com/stacksjs/dtsx/commit/03d4575))
+- Wip ([959a730](https://github.com/stacksjs/dtsx/commit/959a730))
+- Wip ([e1c7cfc](https://github.com/stacksjs/dtsx/commit/e1c7cfc))
+- Wip ([af08d8d](https://github.com/stacksjs/dtsx/commit/af08d8d))
+- Wip ([db7ed2a](https://github.com/stacksjs/dtsx/commit/db7ed2a))
+- Wip ([afa595a](https://github.com/stacksjs/dtsx/commit/afa595a))
+- Wip ([71291fd](https://github.com/stacksjs/dtsx/commit/71291fd))
+- Wip ([4101fe0](https://github.com/stacksjs/dtsx/commit/4101fe0))
+- Wip ([788c083](https://github.com/stacksjs/dtsx/commit/788c083))
+- Wip ([9541ece](https://github.com/stacksjs/dtsx/commit/9541ece))
+- Wip ([190aaba](https://github.com/stacksjs/dtsx/commit/190aaba))
+- Wip ([b74c0e5](https://github.com/stacksjs/dtsx/commit/b74c0e5))
+- Wip ([d36776d](https://github.com/stacksjs/dtsx/commit/d36776d))
+- Wip ([d0166d9](https://github.com/stacksjs/dtsx/commit/d0166d9))
+- Wip ([b3288be](https://github.com/stacksjs/dtsx/commit/b3288be))
+- Wip ([47767b8](https://github.com/stacksjs/dtsx/commit/47767b8))
+- Wip ([660ec1a](https://github.com/stacksjs/dtsx/commit/660ec1a))
+- Wip ([8cbd29b](https://github.com/stacksjs/dtsx/commit/8cbd29b))
+- Wip ([9f5c7da](https://github.com/stacksjs/dtsx/commit/9f5c7da))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+- Cab-mikee ([@cab-mikee](https://github.com/cab-mikee))
+
 ## v0.8.2...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.8.2...main)
