@@ -122,7 +122,7 @@ export async function processFile(
   const sourceCode = await readFile(filePath, 'utf-8')
 
   // Extract declarations
-  const declarations = extractDeclarations(sourceCode, filePath)
+  const declarations = extractDeclarations(sourceCode, filePath, config.keepComments)
 
   // Create processing context
   const context: ProcessingContext = {

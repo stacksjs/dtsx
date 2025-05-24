@@ -5,7 +5,7 @@ import * as ts from 'typescript'
  * Extract only public API declarations from TypeScript source code
  * This focuses on what should be in .d.ts files, not implementation details
  */
-export function extractDeclarations(sourceCode: string, filePath: string): Declaration[] {
+export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
   const declarations: Declaration[] = []
 
   // Create TypeScript source file
@@ -38,7 +38,7 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
         break
 
       case ts.SyntaxKind.FunctionDeclaration:
-        const funcDecl = extractFunctionDeclaration(node as ts.FunctionDeclaration, sourceCode)
+        const funcDecl = extractFunctionDeclaration(node as ts.FunctionDeclaration, sourceCode, sourceFile, keepComments)
         // Only include exported functions or functions that are referenced by exported items
         if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
           declarations.push(funcDecl)
@@ -46,12 +46,12 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
         break
 
       case ts.SyntaxKind.VariableStatement:
-        const varDecls = extractVariableStatement(node as ts.VariableStatement, sourceCode)
+        const varDecls = extractVariableStatement(node as ts.VariableStatement, sourceCode, sourceFile, keepComments)
         declarations.push(...varDecls)
         break
 
       case ts.SyntaxKind.InterfaceDeclaration:
-        const interfaceDecl = extractInterfaceDeclaration(node as ts.InterfaceDeclaration, sourceCode)
+        const interfaceDecl = extractInterfaceDeclaration(node as ts.InterfaceDeclaration, sourceCode, sourceFile, keepComments)
         // Include interfaces that are exported or referenced by exported items
         if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
           declarations.push(interfaceDecl)
@@ -59,19 +59,19 @@ export function extractDeclarations(sourceCode: string, filePath: string): Decla
         break
 
       case ts.SyntaxKind.TypeAliasDeclaration:
-        declarations.push(extractTypeAliasDeclaration(node as ts.TypeAliasDeclaration, sourceCode))
+        declarations.push(extractTypeAliasDeclaration(node as ts.TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
         break
 
       case ts.SyntaxKind.ClassDeclaration:
-        declarations.push(extractClassDeclaration(node as ts.ClassDeclaration, sourceCode))
+        declarations.push(extractClassDeclaration(node as ts.ClassDeclaration, sourceCode, sourceFile, keepComments))
         break
 
       case ts.SyntaxKind.EnumDeclaration:
-        declarations.push(extractEnumDeclaration(node as ts.EnumDeclaration, sourceCode))
+        declarations.push(extractEnumDeclaration(node as ts.EnumDeclaration, sourceCode, sourceFile, keepComments))
         break
 
       case ts.SyntaxKind.ModuleDeclaration:
-        declarations.push(extractModuleDeclaration(node as ts.ModuleDeclaration, sourceCode))
+        declarations.push(extractModuleDeclaration(node as ts.ModuleDeclaration, sourceCode, sourceFile, keepComments))
         break
     }
 
@@ -147,7 +147,7 @@ function extractExportAssignment(node: ts.ExportAssignment, sourceCode: string):
 /**
  * Extract function declaration with proper signature
  */
-function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: string): Declaration | null {
+function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration | null {
   if (!node.name)
     return null // Skip anonymous functions
 
@@ -173,6 +173,9 @@ function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: st
   // Extract generics
   const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'function',
     name,
@@ -183,6 +186,7 @@ function extractFunctionDeclaration(node: ts.FunctionDeclaration, sourceCode: st
     parameters,
     returnType,
     generics: generics ? `<${generics}>` : undefined,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -235,7 +239,7 @@ function buildFunctionSignature(node: ts.FunctionDeclaration): string {
 /**
  * Extract variable statement (only exported ones for DTS)
  */
-function extractVariableStatement(node: ts.VariableStatement, sourceCode: string): Declaration[] {
+function extractVariableStatement(node: ts.VariableStatement, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration[] {
   const declarations: Declaration[] = []
   const isExported = hasExportModifier(node)
 
@@ -257,6 +261,9 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
     // Build clean variable declaration for DTS
     const dtsText = buildVariableDeclaration(name, typeAnnotation, kind, true)
 
+    // Extract comments if enabled
+    const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
     declarations.push({
       kind: 'variable',
       name,
@@ -265,6 +272,7 @@ function extractVariableStatement(node: ts.VariableStatement, sourceCode: string
       typeAnnotation,
       value: initializer,
       modifiers: [kind],
+      leadingComments,
       start: node.getStart(),
       end: node.getEnd(),
     })
@@ -295,7 +303,7 @@ function buildVariableDeclaration(name: string, type: string | undefined, kind: 
 /**
  * Extract interface declaration
  */
-function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: string): Declaration {
+function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -310,6 +318,9 @@ function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: 
   // Extract generics
   const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'interface',
     name,
@@ -317,6 +328,7 @@ function extractInterfaceDeclaration(node: ts.InterfaceDeclaration, sourceCode: 
     isExported,
     extends: extendsClause,
     generics: generics ? `<${generics}>` : undefined,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -427,7 +439,7 @@ function getInterfaceBody(node: ts.InterfaceDeclaration): string {
 /**
  * Extract type alias declaration
  */
-function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: string): Declaration {
+function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -437,12 +449,16 @@ function extractTypeAliasDeclaration(node: ts.TypeAliasDeclaration, sourceCode: 
   // Extract generics
   const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'type',
     name,
     text,
     isExported,
     generics: generics ? `<${generics}>` : undefined,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -474,7 +490,7 @@ function buildTypeDeclaration(node: ts.TypeAliasDeclaration, isExported: boolean
 /**
  * Extract class declaration
  */
-function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string): Declaration {
+function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
   const name = node.name?.getText() || 'AnonymousClass'
   const isExported = hasExportModifier(node)
 
@@ -497,6 +513,9 @@ function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string):
   // Check for abstract modifier
   const isAbstract = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.AbstractKeyword)
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'class',
     name,
@@ -506,6 +525,7 @@ function extractClassDeclaration(node: ts.ClassDeclaration, sourceCode: string):
     implements: implementsClause,
     generics: generics ? `<${generics}>` : undefined,
     modifiers: isAbstract ? ['abstract'] : undefined,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -677,7 +697,7 @@ function buildClassBody(node: ts.ClassDeclaration): string {
 /**
  * Extract enum declaration
  */
-function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string): Declaration {
+function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
   const text = getNodeText(node, sourceCode)
@@ -685,12 +705,16 @@ function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string): D
   // Check for const modifier
   const isConst = node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ConstKeyword)
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'enum',
     name,
     text,
     isExported,
     modifiers: isConst ? ['const'] : undefined,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -699,7 +723,7 @@ function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string): D
 /**
  * Extract module/namespace declaration
  */
-function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string): Declaration {
+function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string, sourceFile: ts.SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
 
@@ -709,12 +733,16 @@ function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string
   // Check if this is an ambient module (quoted name)
   const isAmbient = ts.isStringLiteral(node.name)
 
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
+
   return {
     kind: 'module',
     name,
     text,
     isExported,
     source: isAmbient ? name.slice(1, -1) : undefined, // Remove quotes for ambient modules
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -984,6 +1012,57 @@ function getNodeText(node: ts.Node, sourceCode: string): string {
 }
 
 /**
+ * Extract JSDoc comments from a node
+ */
+function extractJSDocComments(node: ts.Node, sourceFile: ts.SourceFile): string[] {
+  const comments: string[] = []
+  
+  // Get leading trivia (comments before the node)
+  const fullStart = node.getFullStart()
+  const start = node.getStart(sourceFile)
+  
+  if (fullStart !== start) {
+    const triviaText = sourceFile.text.substring(fullStart, start)
+    
+    // Extract JSDoc comments (/** ... */) and single-line comments (// ...)
+    const jsDocMatches = triviaText.match(/\/\*\*[\s\S]*?\*\//g)
+    if (jsDocMatches) {
+      comments.push(...jsDocMatches)
+    }
+    
+    // Also capture regular block comments (/* ... */) that might be documentation
+    const blockCommentMatches = triviaText.match(/\/\*(?!\*)[\s\S]*?\*\//g)
+    if (blockCommentMatches) {
+      comments.push(...blockCommentMatches)
+    }
+    
+    // Capture single-line comments that appear right before the declaration
+    const lines = triviaText.split('\n')
+    const commentLines: string[] = []
+    
+    // Look for consecutive comment lines at the end of the trivia
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim()
+      if (line.startsWith('//')) {
+        commentLines.unshift(line)
+      } else if (line === '') {
+        // Empty line is okay, continue
+        continue
+      } else {
+        // Non-comment, non-empty line - stop
+        break
+      }
+    }
+    
+    if (commentLines.length > 0) {
+      comments.push(commentLines.join('\n'))
+    }
+  }
+  
+  return comments
+}
+
+/**
  * Get parameter name without default values for DTS
  */
 function getParameterName(param: ts.ParameterDeclaration): string {
@@ -1129,7 +1208,7 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         const interfaceNode = node as ts.InterfaceDeclaration
         const interfaceName = interfaceNode.name.getText()
         if (referencedTypes.has(interfaceName)) {
-          const decl = extractInterfaceDeclaration(interfaceNode, sourceCode)
+          const decl = extractInterfaceDeclaration(interfaceNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
           additionalDeclarations.push(decl)
           referencedTypes.delete(interfaceName) // Remove to avoid duplicates
         }
@@ -1139,7 +1218,7 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         const typeNode = node as ts.TypeAliasDeclaration
         const typeName = typeNode.name.getText()
         if (referencedTypes.has(typeName)) {
-          const decl = extractTypeAliasDeclaration(typeNode, sourceCode)
+          const decl = extractTypeAliasDeclaration(typeNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
           additionalDeclarations.push(decl)
           referencedTypes.delete(typeName)
         }
@@ -1150,7 +1229,7 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         if (classNode.name) {
           const className = classNode.name.getText()
           if (referencedTypes.has(className)) {
-            const decl = extractClassDeclaration(classNode, sourceCode)
+            const decl = extractClassDeclaration(classNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
             additionalDeclarations.push(decl)
             referencedTypes.delete(className)
           }
@@ -1161,7 +1240,7 @@ function extractReferencedTypeDeclarations(sourceFile: ts.SourceFile, referenced
         const enumNode = node as ts.EnumDeclaration
         const enumName = enumNode.name.getText()
         if (referencedTypes.has(enumName)) {
-          const decl = extractEnumDeclaration(enumNode, sourceCode)
+          const decl = extractEnumDeclaration(enumNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
           additionalDeclarations.push(decl)
           referencedTypes.delete(enumName)
         }

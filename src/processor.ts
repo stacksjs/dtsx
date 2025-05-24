@@ -2,6 +2,22 @@
 import type { Declaration, ProcessingContext } from './types'
 
 /**
+ * Format comments for DTS output
+ */
+function formatComments(comments: string[] | undefined): string {
+  if (!comments || comments.length === 0) {
+    return ''
+  }
+
+  const formattedComments = comments.map(comment => {
+    // Ensure proper spacing and formatting
+    return comment.trim()
+  }).join('\n')
+
+  return formattedComments + '\n'
+}
+
+/**
  * Replace unresolved types with 'any' in the DTS output
  */
 function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[], imports: Declaration[]): string {
@@ -502,8 +518,11 @@ export function processDeclarations(
  * Process function declaration to DTS format
  */
 export function processFunctionDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   // The extractor already provides the correct DTS signature, just return it
-  return decl.text
+  return comments + decl.text
 }
 
 /**
@@ -539,6 +558,9 @@ function isGenericType(typeAnnotation: string): boolean {
  * Process variable declaration to DTS format
  */
 export function processVariableDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   let result = ''
 
   // Add export if needed
@@ -586,13 +608,16 @@ export function processVariableDeclaration(decl: Declaration): string {
 
   result += `: ${typeAnnotation};`
 
-  return result
+  return comments + result
 }
 
 /**
  * Process interface declaration to DTS format
  */
 export function processInterfaceDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   let result = ''
 
   // Add export if needed
@@ -625,16 +650,19 @@ export function processInterfaceDeclaration(decl: Declaration): string {
     result += ' {}'
   }
 
-  return result
+  return comments + result
 }
 
 /**
  * Process type alias declaration to DTS format
  */
 export function processTypeDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   // For type exports like export type { Foo }
   if (decl.text.includes('{') && decl.text.includes('}') && decl.text.includes('from')) {
-    return decl.text
+    return comments + decl.text
   }
 
   let result = ''
@@ -665,21 +693,27 @@ export function processTypeDeclaration(decl: Declaration): string {
     result += ' = any'
   }
 
-  return result
+  return comments + result
 }
 
 /**
  * Process class declaration to DTS format
  */
 export function processClassDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   // The extractor already provides the correct DTS signature, just return it
-  return decl.text
+  return comments + decl.text
 }
 
 /**
  * Process enum declaration to DTS format
  */
 export function processEnumDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   let result = ''
 
   // Add export if needed
@@ -710,7 +744,7 @@ export function processEnumDeclaration(decl: Declaration): string {
     result += ' {}'
   }
 
-  return result
+  return comments + result
 }
 
 /**
@@ -742,6 +776,9 @@ export function processExportDeclaration(decl: Declaration): string {
  * Process module/namespace declaration to DTS format
  */
 export function processModuleDeclaration(decl: Declaration): string {
+  // Add comments if present
+  const comments = formatComments(decl.leadingComments)
+  
   // Check if this is an ambient module (quoted name)
   const isAmbientModule = decl.source || (decl.name.startsWith('"') || decl.name.startsWith('\'') || decl.name.startsWith('`'))
 
@@ -761,7 +798,7 @@ export function processModuleDeclaration(decl: Declaration): string {
       result += ' {}'
     }
 
-    return result
+    return comments + result
   }
 
   // Regular namespace
@@ -792,7 +829,7 @@ export function processModuleDeclaration(decl: Declaration): string {
     result += ' {}'
   }
 
-  return result
+  return comments + result
 }
 
 /**
