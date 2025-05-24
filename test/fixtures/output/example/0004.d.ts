@@ -1,3 +1,8 @@
+/**
+ * DtsGenerationConfig
+ *
+ * This is the configuration object for the DTS generation process.
+ */
 export declare interface DtsGenerationConfig {
   cwd: string
   root: string
@@ -8,6 +13,9 @@ export declare interface DtsGenerationConfig {
   tsconfigPath: string
   verbose: boolean
 }
+/**
+ * Regular expression patterns used throughout the module
+ */
 export declare interface RegexPatterns {
   typeImport: RegExp
   regularImport: RegExp
@@ -79,6 +87,9 @@ export declare interface MethodSignature {
   params: string
   returnType: string
 }
+/**
+ * Represents property type information with support for nested structures
+ */
 export declare interface PropertyInfo {
   key: string
   value: string
@@ -86,12 +97,18 @@ export declare interface PropertyInfo {
   nested?: PropertyInfo[]
   method?: MethodSignature
 }
+/**
+ * Import statement metadata and tracking
+ */
 export declare interface ImportInfo {
   kind: 'type' | 'value' | 'mixed'
   usedTypes: Set<string>
   usedValues: Set<string>
   source: string
 }
+/**
+ * Function signature components
+ */
 export declare interface FunctionSignature {
   name: string
   params: string
@@ -102,5 +119,15 @@ export declare interface ProcessedMethod {
   name: string
   signature: string
 }
+/**
+ * DtsGenerationOption
+ *
+ * This is the configuration object for the DTS generation process.
+ */
 export type DtsGenerationOption = Partial<DtsGenerationConfig>
+/**
+ * DtsGenerationOptions
+ *
+ * This is the configuration object for the DTS generation process.
+ */
 export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]

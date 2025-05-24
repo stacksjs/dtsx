@@ -1,3 +1,6 @@
+/**
+ * Example of const declaration
+ */
 export declare const conf: {
   apiUrl: 'https://api.stacksjs.org';
   timeout: '5000'
@@ -37,6 +40,7 @@ export declare const someObject: {
 export declare const defaultHeaders: {
   'Content-Type': 'application/json'
 };
+// Complex Arrays and Tuples
 export declare const complexArrays: {
   matrix: readonly [readonly [1, 2, readonly [3, 4, readonly [5, 6]]], readonly ['a', 'b', readonly ['c', 'd']], readonly [true, readonly [false, readonly [true]]]];
   tuples: readonly [
@@ -45,6 +49,7 @@ export declare const complexArrays: {
   ];
   // TODO: () => unknown
 };
+// Nested Object Types with Methods
 export declare const complexObject: {
   handlers: {
   onSuccess<T>(data: T): unknown;
@@ -52,16 +57,19 @@ export declare const complexObject: {
 };
   utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
 };
+// Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
 export declare const methodDecorator: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
 ) => unknown;
+// declares as SomeType
 export declare const methodDecoratorWithExplicitType: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
 ) => SomeType;
+// Complex Constants with Type Inference
 export declare const CONFIG_MAP: {
   development: {
   features: {

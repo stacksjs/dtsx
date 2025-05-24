@@ -4,8 +4,8 @@ import type { Declaration, ProcessingContext } from './types'
 /**
  * Format comments for DTS output
  */
-function formatComments(comments: string[] | undefined): string {
-  if (!comments || comments.length === 0) {
+function formatComments(comments: string[] | undefined, keepComments: boolean = true): string {
+  if (!keepComments || !comments || comments.length === 0) {
     return ''
   }
 
@@ -148,6 +148,7 @@ function extractAllImportedItems(importText: string): string[] {
 export function processDeclarations(
   declarations: Declaration[],
   context: ProcessingContext,
+  keepComments: boolean = true,
 ): string {
   const output: string[] = []
 
@@ -471,25 +472,25 @@ export function processDeclarations(
     let processed = ''
     switch (decl.kind) {
       case 'function':
-        processed = processFunctionDeclaration(decl)
+        processed = processFunctionDeclaration(decl, keepComments)
         break
       case 'variable':
-        processed = processVariableDeclaration(decl)
+        processed = processVariableDeclaration(decl, keepComments)
         break
       case 'interface':
-        processed = processInterfaceDeclaration(decl)
+        processed = processInterfaceDeclaration(decl, keepComments)
         break
       case 'type':
-        processed = processTypeDeclaration(decl)
+        processed = processTypeDeclaration(decl, keepComments)
         break
       case 'class':
-        processed = processClassDeclaration(decl)
+        processed = processClassDeclaration(decl, keepComments)
         break
       case 'enum':
-        processed = processEnumDeclaration(decl)
+        processed = processEnumDeclaration(decl, keepComments)
         break
       case 'module':
-        processed = processModuleDeclaration(decl)
+        processed = processModuleDeclaration(decl, keepComments)
         break
     }
 
@@ -517,9 +518,9 @@ export function processDeclarations(
 /**
  * Process function declaration to DTS format
  */
-export function processFunctionDeclaration(decl: Declaration): string {
+export function processFunctionDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   // The extractor already provides the correct DTS signature, just return it
   return comments + decl.text
@@ -557,9 +558,9 @@ function isGenericType(typeAnnotation: string): boolean {
 /**
  * Process variable declaration to DTS format
  */
-export function processVariableDeclaration(decl: Declaration): string {
+export function processVariableDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   let result = ''
 
@@ -614,9 +615,9 @@ export function processVariableDeclaration(decl: Declaration): string {
 /**
  * Process interface declaration to DTS format
  */
-export function processInterfaceDeclaration(decl: Declaration): string {
+export function processInterfaceDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   let result = ''
 
@@ -656,9 +657,9 @@ export function processInterfaceDeclaration(decl: Declaration): string {
 /**
  * Process type alias declaration to DTS format
  */
-export function processTypeDeclaration(decl: Declaration): string {
+export function processTypeDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   // For type exports like export type { Foo }
   if (decl.text.includes('{') && decl.text.includes('}') && decl.text.includes('from')) {
@@ -699,9 +700,9 @@ export function processTypeDeclaration(decl: Declaration): string {
 /**
  * Process class declaration to DTS format
  */
-export function processClassDeclaration(decl: Declaration): string {
+export function processClassDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   // The extractor already provides the correct DTS signature, just return it
   return comments + decl.text
@@ -710,9 +711,9 @@ export function processClassDeclaration(decl: Declaration): string {
 /**
  * Process enum declaration to DTS format
  */
-export function processEnumDeclaration(decl: Declaration): string {
+export function processEnumDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   let result = ''
 
@@ -775,9 +776,9 @@ export function processExportDeclaration(decl: Declaration): string {
 /**
  * Process module/namespace declaration to DTS format
  */
-export function processModuleDeclaration(decl: Declaration): string {
+export function processModuleDeclaration(decl: Declaration, keepComments: boolean = true): string {
   // Add comments if present
-  const comments = formatComments(decl.leadingComments)
+  const comments = formatComments(decl.leadingComments, keepComments)
   
   // Check if this is an ambient module (quoted name)
   const isAmbientModule = decl.source || (decl.name.startsWith('"') || decl.name.startsWith('\'') || decl.name.startsWith('`'))

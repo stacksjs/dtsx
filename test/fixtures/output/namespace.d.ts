@@ -1,3 +1,4 @@
+// Namespace declarations
 export declare namespace Utils {
   export function formatDate(date: Date): string;
   export interface Options {
@@ -10,6 +11,7 @@ export declare namespace Utils {
   export function isURL(value: string): boolean;
 }
 }
+// Module declaration
 declare module 'custom-module' {
   export interface CustomType {
   id: string
@@ -17,6 +19,7 @@ declare module 'custom-module' {
 }
   export function process(input: CustomType): Promise<CustomType>;
 }
+// Module augmentation
 declare module 'existing-module' {
   interface ExistingInterface {
   newProperty: string
@@ -24,6 +27,7 @@ declare module 'existing-module' {
 }
   export function newFunction(): void;
 }
+// Global augmentation
 declare namespace global {
   interface Window {
   customProperty: string
@@ -35,6 +39,7 @@ declare namespace global {
 }
 }
 }
+// Ambient module
 declare module '*.css' {
   const content: { [className: string]: string };
   export default content;
@@ -43,6 +48,7 @@ declare module '*.svg' {
   const content: string;
   export default content;
 }
+// Namespace with type exports
 export declare namespace Types {
   export type ID = string | number
   export type Nullable<T> = T | null

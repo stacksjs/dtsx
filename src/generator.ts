@@ -135,7 +135,7 @@ export async function processFile(
   }
 
   // Process declarations to generate DTS
-  const dtsContent = processDeclarations(declarations, context)
+  const dtsContent = processDeclarations(declarations, context, config.keepComments)
 
   return dtsContent
 }
