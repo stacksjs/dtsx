@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations, regexp/no-contradiction-with-assertion */
+import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, Modifier, ModuleDeclaration, Node, ParameterDeclaration, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from './types'
-import type { Node, ImportDeclaration, ParameterDeclaration, ExportDeclaration, ExportAssignment, FunctionDeclaration, InterfaceDeclaration, TypeAliasDeclaration, SourceFile, ClassDeclaration, VariableStatement, EnumDeclaration, ModuleDeclaration, Modifier } from 'typescript'
-import { createSourceFile, ScriptTarget, SyntaxKind, isEnumMember, isMethodSignature, isPropertySignature, isCallSignatureDeclaration, isConstructSignatureDeclaration, isConstructorDeclaration, ScriptKind, forEachChild, isIdentifier, NodeFlags, isMethodDeclaration, isPropertyDeclaration, isVariableStatement, isFunctionDeclaration, isStringLiteral, isInterfaceDeclaration, isTypeAliasDeclaration, isEnumDeclaration, isModuleDeclaration, isExportAssignment, isModuleBlock, isObjectBindingPattern, isBindingElement, isArrayBindingPattern } from 'typescript'
+import { createSourceFile, forEachChild, isArrayBindingPattern, isBindingElement, isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isIdentifier, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isObjectBindingPattern, isPropertyDeclaration, isPropertySignature, isStringLiteral, isTypeAliasDeclaration, isVariableStatement, NodeFlags, ScriptKind, ScriptTarget, SyntaxKind } from 'typescript'
 
 /**
  * Extract only public API declarations from TypeScript source code
