@@ -1,19 +1,6 @@
 import * as ts from 'typescript'
 import type { Declaration } from './types'
 
-// Performance optimization: Cache compiled regexes
-const DECLARATION_PATTERNS = {
-  import: /^import\s+/m,
-  export: /^export\s+/m,
-  function: /^(export\s+)?(async\s+)?function\s+/m,
-  variable: /^(export\s+)?(const|let|var)\s+/m,
-  interface: /^(export\s+)?interface\s+/m,
-  type: /^(export\s+)?type\s+/m,
-  class: /^(export\s+)?(abstract\s+)?class\s+/m,
-  enum: /^(export\s+)?(const\s+)?enum\s+/m,
-  module: /^(export\s+)?(declare\s+)?(module|namespace)\s+/m
-} as const
-
 /**
  * Extract only public API declarations from TypeScript source code
  * This focuses on what should be in .d.ts files, not implementation details
@@ -643,7 +630,9 @@ function extractEnumDeclaration(node: ts.EnumDeclaration, sourceCode: string): D
 function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string): Declaration {
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
-  const text = getNodeText(node, sourceCode)
+
+  // Build clean module declaration for DTS
+  const text = buildModuleDeclaration(node, isExported)
 
   // Check if this is an ambient module (quoted name)
   const isAmbient = ts.isStringLiteral(node.name)
@@ -657,6 +646,238 @@ function extractModuleDeclaration(node: ts.ModuleDeclaration, sourceCode: string
     start: node.getStart(),
     end: node.getEnd()
   }
+}
+
+/**
+ * Build clean module declaration for DTS
+ */
+function buildModuleDeclaration(node: ts.ModuleDeclaration, isExported: boolean): string {
+  let result = ''
+
+  // Add export if needed
+  if (isExported) {
+    result += 'export '
+  }
+
+  // Add declare keyword
+  result += 'declare '
+
+  // Check if this is a namespace or module
+  const isNamespace = node.flags & ts.NodeFlags.Namespace
+  if (isNamespace) {
+    result += 'namespace '
+  } else {
+    result += 'module '
+  }
+
+  // Add module name
+  result += node.name.getText()
+
+  // Build module body with only signatures
+  result += ' ' + buildModuleBody(node)
+
+  return result
+}
+
+/**
+ * Build clean module body for DTS (signatures only, no implementations)
+ */
+function buildModuleBody(node: ts.ModuleDeclaration): string {
+  if (!node.body) return '{}'
+
+  const members: string[] = []
+
+    function processModuleElement(element: ts.Node) {
+    if (ts.isFunctionDeclaration(element)) {
+      // Function signature without implementation (no declare keyword in ambient context)
+      const isExported = hasExportModifier(element)
+      const name = element.name?.getText() || ''
+
+      let signature = '  '
+      if (isExported) signature += 'export '
+      signature += 'function '
+      signature += name
+
+      // Add generics
+      if (element.typeParameters) {
+        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        signature += `<${generics}>`
+      }
+
+      // Add parameters
+      const params = element.parameters.map(param => {
+        const paramName = getParameterName(param)
+        const paramType = param.type?.getText() || 'any'
+        const optional = param.questionToken || param.initializer ? '?' : ''
+        return `${paramName}${optional}: ${paramType}`
+      }).join(', ')
+      signature += `(${params})`
+
+      // Add return type
+      const returnType = element.type?.getText() || 'void'
+      signature += `: ${returnType};`
+
+      members.push(signature)
+    } else if (ts.isVariableStatement(element)) {
+      // Variable declarations
+      const isExported = hasExportModifier(element)
+      for (const declaration of element.declarationList.declarations) {
+        if (declaration.name && ts.isIdentifier(declaration.name)) {
+          const name = declaration.name.getText()
+          const typeAnnotation = declaration.type?.getText()
+          const initializer = declaration.initializer?.getText()
+          const kind = element.declarationList.flags & ts.NodeFlags.Const ? 'const' :
+                       element.declarationList.flags & ts.NodeFlags.Let ? 'let' : 'var'
+
+          let varDecl = '  '
+          if (isExported) varDecl += 'export '
+          varDecl += kind + ' '
+          varDecl += name
+
+          // Use type annotation if available, otherwise infer from initializer
+          if (typeAnnotation) {
+            varDecl += `: ${typeAnnotation}`
+          } else if (initializer) {
+            // Simple type inference for common cases
+            if (initializer.startsWith("'") || initializer.startsWith('"') || initializer.startsWith('`')) {
+              varDecl += ': string'
+            } else if (/^\d+$/.test(initializer)) {
+              varDecl += ': number'
+            } else if (initializer === 'true' || initializer === 'false') {
+              varDecl += ': boolean'
+            } else {
+              varDecl += ': any'
+            }
+          } else {
+            varDecl += ': any'
+          }
+
+          varDecl += ';'
+          members.push(varDecl)
+        }
+      }
+    } else if (ts.isInterfaceDeclaration(element)) {
+      // Interface declaration (no declare keyword in ambient context)
+      const isExported = hasExportModifier(element)
+      const name = element.name.getText()
+
+      let interfaceDecl = '  '
+      if (isExported) interfaceDecl += 'export '
+      interfaceDecl += 'interface '
+      interfaceDecl += name
+
+      // Add generics
+      if (element.typeParameters) {
+        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        interfaceDecl += `<${generics}>`
+      }
+
+      // Add extends
+      if (element.heritageClauses) {
+        const extendsClause = element.heritageClauses.find(clause =>
+          clause.token === ts.SyntaxKind.ExtendsKeyword
+        )
+        if (extendsClause) {
+          const types = extendsClause.types.map(type => type.getText()).join(', ')
+          interfaceDecl += ` extends ${types}`
+        }
+      }
+
+      // Add body
+      const body = getInterfaceBody(element)
+      interfaceDecl += ' ' + body
+
+      members.push(interfaceDecl)
+    } else if (ts.isTypeAliasDeclaration(element)) {
+      // Type alias declaration (no declare keyword in ambient context)
+      const isExported = hasExportModifier(element)
+      const name = element.name.getText()
+
+      let typeDecl = '  '
+      if (isExported) typeDecl += 'export '
+      typeDecl += 'type '
+      typeDecl += name
+
+      // Add generics
+      if (element.typeParameters) {
+        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        typeDecl += `<${generics}>`
+      }
+
+      typeDecl += ' = '
+      typeDecl += element.type.getText()
+
+      members.push(typeDecl)
+    } else if (ts.isEnumDeclaration(element)) {
+      // Enum declaration
+      const isExported = hasExportModifier(element)
+      const name = element.name.getText()
+      const isConst = element.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ConstKeyword)
+
+      let enumDecl = '  '
+      if (isExported) enumDecl += 'export '
+      if (isConst) enumDecl += 'const '
+      enumDecl += 'enum '
+      enumDecl += name
+
+      // Build enum body
+      const enumMembers: string[] = []
+      for (const member of element.members) {
+        if (ts.isEnumMember(member)) {
+          const memberName = member.name.getText()
+          if (member.initializer) {
+            const value = member.initializer.getText()
+            enumMembers.push(`    ${memberName} = ${value}`)
+          } else {
+            enumMembers.push(`    ${memberName}`)
+          }
+        }
+      }
+
+      enumDecl += ` {\n${enumMembers.join(',\n')}\n  }`
+      members.push(enumDecl)
+        } else if (ts.isModuleDeclaration(element)) {
+      // Nested namespace/module (no declare keyword in ambient context)
+      const isExported = hasExportModifier(element)
+      const name = element.name.getText()
+
+      let nestedDecl = '  '
+      if (isExported) nestedDecl += 'export '
+
+      // Check if this is a namespace or module
+      const isNamespace = element.flags & ts.NodeFlags.Namespace
+      if (isNamespace) {
+        nestedDecl += 'namespace '
+      } else {
+        nestedDecl += 'module '
+      }
+
+      nestedDecl += name
+      nestedDecl += ' ' + buildModuleBody(element)
+
+      members.push(nestedDecl)
+    } else if (ts.isExportAssignment(element)) {
+      // Export default statement
+      let exportDecl = '  export default '
+      if (element.expression) {
+        exportDecl += element.expression.getText()
+      }
+      exportDecl += ';'
+      members.push(exportDecl)
+    }
+  }
+
+  if (ts.isModuleBlock(node.body)) {
+    // Module block with statements
+    for (const statement of node.body.statements) {
+      processModuleElement(statement)
+    }
+  } else if (ts.isModuleDeclaration(node.body)) {
+    // Nested module
+    processModuleElement(node.body)
+  }
+
+  return `{\n${members.join('\n')}\n}`
 }
 
 /**
