@@ -61,7 +61,7 @@ Choose the binary that matches your platform and architecture:
 
 ```sh [macOS (arm64)]
 # Download the binary
-curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.0/dtsx-darwin-arm64 -o dtsx
+curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.3/dtsx-darwin-arm64 -o dtsx
 
 # Make it executable
 chmod +x dtsx
@@ -72,7 +72,7 @@ mv dtsx /usr/local/bin/dtsx
 
 ```sh [macOS (x64)]
 # Download the binary
-curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.0/dtsx-darwin-x64 -o dtsx
+curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.3/dtsx-darwin-x64 -o dtsx
 
 # Make it executable
 chmod +x dtsx
@@ -83,7 +83,7 @@ mv dtsx /usr/local/bin/dtsx
 
 ```sh [Linux (arm64)]
 # Download the binary
-curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.0/dtsx-linux-arm64 -o dtsx
+curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.3/dtsx-linux-arm64 -o dtsx
 
 # Make it executable
 chmod +x dtsx
@@ -94,7 +94,7 @@ mv dtsx /usr/local/bin/dtsx
 
 ```sh [Linux (x64)]
 # Download the binary
-curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.0/dtsx-linux-x64 -o dtsx
+curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.3/dtsx-linux-x64 -o dtsx
 
 # Make it executable
 chmod +x dtsx
@@ -105,12 +105,91 @@ mv dtsx /usr/local/bin/dtsx
 
 ```sh [Windows (x64)]
 # Download the binary
-curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.0/dtsx-windows-x64.exe -o dtsx.exe
+curl -L https://github.com/stacksjs/dtsx/releases/download/v0.8.3/dtsx-windows-x64.exe -o dtsx.exe
 
 # Move it to your PATH (adjust the path as needed)
 move dtsx.exe C:\Windows\System32\dtsx.exe
 ```
 
+:::
+
 ::: tip
 You can also find the `dtsx` binaries in GitHub [releases](https://github.com/stacksjs/dtsx/releases).
 :::
+
+## Verification
+
+After installation, verify that dtsx is working correctly:
+
+```bash
+# Check version
+dtsx --version
+
+# Show help
+dtsx --help
+
+# Test generation (in a TypeScript project)
+dtsx --verbose
+```
+
+## Requirements
+
+### System Requirements
+
+- **Node.js**: Version 18 or higher (for npm package)
+- **Bun**: Latest version recommended (for optimal performance)
+- **TypeScript**: Version 5.0 or higher
+
+### Project Requirements
+
+Your TypeScript project must have `isolatedDeclarations` enabled in `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "isolatedDeclarations": true,
+    "declaration": true
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Permission Denied (Binary Installation)**
+   ```bash
+   # Make sure the binary is executable
+   chmod +x dtsx
+   ```
+
+2. **Command Not Found**
+   ```bash
+   # Ensure the binary is in your PATH
+   echo $PATH
+   which dtsx
+   ```
+
+3. **TypeScript Errors**
+   ```bash
+   # Ensure isolatedDeclarations is enabled
+   # Check your tsconfig.json file
+   ```
+
+### Getting Help
+
+If you encounter issues:
+
+1. Check the [troubleshooting guide](./advanced/troubleshooting.md)
+2. Search existing [GitHub issues](https://github.com/stacksjs/dtsx/issues)
+3. Create a new issue with reproduction steps
+4. Join our [Discord community](https://discord.gg/stacksjs)
+
+## Next Steps
+
+After installation, check out:
+
+- [Usage Guide](./usage.md) - Learn how to use dtsx
+- [Configuration](./config.md) - Customize dtsx for your project
+- [API Reference](./api-reference.md) - Detailed API documentation
+- [Features](./features/) - Explore advanced features

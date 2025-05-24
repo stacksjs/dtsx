@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import { dts } from 'bun-plugin-dtsx'
+import dts from '../bun-plugin/src/index'
 
 console.log('Building...')
 
@@ -15,11 +15,5 @@ await Bun.build({
     dts(),
   ],
 })
-
-// prepare dist for publishing
-await fs.rename('./dist/bin/cli.js', './dist/cli.js')
-await fs.rename('./dist/src/index.js', './dist/index.js')
-await fs.rm('./dist/src', { recursive: true, force: true })
-await fs.rm('./dist/bin', { recursive: true, force: true })
 
 console.log('Built!')

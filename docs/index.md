@@ -16,18 +16,24 @@ hero:
       link: https://github.com/stacksjs/dtsx
 
 features:
-  - title: "Fast .d.ts Generation"
+  - title: "⚡ Fast .d.ts Generation"
     icon: "⚡"
     details: "Generate TypeScript declaration files quickly and efficiently."
-  - title: "Highly Configurable"
+  - title: "🔧 Highly Configurable"
     icon: "🔧"
-    details: "Easily adjust settings to fit your project's needs."
-  - title: "Lightweight Library"
+    details: "Easily adjust settings to fit your project's needs with comprehensive configuration options."
+  - title: "📦 Lightweight Library"
     icon: "📦"
-    details: "Minimal footprint for seamless & performant integration."
-  - title: "Cross-Platform Binary"
+    details: "Minimal footprint for seamless & performant integration with focused functionality."
+  - title: "🌐 Cross-Platform Binary"
     icon: "🌐"
-    details: "Compatible with multiple operating systems."
+    details: "Compatible with multiple operating systems including macOS, Linux, and Windows."
+  - title: "💬 Comment Preservation"
+    icon: "💬"
+    details: "Maintains JSDoc and documentation comments in generated declarations by default."
+  - title: "🧠 Smart Type Inference"
+    icon: "🧠"
+    details: "Intelligent type inference for complex structures including narrow types for constants."
 ---
 
 <Home />

@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { generate } from '../src'
+import { generate } from '../packages/dtsx/src'
 
 console.log('Generating output...', path.join(__dirname, '..'))
 

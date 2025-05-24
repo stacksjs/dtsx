@@ -1,59 +1,328 @@
 # Type Support
 
-dtsx provides comprehensive support for various TypeScript type constructs. This page details the supported types and how they are handled.
+dtsx provides comprehensive support for all TypeScript declaration types, ensuring that your generated `.d.ts` files accurately represent your source code's type information.
 
-## Basic Types
+## Supported Declaration Types
 
-- **Primitive Types**: `string`, `number`, `boolean`, `null`, `undefined`
-- **Literal Types**: String, number, and boolean literals
-- **Union Types**: Combinations of multiple types
-- **Intersection Types**: Merged types with all properties
+### Interfaces
 
-## Complex Types
-
-### Interfaces and Types
+Full support for TypeScript interfaces with all features:
 
 ```typescript
-interface User {
-  name: string;
-  age: number;
-  email?: string;
+// Source
+export interface User<T = string> {
+  /** User's unique identifier */
+  id: T
+  /** User's display name */
+  name: string
+  /** Optional email address */
+  email?: string
+  /** User preferences */
+  preferences: {
+    theme: 'light' | 'dark'
+    notifications: boolean
+  }
 }
 
-type UserRole = 'admin' | 'user' | 'guest';
-```
-
-### Functions and Methods
-
-```typescript
-function process<T>(input: T): Promise<T>;
-interface Processor {
-  transform<T>(data: T): T;
-}
-```
-
-### Classes and Enums
-
-```typescript
-class User {
-  constructor(name: string);
-  getName(): string;
-}
-
-enum UserStatus {
-  Active,
-  Inactive,
-  Pending
+// Generated .d.ts
+export interface User<T = string> {
+  /** User's unique identifier */
+  id: T
+  /** User's display name */
+  name: string
+  /** Optional email address */
+  email?: string
+  /** User preferences */
+  preferences: {
+    theme: 'light' | 'dark'
+    notifications: boolean
+  }
 }
 ```
 
-### Generics
+**Supported Interface Features:**
+- Generic type parameters with constraints and defaults
+- Optional properties (`?`)
+- Readonly properties
+- Index signatures
+- Method signatures
+- Inheritance with `extends`
+- JSDoc comment preservation
+
+### Type Aliases
+
+Complete support for type aliases including complex types:
 
 ```typescript
-interface Container<T> {
-  value: T;
-  getValue(): T;
+// Source
+export type Status = 'pending' | 'approved' | 'rejected'
+
+export type ApiResponse<T> = {
+  data: T
+  status: Status
+  timestamp: Date
 }
+
+export type EventHandler<T extends Event = Event> = (event: T) => void
+
+// Generated .d.ts
+export type Status = 'pending' | 'approved' | 'rejected'
+export type ApiResponse<T> = {
+  data: T
+  status: Status
+  timestamp: Date
+}
+export type EventHandler<T extends Event = Event> = (event: T) => void
+```
+
+**Supported Type Features:**
+- Union and intersection types
+- Generic type parameters
+- Conditional types
+- Mapped types
+- Template literal types
+- Utility types
+
+### Functions
+
+Comprehensive function declaration support:
+
+```typescript
+// Source
+/**
+ * Processes user data with validation
+ * @param user - The user object to process
+ * @param options - Processing options
+ * @returns Promise resolving to processed user
+ * @example
+ * const result = await processUser(user, { validate: true })
+ */
+export async function processUser<T extends User>(
+  user: T,
+  options: { validate?: boolean } = {}
+): Promise<T & { processed: true }> {
+  // implementation
+}
+
+// Generated .d.ts
+/**
+ * Processes user data with validation
+ * @param user - The user object to process
+ * @param options - Processing options
+ * @returns Promise resolving to processed user
+ * @example
+ * const result = await processUser(user, { validate: true })
+ */
+export declare function processUser<T extends User>(
+  user: T,
+  options?: { validate?: boolean }
+): Promise<T & { processed: true }>
+```
+
+**Supported Function Features:**
+- Generic type parameters with constraints
+- Optional parameters
+- Default parameter values
+- Rest parameters
+- Async functions
+- Generator functions
+- Function overloads
+- JSDoc preservation
+
+### Classes
+
+Full class declaration support with all TypeScript features:
+
+```typescript
+// Source
+/**
+ * Base user management class
+ */
+export abstract class BaseUserManager<T extends User = User> {
+  protected users: Map<string, T> = new Map()
+
+  /**
+   * Adds a user to the manager
+   * @param user - User to add
+   */
+  abstract addUser(user: T): Promise<void>
+
+  /**
+   * Gets a user by ID
+   * @param id - User ID
+   * @returns User or undefined
+   */
+  getUser(id: string): T | undefined {
+    return this.users.get(id)
+  }
+}
+
+// Generated .d.ts
+/**
+ * Base user management class
+ */
+export declare abstract class BaseUserManager<T extends User = User> {
+  protected users: Map<string, T>
+  /**
+   * Adds a user to the manager
+   * @param user - User to add
+   */
+  abstract addUser(user: T): Promise<void>
+  /**
+   * Gets a user by ID
+   * @param id - User ID
+   * @returns User or undefined
+   */
+  getUser(id: string): T | undefined
+}
+```
+
+**Supported Class Features:**
+- Abstract classes and methods
+- Access modifiers (public, private, protected)
+- Static members
+- Generic type parameters
+- Inheritance with `extends`
+- Interface implementation with `implements`
+- Constructor signatures
+- Property declarations
+- Method declarations
+
+### Enums
+
+Support for both numeric and string enums:
+
+```typescript
+// Source
+/**
+ * User role enumeration
+ */
+export enum UserRole {
+  /** Standard user */
+  USER = 'user',
+  /** Administrator */
+  ADMIN = 'admin',
+  /** Super administrator */
+  SUPER_ADMIN = 'super_admin'
+}
+
+export enum HttpStatus {
+  OK = 200,
+  NOT_FOUND = 404,
+  SERVER_ERROR = 500
+}
+
+// Generated .d.ts
+/**
+ * User role enumeration
+ */
+export declare enum UserRole {
+  /** Standard user */
+  USER = 'user',
+  /** Administrator */
+  ADMIN = 'admin',
+  /** Super administrator */
+  SUPER_ADMIN = 'super_admin'
+}
+export declare enum HttpStatus {
+  OK = 200,
+  NOT_FOUND = 404,
+  SERVER_ERROR = 500
+}
+```
+
+### Variables and Constants
+
+Smart type inference for variable declarations:
+
+```typescript
+// Source
+export const API_BASE_URL = 'https://api.example.com' as const
+export const DEFAULT_CONFIG = {
+  timeout: 5000,
+  retries: 3,
+  debug: false
+} as const
+
+export let globalState: { user?: User } = {}
+
+// Generated .d.ts
+export declare const API_BASE_URL: "https://api.example.com"
+export declare const DEFAULT_CONFIG: {
+  readonly timeout: 5000
+  readonly retries: 3
+  readonly debug: false
+}
+export declare let globalState: { user?: User }
+```
+
+**Variable Features:**
+- Const assertions for literal types
+- Readonly type inference
+- Complex object type inference
+- Array type inference
+- Function type inference
+
+### Modules and Namespaces
+
+Support for module declarations and namespaces:
+
+```typescript
+// Source
+export namespace Utils {
+  export interface Config {
+    debug: boolean
+  }
+
+  export function log(message: string): void {
+    // implementation
+  }
+
+  export namespace Validation {
+    export function isEmail(value: string): boolean {
+      // implementation
+    }
+  }
+}
+
+// Generated .d.ts
+export declare namespace Utils {
+  interface Config {
+    debug: boolean
+  }
+  function log(message: string): void
+  namespace Validation {
+    function isEmail(value: string): boolean
+  }
+}
+```
+
+## Import and Export Handling
+
+### ES6 Imports/Exports
+
+```typescript
+// Named exports
+export { User, UserRole } from './types'
+export type { ApiResponse } from './api'
+
+// Default exports
+export default class UserManager {}
+
+// Re-exports
+export * from './utils'
+export * as Helpers from './helpers'
+```
+
+### Type-only Imports
+
+```typescript
+// Type-only imports are preserved
+import type { User } from './types'
+import { type Config, createUser } from './user'
+
+// Generated appropriately in .d.ts
+export declare function processUser(user: User, config: Config): void
 ```
 
 ## Advanced Type Features
@@ -61,47 +330,103 @@ interface Container<T> {
 ### Conditional Types
 
 ```typescript
-type IsString<T> = T extends string ? true : false;
+export type NonNullable<T> = T extends null | undefined ? never : T
+export type ReturnType<T> = T extends (...args: any[]) => infer R ? R : any
 ```
 
 ### Mapped Types
 
 ```typescript
-type Readonly<T> = {
-  readonly [P in keyof T]: T[P];
-};
+export type Partial<T> = {
+  [P in keyof T]?: T[P]
+}
+
+export type Pick<T, K extends keyof T> = {
+  [P in K]: T[P]
+}
 ```
 
-### Utility Types
+### Template Literal Types
 
-- `Partial<T>`
-- `Required<T>`
-- `Readonly<T>`
-- `Record<K,T>`
-- `Pick<T,K>`
-- `Omit<T,K>`
-- `Exclude<T,U>`
-- `Extract<T,U>`
-- `NonNullable<T>`
-- `ReturnType<T>`
-- `InstanceType<T>`
+```typescript
+export type EventName<T extends string> = `on${Capitalize<T>}`
+export type CSSProperty = `--${string}`
+```
 
 ## Type Inference
 
 dtsx provides intelligent type inference for:
 
-- Object literals
-- Array literals
-- Function return types
-- Generic type parameters
-- Union types
-- Intersection types
+### Narrow Types for Constants
 
-## Type Augmentation
+```typescript
+// Source
+const theme = 'dark' as const
+const config = { api: 'v1', debug: true } as const
 
-Support for:
+// Inferred as literal types
+export declare const theme: "dark"
+export declare const config: {
+  readonly api: "v1"
+  readonly debug: true
+}
+```
 
-- Module augmentation
-- Interface merging
-- Declaration merging
-- Ambient declarations
+### Complex Object Types
+
+```typescript
+// Source
+export const routes = {
+  home: '/',
+  about: '/about',
+  user: (id: string) => `/user/${id}`
+} as const
+
+// Properly inferred function types
+export declare const routes: {
+  readonly home: "/"
+  readonly about: "/about"
+  readonly user: (id: string) => string
+}
+```
+
+### Array and Tuple Types
+
+```typescript
+// Source
+export const colors = ['red', 'green', 'blue'] as const
+export const point: [number, number] = [0, 0]
+
+// Generated with proper types
+export declare const colors: readonly ["red", "green", "blue"]
+export declare const point: [number, number]
+```
+
+## Limitations and Considerations
+
+### Isolated Declarations Requirement
+
+dtsx requires TypeScript's `isolatedDeclarations` to be enabled, which means:
+
+- All exported declarations must have explicit type annotations
+- Type inference is limited to what TypeScript can determine in isolation
+- Complex type computations may need explicit annotations
+
+### Implementation Details
+
+dtsx focuses on generating clean declaration files by:
+
+- Extracting only exported declarations
+- Removing implementation details
+- Preserving type information and comments
+- Optimizing import statements
+
+### Best Practices
+
+For optimal results with dtsx:
+
+1. **Use explicit type annotations** for all exported declarations
+2. **Add comprehensive JSDoc comments** for documentation
+3. **Leverage const assertions** for literal types
+4. **Organize types logically** in your source files
+5. **Use type-only imports** when importing only for types

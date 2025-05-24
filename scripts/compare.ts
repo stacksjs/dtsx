@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { generate } from '../src'
+import { generate } from '../packages/dtsx/src'
 
 console.log('Generating output for reviewal...', path.join(__dirname, '..'))
 

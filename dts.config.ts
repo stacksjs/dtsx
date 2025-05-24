@@ -1,4 +1,4 @@
-import type { DtsGenerationOption } from './src/types'
+import type { DtsGenerationOption } from './packages/dtsx/src/types'
 
 const config: DtsGenerationOption = {
   cwd: __dirname,

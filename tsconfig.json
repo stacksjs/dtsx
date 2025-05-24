@@ -8,7 +8,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "paths": {
-      "@stacksjs/dtsx": ["./src/index.ts"]
+      "@stacksjs/dtsx": ["./packages/dtsx/src/index.ts"]
     },
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,

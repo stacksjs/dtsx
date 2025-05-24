@@ -1,24 +1,30 @@
-name: CI
+name: Releaser
 
 on:
   push:
     tags:
       - 'v*'
 
-jobs:
-  release:
-    name: release
-    runs-on: ubuntu-latest
+permissions:
+  contents: write
+  packages: write
+  id-token: write
 
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ env.VERSION }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Bun
+      - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Use cached node_modules
+      - name: Use Cached node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
@@ -29,24 +35,33 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
+      - name: Extract tag version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
       - name: Publish to npm
         run: bun publish --access public
         env:
           BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
-      - name: Create GitHub release
-        run: bunx changelogithub
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-      - name: Attach Binaries
+      - name: Create GitHub Release
+        id: create_release
         uses: stacksjs/action-releaser@v1.1.0
         with:
           files: |
-            bin/dtsx-linux-x64.zip
-            bin/dtsx-linux-arm64.zip
-            bin/dtsx-windows-x64.zip
-            bin/dtsx-darwin-x64.zip
-            bin/dtsx-darwin-arm64.zip
+            ./packages/dtsx/bin/dtsx-linux-x64.zip
+            ./packages/dtsx/bin/dtsx-linux-arm64.zip
+            ./packages/dtsx/bin/dtsx-windows-x64.zip
+            ./packages/dtsx/bin/dtsx-darwin-x64.zip
+            ./packages/dtsx/bin/dtsx-darwin-arm64.zip
+          # --- Homebrew tap update support ---
+          # Path to your Homebrew formula template (update this path as needed)
+          # homebrewFormula: .github/homebrew-formula.rb
+          # The owner/repo of your Homebrew tap (update this value as needed)
+          # homebrewRepo: stacksjs/homebrew-tap
+          # Optionally uncomment and set these if you need custom values:
+          # homebrewBranch: main
+          # homebrewPath: Formula
+          # homebrewCommitFormat: "update: {{ formula }} to {{ version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

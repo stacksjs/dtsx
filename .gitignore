@@ -13,7 +13,7 @@ temp
 docs/.vitepress/cache
 storage
 fixtures/generated
-bin/dtsx*
+**/bin/dtsx*
 /test/temp-output
 test/debug
 /test/fixtures/generated

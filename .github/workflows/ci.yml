@@ -85,6 +85,7 @@ jobs:
 
   publish-commit:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -106,4 +107,4 @@ jobs:
         run: bun run build
 
       - name: Publish Commit
-        run: bunx pkg-pr-new publish
+        run: bunx pkg-pr-new publish './packages/dtsx' './packages/bun-plugin' './packages/vite-plugin'

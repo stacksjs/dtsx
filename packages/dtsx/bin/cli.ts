@@ -2,7 +2,7 @@ import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { CAC } from 'cac'
-import { version } from '../package.json'
+import { version } from '../../../package.json'
 import { generate } from '../src/generator'
 
 const cli = new CAC('dtsx')
