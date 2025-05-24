@@ -1,7 +1,7 @@
 {
   "name": "@stacksjs/dtsx",
   "type": "module",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "description": "A modern, fast .d.ts generation tool, powered by Bun.",
   "author": "Chris Breuer <chris@stacksjs.org>",
