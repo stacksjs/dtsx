@@ -5,26 +5,24 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
-
 jobs:
   npm:
+    name: npm
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ env.VERSION }}
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
+      - name: Install Bun
         uses: oven-sh/setup-bun@v2
+        # env:
+        #   BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+        with:
+          bun-version: latest
 
-      - name: Use Cached node_modules
+      - name: Use cached node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
@@ -35,33 +33,24 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
-      - name: Extract tag version
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
       - name: Publish to npm
-        run: bun publish --access public
+        run: ./scripts/publish.sh
         env:
           BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
-      - name: Create GitHub Release
-        id: create_release
+      - name: Create GitHub release
+        run: bunx changelogithub
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Attach Binaries
         uses: stacksjs/action-releaser@v1.1.0
         with:
           files: |
-            ./packages/dtsx/bin/dtsx-linux-x64.zip
-            ./packages/dtsx/bin/dtsx-linux-arm64.zip
-            ./packages/dtsx/bin/dtsx-windows-x64.zip
-            ./packages/dtsx/bin/dtsx-darwin-x64.zip
-            ./packages/dtsx/bin/dtsx-darwin-arm64.zip
-          # --- Homebrew tap update support ---
-          # Path to your Homebrew formula template (update this path as needed)
-          # homebrewFormula: .github/homebrew-formula.rb
-          # The owner/repo of your Homebrew tap (update this value as needed)
-          # homebrewRepo: stacksjs/homebrew-tap
-          # Optionally uncomment and set these if you need custom values:
-          # homebrewBranch: main
-          # homebrewPath: Formula
-          # homebrewCommitFormat: "update: {{ formula }} to {{ version }}"
+            packages/dtsx/bin/dtsx-linux-x64.zip
+            packages/dtsx/bin/dtsx-linux-arm64.zip
+            packages/dtsx/bin/dtsx-windows-x64.zip
+            packages/dtsx/bin/dtsx-darwin-x64.zip
+            packages/dtsx/bin/dtsx-darwin-arm64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
