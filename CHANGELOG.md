@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.9.4...main
+
+[compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.4...main)
+
+### 🩹 Fixes
+
+- Comment generation ([b3e430d](https://github.com/stacksjs/dtsx/commit/b3e430d))
+
+### ❤️ Contributors
+
+- Chris ([@chrisbbreuer](https://github.com/chrisbbreuer))
+
 ## v0.9.3...main
 
 [compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.3...main)
