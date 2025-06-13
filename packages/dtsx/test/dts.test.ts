@@ -27,6 +27,7 @@ describe('dts-generation', () => {
 
   // List of all fixture files to test (excluding checker.ts which is too large)
   const fixtures = [
+    'abseil.io',
     'class',
     'edge-cases',
     'enum',

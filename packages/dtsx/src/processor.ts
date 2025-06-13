@@ -1394,10 +1394,34 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   let inString = false
   let stringChar = ''
   let inKey = true
+  let inComment = false
+  let commentDepth = 0
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i]
     const prevChar = i > 0 ? content[i - 1] : ''
+    const nextChar = i < content.length - 1 ? content[i + 1] : ''
+
+    // Track JSDoc/block comments to avoid parsing colons inside them
+    if (!inString && !inComment && char === '/' && nextChar === '*') {
+      inComment = true
+      commentDepth = 1
+      current += char
+      continue
+    }
+    else if (inComment && char === '*' && nextChar === '/') {
+      commentDepth--
+      if (commentDepth === 0) {
+        inComment = false
+      }
+      current += char
+      continue
+    }
+    else if (inComment && char === '/' && nextChar === '*') {
+      commentDepth++
+      current += char
+      continue
+    }
 
     if (!inString && (char === '"' || char === '\'' || char === '`')) {
       inString = true
@@ -1408,7 +1432,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       inString = false
       current += char
     }
-    else if (!inString) {
+    else if (!inString && !inComment) {
       if (char === '{' || char === '[' || char === '(') {
         depth++
         current += char
