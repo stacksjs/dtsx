@@ -23,7 +23,7 @@ jobs:
           bun-version: latest
 
       - name: Use cached node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.4
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
