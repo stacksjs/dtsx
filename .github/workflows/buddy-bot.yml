@@ -126,11 +126,11 @@ jobs:
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@2.35.4
         with:
           php-version: '8.4'
           tools: composer
@@ -163,7 +163,7 @@ jobs:
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Install dependencies
         run: bun install
@@ -244,11 +244,11 @@ jobs:
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@2.35.4
         with:
           php-version: '8.4'
           tools: composer
@@ -351,7 +351,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Install dependencies
         run: bun install
