@@ -55,18 +55,18 @@
     "preview:docs": "bun --bun vitepress preview docs"
   },
   "devDependencies": {
-    "@stacksjs/bumpx": "^0.1.17",
+    "@stacksjs/bumpx": "^0.1.78",
     "@stacksjs/cli": "^0.70.23",
     "@stacksjs/development": "^0.70.23",
     "@stacksjs/docs": "^0.70.23",
     "@stacksjs/eslint-config": "^4.14.0-beta.3",
     "@stacksjs/gitlint": "^0.1.5",
-    "@stacksjs/logsmith": "^0.1.8",
-    "@types/bun": "^1.2.14",
+    "@stacksjs/logsmith": "^0.1.18",
+    "@types/bun": "^1.2.21",
     "buddy-bot": "^0.8.9",
     "bun-git-hooks": "^0.2.19",
     "bun-plugin-dtsx": "workspace:*",
-    "unocss": "^66.1.2"
+    "unocss": "^66.5.1"
   },
   "overrides": {
     "unconfig": "0.3.10"
