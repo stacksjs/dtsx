@@ -55,7 +55,7 @@
     "preview:docs": "bun --bun vitepress preview docs"
   },
   "devDependencies": {
-    "@stacksjs/bumpx": "^0.1.84",
+    "@stacksjs/bumpx": "^0.1.86",
     "@stacksjs/cli": "^0.70.23",
     "@stacksjs/development": "^0.70.23",
     "@stacksjs/docs": "^0.70.23",
