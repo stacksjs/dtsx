@@ -63,7 +63,7 @@
     "@stacksjs/gitlint": "^0.1.5",
     "@stacksjs/logsmith": "^0.1.8",
     "@types/bun": "^1.2.14",
-    "buddy-bot": "^0.9.9",
+    "buddy-bot": "^0.8.9",
     "bun-git-hooks": "^0.3.1",
     "bun-plugin-dtsx": "workspace:*",
     "unocss": "^66.1.2"
