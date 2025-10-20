@@ -16,14 +16,14 @@ jobs:
           fetch-depth: 0
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2.0.2
+        uses: oven-sh/setup-bun@v2
         # env:
         #   BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
         with:
           bun-version: latest
 
       - name: Use cached node_modules
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v4
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
