@@ -65,7 +65,7 @@
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "devDependencies": {
-    "bunfig": "^0.15.1",
+    "bunfig": "^0.15.2",
     "tinyglobby": "^0.2.14"
   },
   "git-hooks": {
