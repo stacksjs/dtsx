@@ -61,7 +61,7 @@
     "@stacksjs/docs": "^0.70.23",
     "@stacksjs/eslint-config": "^4.14.0-beta.3",
     "@stacksjs/gitlint": "^0.1.5",
-    "@stacksjs/logsmith": "^0.2.0",
+    "@stacksjs/logsmith": "^0.2.1",
     "@types/bun": "^1.3.1",
     "buddy-bot": "^0.9.9",
     "bun-git-hooks": "^0.3.1",
