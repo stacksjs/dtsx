@@ -68,8 +68,8 @@
     "@stacksjs/clapp": "^0.2.0"
   },
   "devDependencies": {
-    "bunfig": "^0.10.0",
-    "tinyglobby": "^0.2.14"
+    "bunfig": "^0.15.5",
+    "tinyglobby": "^0.2.15"
   },
   "git-hooks": {
     "pre-commit": {
