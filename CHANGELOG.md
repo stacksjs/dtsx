@@ -1,5 +1,58 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.5...v0.9.6)
 
+### 🧹 Chores
+
+- release v0.9.6 ([96ff0d3](https://github.com/stacksjs/dtsx/commit/96ff0d3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([afd963c](https://github.com/stacksjs/dtsx/commit/afd963c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.6 ([54bd734](https://github.com/stacksjs/dtsx/commit/54bd734)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update actions/checkout action to v5 (#57) ([e42db23](https://github.com/stacksjs/dtsx/commit/e42db23)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#57](https://github.com/stacksjs/dtsx/issues/57), [#57](https://github.com/stacksjs/dtsx/issues/57))
+- wip ([dc3376f](https://github.com/stacksjs/dtsx/commit/dc3376f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7037407](https://github.com/stacksjs/dtsx/commit/7037407)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.6 ([30c5d79](https://github.com/stacksjs/dtsx/commit/30c5d79)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([ba2d477](https://github.com/stacksjs/dtsx/commit/ba2d477)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f5d43a](https://github.com/stacksjs/dtsx/commit/8f5d43a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7f4826f](https://github.com/stacksjs/dtsx/commit/7f4826f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- update og-image and cover ([1dd3533](https://github.com/stacksjs/dtsx/commit/1dd3533)) _(by cab-mikee <mike.cabz32@gmail.com>)_
+- update tools ([695648b](https://github.com/stacksjs/dtsx/commit/695648b)) _(by Adelino Ngomacha <adelinob335@gmail.com>)_
+
+### 📄 Miscellaneous
+
+- Merge pull request #56 from stacksjs/renovate/all-minor-patch ([b088b9d](https://github.com/stacksjs/dtsx/commit/b088b9d)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#56](https://github.com/stacksjs/dtsx/issues/56), [#56](https://github.com/stacksjs/dtsx/issues/56))
+
+### Contributors
+
+- _Adelino Ngomacha <adelinob335@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _cab-mikee <mike.cabz32@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.5...HEAD)
+
+### 🧹 Chores
+
+- wip ([afd963c](https://github.com/stacksjs/dtsx/commit/afd963c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.6 ([54bd734](https://github.com/stacksjs/dtsx/commit/54bd734)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update actions/checkout action to v5 (#57) ([e42db23](https://github.com/stacksjs/dtsx/commit/e42db23)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#57](https://github.com/stacksjs/dtsx/issues/57), [#57](https://github.com/stacksjs/dtsx/issues/57))
+- wip ([dc3376f](https://github.com/stacksjs/dtsx/commit/dc3376f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7037407](https://github.com/stacksjs/dtsx/commit/7037407)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.6 ([30c5d79](https://github.com/stacksjs/dtsx/commit/30c5d79)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([ba2d477](https://github.com/stacksjs/dtsx/commit/ba2d477)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f5d43a](https://github.com/stacksjs/dtsx/commit/8f5d43a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7f4826f](https://github.com/stacksjs/dtsx/commit/7f4826f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- update og-image and cover ([1dd3533](https://github.com/stacksjs/dtsx/commit/1dd3533)) _(by cab-mikee <mike.cabz32@gmail.com>)_
+- update tools ([695648b](https://github.com/stacksjs/dtsx/commit/695648b)) _(by Adelino Ngomacha <adelinob335@gmail.com>)_
+
+### 📄 Miscellaneous
+
+- Merge pull request #56 from stacksjs/renovate/all-minor-patch ([b088b9d](https://github.com/stacksjs/dtsx/commit/b088b9d)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#56](https://github.com/stacksjs/dtsx/issues/56), [#56](https://github.com/stacksjs/dtsx/issues/56))
+
+### Contributors
+
+- _Adelino Ngomacha <adelinob335@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _cab-mikee <mike.cabz32@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
 
 ## v0.9.4...main
 
@@ -678,7 +731,6 @@
 
 ## ...main
 
-
 ### 🏡 Chore
 
 - Wip ([b81e275](https://github.com/stacksjs/dtsx/commit/b81e275))
@@ -746,7 +798,6 @@
 - Chris <chrisbreuer93@gmail.com>
 
 ## ...main
-
 
 ### 🏡 Chore
 
