@@ -1404,22 +1404,28 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 
     // Track JSDoc/block comments to avoid parsing colons inside them
     if (!inString && !inComment && char === '/' && nextChar === '*') {
+      // Enter block/JSDoc comment, preserve opening delimiter
       inComment = true
       commentDepth = 1
-      current += char
+      current += '/*'
+      i++ // Skip '*'
       continue
     }
     else if (inComment && char === '*' && nextChar === '/') {
+      // Closing a block/JSDoc comment, preserve closing delimiter
       commentDepth--
+      current += '*/'
+      i++ // Skip '/'
       if (commentDepth === 0) {
         inComment = false
       }
-      current += char
       continue
     }
     else if (inComment && char === '/' && nextChar === '*') {
+      // Nested comment start, preserve and increase depth
       commentDepth++
-      current += char
+      current += '/*'
+      i++
       continue
     }
 
@@ -1482,6 +1488,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       }
     }
     else {
+      // Preserve all characters while inside comments
       current += char
     }
   }
