@@ -1,11 +1,11 @@
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { CAC } from 'cac'
+import { CLI } from '@stacksjs/clapp'
 import { version } from '../../../package.json'
 import { generate } from '../src/generator'
 
-const cli = new CAC('dtsx')
+const cli = new CLI('dtsx')
 
 const defaultOptions: DtsGenerationConfig = {
   cwd: process.cwd(),

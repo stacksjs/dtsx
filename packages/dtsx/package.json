@@ -64,6 +64,9 @@
     "zip:darwin-x64": "zip -j bin/dtsx-darwin-x64.zip bin/dtsx-darwin-x64",
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
+  "dependencies": {
+    "@stacksjs/clapp": "^0.2.0"
+  },
   "devDependencies": {
     "bunfig": "^0.10.0",
     "tinyglobby": "^0.2.14"
