@@ -44,7 +44,7 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Attach Binaries
-        uses: stacksjs/action-releaser@v1.2.7
+        uses: stacksjs/action-releaser@v1.2.6
         with:
           files: |
             packages/dtsx/bin/dtsx-linux-x64.zip
