@@ -1,4 +1,33 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.6...v0.9.7)
+
+### 🧹 Chores
+
+- release v0.9.7 ([ef9e926](https://github.com/stacksjs/dtsx/commit/ef9e926)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#74) ([a7fc0b7](https://github.com/stacksjs/dtsx/commit/a7fc0b7)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#74](https://github.com/stacksjs/dtsx/issues/74), [#74](https://github.com/stacksjs/dtsx/issues/74))
+- wip ([498f379](https://github.com/stacksjs/dtsx/commit/498f379)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#73) ([e6bf21d](https://github.com/stacksjs/dtsx/commit/e6bf21d)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#73](https://github.com/stacksjs/dtsx/issues/73), [#73](https://github.com/stacksjs/dtsx/issues/73))
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.6...HEAD)
+
+### 🧹 Chores
+
+- **deps**: update all non-major dependencies (#74) ([a7fc0b7](https://github.com/stacksjs/dtsx/commit/a7fc0b7)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#74](https://github.com/stacksjs/dtsx/issues/74), [#74](https://github.com/stacksjs/dtsx/issues/74))
+- wip ([498f379](https://github.com/stacksjs/dtsx/commit/498f379)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#73) ([e6bf21d](https://github.com/stacksjs/dtsx/commit/e6bf21d)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#73](https://github.com/stacksjs/dtsx/issues/73), [#73](https://github.com/stacksjs/dtsx/issues/73))
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.5...v0.9.6)
 
 ### 🧹 Chores
