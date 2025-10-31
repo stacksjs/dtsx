@@ -281,12 +281,19 @@ export function processDeclarations(
         const typeMatches = importText.match(/type\s+([A-Za-z_$][\w$]*)/g)
         const valueMatches = importText.match(/import\s+\{([^}]+)\}/)
 
+        // Get all text to check (both variable.text and variable.typeAnnotation)
+        const textToCheck = [variable.text]
+        if (variable.typeAnnotation) {
+          textToCheck.push(variable.typeAnnotation)
+        }
+
         // Check type imports
         if (typeMatches) {
           for (const typeMatch of typeMatches) {
             const typeName = typeMatch.replace('type ', '').trim()
             const regex = new RegExp(`\\b${typeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-            if (regex.test(variable.text)) {
+            // Check both variable.text and variable.typeAnnotation
+            if (textToCheck.some(text => regex.test(text))) {
               usedImportItems.add(typeName)
             }
           }
@@ -299,9 +306,20 @@ export function processDeclarations(
           )
           for (const importName of imports) {
             const regex = new RegExp(`\\b${importName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-            if (regex.test(variable.text)) {
+            // Check both variable.text and variable.typeAnnotation
+            if (textToCheck.some(text => regex.test(text))) {
               usedImportItems.add(importName)
             }
+          }
+        }
+
+        // Also check using the more comprehensive extractAllImportedItems function
+        const allImportedItems = extractAllImportedItems(imp.text)
+        for (const item of allImportedItems) {
+          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
+          // Check both variable.text and variable.typeAnnotation
+          if (textToCheck.some(text => regex.test(text))) {
+            usedImportItems.add(item)
           }
         }
       }
