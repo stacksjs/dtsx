@@ -20,10 +20,7 @@ interface PluginConfig extends DtsGenerationOption {
  * @param options - Configuration options for DTS generation
  * @returns BunPlugin instance
  */
-export function dts(options: PluginConfig = {
-  root: './src',
-  outdir: './dist',
-}): BunPlugin {
+export function dts(options: PluginConfig = {}): BunPlugin {
   return {
     name: 'bun-plugin-dtsx',
 
@@ -41,8 +38,8 @@ export function dts(options: PluginConfig = {
  * @returns Normalized configuration
  */
 function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): DtsGenerationOption {
-  const root = options.root || build?.config.root
-  const outdir = options.outdir || build?.config.outdir
+  const root = options.root || options.build?.config.root || build?.config.root || './src'
+  const outdir = options.outdir || options.build?.config.outdir || build?.config.outdir || './dist'
 
   if (!root) {
     throw new Error('[bun-plugin-dtsx] Root directory is required')
