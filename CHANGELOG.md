@@ -1,4 +1,35 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.8...v0.9.9)
+
+### 🧹 Chores
+
+- release v0.9.9 ([a101b79](https://github.com/stacksjs/dtsx/commit/a101b79)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([3a6671a](https://github.com/stacksjs/dtsx/commit/3a6671a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#77) ([e7c57ea](https://github.com/stacksjs/dtsx/commit/e7c57ea)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#77](https://github.com/stacksjs/dtsx/issues/77), [#77](https://github.com/stacksjs/dtsx/issues/77))
+- **deps**: update stacksjs/action-releaser action to v1.2.7 (#75) ([7ab2e54](https://github.com/stacksjs/dtsx/commit/7ab2e54)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#75](https://github.com/stacksjs/dtsx/issues/75), [#75](https://github.com/stacksjs/dtsx/issues/75))
+- wip ([85e6a99](https://github.com/stacksjs/dtsx/commit/85e6a99)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.8...HEAD)
+
+### 🧹 Chores
+
+- wip ([3a6671a](https://github.com/stacksjs/dtsx/commit/3a6671a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#77) ([e7c57ea](https://github.com/stacksjs/dtsx/commit/e7c57ea)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#77](https://github.com/stacksjs/dtsx/issues/77), [#77](https://github.com/stacksjs/dtsx/issues/77))
+- **deps**: update stacksjs/action-releaser action to v1.2.7 (#75) ([7ab2e54](https://github.com/stacksjs/dtsx/commit/7ab2e54)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#75](https://github.com/stacksjs/dtsx/issues/75), [#75](https://github.com/stacksjs/dtsx/issues/75))
+- wip ([85e6a99](https://github.com/stacksjs/dtsx/commit/85e6a99)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.7...v0.9.8)
 
 ### 🧹 Chores
