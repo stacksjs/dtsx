@@ -119,14 +119,14 @@ jobs:
     if: ${{ needs.determine-jobs.outputs.run_check == 'true' || needs.determine-jobs.outputs.run_update == 'true' || needs.determine-jobs.outputs.run_dashboard == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0 # Fetch full history for rebasing
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
@@ -156,14 +156,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Install dependencies
         run: bun install
@@ -237,14 +237,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
@@ -346,12 +346,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.0.2
 
       - name: Install dependencies
         run: bun install
