@@ -23,6 +23,7 @@ describe('dts-generation', () => {
     '0009',
     '0010',
     '0011',
+    '0012',
   ]
 
   // List of all fixture files to test (excluding checker.ts which is too large)

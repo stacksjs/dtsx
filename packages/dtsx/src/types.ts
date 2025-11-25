@@ -16,6 +16,13 @@ export interface DtsGenerationConfig {
    * Output structure: 'mirror' to mirror src folders, 'flat' for flat output
    */
   outputStructure?: 'mirror' | 'flat'
+  /**
+   * Import order priority patterns. Imports matching earlier patterns appear first.
+   * Use 'bun', 'node:', or any string to match against the import source.
+   * @default ['bun']
+   * @example ['node:', 'bun', '@myorg/']
+   */
+  importOrder?: string[]
 }
 
 /**

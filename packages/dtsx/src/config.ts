@@ -12,6 +12,7 @@ export const defaultConfig: DtsGenerationConfig = {
   tsconfigPath: './tsconfig.json',
   outputStructure: 'mirror',
   verbose: false,
+  importOrder: ['bun'],
 }
 
 // Get loaded config

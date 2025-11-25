@@ -16,6 +16,7 @@ const defaultOptions: DtsGenerationConfig = {
   clean: false,
   tsconfigPath: 'tsconfig.json',
   verbose: false,
+  importOrder: ['bun'],
 }
 
 cli
@@ -31,8 +32,13 @@ cli
   .option('--clean', 'Clean output directory before generation', { default: defaultOptions.clean })
   .option('--tsconfig <path>', 'Path to tsconfig.json', { default: defaultOptions.tsconfigPath })
   .option('--verbose', 'Enable verbose logging', { default: defaultOptions.verbose })
+  .option('--import-order <patterns>', 'Import order priority patterns (comma-separated)', {
+    default: defaultOptions.importOrder?.join(','),
+    type: [String],
+  })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
+  .example('dtsx generate --import-order "node:,bun,@myorg/"')
   .action(async (options: DtsGenerationOption) => {
     try {
       const config: DtsGenerationConfig = {
@@ -44,6 +50,7 @@ cli
         keepComments: options.keepComments || defaultOptions.keepComments,
         clean: options.clean || defaultOptions.clean,
         verbose: options.verbose || defaultOptions.verbose,
+        importOrder: options.importOrder || defaultOptions.importOrder,
       }
 
       await generate(config)

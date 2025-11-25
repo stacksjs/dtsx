@@ -61,73 +61,6 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
     }
   }
 
-  // Common TypeScript built-in types that don't need to be imported
-  // const builtInTypes = new Set([
-  //   'string',
-  //   'number',
-  //   'boolean',
-  //   'object',
-  //   'any',
-  //   'unknown',
-  //   'never',
-  //   'void',
-  //   'undefined',
-  //   'null',
-  //   'Array',
-  //   'Promise',
-  //   'Record',
-  //   'Partial',
-  //   'Required',
-  //   'Pick',
-  //   'Omit',
-  //   'Exclude',
-  //   'Extract',
-  //   'NonNullable',
-  //   'ReturnType',
-  //   'Parameters',
-  //   'ConstructorParameters',
-  //   'InstanceType',
-  //   'ThisType',
-  //   'Function',
-  //   'Date',
-  //   'RegExp',
-  //   'Error',
-  //   'Map',
-  //   'Set',
-  //   'WeakMap',
-  //   'WeakSet',
-  // ])
-
-  // // Common generic type parameter names that should not be replaced
-  // const genericTypeParams = new Set([
-  //   'T',
-  //   'K',
-  //   'V',
-  //   'U',
-  //   'R',
-  //   'P',
-  //   'E',
-  //   'A',
-  //   'B',
-  //   'C',
-  //   'D',
-  //   'F',
-  //   'G',
-  //   'H',
-  //   'I',
-  //   'J',
-  //   'L',
-  //   'M',
-  //   'N',
-  //   'O',
-  //   'Q',
-  //   'S',
-  //   'W',
-  //   'X',
-  //   'Y',
-  //   'Z',
-  // ])
-
   // Extract all types that are actually defined in the DTS content itself
   // This catches types that weren't extracted but are still defined in the output
   const definedInDts = new Set<string>()
@@ -240,6 +173,7 @@ export function processDeclarations(
   declarations: Declaration[],
   context: ProcessingContext,
   keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
 ): string {
   const output: string[] = []
 
@@ -502,15 +436,24 @@ export function processDeclarations(
     }
   }
 
-  // Sort imports: type imports from 'bun' first, then others alphabetically
+  // Sort imports based on importOrder priority, then alphabetically
   processedImports.sort((a, b) => {
-    const aFromBun = a.includes('from \'bun\'')
-    const bFromBun = b.includes('from \'bun\'')
+    // Find the priority index for each import (-1 if not in priority list)
+    const getPriority = (imp: string): number => {
+      for (let i = 0; i < importOrder.length; i++) {
+        if (imp.includes(`from '${importOrder[i]}`) || imp.includes(`from "${importOrder[i]}`)) {
+          return i
+        }
+      }
+      return importOrder.length // Non-priority imports come last
+    }
 
-    if (aFromBun && !bFromBun)
-      return -1
-    if (!aFromBun && bFromBun)
-      return 1
+    const aPriority = getPriority(a)
+    const bPriority = getPriority(b)
+
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority
+    }
 
     return a.localeCompare(b)
   })
