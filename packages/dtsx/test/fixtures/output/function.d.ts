@@ -19,7 +19,6 @@ export declare function processData(data: string): string;
 export declare function processData(data: number): number;
 export declare function processData(data: boolean): boolean;
 export declare function processData<T extends object>(data: T): T;
-export declare function processData(data: unknown): unknown;
 // Complex Async Patterns -> due to isolatedDeclarations, we can assume the return type here
 export declare function complexAsyncGenerator(): any;
 // Type Assertions and Guards

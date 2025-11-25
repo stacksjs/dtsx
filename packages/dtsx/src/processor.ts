@@ -865,6 +865,12 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
 
+  // Check if this is a global augmentation (declare global { ... })
+  // The extractor already formats this correctly, so just use the text
+  if (decl.text.startsWith('declare global')) {
+    return comments + decl.text
+  }
+
   // Check if this is an ambient module (quoted name)
   const isAmbientModule = decl.source || (decl.name.startsWith('"') || decl.name.startsWith('\'') || decl.name.startsWith('`'))
 

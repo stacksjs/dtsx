@@ -3,7 +3,6 @@ export declare function complexOverload(value: string): string;
 export declare function complexOverload(value: number): number;
 export declare function complexOverload(value: boolean): boolean;
 export declare function complexOverload<T extends object>(value: T): T;
-export declare function complexOverload(value: any): any;
 // Async generator function
 export declare function asyncGenerator<T>(items: T[]): AsyncGenerator<T, void, unknown>;
 // Test edge cases for type inference

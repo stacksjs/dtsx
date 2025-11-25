@@ -234,6 +234,30 @@ function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode: strin
   if (!node.name)
     return null // Skip anonymous functions
 
+  // Skip implementation signatures for overloaded functions
+  // In TypeScript, overload declarations have no body, only the implementation does
+  // If this function has a body and there are overload declarations with the same name,
+  // we should skip it (only emit the overload declarations)
+  if (node.body) {
+    // This is an implementation signature - check if there are overload declarations
+    const funcName = node.name.getText()
+    let hasOverloads = false
+
+    // Look through sibling nodes for overload declarations
+    forEachChild(sourceFile, (sibling) => {
+      if (isFunctionDeclaration(sibling)
+        && sibling !== node
+        && sibling.name?.getText() === funcName
+        && !sibling.body) {
+        hasOverloads = true
+      }
+    })
+
+    if (hasOverloads) {
+      return null // Skip implementation, only overload declarations will be emitted
+    }
+  }
+
   const name = node.name.getText()
   const isExported = hasExportModifier(node)
   const isAsync = hasAsyncModifier(node)
@@ -836,6 +860,16 @@ function extractModuleDeclaration(node: ModuleDeclaration, sourceCode: string, s
  */
 function buildModuleDeclaration(node: ModuleDeclaration, isExported: boolean): string {
   let result = ''
+
+  // Check if this is a global augmentation (declare global { ... })
+  const isGlobalAugmentation = node.flags & NodeFlags.GlobalAugmentation
+
+  if (isGlobalAugmentation) {
+    // Global augmentation - output as "declare global"
+    result = 'declare global'
+    result += ` ${buildModuleBody(node)}`
+    return result
+  }
 
   // Add export if needed
   if (isExported) {
