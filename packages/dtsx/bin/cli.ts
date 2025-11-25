@@ -67,7 +67,18 @@ cli
         logLevel: (options.logLevel as LogLevel) ?? defaultOptions.logLevel,
       }
 
-      await generate(config)
+      const stats = await generate(config)
+
+      // Exit with appropriate code based on results
+      if (stats.filesFailed > 0 && stats.filesGenerated === 0) {
+        // All files failed
+        process.exit(1)
+      }
+      else if (stats.filesFailed > 0) {
+        // Some files failed (partial success)
+        process.exit(2)
+      }
+      // Success - exit code 0 (default)
     }
     catch (error) {
       console.error('Error generating .d.ts files:', error)
