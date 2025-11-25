@@ -65,6 +65,46 @@ function formatComments(comments: string[] | undefined, keepComments: boolean = 
 }
 
 /**
+ * Find the start of interface body, accounting for nested braces in generics
+ * Returns the index of the opening brace of the body, or -1 if not found
+ */
+function findInterfaceBodyStart(text: string): number {
+  let angleDepth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const prevChar = i > 0 ? text[i - 1] : ''
+
+    // Handle string literals
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      // Track angle brackets for generics
+      if (char === '<') {
+        angleDepth++
+      }
+      else if (char === '>') {
+        angleDepth--
+      }
+      // The body starts with { after all generics are closed
+      else if (char === '{' && angleDepth === 0) {
+        return i
+      }
+    }
+  }
+
+  return -1
+}
+
+/**
  * Replace unresolved types with 'any' in the DTS output
  */
 function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[], imports: Declaration[]): string {
@@ -216,10 +256,20 @@ function extractAllImportedItems(importText: string): string[] {
 
   const items: string[] = []
 
-  // Helper to clean import item names (trim first, then remove 'type ' prefix)
+  // Helper to clean import item names and extract alias if present
+  // For 'SomeType as AliasedType', returns 'AliasedType' (the local name used in code)
   const cleanImportItem = (item: string): string => {
-    const trimmed = item.trim()
-    return trimmed.startsWith('type ') ? trimmed.slice(5).trim() : trimmed
+    let trimmed = item.trim()
+    // Remove 'type ' prefix
+    if (trimmed.startsWith('type ')) {
+      trimmed = trimmed.slice(5).trim()
+    }
+    // Handle aliases: 'OriginalName as AliasName' -> 'AliasName'
+    const asIndex = trimmed.indexOf(' as ')
+    if (asIndex !== -1) {
+      return trimmed.slice(asIndex + 4).trim()
+    }
+    return trimmed
   }
 
   // Find 'from' keyword position
@@ -479,6 +529,13 @@ export function processDeclarations(
   // Create filtered imports based on actually used items
   const processedImports: string[] = []
   for (const imp of imports) {
+    // Preserve side-effect imports unconditionally (they may have type effects like reflect-metadata)
+    if (imp.isSideEffect) {
+      const sideEffectImport = imp.text.trim().endsWith(';') ? imp.text.trim() : `${imp.text.trim()};`
+      processedImports.push(sideEffectImport)
+      continue
+    }
+
     // Parse import using string operations to avoid regex backtracking
     const parsed = parseImportStatement(imp.text)
     if (!parsed) continue
@@ -488,7 +545,12 @@ export function processDeclarations(
     // Filter to only used items
     const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
     const usedNamed = namedItems.filter((item) => {
-      const cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
+      let cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
+      // For aliases 'OriginalName as AliasName', check if AliasName is used
+      const asIndex = cleanItem.indexOf(' as ')
+      if (asIndex !== -1) {
+        cleanItem = cleanItem.slice(asIndex + 4).trim()
+      }
       return usedImportItems.has(cleanItem)
     })
 
@@ -704,6 +766,16 @@ export function processInterfaceDeclaration(decl: Declaration, keepComments: boo
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
 
+  // The extractor already produces properly formatted interface declarations
+  // We just need to ensure proper export and declare keywords
+  let text = decl.text
+
+  // If the extractor's text already starts with proper keywords, use it
+  if (text.startsWith('export declare interface') || text.startsWith('declare interface')) {
+    return comments + text
+  }
+
+  // Otherwise build from components
   let result = ''
 
   // Add export if needed
@@ -727,10 +799,10 @@ export function processInterfaceDeclaration(decl: Declaration, keepComments: boo
     result += ` extends ${decl.extends}`
   }
 
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    result += ` ${bodyMatch[0]}`
+  // Find the body using balanced brace matching to handle nested braces in generics
+  const bodyStart = findInterfaceBodyStart(decl.text)
+  if (bodyStart !== -1) {
+    result += ` ${decl.text.slice(bodyStart)}`
   }
   else {
     result += ' {}'

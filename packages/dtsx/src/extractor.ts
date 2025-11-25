@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations, regexp/no-contradiction-with-assertion */
 import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, Modifier, ModuleDeclaration, Node, ParameterDeclaration, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from './types'
-import { createSourceFile, forEachChild, isArrayBindingPattern, isBindingElement, isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isIdentifier, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isObjectBindingPattern, isPropertyDeclaration, isPropertySignature, isStringLiteral, isTypeAliasDeclaration, isVariableStatement, NodeFlags, ScriptKind, ScriptTarget, SyntaxKind } from 'typescript'
+import { createSourceFile, forEachChild, isArrayBindingPattern, isBindingElement, isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isObjectBindingPattern, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isStringLiteral, isTypeAliasDeclaration, isVariableStatement, NodeFlags, ScriptKind, ScriptTarget, SyntaxKind } from 'typescript'
 
 /**
  * Cache for parsed SourceFile objects to avoid re-parsing
@@ -179,12 +179,16 @@ function extractImportDeclaration(node: ImportDeclaration, sourceCode: string): 
   const text = getNodeText(node, sourceCode)
   const isTypeOnly = !!(node.importClause?.isTypeOnly)
 
+  // Detect side-effect imports (no import clause, e.g., `import 'module'`)
+  const isSideEffectImport = !node.importClause
+
   return {
     kind: 'import',
     name: '', // Imports don't have a single name
     text,
     isExported: false,
     isTypeOnly,
+    isSideEffect: isSideEffectImport,
     source: node.moduleSpecifier.getText().slice(1, -1), // Remove quotes
     start: node.getStart(),
     end: node.getEnd(),
@@ -538,6 +542,16 @@ function getInterfaceBody(node: InterfaceDeclaration): string {
       const returnType = member.type?.getText() || 'any'
       members.push(`  new (${params}): ${returnType}`)
     }
+    else if (isIndexSignatureDeclaration(member)) {
+      // Index signature: [key: string]: T or [index: number]: T
+      const params = member.parameters.map((param) => {
+        const paramName = param.name.getText()
+        const paramType = param.type?.getText() || 'any'
+        return `${paramName}: ${paramType}`
+      }).join(', ')
+      const returnType = member.type?.getText() || 'any'
+      members.push(`  [${params}]: ${returnType}`)
+    }
   }
 
   return `{\n${members.join('\n')}\n}`
@@ -793,6 +807,56 @@ function buildClassBody(node: ClassDeclaration): string {
 
       const type = member.type?.getText() || 'any'
       signature += `: ${type};`
+
+      members.push(signature)
+    }
+    else if (isGetAccessorDeclaration(member)) {
+      // Get accessor declaration
+      const name = member.name?.getText() || ''
+      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
+
+      let signature = '  '
+      if (isStatic)
+        signature += 'static '
+      if (isAbstract)
+        signature += 'abstract '
+      if (isPrivate)
+        signature += 'private '
+      else if (isProtected)
+        signature += 'protected '
+
+      const returnType = member.type?.getText() || 'any'
+      signature += `get ${name}(): ${returnType};`
+
+      members.push(signature)
+    }
+    else if (isSetAccessorDeclaration(member)) {
+      // Set accessor declaration
+      const name = member.name?.getText() || ''
+      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
+      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
+      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
+
+      let signature = '  '
+      if (isStatic)
+        signature += 'static '
+      if (isAbstract)
+        signature += 'abstract '
+      if (isPrivate)
+        signature += 'private '
+      else if (isProtected)
+        signature += 'protected '
+
+      // Get parameter type from the setter's parameter
+      const param = member.parameters[0]
+      const paramType = param?.type?.getText() || 'any'
+      const paramName = param?.name?.getText() || 'value'
+
+      signature += `set ${name}(${paramName}: ${paramType});`
 
       members.push(signature)
     }

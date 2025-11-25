@@ -63,6 +63,7 @@ export interface Declaration {
   source?: string // for imports
   specifiers?: ImportSpecifier[] // for imports
   isTypeOnly?: boolean // for imports/exports
+  isSideEffect?: boolean // for side-effect imports like `import 'module'`
   isAsync?: boolean
   isGenerator?: boolean
   overloads?: string[] // for function overloads
