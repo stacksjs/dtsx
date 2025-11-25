@@ -23,6 +23,33 @@ export interface DtsGenerationConfig {
    * @example ['node:', 'bun', '@myorg/']
    */
   importOrder?: string[]
+  /**
+   * Dry run mode - show what would be generated without writing files
+   */
+  dryRun?: boolean
+  /**
+   * Show statistics after generation (files processed, declarations found, etc.)
+   */
+  stats?: boolean
+  /**
+   * Continue processing other files if one file fails
+   * @default false
+   */
+  continueOnError?: boolean
+}
+
+/**
+ * Generation statistics
+ */
+export interface GenerationStats {
+  filesProcessed: number
+  filesGenerated: number
+  filesFailed: number
+  declarationsFound: number
+  importsProcessed: number
+  exportsProcessed: number
+  durationMs: number
+  errors: Array<{ file: string, error: string }>
 }
 
 /**

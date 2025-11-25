@@ -6,7 +6,12 @@ import { pathToFileURL } from 'node:url'
 import { config } from './config'
 
 export async function writeToFile(filePath: string, content: string): Promise<void> {
-  await Bun.write(filePath, content)
+  // Normalize line endings to LF and ensure trailing newline
+  let normalized = content.replace(/\r\n/g, '\n')
+  if (!normalized.endsWith('\n')) {
+    normalized += '\n'
+  }
+  await Bun.write(filePath, normalized)
 }
 
 export async function getAllTypeScriptFiles(directory?: string): Promise<string[]> {

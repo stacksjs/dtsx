@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 
-import type { DtsGenerationConfig, ProcessingContext } from './types'
+import type { DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
@@ -12,8 +12,21 @@ import { writeToFile } from './utils'
 /**
  * Generate DTS files from TypeScript source files
  */
-export async function generate(options?: Partial<DtsGenerationConfig>): Promise<void> {
+export async function generate(options?: Partial<DtsGenerationConfig>): Promise<GenerationStats> {
+  const startTime = Date.now()
   const config = { ...defaultConfig, ...options }
+
+  // Statistics tracking
+  const stats: GenerationStats = {
+    filesProcessed: 0,
+    filesGenerated: 0,
+    filesFailed: 0,
+    declarationsFound: 0,
+    importsProcessed: 0,
+    exportsProcessed: 0,
+    durationMs: 0,
+    errors: [],
+  }
 
   // Log start if verbose
   if (config.verbose) {
@@ -32,27 +45,78 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   for (const file of files) {
     try {
       const outputPath = getOutputPath(file, config)
-      const dtsContent = await processFile(file, config)
+      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStats(file, config)
 
-      // Ensure output directory exists
-      await mkdir(dirname(outputPath), { recursive: true })
+      stats.filesProcessed++
+      stats.declarationsFound += declarationCount
+      stats.importsProcessed += importCount
+      stats.exportsProcessed += exportCount
 
-      // Write the DTS file
-      await writeToFile(outputPath, dtsContent)
+      if (config.dryRun) {
+        // Dry run - just show what would be generated
+        console.log(`[dry-run] Would generate: ${outputPath}`)
+        if (config.verbose) {
+          console.log('--- Content preview ---')
+          console.log(dtsContent.slice(0, 500) + (dtsContent.length > 500 ? '\n...' : ''))
+          console.log('--- End preview ---')
+        }
+      }
+      else {
+        // Ensure output directory exists
+        await mkdir(dirname(outputPath), { recursive: true })
 
-      if (config.verbose) {
-        console.log(`Generated: ${outputPath}`)
+        // Write the DTS file
+        await writeToFile(outputPath, dtsContent)
+        stats.filesGenerated++
+
+        if (config.verbose) {
+          console.log(`Generated: ${outputPath}`)
+        }
       }
     }
     catch (error) {
-      console.error(`Error processing ${file}:`, error)
-      throw error
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      stats.filesFailed++
+      stats.errors.push({ file, error: errorMessage })
+
+      if (config.continueOnError) {
+        console.error(`[warning] Error processing ${file}: ${errorMessage}`)
+      }
+      else {
+        console.error(`Error processing ${file}:`, error)
+        throw error
+      }
     }
+  }
+
+  stats.durationMs = Date.now() - startTime
+
+  // Show stats if enabled
+  if (config.stats) {
+    console.log('\n--- Generation Statistics ---')
+    console.log(`Files processed:     ${stats.filesProcessed}`)
+    console.log(`Files generated:     ${stats.filesGenerated}`)
+    if (stats.filesFailed > 0) {
+      console.log(`Files failed:        ${stats.filesFailed}`)
+    }
+    console.log(`Declarations found:  ${stats.declarationsFound}`)
+    console.log(`Imports processed:   ${stats.importsProcessed}`)
+    console.log(`Exports processed:   ${stats.exportsProcessed}`)
+    console.log(`Duration:            ${stats.durationMs}ms`)
+    if (stats.errors.length > 0) {
+      console.log('\nErrors:')
+      for (const { file, error } of stats.errors) {
+        console.log(`  - ${file}: ${error}`)
+      }
+    }
+    console.log('-----------------------------\n')
   }
 
   if (config.verbose) {
     console.log('DTS generation complete!')
   }
+
+  return stats
 }
 
 /**
@@ -118,11 +182,26 @@ export async function processFile(
   filePath: string,
   config: DtsGenerationConfig,
 ): Promise<string> {
+  const result = await processFileWithStats(filePath, config)
+  return result.content
+}
+
+/**
+ * Process a single TypeScript file and return DTS with statistics
+ */
+async function processFileWithStats(
+  filePath: string,
+  config: DtsGenerationConfig,
+): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
   const sourceCode = await readFile(filePath, 'utf-8')
 
   // Extract declarations
   const declarations = extractDeclarations(sourceCode, filePath, config.keepComments)
+
+  // Count imports and exports
+  const importCount = declarations.filter(d => d.kind === 'import').length
+  const exportCount = declarations.filter(d => d.kind === 'export' || d.isExported).length
 
   // Create processing context
   const context: ProcessingContext = {
@@ -137,5 +216,10 @@ export async function processFile(
   // Process declarations to generate DTS
   const dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
 
-  return dtsContent
+  return {
+    content: dtsContent,
+    declarationCount: declarations.length,
+    importCount,
+    exportCount,
+  }
 }

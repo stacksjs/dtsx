@@ -17,6 +17,9 @@ const defaultOptions: DtsGenerationConfig = {
   tsconfigPath: 'tsconfig.json',
   verbose: false,
   importOrder: ['bun'],
+  dryRun: false,
+  stats: false,
+  continueOnError: false,
 }
 
 cli
@@ -36,9 +39,13 @@ cli
     default: defaultOptions.importOrder?.join(','),
     type: [String],
   })
+  .option('--dry-run', 'Show what would be generated without writing files', { default: defaultOptions.dryRun })
+  .option('--stats', 'Show statistics after generation', { default: defaultOptions.stats })
+  .option('--continue-on-error', 'Continue processing other files if one fails', { default: defaultOptions.continueOnError })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
+  .example('dtsx generate --dry-run --stats')
   .action(async (options: DtsGenerationOption) => {
     try {
       const config: DtsGenerationConfig = {
@@ -47,10 +54,13 @@ cli
         root: resolve(options.root || defaultOptions.root),
         outdir: resolve(options.outdir || defaultOptions.outdir),
         tsconfigPath: resolve(options.tsconfigPath || defaultOptions.tsconfigPath),
-        keepComments: options.keepComments || defaultOptions.keepComments,
-        clean: options.clean || defaultOptions.clean,
-        verbose: options.verbose || defaultOptions.verbose,
+        keepComments: options.keepComments ?? defaultOptions.keepComments,
+        clean: options.clean ?? defaultOptions.clean,
+        verbose: options.verbose ?? defaultOptions.verbose,
         importOrder: options.importOrder || defaultOptions.importOrder,
+        dryRun: options.dryRun ?? defaultOptions.dryRun,
+        stats: options.stats ?? defaultOptions.stats,
+        continueOnError: options.continueOnError ?? defaultOptions.continueOnError,
       }
 
       await generate(config)

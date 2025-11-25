@@ -1,9 +1,15 @@
-import { and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter,  } from './_namespaces/ts.js';
+import { and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter } from './_namespaces/ts.js';
+/** @internal */
 export declare function getNodeId(node: Node): number;
+/** @internal */
 export declare function getSymbolId(symbol: Symbol): SymbolId;
+/** @internal */
 export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): void;
+/** @internal */
 export declare function createTypeChecker(host: TypeCheckerHost): TypeChecker;
+/** @internal */
 export declare function signatureHasRestParameter(s: Signature): void;
+/** @internal */
 export declare function signatureHasLiteralTypes(s: Signature): void;
 declare interface NodeBuilderContext {
   enclosingDeclaration: Node | undefined
@@ -32,6 +38,7 @@ declare interface NodeBuilderContext {
   mapper: TypeMapper | undefined
 }
 declare type TypeSystemEntity = Node | Symbol | Type | Signature
+/** @param containingNode Node to check for parse error */
 declare type AddUnusedDiagnostic = (containingNode: Node, type: UnusedKind, diagnostic: DiagnosticWithLocation) => void
 declare class SymbolTrackerImpl implements SymbolTracker {
   moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined;
@@ -98,6 +105,7 @@ declare const enum WideningKind {
     GeneratorNext,
     GeneratorYield,
 }
+/** @internal */
 export declare const enum TypeFacts {
     None = 0,
     TypeofEQString = 1 << 0,      // typeof x === "string"
@@ -191,6 +199,7 @@ declare const enum TypeSystemPropertyName {
     WriteType,
     ParameterInitializerContainsUndefined,
 }
+/** @internal */
 export declare const enum CheckMode {
     Normal = 0,                                     // Normal type checking
     Contextual = 1 << 0,                            // Explicitly assigned contextual type, therefore not cacheable
@@ -203,6 +212,7 @@ export declare const enum CheckMode {
                                                     //   we need to preserve generic types instead of substituting them for constraints
     TypeOnly = 1 << 6,                              // Called from getTypeOfExpression, diagnostics may be omitted
 }
+/** @internal */
 export declare const enum SignatureCheckMode {
     None = 0,
     BivariantCallback = 1 << 0,

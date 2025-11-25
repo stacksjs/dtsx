@@ -1,4 +1,4 @@
-import type { DtsGenerationOption } from '@stacksjs/dtsx'
+import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
 import process from 'node:process'
 import { generate } from '@stacksjs/dtsx'
@@ -6,13 +6,29 @@ import { generate } from '@stacksjs/dtsx'
 /**
  * Configuration interface extending DtsGenerationOption with build-specific properties
  */
-interface PluginConfig extends DtsGenerationOption {
+export interface PluginConfig extends DtsGenerationOption {
   build?: {
     config: {
       root?: string
       outdir?: string
     }
   }
+
+  /**
+   * Callback after successful generation
+   */
+  onSuccess?: (stats: GenerationStats) => void | Promise<void>
+
+  /**
+   * Callback on generation error
+   */
+  onError?: (error: Error) => void | Promise<void>
+
+  /**
+   * Whether to fail the build on generation error
+   * @default true
+   */
+  failOnError?: boolean
 }
 
 /**
@@ -21,12 +37,34 @@ interface PluginConfig extends DtsGenerationOption {
  * @returns BunPlugin instance
  */
 export function dts(options: PluginConfig = {}): BunPlugin {
+  const { onSuccess, onError, failOnError = true, ...dtsOptions } = options
+
   return {
     name: 'bun-plugin-dtsx',
 
     async setup(build) {
-      const config = normalizeConfig(options, build)
-      await generate(config)
+      try {
+        const config = normalizeConfig(dtsOptions, build)
+        const stats = await generate(config)
+
+        if (onSuccess) {
+          await onSuccess(stats)
+        }
+      }
+      catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+
+        if (onError) {
+          await onError(err)
+        }
+        else {
+          console.error('[bun-plugin-dtsx] Error generating declarations:', err.message)
+        }
+
+        if (failOnError) {
+          throw err
+        }
+      }
     },
   }
 }
@@ -56,6 +94,6 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
   }
 }
 
-export type { DtsGenerationOption }
+export type { DtsGenerationOption, GenerationStats }
 
 export default dts

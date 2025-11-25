@@ -26,7 +26,7 @@ describe('dts-generation', () => {
     '0012',
   ]
 
-  // List of all fixture files to test (excluding checker.ts which is too large)
+  // List of all fixture files to test
   const fixtures = [
     'abseil.io',
     'class',
@@ -42,6 +42,11 @@ describe('dts-generation', () => {
     'type',
     'type-interface-imports',
     'variable',
+  ]
+
+  // Large fixture files (slower tests)
+  const largeFixtures = [
+    'checker',
   ]
 
   // Generate a test for each example file
@@ -88,6 +93,29 @@ describe('dts-generation', () => {
 
       expect(generatedContent).toBe(expectedContent)
     })
+  })
+
+  // Generate a test for each large fixture file (slower tests)
+  largeFixtures.forEach((fixture) => {
+    it(`should properly generate types for large fixture ${fixture}`, async () => {
+      const config: DtsGenerationOption = {
+        entrypoints: [join(inputDir, `${fixture}.ts`)],
+        outdir: generatedDir,
+        clean: false,
+        tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+        outputStructure: 'flat',
+      }
+
+      await generate(config)
+
+      const outputPath = join(outputDir, `${fixture}.d.ts`)
+      const generatedPath = join(generatedDir, `${fixture}.d.ts`)
+
+      const expectedContent = await Bun.file(outputPath).text()
+      const generatedContent = await Bun.file(generatedPath).text()
+
+      expect(generatedContent).toBe(expectedContent)
+    }, 30000) // 30 second timeout for large files
   })
 
   afterEach(async () => {
