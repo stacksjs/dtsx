@@ -44,6 +44,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   logger.debug(`Found ${files.length} TypeScript files`)
 
+  // Show initial progress if enabled
+  if (config.progress && files.length > 0) {
+    logger.info(`Processing ${files.length} files...`)
+  }
+
   // Process each file
   for (const file of files) {
     try {
@@ -54,6 +59,12 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       stats.declarationsFound += declarationCount
       stats.importsProcessed += importCount
       stats.exportsProcessed += exportCount
+
+      // Show progress
+      if (config.progress) {
+        const percent = Math.round((stats.filesProcessed / files.length) * 100)
+        logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)}`)
+      }
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
@@ -92,23 +103,30 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Show stats if enabled
   if (config.stats) {
-    logger.info('\n--- Generation Statistics ---')
-    logger.info(`Files processed:     ${stats.filesProcessed}`)
-    logger.info(`Files generated:     ${stats.filesGenerated}`)
-    if (stats.filesFailed > 0) {
-      logger.info(`Files failed:        ${stats.filesFailed}`)
+    if (config.outputFormat === 'json') {
+      // JSON output for machine consumption
+      console.log(JSON.stringify(stats, null, 2))
     }
-    logger.info(`Declarations found:  ${stats.declarationsFound}`)
-    logger.info(`Imports processed:   ${stats.importsProcessed}`)
-    logger.info(`Exports processed:   ${stats.exportsProcessed}`)
-    logger.info(`Duration:            ${stats.durationMs}ms`)
-    if (stats.errors.length > 0) {
-      logger.info('\nErrors:')
-      for (const { file, error } of stats.errors) {
-        logger.info(`  - ${file}: ${error}`)
+    else {
+      // Human-readable output
+      logger.info('\n--- Generation Statistics ---')
+      logger.info(`Files processed:     ${stats.filesProcessed}`)
+      logger.info(`Files generated:     ${stats.filesGenerated}`)
+      if (stats.filesFailed > 0) {
+        logger.info(`Files failed:        ${stats.filesFailed}`)
       }
+      logger.info(`Declarations found:  ${stats.declarationsFound}`)
+      logger.info(`Imports processed:   ${stats.importsProcessed}`)
+      logger.info(`Exports processed:   ${stats.exportsProcessed}`)
+      logger.info(`Duration:            ${stats.durationMs}ms`)
+      if (stats.errors.length > 0) {
+        logger.info('\nErrors:')
+        for (const { file, error } of stats.errors) {
+          logger.info(`  - ${file}: ${error}`)
+        }
+      }
+      logger.info('-----------------------------\n')
     }
-    logger.info('-----------------------------\n')
   }
 
   logger.debug('DTS generation complete!')
@@ -117,18 +135,41 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 }
 
 /**
+ * Check if a file matches any of the exclude patterns
+ */
+function isExcluded(filePath: string, excludePatterns: string[], rootPath: string): boolean {
+  if (!excludePatterns || excludePatterns.length === 0) {
+    return false
+  }
+
+  const relativePath = relative(rootPath, filePath)
+
+  for (const pattern of excludePatterns) {
+    const glob = new Glob(pattern)
+    if (glob.match(relativePath) || glob.match(filePath)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
  * Find all TypeScript files matching the entrypoints patterns
  */
 async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
   const files: string[] = []
   const rootPath = resolve(config.cwd, config.root)
+  const excludePatterns = config.exclude || []
 
   for (const pattern of config.entrypoints) {
     // Check if pattern is an absolute path to a specific file
     if (pattern.startsWith('/') && pattern.endsWith('.ts')) {
       // It's an absolute file path
       if (!pattern.endsWith('.d.ts') && !pattern.includes('node_modules')) {
-        files.push(pattern)
+        if (!isExcluded(pattern, excludePatterns, rootPath)) {
+          files.push(pattern)
+        }
       }
     }
     else {
@@ -141,9 +182,11 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
         absolute: true,
         onlyFiles: true,
       })) {
-        // Skip .d.ts files and node_modules
+        // Skip .d.ts files, node_modules, and excluded patterns
         if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
-          files.push(file)
+          if (!isExcluded(file, excludePatterns, rootPath)) {
+            files.push(file)
+          }
         }
       }
     }

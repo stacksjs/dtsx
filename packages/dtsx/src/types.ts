@@ -41,6 +41,21 @@ export interface DtsGenerationConfig {
    * @default 'info'
    */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'silent'
+  /**
+   * Glob patterns to exclude from processing
+   * @example ['**\/*.test.ts', '**\/__tests__/**']
+   */
+  exclude?: string[]
+  /**
+   * Output format: 'text' for human-readable, 'json' for machine-readable
+   * @default 'text'
+   */
+  outputFormat?: 'text' | 'json'
+  /**
+   * Show progress during generation (file count)
+   * @default false
+   */
+  progress?: boolean
 }
 
 /**

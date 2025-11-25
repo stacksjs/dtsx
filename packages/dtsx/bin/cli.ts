@@ -22,6 +22,9 @@ const defaultOptions: DtsGenerationConfig = {
   stats: false,
   continueOnError: false,
   logLevel: 'info',
+  exclude: [],
+  outputFormat: 'text',
+  progress: false,
 }
 
 cli
@@ -45,10 +48,18 @@ cli
   .option('--stats', 'Show statistics after generation', { default: defaultOptions.stats })
   .option('--continue-on-error', 'Continue processing other files if one fails', { default: defaultOptions.continueOnError })
   .option('--log-level <level>', 'Log level (debug, info, warn, error, silent)', { default: defaultOptions.logLevel })
+  .option('--exclude <patterns>', 'Glob patterns to exclude (comma-separated)', {
+    default: defaultOptions.exclude?.join(','),
+    type: [String],
+  })
+  .option('--output-format <format>', 'Output format: text or json', { default: defaultOptions.outputFormat })
+  .option('--progress', 'Show progress during generation', { default: defaultOptions.progress })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
   .example('dtsx generate --dry-run --stats')
+  .example('dtsx generate --exclude "**/*.test.ts,**/__tests__/**"')
+  .example('dtsx generate --stats --output-format json')
   .action(async (options: DtsGenerationOption) => {
     try {
       const config: DtsGenerationConfig = {
@@ -65,6 +76,9 @@ cli
         stats: options.stats ?? defaultOptions.stats,
         continueOnError: options.continueOnError ?? defaultOptions.continueOnError,
         logLevel: (options.logLevel as LogLevel) ?? defaultOptions.logLevel,
+        exclude: options.exclude ? options.exclude.flatMap((p: string) => p.split(',').map(s => s.trim()).filter(Boolean)) : defaultOptions.exclude,
+        outputFormat: (options.outputFormat as 'text' | 'json') ?? defaultOptions.outputFormat,
+        progress: options.progress ?? defaultOptions.progress,
       }
 
       const stats = await generate(config)
