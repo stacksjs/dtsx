@@ -53,7 +53,7 @@
 
 - [ ] **Avoid double-parsing** - `parser.ts` and `extractor.ts` both parse similar constructs. Consolidate into a single AST-based approach.
 
-- [ ] **Lazy comment extraction** - `extractJSDocComments()` is called even when `keepComments=false`. Short-circuit early.
+- [x] **Lazy comment extraction** - `extractJSDocComments()` is called even when `keepComments=false`. Short-circuit early. ✅ Already implemented
 
 - [ ] **Reduce regex backtracking** - Multiple regexes in `processor.ts` have super-linear backtracking (noted by eslint-disable comments). Rewrite with non-backtracking patterns.
 
@@ -65,12 +65,11 @@
 
 - [ ] **Conditional types with `infer`** - Currently handled but may not preserve complex nested infer patterns correctly.
 
-- [ ] **Template literal types** - `inferTemplateLiteralType()` returns `string` for complex cases. Should preserve template literal type syntax.
+- [x] **Template literal types** - `inferTemplateLiteralType()` returns `string` for complex cases. Should preserve template literal type syntax. ✅ Working correctly
 
   ```typescript
   // Input: type Route = `/${string}/${number}`
-  // Current output: string
-  // Expected: `/${string}/${number}`
+  // Output: `/${string}/${number}` (preserved correctly)
   ```
 
 - [ ] **Mapped type modifiers** - Ensure `+readonly`, `-readonly`, `+?`, `-?` modifiers are preserved.
@@ -97,7 +96,7 @@
 
 - [ ] **Global augmentations** - `declare global { }` blocks.
 
-- [ ] **Triple-slash directives** - `/// <reference types="..." />` should be preserved.
+- [x] **Triple-slash directives** - `/// <reference types="..." />` should be preserved. ✅ Implemented in `extractTripleSlashDirectives()`
 
 - [ ] **`declare const enum`** - Ensure const enums are properly emitted.
 
@@ -131,19 +130,19 @@
 
 ### Bug Fixes
 
-- [ ] **Duplicate `declare` keywords** - Some outputs may have `export declare declare`. Add deduplication.
+- [x] **Duplicate `declare` keywords** - Some outputs may have `export declare declare`. Add deduplication. ✅ Not an issue (verified)
 
-- [ ] **Missing semicolons** - Inconsistent semicolon handling in various declaration types.
+- [x] **Missing semicolons** - Inconsistent semicolon handling in various declaration types. ✅ Fixed in `processTypeDeclaration()`
 
-- [ ] **Import alias handling** - `import { X as Y }` aliases may not be tracked correctly through re-exports.
+- [x] **Import alias handling** - `import { X as Y }` aliases may not be tracked correctly through re-exports. ✅ Working correctly
 
 - [ ] **Type-only vs value imports** - `import type` vs `import` distinction needs more robust handling for re-exports.
 
 - [ ] **Circular type references** - No detection or handling of circular type dependencies.
 
-- [ ] **Generic constraint preservation** - Ensure `<T extends U>` constraints are fully preserved.
+- [x] **Generic constraint preservation** - Ensure `<T extends U>` constraints are fully preserved. ✅ Working correctly
 
-- [ ] **Default type parameters** - `<T = DefaultType>` may not be handled correctly.
+- [x] **Default type parameters** - `<T = DefaultType>` may not be handled correctly. ✅ Working correctly
 
 ### Type Inference Improvements
 
@@ -198,13 +197,13 @@
 
 - [ ] **Strict null checks** - Ensure all optional chaining is necessary and correct.
 
-- [ ] **Exhaustive switch statements** - Add `never` checks to all switch statements for declaration kinds.
+- [x] **Exhaustive switch statements** - Add `never` checks to all switch statements for declaration kinds. ✅ Added `assertNever()` helper and exhaustive checks
 
 - [ ] **Branded types** - Consider using branded types for file paths, source code strings, etc.
 
 ### Testing
 
-- [ ] **Add missing test for example 0012** - Test file exists but not in test array.
+- [x] **Add missing test for example 0012** - Test file exists but not in test array. ✅ Already included
 
 - [ ] **Add `checker.ts` test** - Large file excluded from tests, should have coverage.
 
@@ -226,7 +225,7 @@
 
 - [ ] **Custom type mappings** - Allow users to specify type replacements.
 
-- [ ] **Exclude patterns** - Add glob patterns for excluding files.
+- [x] **Exclude patterns** - Add glob patterns for excluding files. ✅ Implemented `--exclude` CLI option
 
 - [ ] **Include patterns** - More granular control over what gets processed.
 
@@ -252,7 +251,7 @@
 
 - [ ] **Better error messages** - Include file location and context in errors.
 
-- [ ] **Progress reporting** - Show progress for large codebases.
+- [x] **Progress reporting** - Show progress for large codebases. ✅ Implemented `--progress` CLI option
 
 - [ ] **Diff output** - Show what changed between generations.
 
@@ -303,13 +302,13 @@ Based on code analysis, these are the likely bottlenecks:
 
 ## 🎯 Quick Wins (Low Effort, High Impact)
 
-1. [ ] Cache compiled RegExp patterns
-2. [ ] Add early return in `formatComments()` when `keepComments=false`
-3. [ ] Fix duplicate `declare` keyword issue
-4. [ ] Add example 0012 to test suite
-5. [ ] Remove commented-out code blocks in `processor.ts` (lines 40-104)
-6. [ ] Add `--version` flag to CLI (partially implemented)
-7. [ ] Fix import sorting to be configurable
+1. [x] Cache compiled RegExp patterns ✅ Implemented in `processor/cache.ts`
+2. [x] Add early return in `formatComments()` when `keepComments=false` ✅ Already implemented
+3. [x] Fix duplicate `declare` keyword issue ✅ Not an issue (verified)
+4. [x] Add example 0012 to test suite ✅ Already included
+5. [x] Remove commented-out code blocks in `processor.ts` ✅ Code is clean
+6. [x] Add `--version` flag to CLI ✅ Working
+7. [x] Fix import sorting to be configurable ✅ `--import-order` option exists
 
 ---
 
@@ -416,27 +415,27 @@ These files have eslint-disable comments indicating known issues:
 
 - [ ] **`generator.ts`** - `no-console` (should use proper logging)
 
-- [ ] **`utils.ts`** - `unused-imports/no-unused-vars` (error variable not used)
+- [x] **`utils.ts`** - `unused-imports/no-unused-vars` (error variable not used) ✅ Fixed with empty catch
 
 ---
 
 ## 🔸 CLI Improvements
 
-- [ ] **`--help` improvements** - Add examples for each command.
+- [x] **`--help` improvements** - Add examples for each command. ✅ Examples added
 
-- [ ] **`--dry-run` flag** - Show what would be generated without writing files.
+- [x] **`--dry-run` flag** - Show what would be generated without writing files. ✅ Implemented
 
-- [ ] **`--diff` flag** - Show differences from existing .d.ts files.
+- [x] **`--diff` flag** - Show differences from existing .d.ts files. ✅ Implemented
 
 - [ ] **`--validate` flag** - Validate generated .d.ts against TypeScript compiler.
 
-- [ ] **`--stats` flag** - Show statistics (files processed, declarations found, etc.).
+- [x] **`--stats` flag** - Show statistics (files processed, declarations found, etc.). ✅ Implemented
 
-- [ ] **Exit codes** - Proper exit codes for different error conditions.
+- [x] **Exit codes** - Proper exit codes for different error conditions. ✅ 0=success, 1=all failed, 2=partial
 
 - [ ] **Stdin support** - Accept TypeScript code from stdin.
 
-- [ ] **JSON output** - `--format json` for programmatic consumption.
+- [x] **JSON output** - `--format json` for programmatic consumption. ✅ `--output-format json`
 
 - [ ] **Parallel processing** - `--parallel` flag for multi-file processing.
 
@@ -481,7 +480,7 @@ Based on test fixtures analysis:
 
 ## 🧪 Test Coverage Gaps
 
-- [ ] **Example 0012** - Test file exists in fixtures but not in test array.
+- [x] **Example 0012** - Test file exists in fixtures but not in test array. ✅ Already included
 
 - [ ] **`checker.ts`** - Large fixture file excluded from tests.
 
@@ -537,7 +536,7 @@ Based on test fixtures analysis:
 
 - [ ] **Timeout handling** - Add configurable timeout for processing.
 
-- [ ] **Graceful degradation** - Continue processing other files if one fails.
+- [x] **Graceful degradation** - Continue processing other files if one fails. ✅ `--continue-on-error` option
 
 ---
 
@@ -549,5 +548,5 @@ Based on test fixtures analysis:
 
 ---
 
-*Last updated: November 2025*
+*Last updated: November 25, 2025*
 *Generated from codebase analysis of dtsx v0.9.9*

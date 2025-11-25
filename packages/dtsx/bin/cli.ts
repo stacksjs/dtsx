@@ -25,6 +25,7 @@ const defaultOptions: DtsGenerationConfig = {
   exclude: [],
   outputFormat: 'text',
   progress: false,
+  diff: false,
 }
 
 cli
@@ -54,6 +55,7 @@ cli
   })
   .option('--output-format <format>', 'Output format: text or json', { default: defaultOptions.outputFormat })
   .option('--progress', 'Show progress during generation', { default: defaultOptions.progress })
+  .option('--diff', 'Show diff of changes compared to existing files', { default: defaultOptions.diff })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -79,6 +81,7 @@ cli
         exclude: options.exclude ? options.exclude.flatMap((p: string) => p.split(',').map(s => s.trim()).filter(Boolean)) : defaultOptions.exclude,
         outputFormat: (options.outputFormat as 'text' | 'json') ?? defaultOptions.outputFormat,
         progress: options.progress ?? defaultOptions.progress,
+        diff: options.diff ?? defaultOptions.diff,
       }
 
       const stats = await generate(config)

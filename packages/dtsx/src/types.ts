@@ -56,6 +56,11 @@ export interface DtsGenerationConfig {
    * @default false
    */
   progress?: boolean
+  /**
+   * Show diff of changes compared to existing .d.ts files
+   * @default false
+   */
+  diff?: boolean
 }
 
 /**

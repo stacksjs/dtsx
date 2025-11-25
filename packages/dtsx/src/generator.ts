@@ -6,7 +6,7 @@ import { config as defaultConfig } from './config'
 import { extractDeclarations } from './extractor'
 import { logger, setLogLevel } from './logger'
 import { processDeclarations } from './processor'
-import { writeToFile } from './utils'
+import { createDiff, writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -74,6 +74,24 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         logger.debug('--- End preview ---')
       }
       else {
+        // Show diff if enabled
+        if (config.diff) {
+          try {
+            const existingContent = await readFile(outputPath, 'utf-8')
+            const diffOutput = createDiff(existingContent, dtsContent, relative(config.cwd, outputPath))
+            if (diffOutput) {
+              logger.info(`\n${diffOutput}`)
+            }
+            else {
+              logger.debug(`[no changes] ${outputPath}`)
+            }
+          }
+          catch {
+            // File doesn't exist yet, show as new file
+            logger.info(`[new file] ${relative(config.cwd, outputPath)}`)
+          }
+        }
+
         // Ensure output directory exists
         await mkdir(dirname(outputPath), { recursive: true })
 

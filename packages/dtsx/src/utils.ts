@@ -84,6 +84,39 @@ export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): 
   }
 }
 
+/**
+ * Simple line-by-line diff between two strings
+ * Returns formatted diff output with +/- prefixes
+ */
+export function createDiff(oldContent: string, newContent: string, filename: string): string {
+  const oldLines = oldContent.split('\n')
+  const newLines = newContent.split('\n')
+
+  // Simple diff: find added and removed lines
+  const oldSet = new Set(oldLines)
+  const newSet = new Set(newLines)
+
+  const removed = oldLines.filter(line => !newSet.has(line))
+  const added = newLines.filter(line => !oldSet.has(line))
+
+  if (removed.length === 0 && added.length === 0) {
+    return '' // No changes
+  }
+
+  const output: string[] = []
+  output.push(`--- ${filename}`)
+  output.push(`+++ ${filename}`)
+
+  for (const line of removed) {
+    output.push(`- ${line}`)
+  }
+  for (const line of added) {
+    output.push(`+ ${line}`)
+  }
+
+  return output.join('\n')
+}
+
 function makeAbsolute(basePath: string, configPath: string): string {
   // If it's already absolute, return as is
   if (isAbsolute(configPath)) {
