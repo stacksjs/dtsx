@@ -4,13 +4,62 @@ import type { Declaration } from './types'
 import { createSourceFile, forEachChild, isArrayBindingPattern, isBindingElement, isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isIdentifier, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isObjectBindingPattern, isPropertyDeclaration, isPropertySignature, isStringLiteral, isTypeAliasDeclaration, isVariableStatement, NodeFlags, ScriptKind, ScriptTarget, SyntaxKind } from 'typescript'
 
 /**
- * Extract only public API declarations from TypeScript source code
- * This focuses on what should be in .d.ts files, not implementation details
+ * Cache for parsed SourceFile objects to avoid re-parsing
+ * Key: filePath, Value: { sourceFile, contentHash, lastAccess }
  */
-export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
-  const declarations: Declaration[] = []
+const sourceFileCache = new Map<string, { sourceFile: SourceFile, contentHash: number, lastAccess: number }>()
 
-  // Create TypeScript source file
+/**
+ * Maximum number of cached SourceFiles to prevent memory bloat
+ */
+const MAX_CACHE_SIZE = 100
+
+/**
+ * Simple hash function for content comparison
+ */
+function hashContent(content: string): number {
+  let hash = 0
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  return hash
+}
+
+/**
+ * Evict oldest entries if cache exceeds max size
+ */
+function evictOldestEntries(): void {
+  if (sourceFileCache.size <= MAX_CACHE_SIZE) {
+    return
+  }
+
+  // Sort by last access time and remove oldest entries
+  const entries = Array.from(sourceFileCache.entries())
+    .sort((a, b) => a[1].lastAccess - b[1].lastAccess)
+
+  const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE)
+  for (const [key] of toRemove) {
+    sourceFileCache.delete(key)
+  }
+}
+
+/**
+ * Get or create a cached SourceFile
+ */
+function getSourceFile(filePath: string, sourceCode: string): SourceFile {
+  const contentHash = hashContent(sourceCode)
+  const cached = sourceFileCache.get(filePath)
+  const now = Date.now()
+
+  if (cached && cached.contentHash === contentHash) {
+    // Update last access time
+    cached.lastAccess = now
+    return cached.sourceFile
+  }
+
+  // Create new SourceFile and cache it
   const sourceFile = createSourceFile(
     filePath,
     sourceCode,
@@ -18,6 +67,38 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
     true,
     ScriptKind.TS,
   )
+
+  sourceFileCache.set(filePath, { sourceFile, contentHash, lastAccess: now })
+
+  // Evict old entries if needed
+  evictOldestEntries()
+
+  return sourceFile
+}
+
+/**
+ * Clear the SourceFile cache (useful for testing or memory management)
+ */
+export function clearSourceFileCache(): void {
+  sourceFileCache.clear()
+}
+
+/**
+ * Get the current cache size (useful for debugging)
+ */
+export function getSourceFileCacheSize(): number {
+  return sourceFileCache.size
+}
+
+/**
+ * Extract only public API declarations from TypeScript source code
+ * This focuses on what should be in .d.ts files, not implementation details
+ */
+export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
+  const declarations: Declaration[] = []
+
+  // Get or create cached TypeScript source file
+  const sourceFile = getSourceFile(filePath, sourceCode)
 
   // Visit only top-level declarations
   function visitTopLevel(node: Node) {

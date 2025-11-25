@@ -1,5 +1,11 @@
-/* eslint-disable regexp/no-super-linear-backtracking, regexp/no-misleading-capturing-group, regexp/optimal-quantifier-concatenation, regexp/no-unused-capturing-group */
+/* eslint-disable regexp/no-super-linear-backtracking, regexp/optimal-quantifier-concatenation, regexp/no-unused-capturing-group */
 import type { Declaration, ProcessingContext } from './types'
+
+/**
+ * Maximum cache sizes to prevent memory bloat
+ */
+const MAX_REGEX_CACHE_SIZE = 500
+const MAX_IMPORT_CACHE_SIZE = 200
 
 /**
  * Cache for compiled RegExp patterns to avoid recreation in loops
@@ -16,6 +22,14 @@ function getCachedRegex(pattern: string): RegExp {
     const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     cached = new RegExp(`\\b${escaped}\\b`)
     regexCache.set(pattern, cached)
+
+    // Evict oldest entries if cache is too large
+    if (regexCache.size > MAX_REGEX_CACHE_SIZE) {
+      const firstKey = regexCache.keys().next().value
+      if (firstKey) {
+        regexCache.delete(firstKey)
+      }
+    }
   }
   return cached
 }
@@ -25,6 +39,14 @@ function getCachedRegex(pattern: string): RegExp {
  * Key: import text, Value: array of imported items
  */
 const importItemsCache = new Map<string, string[]>()
+
+/**
+ * Clear processor caches (useful for testing or memory management)
+ */
+export function clearProcessorCaches(): void {
+  regexCache.clear()
+  importItemsCache.clear()
+}
 
 /**
  * Format comments for DTS output
@@ -119,7 +141,71 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
 }
 
 /**
+ * Parse an import statement into its components using string operations
+ * Avoids regex backtracking issues
+ */
+function parseImportStatement(importText: string): {
+  defaultName: string | null
+  namedItems: string[]
+  source: string
+  isTypeOnly: boolean
+} | null {
+  // Find 'from' and extract source
+  const fromIndex = importText.indexOf(' from ')
+  if (fromIndex === -1) return null
+
+  // Extract source (between quotes after 'from')
+  const afterFrom = importText.slice(fromIndex + 6).trim()
+  const quoteChar = afterFrom[0]
+  if (quoteChar !== '"' && quoteChar !== '\'') return null
+
+  const endQuote = afterFrom.indexOf(quoteChar, 1)
+  if (endQuote === -1) return null
+
+  const source = afterFrom.slice(1, endQuote)
+
+  // Parse the import part (before 'from')
+  let importPart = importText.slice(0, fromIndex).trim()
+
+  // Check for 'import type'
+  const isTypeOnly = importPart.startsWith('import type ')
+  if (importPart.startsWith('import ')) {
+    importPart = importPart.slice(7).trim()
+  }
+  if (importPart.startsWith('type ')) {
+    importPart = importPart.slice(5).trim()
+  }
+
+  let defaultName: string | null = null
+  const namedItems: string[] = []
+
+  // Check for braces (named imports)
+  const braceStart = importPart.indexOf('{')
+  const braceEnd = importPart.lastIndexOf('}')
+
+  if (braceStart !== -1 && braceEnd !== -1) {
+    // Check for default import before braces
+    const beforeBrace = importPart.slice(0, braceStart).trim()
+    if (beforeBrace.endsWith(',')) {
+      defaultName = beforeBrace.slice(0, -1).trim() || null
+    }
+
+    // Extract named imports
+    const namedPart = importPart.slice(braceStart + 1, braceEnd)
+    const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
+    namedItems.push(...items)
+  }
+  else {
+    // Default import only
+    defaultName = importPart.trim() || null
+  }
+
+  return { defaultName, namedItems, source, isTypeOnly }
+}
+
+/**
  * Extract all imported items from an import statement (with caching)
+ * Uses simple string operations to avoid regex backtracking
  */
 function extractAllImportedItems(importText: string): string[] {
   // Check cache first
@@ -131,38 +217,71 @@ function extractAllImportedItems(importText: string): string[] {
   const items: string[] = []
 
   // Helper to clean import item names (trim first, then remove 'type ' prefix)
-  const cleanImportItem = (item: string): string => item.trim().replace(/^type\s+/, '').trim()
+  const cleanImportItem = (item: string): string => {
+    const trimmed = item.trim()
+    return trimmed.startsWith('type ') ? trimmed.slice(5).trim() : trimmed
+  }
 
-  // Handle mixed imports: import defaultName, { a, b } from 'module'
-  const mixedMatch = importText.match(/import\s+([^{,\s]+),\s*(?:\{\s*)?([^}]+)(?:\s+(?:\}\s+)?|\}\s+)from/)
-  if (mixedMatch) {
-    // Add default import
-    items.push(mixedMatch[1].trim())
-    // Add named imports
-    const namedItems = mixedMatch[2].split(',').map(cleanImportItem)
-    items.push(...namedItems)
+  // Find 'from' keyword position
+  const fromIndex = importText.indexOf(' from ')
+  if (fromIndex === -1) {
     importItemsCache.set(importText, items)
     return items
   }
 
-  // Handle named imports: import { a, b } from 'module'
-  const namedMatch = importText.match(/import\s+(?:type\s+)?\{?\s*([^}]+)(?:\s+(?:\}\s+)?|\}\s+)from/)
-  if (namedMatch) {
-    const namedItems = namedMatch[1].split(',').map(cleanImportItem)
-    items.push(...namedItems)
-    importItemsCache.set(importText, items)
-    return items
+  // Get the part between 'import' and 'from'
+  let importPart = importText.slice(0, fromIndex).trim()
+
+  // Remove 'import' keyword and optional 'type' keyword
+  if (importPart.startsWith('import ')) {
+    importPart = importPart.slice(7).trim()
+  }
+  if (importPart.startsWith('type ')) {
+    importPart = importPart.slice(5).trim()
   }
 
-  // Handle default imports: import defaultName from 'module'
-  const defaultMatch = importText.match(/import\s+(?:type\s+)?([^{,\s]+)\s+from/)
-  if (defaultMatch) {
-    items.push(defaultMatch[1].trim())
-    importItemsCache.set(importText, items)
-    return items
+  // Check for named imports with braces
+  const braceStart = importPart.indexOf('{')
+  const braceEnd = importPart.lastIndexOf('}')
+
+  if (braceStart !== -1 && braceEnd !== -1) {
+    // Check for default import before braces (mixed import)
+    const beforeBrace = importPart.slice(0, braceStart).trim()
+    if (beforeBrace.endsWith(',')) {
+      // Mixed import: defaultName, { a, b }
+      const defaultName = beforeBrace.slice(0, -1).trim()
+      if (defaultName) {
+        items.push(defaultName)
+      }
+    }
+    else if (beforeBrace && !beforeBrace.includes(',')) {
+      // Default import before braces without comma (shouldn't happen but handle it)
+      items.push(beforeBrace)
+    }
+
+    // Extract named imports from braces
+    const namedPart = importPart.slice(braceStart + 1, braceEnd)
+    const namedItems = namedPart.split(',').map(cleanImportItem).filter(Boolean)
+    items.push(...namedItems)
+  }
+  else {
+    // Default import only: import defaultName from 'module'
+    const defaultName = importPart.trim()
+    if (defaultName) {
+      items.push(defaultName)
+    }
   }
 
   importItemsCache.set(importText, items)
+
+  // Evict oldest entries if cache is too large
+  if (importItemsCache.size > MAX_IMPORT_CACHE_SIZE) {
+    const firstKey = importItemsCache.keys().next().value
+    if (firstKey) {
+      importItemsCache.delete(firstKey)
+    }
+  }
+
   return items
 }
 
@@ -360,79 +479,35 @@ export function processDeclarations(
   // Create filtered imports based on actually used items
   const processedImports: string[] = []
   for (const imp of imports) {
-    // Handle different import patterns - check mixed imports first
-    const mixedImportMatch = imp.text.match(/import\s+([^{,\s]+),\s*(?:\{\s*)?([^}]+)(?:\s+(?:\}\s+)?|\}\s+)from\s+['"]([^'"]+)['"]/)
-    const namedImportMatch = imp.text.match(/import\s+(?:type\s+)?\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"]/)
-    const defaultImportMatch = imp.text.match(/import\s+(?:type\s+)?([^{,\s]+)\s+from\s+['"]([^'"]+)['"]/)
+    // Parse import using string operations to avoid regex backtracking
+    const parsed = parseImportStatement(imp.text)
+    if (!parsed) continue
 
-    if (mixedImportMatch) {
-      // Mixed import: import defaultName, { a, b } from 'module'
-      const defaultName = mixedImportMatch[1].trim()
-      const namedItems = mixedImportMatch[2].split(',').map(item => item.trim())
-      const source = mixedImportMatch[3]
+    const { defaultName, namedItems, source, isTypeOnly } = parsed
 
-      const usedDefault = usedImportItems.has(defaultName)
-      const usedNamed = namedItems.filter((item) => {
-        const cleanItem = item.replace(/^type\s+/, '').trim()
-        return usedImportItems.has(cleanItem)
-      })
+    // Filter to only used items
+    const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
+    const usedNamed = namedItems.filter((item) => {
+      const cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
+      return usedImportItems.has(cleanItem)
+    })
 
-      if (usedDefault || usedNamed.length > 0) {
-        const isOriginalTypeOnly = imp.text.includes('import type')
-
-        let importStatement = 'import '
-        if (isOriginalTypeOnly) {
-          importStatement += 'type '
-        }
-
-        const parts = []
-        if (usedDefault)
-          parts.push(defaultName)
-        if (usedNamed.length > 0)
-          parts.push(`{ ${usedNamed.join(', ')} }`)
-
-        importStatement += `${parts.join(', ')} from '${source}';`
-
-        processedImports.push(importStatement)
+    if (usedDefault || usedNamed.length > 0) {
+      let importStatement = 'import '
+      if (isTypeOnly) {
+        importStatement += 'type '
       }
-    }
-    else if (namedImportMatch && !defaultImportMatch) {
-      // Named imports only: import { a, b } from 'module'
-      const importedItems = namedImportMatch[1].split(',').map(item => item.trim())
-      const usedItems = importedItems.filter((item) => {
-        const cleanItem = item.replace(/^type\s+/, '').trim()
-        return usedImportItems.has(cleanItem)
-      })
 
-      if (usedItems.length > 0) {
-        const source = namedImportMatch[2]
-        const isOriginalTypeOnly = imp.text.includes('import type')
-
-        let importStatement = 'import '
-        if (isOriginalTypeOnly) {
-          importStatement += 'type '
-        }
-        importStatement += `{ ${usedItems.join(', ')} } from '${source}';`
-
-        processedImports.push(importStatement)
+      const parts: string[] = []
+      if (usedDefault && defaultName) {
+        parts.push(defaultName)
       }
-    }
-    else if (defaultImportMatch && !namedImportMatch) {
-      // Default import only: import defaultName from 'module'
-      const defaultName = defaultImportMatch[1].trim()
-      const source = defaultImportMatch[2]
-
-      if (usedImportItems.has(defaultName)) {
-        const isOriginalTypeOnly = imp.text.includes('import type')
-
-        let importStatement = 'import '
-        if (isOriginalTypeOnly) {
-          importStatement += 'type '
-        }
-        importStatement += `${defaultName} from '${source}';`
-
-        processedImports.push(importStatement)
+      if (usedNamed.length > 0) {
+        parts.push(`{ ${usedNamed.join(', ')} }`)
       }
+
+      importStatement += `${parts.join(', ')} from '${source}';`
+      processedImports.push(importStatement)
     }
   }
 
@@ -585,8 +660,15 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   // Add type annotation
   let typeAnnotation = decl.typeAnnotation
 
+  // Check for 'satisfies' operator - extract the type from the satisfies clause
+  if (decl.value && decl.value.includes(' satisfies ')) {
+    const satisfiesType = extractSatisfiesType(decl.value)
+    if (satisfiesType) {
+      typeAnnotation = satisfiesType
+    }
+  }
   // If we have a value, check if it has 'as const' - if so, infer from value instead of type annotation
-  if (decl.value && decl.value.includes('as const')) {
+  else if (decl.value && decl.value.includes('as const')) {
     typeAnnotation = inferNarrowType(decl.value, true)
   }
   else if (!typeAnnotation && decl.value && kind === 'const') {
@@ -1090,6 +1172,27 @@ function inferTemplateLiteralType(value: string, isConst: boolean): string {
 
   // Complex template literal - would need more sophisticated parsing
   return 'string'
+}
+
+/**
+ * Extract type from 'satisfies' operator
+ * e.g., "{ port: 3000 } satisfies { port: number }" returns "{ port: number }"
+ */
+function extractSatisfiesType(value: string): string | null {
+  const satisfiesIndex = value.lastIndexOf(' satisfies ')
+  if (satisfiesIndex === -1) {
+    return null
+  }
+
+  // Extract everything after 'satisfies '
+  let typeStr = value.slice(satisfiesIndex + 11).trim()
+
+  // Remove trailing semicolon if present
+  if (typeStr.endsWith(';')) {
+    typeStr = typeStr.slice(0, -1).trim()
+  }
+
+  return typeStr || null
 }
 
 /**

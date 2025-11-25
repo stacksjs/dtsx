@@ -1,10 +1,40 @@
-/* eslint-disable regexp/no-super-linear-backtracking */
-
 /**
  * Remove leading comments from a declaration
  */
 export function removeLeadingComments(text: string): string {
-  return text.replace(/^(\s*\/\*[\s\S]*?\*\/\s*|\s*\/\/.*\n)*/g, '').trim()
+  let result = text
+  let changed = true
+
+  // Iteratively remove leading comments to avoid regex backtracking
+  while (changed) {
+    changed = false
+    const trimmed = result.trimStart()
+
+    // Remove block comments /* ... */
+    if (trimmed.startsWith('/*')) {
+      const endIndex = trimmed.indexOf('*/', 2)
+      if (endIndex !== -1) {
+        result = trimmed.slice(endIndex + 2)
+        changed = true
+        continue
+      }
+    }
+
+    // Remove single-line comments // ...
+    if (trimmed.startsWith('//')) {
+      const newlineIndex = trimmed.indexOf('\n')
+      if (newlineIndex !== -1) {
+        result = trimmed.slice(newlineIndex + 1)
+        changed = true
+      }
+      else {
+        result = ''
+        changed = true
+      }
+    }
+  }
+
+  return result.trim()
 }
 
 /**
@@ -184,9 +214,9 @@ export interface FunctionSignature {
 export function parseFunctionDeclaration(text: string): FunctionSignature | null {
   const clean = removeLeadingComments(text).trim()
 
-  // Match function pattern
+  // Match function pattern (use \s+ after 'function' to avoid backtracking with optional \s*)
   const functionMatch = clean.match(
-    /^(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][\w$]*)/,
+    /^(export\s+)?(async\s+)?function\s*(\*?)([a-zA-Z_$][\w$]*)/,
   )
 
   if (!functionMatch)
