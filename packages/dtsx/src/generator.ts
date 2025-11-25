@@ -305,3 +305,93 @@ async function processFileWithStats(
     exportCount,
   }
 }
+
+/**
+ * Watch mode - regenerate DTS files on source changes
+ */
+export async function watch(options?: Partial<DtsGenerationConfig>): Promise<void> {
+  const config = { ...defaultConfig, ...options }
+
+  // Configure logger
+  if (config.logLevel) {
+    setLogLevel(config.logLevel)
+  }
+
+  const rootPath = resolve(config.cwd, config.root)
+
+  logger.info(`Watching for changes in ${rootPath}...`)
+  logger.info('Press Ctrl+C to stop\n')
+
+  // Initial generation
+  await generate(config)
+
+  // Set up file watcher using Bun's watch API
+  const watcher = Bun.spawn(['bun', '-e', `
+    const fs = require('fs');
+    const path = require('path');
+
+    const rootPath = '${rootPath}';
+    const debounceMs = 100;
+    let timeout = null;
+
+    fs.watch(rootPath, { recursive: true }, (eventType, filename) => {
+      if (filename && filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          console.log('CHANGED:' + filename);
+        }, debounceMs);
+      }
+    });
+
+    // Keep process alive
+    setInterval(() => {}, 1000);
+  `], {
+    stdout: 'pipe',
+    stderr: 'inherit',
+  })
+
+  // Process watcher output
+  const reader = watcher.stdout.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('CHANGED:')) {
+        const filename = line.slice(8)
+        const filePath = resolve(rootPath, filename)
+
+        logger.info(`\n[${new Date().toLocaleTimeString()}] File changed: ${filename}`)
+
+        try {
+          // Check if file should be processed
+          const excludePatterns = config.exclude || []
+          if (isExcluded(filePath, excludePatterns, rootPath)) {
+            logger.debug(`Skipping excluded file: ${filename}`)
+            continue
+          }
+
+          // Process just this file
+          const outputPath = getOutputPath(filePath, config)
+          const { content: dtsContent } = await processFileWithStats(filePath, config)
+
+          await mkdir(dirname(outputPath), { recursive: true })
+          await writeToFile(outputPath, dtsContent)
+
+          logger.info(`  → Generated: ${relative(config.cwd, outputPath)}`)
+        }
+        catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`  ✗ Error: ${errorMessage}`)
+        }
+      }
+    }
+  }
+}

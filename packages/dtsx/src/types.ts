@@ -66,6 +66,11 @@ export interface DtsGenerationConfig {
    * @default false
    */
   validate?: boolean
+  /**
+   * Watch mode - regenerate on file changes
+   * @default false
+   */
+  watch?: boolean
 }
 
 /**

@@ -231,7 +231,7 @@
 
 - [ ] **Source maps** - Generate source maps for debugging.
 
-- [ ] **Watch mode** - File watching for incremental regeneration.
+- [x] **Watch mode** - File watching for incremental regeneration. ✅ Implemented `dtsx watch` command
 
 - [ ] **Incremental builds** - Cache and reuse unchanged declarations.
 

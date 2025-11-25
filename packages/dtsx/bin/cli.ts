@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { CLI } from '@stacksjs/clapp'
 import { version } from '../../../package.json'
-import { generate } from '../src/generator'
+import { generate, watch } from '../src/generator'
 
 const cli = new CLI('dtsx')
 
@@ -102,6 +102,43 @@ cli
     }
     catch (error) {
       console.error('Error generating .d.ts files:', error)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('watch', 'Watch for changes and regenerate .d.ts files')
+  .option('--cwd <path>', 'Current working directory', { default: defaultOptions.cwd })
+  .option('--root <path>', 'Root directory of the project', { default: defaultOptions.root })
+  .option('--entrypoints <files>', 'Entry point files (comma-separated)', {
+    default: defaultOptions.entrypoints?.join(','),
+    type: [String],
+  })
+  .option('--outdir <path>', 'Output directory for generated .d.ts files', { default: defaultOptions.outdir })
+  .option('--keep-comments', 'Keep comments in generated .d.ts files', { default: defaultOptions.keepComments })
+  .option('--exclude <patterns>', 'Glob patterns to exclude (comma-separated)', {
+    default: defaultOptions.exclude?.join(','),
+    type: [String],
+  })
+  .option('--log-level <level>', 'Log level (debug, info, warn, error, silent)', { default: defaultOptions.logLevel })
+  .example('dtsx watch')
+  .example('dtsx watch --root src --outdir dist/types')
+  .action(async (options: DtsGenerationOption) => {
+    try {
+      const config: Partial<DtsGenerationConfig> = {
+        entrypoints: options.entrypoints ? options.entrypoints : defaultOptions.entrypoints,
+        cwd: resolve(options.cwd || defaultOptions.cwd),
+        root: resolve(options.root || defaultOptions.root),
+        outdir: resolve(options.outdir || defaultOptions.outdir),
+        keepComments: options.keepComments ?? defaultOptions.keepComments,
+        exclude: options.exclude ? options.exclude.flatMap((p: string) => p.split(',').map(s => s.trim()).filter(Boolean)) : defaultOptions.exclude,
+        logLevel: (options.logLevel as LogLevel) ?? defaultOptions.logLevel,
+      }
+
+      await watch(config)
+    }
+    catch (error) {
+      console.error('Error in watch mode:', error)
       process.exit(1)
     }
   })
