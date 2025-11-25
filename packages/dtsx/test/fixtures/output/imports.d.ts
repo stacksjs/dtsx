@@ -1,4 +1,4 @@
-import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath } from 'node:path';
+import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, type ParsedPath, relative, resolve, sep, toNamespacedPath } from 'node:path';
 import { generate } from '@stacksjs/dtsx';
 import forge, { pki, tls } from 'node-forge';
 /**

@@ -2,6 +2,31 @@
 import type { Declaration, ProcessingContext } from './types'
 
 /**
+ * Cache for compiled RegExp patterns to avoid recreation in loops
+ * Key: escaped pattern string, Value: compiled RegExp with word boundaries
+ */
+const regexCache = new Map<string, RegExp>()
+
+/**
+ * Get or create a cached RegExp for word boundary matching
+ */
+function getCachedRegex(pattern: string): RegExp {
+  let cached = regexCache.get(pattern)
+  if (!cached) {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    cached = new RegExp(`\\b${escaped}\\b`)
+    regexCache.set(pattern, cached)
+  }
+  return cached
+}
+
+/**
+ * Cache for extractAllImportedItems results
+ * Key: import text, Value: array of imported items
+ */
+const importItemsCache = new Map<string, string[]>()
+
+/**
  * Format comments for DTS output
  */
 function formatComments(comments: string[] | undefined, keepComments: boolean = true): string {
@@ -161,10 +186,19 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
 }
 
 /**
- * Extract all imported items from an import statement
+ * Extract all imported items from an import statement (with caching)
  */
 function extractAllImportedItems(importText: string): string[] {
+  // Check cache first
+  const cached = importItemsCache.get(importText)
+  if (cached) {
+    return cached
+  }
+
   const items: string[] = []
+
+  // Helper to clean import item names (trim first, then remove 'type ' prefix)
+  const cleanImportItem = (item: string): string => item.trim().replace(/^type\s+/, '').trim()
 
   // Handle mixed imports: import defaultName, { a, b } from 'module'
   const mixedMatch = importText.match(/import\s+([^{,\s]+),\s*(?:\{\s*)?([^}]+)(?:\s+(?:\}\s+)?|\}\s+)from/)
@@ -172,16 +206,18 @@ function extractAllImportedItems(importText: string): string[] {
     // Add default import
     items.push(mixedMatch[1].trim())
     // Add named imports
-    const namedItems = mixedMatch[2].split(',').map(item => item.replace(/^type\s+/, '').trim())
+    const namedItems = mixedMatch[2].split(',').map(cleanImportItem)
     items.push(...namedItems)
+    importItemsCache.set(importText, items)
     return items
   }
 
   // Handle named imports: import { a, b } from 'module'
   const namedMatch = importText.match(/import\s+(?:type\s+)?\{?\s*([^}]+)(?:\s+(?:\}\s+)?|\}\s+)from/)
   if (namedMatch) {
-    const namedItems = namedMatch[1].split(',').map(item => item.replace(/^type\s+/, '').trim())
+    const namedItems = namedMatch[1].split(',').map(cleanImportItem)
     items.push(...namedItems)
+    importItemsCache.set(importText, items)
     return items
   }
 
@@ -189,9 +225,11 @@ function extractAllImportedItems(importText: string): string[] {
   const defaultMatch = importText.match(/import\s+(?:type\s+)?([^{,\s]+)\s+from/)
   if (defaultMatch) {
     items.push(defaultMatch[1].trim())
+    importItemsCache.set(importText, items)
     return items
   }
 
+  importItemsCache.set(importText, items)
   return items
 }
 
@@ -205,16 +243,30 @@ export function processDeclarations(
 ): string {
   const output: string[] = []
 
-  // Group declarations by type for better organization
-  const imports = declarations.filter(d => d.kind === 'import')
-  const functions = declarations.filter(d => d.kind === 'function')
-  const variables = declarations.filter(d => d.kind === 'variable')
-  const interfaces = declarations.filter(d => d.kind === 'interface')
-  const types = declarations.filter(d => d.kind === 'type')
-  const classes = declarations.filter(d => d.kind === 'class')
-  const enums = declarations.filter(d => d.kind === 'enum')
-  const modules = declarations.filter(d => d.kind === 'module')
-  const exports = declarations.filter(d => d.kind === 'export')
+  // Group declarations by type for better organization (single pass)
+  const imports: Declaration[] = []
+  const functions: Declaration[] = []
+  const variables: Declaration[] = []
+  const interfaces: Declaration[] = []
+  const types: Declaration[] = []
+  const classes: Declaration[] = []
+  const enums: Declaration[] = []
+  const modules: Declaration[] = []
+  const exports: Declaration[] = []
+
+  for (const d of declarations) {
+    switch (d.kind) {
+      case 'import': imports.push(d); break
+      case 'function': functions.push(d); break
+      case 'variable': variables.push(d); break
+      case 'interface': interfaces.push(d); break
+      case 'type': types.push(d); break
+      case 'class': classes.push(d); break
+      case 'enum': enums.push(d); break
+      case 'module': modules.push(d); break
+      case 'export': exports.push(d); break
+    }
+  }
 
   // Parse all exports to understand what's being exported
   const exportedItems = new Set<string>()
@@ -250,186 +302,124 @@ export function processDeclarations(
     }
   }
 
+  // Build a map of all imported items to their import declarations (single pass)
+  // This eliminates the O(n²) iteration over imports for each declaration
+  const allImportedItemsMap = new Map<string, Declaration>()
+  for (const imp of imports) {
+    const items = extractAllImportedItems(imp.text)
+    for (const item of items) {
+      allImportedItemsMap.set(item, imp)
+    }
+  }
+
+  // Get all unique imported item names for regex matching
+  const allImportedItemNames = Array.from(allImportedItemsMap.keys())
+
+  // Helper function to check which imports are used in a text
+  function findUsedImports(text: string, additionalTexts: string[] = []): Set<string> {
+    const used = new Set<string>()
+    const textsToCheck = [text, ...additionalTexts]
+
+    for (const item of allImportedItemNames) {
+      const regex = getCachedRegex(item)
+      for (const textToCheck of textsToCheck) {
+        if (regex.test(textToCheck)) {
+          used.add(item)
+          break // Found in at least one text, no need to check others
+        }
+      }
+    }
+    return used
+  }
+
   // Filter imports to only include those that are used in exports or declarations
   const usedImportItems = new Set<string>()
 
-  // Check which imports are needed based on exported functions and types
+  // Collect all declaration texts that need to be checked for imports (single pass)
+  const declarationTexts: Array<{ text: string, additionalTexts: string[] }> = []
+
+  // Add exported functions
   for (const func of functions) {
     if (func.isExported) {
-      // Check the entire function signature for imported types
-      const funcDeclaration = func.text
-      for (const imp of imports) {
-        // Handle all import patterns: named, default, and mixed
-        const allImportedItems = extractAllImportedItems(imp.text)
-        for (const item of allImportedItems) {
-          // Use word boundary regex to match exact identifiers, not substrings
-          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-          if (regex.test(funcDeclaration)) {
-            usedImportItems.add(item)
-          }
-        }
-      }
+      declarationTexts.push({ text: func.text, additionalTexts: [] })
     }
   }
 
-  // Check which imports are needed for exported variables
+  // Add exported variables
   for (const variable of variables) {
     if (variable.isExported) {
-      for (const imp of imports) {
-        // Handle mixed imports like: import { collect, type Collection } from 'module'
-        const importText = imp.text
-        const typeMatches = importText.match(/type\s+([A-Za-z_$][\w$]*)/g)
-        const valueMatches = importText.match(/import\s+\{([^}]+)\}/)
+      const additionalTexts: string[] = []
+      if (variable.typeAnnotation) {
+        additionalTexts.push(variable.typeAnnotation)
+      }
+      declarationTexts.push({ text: variable.text, additionalTexts })
+    }
+  }
 
-        // Get all text to check (both variable.text and variable.typeAnnotation)
-        const textToCheck = [variable.text]
-        if (variable.typeAnnotation) {
-          textToCheck.push(variable.typeAnnotation)
-        }
-
-        // Check type imports
-        if (typeMatches) {
-          for (const typeMatch of typeMatches) {
-            const typeName = typeMatch.replace('type ', '').trim()
-            const regex = new RegExp(`\\b${typeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-            // Check both variable.text and variable.typeAnnotation
-            if (textToCheck.some(text => regex.test(text))) {
-              usedImportItems.add(typeName)
-            }
-          }
-        }
-
-        // Check value imports
-        if (valueMatches) {
-          const imports = valueMatches[1].split(',').map(item =>
-            item.replace(/type\s+/, '').trim(),
-          )
-          for (const importName of imports) {
-            const regex = new RegExp(`\\b${importName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-            // Check both variable.text and variable.typeAnnotation
-            if (textToCheck.some(text => regex.test(text))) {
-              usedImportItems.add(importName)
-            }
-          }
-        }
-
-        // Also check using the more comprehensive extractAllImportedItems function
-        const allImportedItems = extractAllImportedItems(imp.text)
-        for (const item of allImportedItems) {
-          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-          // Check both variable.text and variable.typeAnnotation
-          if (textToCheck.some(text => regex.test(text))) {
-            usedImportItems.add(item)
-          }
+  // Build reference check sets for interfaces
+  const interfaceReferences = new Set<string>()
+  for (const func of functions) {
+    if (func.isExported) {
+      for (const iface of interfaces) {
+        if (func.text.includes(iface.name)) {
+          interfaceReferences.add(iface.name)
         }
       }
     }
   }
-
-  // Check which imports are needed for ALL declarations that will be included in the DTS output
-  // This includes non-exported types, interfaces, classes, etc. that are still part of the public API
-
-  // Check interfaces (both exported and non-exported ones that are referenced)
-  for (const iface of interfaces) {
-    // Include interface if it's exported OR if it's referenced by any declaration we're including
-    const isReferencedByExports = functions.some(func =>
-      func.isExported && func.text.includes(iface.name),
-    )
-    const isReferencedByClasses = classes.some(cls =>
-      cls.text.includes(iface.name),
-    )
-    const isReferencedByTypes = types.some(type =>
-      type.text.includes(iface.name),
-    )
-
-    if (iface.isExported || isReferencedByExports || isReferencedByClasses || isReferencedByTypes) {
-      for (const imp of imports) {
-        const allImportedItems = extractAllImportedItems(imp.text)
-        for (const item of allImportedItems) {
-          const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-          if (regex.test(iface.text)) {
-            usedImportItems.add(item)
-          }
-        }
-      }
-    }
-  }
-
-  // Check ALL types (exported and non-exported) since they may be included in DTS
-  for (const type of types) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const item of allImportedItems) {
-        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-        if (regex.test(type.text)) {
-          usedImportItems.add(item)
-        }
-      }
-    }
-  }
-
-  // Check ALL classes (exported and non-exported) since they may be included in DTS
   for (const cls of classes) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const item of allImportedItems) {
-        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-        if (regex.test(cls.text)) {
-          usedImportItems.add(item)
-        }
+    for (const iface of interfaces) {
+      if (cls.text.includes(iface.name)) {
+        interfaceReferences.add(iface.name)
+      }
+    }
+  }
+  for (const type of types) {
+    for (const iface of interfaces) {
+      if (type.text.includes(iface.name)) {
+        interfaceReferences.add(iface.name)
       }
     }
   }
 
-  // Check ALL enums (exported and non-exported) since they may be included in DTS
+  // Add interfaces (exported or referenced)
+  for (const iface of interfaces) {
+    if (iface.isExported || interfaceReferences.has(iface.name)) {
+      declarationTexts.push({ text: iface.text, additionalTexts: [] })
+    }
+  }
+
+  // Add all types, classes, enums, modules (they may be included in DTS)
+  for (const type of types) {
+    declarationTexts.push({ text: type.text, additionalTexts: [] })
+  }
+  for (const cls of classes) {
+    declarationTexts.push({ text: cls.text, additionalTexts: [] })
+  }
   for (const enumDecl of enums) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const item of allImportedItems) {
-        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-        if (regex.test(enumDecl.text)) {
-          usedImportItems.add(item)
-        }
-      }
-    }
+    declarationTexts.push({ text: enumDecl.text, additionalTexts: [] })
   }
-
-  // Check ALL modules/namespaces since they may be included in DTS
   for (const mod of modules) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const item of allImportedItems) {
-        const regex = new RegExp(`\\b${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-        if (regex.test(mod.text)) {
-          usedImportItems.add(item)
-        }
-      }
-    }
+    declarationTexts.push({ text: mod.text, additionalTexts: [] })
   }
 
-  // Check which imports are needed for re-exports
-  for (const item of exportedItems) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const importedItem of allImportedItems) {
-        if (item === importedItem) {
-          usedImportItems.add(importedItem)
-        }
-      }
-    }
-  }
-
-  // Also check for value imports that are re-exported
+  // Add export statements
   for (const exp of exports) {
-    for (const imp of imports) {
-      const allImportedItems = extractAllImportedItems(imp.text)
-      for (const importedItem of allImportedItems) {
-        // Use word boundary regex to match exact identifiers in export statements
-        const regex = new RegExp(`\\b${importedItem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-        if (regex.test(exp.text)) {
-          usedImportItems.add(importedItem)
-        }
-      }
+    declarationTexts.push({ text: exp.text, additionalTexts: [] })
+  }
+
+  // Single pass: find all used imports across all declarations
+  for (const { text, additionalTexts } of declarationTexts) {
+    const used = findUsedImports(text, additionalTexts)
+    for (const item of used) {
+      usedImportItems.add(item)
+    }
+  }
+
+  // Check which imports are needed for re-exports (direct matches)
+  for (const item of exportedItems) {
+    if (allImportedItemsMap.has(item)) {
+      usedImportItems.add(item)
     }
   }
 
