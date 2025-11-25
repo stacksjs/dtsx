@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
+import ts from 'typescript'
 import { config } from './config'
 
 /**
@@ -82,6 +83,87 @@ export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): 
   catch {
     return false
   }
+}
+
+/**
+ * Validation result for a .d.ts file
+ */
+export interface ValidationResult {
+  isValid: boolean
+  errors: Array<{ line: number, column: number, message: string }>
+}
+
+/**
+ * Validate a .d.ts file content against TypeScript compiler
+ */
+export function validateDtsContent(content: string, filename: string): ValidationResult {
+  const result: ValidationResult = {
+    isValid: true,
+    errors: [],
+  }
+
+  // Create a source file from the content
+  const sourceFile = ts.createSourceFile(
+    filename,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+
+  // Create a minimal compiler host
+  const compilerHost: ts.CompilerHost = {
+    getSourceFile: (name) => {
+      if (name === filename) return sourceFile
+      return undefined
+    },
+    getDefaultLibFileName: () => 'lib.d.ts',
+    writeFile: () => {},
+    getCurrentDirectory: () => '',
+    getCanonicalFileName: (f) => f,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (f) => f === filename,
+    readFile: () => undefined,
+  }
+
+  // Create program with declaration-focused options
+  const program = ts.createProgram({
+    rootNames: [filename],
+    options: {
+      noEmit: true,
+      declaration: true,
+      skipLibCheck: true,
+      noLib: true,
+    },
+    host: compilerHost,
+  })
+
+  // Get diagnostics
+  const diagnostics = [
+    ...program.getSyntacticDiagnostics(sourceFile),
+  ]
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.file && diagnostic.start !== undefined) {
+      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start)
+      result.errors.push({
+        line: line + 1,
+        column: character + 1,
+        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+      })
+    }
+    else {
+      result.errors.push({
+        line: 0,
+        column: 0,
+        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+      })
+    }
+  }
+
+  result.isValid = result.errors.length === 0
+  return result
 }
 
 /**

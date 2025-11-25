@@ -6,7 +6,7 @@ import { config as defaultConfig } from './config'
 import { extractDeclarations } from './extractor'
 import { logger, setLogLevel } from './logger'
 import { processDeclarations } from './processor'
-import { createDiff, writeToFile } from './utils'
+import { createDiff, validateDtsContent, writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -28,6 +28,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     filesProcessed: 0,
     filesGenerated: 0,
     filesFailed: 0,
+    filesValidated: 0,
+    validationErrors: 0,
     declarationsFound: 0,
     importsProcessed: 0,
     exportsProcessed: 0,
@@ -99,6 +101,22 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         await writeToFile(outputPath, dtsContent)
         stats.filesGenerated++
 
+        // Validate if enabled
+        if (config.validate) {
+          const validation = validateDtsContent(dtsContent, outputPath)
+          stats.filesValidated++
+          if (!validation.isValid) {
+            stats.validationErrors += validation.errors.length
+            logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
+            for (const err of validation.errors) {
+              logger.warn(`  Line ${err.line}:${err.column} - ${err.message}`)
+            }
+          }
+          else {
+            logger.debug(`[validation] ${outputPath} - OK`)
+          }
+        }
+
         logger.debug(`Generated: ${outputPath}`)
       }
     }
@@ -136,6 +154,12 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       logger.info(`Declarations found:  ${stats.declarationsFound}`)
       logger.info(`Imports processed:   ${stats.importsProcessed}`)
       logger.info(`Exports processed:   ${stats.exportsProcessed}`)
+      if (stats.filesValidated > 0) {
+        logger.info(`Files validated:     ${stats.filesValidated}`)
+        if (stats.validationErrors > 0) {
+          logger.info(`Validation errors:   ${stats.validationErrors}`)
+        }
+      }
       logger.info(`Duration:            ${stats.durationMs}ms`)
       if (stats.errors.length > 0) {
         logger.info('\nErrors:')

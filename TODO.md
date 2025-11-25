@@ -427,7 +427,7 @@ These files have eslint-disable comments indicating known issues:
 
 - [x] **`--diff` flag** - Show differences from existing .d.ts files. ✅ Implemented
 
-- [ ] **`--validate` flag** - Validate generated .d.ts against TypeScript compiler.
+- [x] **`--validate` flag** - Validate generated .d.ts against TypeScript compiler. ✅ Implemented
 
 - [x] **`--stats` flag** - Show statistics (files processed, declarations found, etc.). ✅ Implemented
 

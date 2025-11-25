@@ -61,6 +61,11 @@ export interface DtsGenerationConfig {
    * @default false
    */
   diff?: boolean
+  /**
+   * Validate generated .d.ts files against TypeScript compiler
+   * @default false
+   */
+  validate?: boolean
 }
 
 /**
@@ -70,6 +75,8 @@ export interface GenerationStats {
   filesProcessed: number
   filesGenerated: number
   filesFailed: number
+  filesValidated: number
+  validationErrors: number
   declarationsFound: number
   importsProcessed: number
   exportsProcessed: number

@@ -26,6 +26,7 @@ const defaultOptions: DtsGenerationConfig = {
   outputFormat: 'text',
   progress: false,
   diff: false,
+  validate: false,
 }
 
 cli
@@ -56,6 +57,7 @@ cli
   .option('--output-format <format>', 'Output format: text or json', { default: defaultOptions.outputFormat })
   .option('--progress', 'Show progress during generation', { default: defaultOptions.progress })
   .option('--diff', 'Show diff of changes compared to existing files', { default: defaultOptions.diff })
+  .option('--validate', 'Validate generated .d.ts files against TypeScript', { default: defaultOptions.validate })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -82,6 +84,7 @@ cli
         outputFormat: (options.outputFormat as 'text' | 'json') ?? defaultOptions.outputFormat,
         progress: options.progress ?? defaultOptions.progress,
         diff: options.diff ?? defaultOptions.diff,
+        validate: options.validate ?? defaultOptions.validate,
       }
 
       const stats = await generate(config)
