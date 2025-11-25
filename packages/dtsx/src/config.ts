@@ -15,8 +15,18 @@ export const defaultConfig: DtsGenerationConfig = {
 }
 
 // Get loaded config
-// eslint-disable-next-line antfu/no-top-level-await
-export const config: DtsGenerationConfig = await loadConfig({
+// Lazy-loaded config to avoid top-level await (enables bun --compile)
+let _config: DtsGenerationConfig | null = null
+
+export async function getConfig(): Promise<DtsGenerationConfig> {
+  if (!_config) {
+    _config = await loadConfig({
   name: 'dts',
   defaultConfig,
 })
+  }
+  return _config
+}
+
+// For backwards compatibility - synchronous access with default fallback
+export const config: DtsGenerationConfig = defaultConfig
