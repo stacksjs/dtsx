@@ -1,6 +1,7 @@
 export * from './config'
 export * from './extractor'
 export * from './generator'
+export * from './logger'
 export * from './parser'
 export * from './processor'
 export * from './types'

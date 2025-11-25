@@ -1,0 +1,994 @@
+/**
+ * Type inference utilities for DTS generation
+ * Handles inferring narrow types from values
+ */
+
+/**
+ * Infer and narrow types from values
+ */
+export function inferNarrowType(value: any, isConst: boolean = false): string {
+  if (!value || typeof value !== 'string')
+    return 'unknown'
+
+  const trimmed = value.trim()
+
+  // BigInt expressions (check early)
+  if (trimmed.startsWith('BigInt(')) {
+    return 'bigint'
+  }
+
+  // Symbol.for expressions (check early)
+  if (trimmed.startsWith('Symbol.for(')) {
+    return 'symbol'
+  }
+
+  // Tagged template literals (check early)
+  if (trimmed.includes('.raw`') || trimmed.includes('String.raw`')) {
+    return 'string'
+  }
+
+  // String literals - always use literal type for simple string literals
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
+    || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
+    // For simple string literals without expressions, always return the literal
+    if (!trimmed.includes('${')) {
+      return trimmed
+    }
+    // Template literals with expressions only get literal type if const
+    if (isConst) {
+      return trimmed
+    }
+    return 'string'
+  }
+
+  // Number literals - ALWAYS use literal types for const declarations
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return trimmed // Always return literal number
+  }
+
+  // Boolean literals - ALWAYS use literal types for const declarations
+  if (trimmed === 'true' || trimmed === 'false') {
+    return trimmed // Always return literal boolean
+  }
+
+  // Null and undefined
+  if (trimmed === 'null')
+    return 'null'
+  if (trimmed === 'undefined')
+    return 'undefined'
+
+  // Array literals
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return inferArrayType(trimmed, isConst)
+  }
+
+  // Object literals
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return inferObjectType(trimmed, isConst)
+  }
+
+  // Function expressions
+  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+    return inferFunctionType(trimmed, false)
+  }
+
+  // As const assertions
+  if (trimmed.endsWith('as const')) {
+    const withoutAsConst = trimmed.slice(0, -8).trim()
+    // For arrays with 'as const', create readonly tuple
+    if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+      const content = withoutAsConst.slice(1, -1).trim()
+      if (!content)
+        return 'readonly []'
+      const elements = parseArrayElements(content)
+      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+      return `readonly [${elementTypes.join(', ')}]`
+    }
+    return inferNarrowType(withoutAsConst, true)
+  }
+
+  // Template literal expressions
+  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+    return inferTemplateLiteralType(trimmed, isConst)
+  }
+
+  // New expressions
+  if (trimmed.startsWith('new ')) {
+    return inferNewExpressionType(trimmed)
+  }
+
+  // Promise expressions
+  if (trimmed.startsWith('Promise.')) {
+    return inferPromiseType(trimmed)
+  }
+
+  // Await expressions
+  if (trimmed.startsWith('await ')) {
+    return 'unknown' // Would need async context analysis
+  }
+
+  // BigInt literals
+  if (/^\d+n$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'bigint'
+  }
+
+  // Symbol
+  if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
+    return 'symbol'
+  }
+
+  // Other expressions (method calls, property access, etc.)
+  return 'unknown'
+}
+
+/**
+ * Infer and narrow types from values in union context (for arrays)
+ */
+export function inferNarrowTypeInUnion(value: any, isConst: boolean = false): string {
+  if (!value || typeof value !== 'string')
+    return 'unknown'
+
+  const trimmed = value.trim()
+
+  // String literals - always use literal type for simple string literals
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
+    || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
+    // For simple string literals without expressions, always return the literal
+    if (!trimmed.includes('${')) {
+      return trimmed
+    }
+    // Template literals with expressions only get literal type if const
+    if (isConst) {
+      return trimmed
+    }
+    return 'string'
+  }
+
+  // Number literals
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'number'
+  }
+
+  // Boolean literals
+  if (trimmed === 'true' || trimmed === 'false') {
+    if (isConst) {
+      return trimmed
+    }
+    return 'boolean'
+  }
+
+  // Null and undefined
+  if (trimmed === 'null')
+    return 'null'
+  if (trimmed === 'undefined')
+    return 'undefined'
+
+  // Array literals
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return inferArrayType(trimmed, isConst)
+  }
+
+  // Object literals
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return inferObjectType(trimmed, isConst)
+  }
+
+  // Function expressions - use union context
+  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+    return inferFunctionType(trimmed, true)
+  }
+
+  // As const assertions
+  if (trimmed.endsWith('as const')) {
+    const withoutAsConst = trimmed.slice(0, -8).trim()
+    // For arrays with 'as const', create readonly tuple
+    if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+      const content = withoutAsConst.slice(1, -1).trim()
+      if (!content)
+        return 'readonly []'
+      const elements = parseArrayElements(content)
+      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+      return `readonly [${elementTypes.join(', ')}]`
+    }
+    return inferNarrowTypeInUnion(withoutAsConst, true)
+  }
+
+  // Template literal expressions
+  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+    return inferTemplateLiteralType(trimmed, isConst)
+  }
+
+  // New expressions
+  if (trimmed.startsWith('new ')) {
+    return inferNewExpressionType(trimmed)
+  }
+
+  // Promise expressions
+  if (trimmed.startsWith('Promise.')) {
+    return inferPromiseType(trimmed)
+  }
+
+  // Await expressions
+  if (trimmed.startsWith('await ')) {
+    return 'unknown' // Would need async context analysis
+  }
+
+  // BigInt literals
+  if (/^\d+n$/.test(trimmed)) {
+    if (isConst) {
+      return trimmed
+    }
+    return 'bigint'
+  }
+
+  // Symbol
+  if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
+    return 'symbol'
+  }
+
+  // Other expressions (method calls, property access, etc.)
+  return 'unknown'
+}
+
+/**
+ * Infer type from template literal
+ */
+function inferTemplateLiteralType(value: string, isConst: boolean): string {
+  // Handle tagged template literals like String.raw`...`
+  if (value.includes('.raw`') || value.includes('String.raw`')) {
+    return 'string'
+  }
+
+  if (!isConst)
+    return 'string'
+
+  // Simple template literal without expressions
+  if (!value.includes('${')) {
+    return value
+  }
+
+  // Complex template literal - would need more sophisticated parsing
+  return 'string'
+}
+
+/**
+ * Infer type from new expression
+ */
+function inferNewExpressionType(value: string): string {
+  const match = value.match(/^new\s+([A-Z][a-zA-Z0-9]*)/)
+  if (match) {
+    const className = match[1]
+    // Common built-in types
+    switch (className) {
+      case 'Date': return 'Date'
+      case 'Map': return 'Map<any, any>'
+      case 'Set': return 'Set<any>'
+      case 'WeakMap': return 'WeakMap<any, any>'
+      case 'WeakSet': return 'WeakSet<any>'
+      case 'RegExp': return 'RegExp'
+      case 'Error': return 'Error'
+      case 'Array': return 'any[]'
+      case 'Object': return 'object'
+      case 'Function': return 'Function'
+      case 'Promise': return 'Promise<any>'
+      default: return className
+    }
+  }
+  return 'unknown'
+}
+
+/**
+ * Infer type from Promise expression
+ */
+function inferPromiseType(value: string): string {
+  if (value.startsWith('Promise.resolve(')) {
+    // Try to extract the argument type
+    const match = value.match(/Promise\.resolve\(([^)]+)\)/)
+    if (match) {
+      const arg = match[1].trim()
+      const argType = inferNarrowType(arg, false)
+      return `Promise<${argType}>`
+    }
+    return 'Promise<unknown>'
+  }
+  if (value.startsWith('Promise.reject(')) {
+    return 'Promise<never>'
+  }
+  if (value.startsWith('Promise.all(')) {
+    // Try to extract array argument types
+    const match = value.match(/Promise\.all\(\[([^\]]+)\]\)/)
+    if (match) {
+      const arrayContent = match[1].trim()
+      const elements = parseArrayElements(arrayContent)
+      const elementTypes = elements.map((el) => {
+        const trimmed = el.trim()
+        if (trimmed.startsWith('Promise.resolve(')) {
+          const promiseType = inferPromiseType(trimmed)
+          // Extract the inner type from Promise<T>
+          const innerMatch = promiseType.match(/Promise<(.+)>/)
+          return innerMatch ? innerMatch[1] : 'unknown'
+        }
+        return inferNarrowType(trimmed, false)
+      })
+      return `Promise<[${elementTypes.join(', ')}]>`
+    }
+    return 'Promise<unknown[]>'
+  }
+  return 'Promise<unknown>'
+}
+
+/**
+ * Infer array type from array literal
+ */
+export function inferArrayType(value: string, isConst: boolean): string {
+  // Remove brackets and parse elements
+  const content = value.slice(1, -1).trim()
+
+  if (!content)
+    return 'Array<never>'
+
+  // Simple parsing - this would need to be more sophisticated for complex cases
+  const elements = parseArrayElements(content)
+
+  // Check if any element has 'as const' - if so, this should be a readonly tuple
+  const hasAsConst = elements.some(el => el.trim().endsWith('as const'))
+
+  if (hasAsConst) {
+    // Create readonly tuple with union types for each element
+    const elementTypes = elements.map((el) => {
+      const trimmedEl = el.trim()
+      if (trimmedEl.endsWith('as const')) {
+        const withoutAsConst = trimmedEl.slice(0, -8).trim()
+        // For arrays with 'as const', create readonly tuple
+        if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
+          const innerContent = withoutAsConst.slice(1, -1).trim()
+          const innerElements = parseArrayElements(innerContent)
+          const innerTypes = innerElements.map(innerEl => inferNarrowType(innerEl.trim(), true))
+          return `readonly [${innerTypes.join(', ')}]`
+        }
+        return inferNarrowType(withoutAsConst, true)
+      }
+      if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
+        return inferArrayType(trimmedEl, true)
+      }
+      return inferNarrowType(trimmedEl, true)
+    })
+    return `readonly [\n    ${elementTypes.join(' |\n    ')}\n  ]`
+  }
+
+  // Regular array processing
+  const elementTypes = elements.map((el) => {
+    const trimmedEl = el.trim()
+    // Check if element is an array itself
+    if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
+      return inferArrayType(trimmedEl, isConst)
+    }
+    return inferNarrowTypeInUnion(trimmedEl, isConst)
+  })
+
+  // For const arrays, ALWAYS create readonly tuples for better type safety
+  if (isConst) {
+    return `readonly [${elementTypes.join(', ')}]`
+  }
+
+  // For simple arrays with all same literal types, also create tuples
+  const uniqueTypes = [...new Set(elementTypes)]
+  const allLiterals = elementTypes.every(type =>
+    /^-?\d+(\.\d+)?$/.test(type) // numbers
+    || type === 'true' || type === 'false' // booleans
+    || (type.startsWith('"') && type.endsWith('"')) // strings
+    || (type.startsWith('\'') && type.endsWith('\'')),
+  )
+
+  if (allLiterals && elementTypes.length <= 10) {
+    // Create tuple for small arrays with literal types
+    return `readonly [${elementTypes.join(', ')}]`
+  }
+
+  if (uniqueTypes.length === 1) {
+    return `Array<${uniqueTypes[0]}>`
+  }
+
+  return `Array<${uniqueTypes.join(' | ')}>`
+}
+
+/**
+ * Parse array elements handling nested structures
+ */
+export function parseArrayElements(content: string): string[] {
+  const elements: string[] = []
+  let current = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    const prevChar = i > 0 ? content[i - 1] : ''
+
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      if (char === '[' || char === '{' || char === '(')
+        depth++
+      if (char === ']' || char === '}' || char === ')')
+        depth--
+
+      if (char === ',' && depth === 0) {
+        elements.push(current.trim())
+        current = ''
+        continue
+      }
+    }
+
+    current += char
+  }
+
+  if (current.trim()) {
+    elements.push(current.trim())
+  }
+
+  return elements
+}
+
+/**
+ * Infer object type from object literal
+ */
+export function inferObjectType(value: string, isConst: boolean): string {
+  // Remove braces
+  const content = value.slice(1, -1).trim()
+
+  if (!content)
+    return '{}'
+
+  // Parse object properties
+  const properties = parseObjectProperties(content)
+  const propTypes: string[] = []
+
+  for (const [key, val] of properties) {
+    let valueType = inferNarrowType(val, isConst)
+
+    // Handle method signatures - clean up async and parameter defaults
+    if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
+      valueType = cleanMethodSignature(valueType)
+    }
+
+    propTypes.push(`${key}: ${valueType}`)
+  }
+
+  return `{\n  ${propTypes.join(';\n  ')}\n}`
+}
+
+/**
+ * Clean method signatures for declaration files
+ */
+function cleanMethodSignature(signature: string): string {
+  // Remove async modifier from method signatures (including in object methods)
+  let cleaned = signature.replace(/^async\s+/, '').replace(/\basync\s+/g, '')
+
+  // Remove parameter default values (e.g., currency = 'USD' becomes currency?)
+  cleaned = cleaned.replace(/(\w+)\s*=[^,)]+/g, (match, paramName) => {
+    return `${paramName}?`
+  })
+
+  // Clean up extra spaces
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+
+  return cleaned
+}
+
+/**
+ * Clean parameter defaults from function parameters
+ */
+export function cleanParameterDefaults(params: string): string {
+  // Remove parameter default values and make them optional
+  return params.replace(/(\w+)\s*=[^,)]+/g, (match, paramName) => {
+    return `${paramName}?`
+  })
+}
+
+/**
+ * Parse object properties
+ */
+function parseObjectProperties(content: string): Array<[string, string]> {
+  const properties: Array<[string, string]> = []
+  let current = ''
+  let currentKey = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+  let inKey = true
+  let inComment = false
+  let commentDepth = 0
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i]
+    const prevChar = i > 0 ? content[i - 1] : ''
+    const nextChar = i < content.length - 1 ? content[i + 1] : ''
+
+    // Track JSDoc/block comments to avoid parsing colons inside them
+    if (!inString && !inComment && char === '/' && nextChar === '*') {
+      // Enter block/JSDoc comment, preserve opening delimiter
+      inComment = true
+      commentDepth = 1
+      current += '/*'
+      i++ // Skip '*'
+      continue
+    }
+    else if (inComment && char === '*' && nextChar === '/') {
+      // Closing a block/JSDoc comment, preserve closing delimiter
+      commentDepth--
+      current += '*/'
+      i++ // Skip '/'
+      if (commentDepth === 0) {
+        inComment = false
+      }
+      continue
+    }
+    else if (inComment && char === '/' && nextChar === '*') {
+      // Nested comment start, preserve and increase depth
+      commentDepth++
+      current += '/*'
+      i++
+      continue
+    }
+
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+      current += char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+      current += char
+    }
+    else if (!inString && !inComment) {
+      if (char === '{' || char === '[' || char === '(') {
+        depth++
+        current += char
+      }
+      else if (char === '}' || char === ']' || char === ')') {
+        depth--
+        current += char
+      }
+      else if (char === ':' && depth === 0 && inKey) {
+        currentKey = current.trim()
+        current = ''
+        inKey = false
+      }
+      else if (char === '(' && depth === 0 && inKey) {
+        // This might be a method definition like: methodName(params) or async methodName<T>(params)
+        currentKey = current.trim()
+        // Remove 'async' from the key if present
+        if (currentKey.startsWith('async ')) {
+          currentKey = currentKey.slice(6).trim()
+        }
+        current = char // Start with the opening parenthesis
+        inKey = false
+        depth = 1 // We're now inside the method definition
+      }
+      else if (char === ',' && depth === 0) {
+        if (currentKey && current.trim()) {
+          // Clean method signatures before storing
+          let value = current.trim()
+
+          // Check if this is a method definition (starts with parentheses)
+          if (value.startsWith('(')) {
+            // This is a method definition like: (params): ReturnType { ... }
+            value = convertMethodToFunctionType(currentKey, value)
+          }
+          else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
+            value = cleanMethodSignature(value)
+          }
+
+          properties.push([currentKey, value])
+        }
+        current = ''
+        currentKey = ''
+        inKey = true
+      }
+      else {
+        current += char
+      }
+    }
+    else {
+      // Preserve all characters while inside comments
+      current += char
+    }
+  }
+
+  // Don't forget the last property
+  if (currentKey && current.trim()) {
+    let value = current.trim()
+
+    // Check if this is a method definition (starts with parentheses)
+    if (value.startsWith('(')) {
+      // This is a method definition like: (params): ReturnType { ... }
+      value = convertMethodToFunctionType(currentKey, value)
+    }
+    else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
+      value = cleanMethodSignature(value)
+    }
+
+    properties.push([currentKey, value])
+  }
+
+  return properties
+}
+
+/**
+ * Convert method definition to function type signature
+ */
+function convertMethodToFunctionType(methodName: string, methodDef: string): string {
+  // Remove async modifier if present
+  let cleaned = methodDef.replace(/^async\s+/, '')
+
+  // Extract generics, parameters, and return type
+  const genericMatch = cleaned.match(/^<([^>]+)>/)
+  const generics = genericMatch ? genericMatch[0] : ''
+  if (generics) {
+    cleaned = cleaned.slice(generics.length).trim()
+  }
+
+  // Find parameter list
+  const paramStart = cleaned.indexOf('(')
+  const paramEnd = findMatchingBracket(cleaned, paramStart, '(', ')')
+
+  if (paramStart === -1 || paramEnd === -1) {
+    return '() => unknown'
+  }
+
+  const params = cleaned.slice(paramStart, paramEnd + 1)
+  let returnType = 'unknown'
+
+  // Check for explicit return type annotation
+  const afterParams = cleaned.slice(paramEnd + 1).trim()
+  if (afterParams.startsWith(':')) {
+    const returnTypeMatch = afterParams.match(/^:\s*([^{]+)/)
+    if (returnTypeMatch) {
+      returnType = returnTypeMatch[1].trim()
+    }
+  }
+
+  // Clean parameter defaults
+  const cleanedParams = cleanParameterDefaults(params)
+
+  return `${generics}${cleanedParams} => ${returnType}`
+}
+
+/**
+ * Find matching bracket for nested structures
+ */
+export function findMatchingBracket(str: string, start: number, openChar: string, closeChar: string): number {
+  let depth = 0
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === openChar) {
+      depth++
+    }
+    else if (str[i] === closeChar) {
+      depth--
+      if (depth === 0) {
+        return i
+      }
+    }
+  }
+  return -1
+}
+
+/**
+ * Find the main arrow (=>) in a function, ignoring nested arrows in parameter types
+ */
+function findMainArrowIndex(str: string): number {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < str.length - 1; i++) {
+    const char = str[i]
+    const nextChar = str[i + 1]
+    const prevChar = i > 0 ? str[i - 1] : ''
+
+    // Handle string literals
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      // Track nesting depth - only parentheses and square brackets
+      // Don't track < > as they can be comparison operators or part of generics
+      if (char === '(') {
+        parenDepth++
+      }
+      else if (char === ')') {
+        parenDepth--
+      }
+      else if (char === '[') {
+        bracketDepth++
+      }
+      else if (char === ']') {
+        bracketDepth--
+      }
+
+      // Look for arrow at depth 0 (not nested inside parentheses or brackets)
+      if (char === '=' && nextChar === '>' && parenDepth === 0 && bracketDepth === 0) {
+        return i
+      }
+    }
+  }
+
+  return -1
+}
+
+/**
+ * Infer function type from function expression
+ */
+export function inferFunctionType(value: string, inUnion: boolean = false): string {
+  const trimmed = value.trim()
+
+  // Handle very complex function types early (but not function expressions)
+  // Only simplify if it's truly complex AND looks like a problematic signature
+  if (trimmed.length > 200 && (trimmed.match(/=>/g) || []).length > 2 && (trimmed.match(/</g) || []).length > 5 && !trimmed.startsWith('function')) {
+    // For extremely complex types, use a simple signature
+    const funcType = '(...args: any[]) => any'
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Handle async arrow functions
+  if (trimmed.startsWith('async ') && trimmed.includes('=>')) {
+    const asyncRemoved = trimmed.slice(5).trim() // Remove 'async '
+    const arrowIndex = asyncRemoved.indexOf('=>')
+    let params = asyncRemoved.substring(0, arrowIndex).trim()
+    const body = asyncRemoved.substring(arrowIndex + 2).trim()
+
+    // Clean up params - remove default values
+    params = cleanParameterDefaults(params)
+
+    // Clean up params
+    if (params === '()' || params === '') {
+      params = '()'
+    }
+    else if (!params.startsWith('(')) {
+      // Single parameter without parentheses
+      params = `(${params})`
+    }
+
+    // Try to infer return type from body
+    let returnType = 'unknown'
+    if (body.startsWith('{')) {
+      // Block body - can't easily infer return type
+      returnType = 'unknown'
+    }
+    else {
+      // Expression body - try to infer
+      returnType = inferNarrowType(body, false)
+    }
+
+    const funcType = `${params} => Promise<${returnType}>`
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Regular arrow functions
+  if (trimmed.includes('=>')) {
+    // Handle generics at the beginning
+    let generics = ''
+    let remaining = trimmed
+
+    // Check for generics at the start
+    if (trimmed.startsWith('<')) {
+      const genericEnd = findMatchingBracket(trimmed, 0, '<', '>')
+      if (genericEnd !== -1) {
+        generics = trimmed.substring(0, genericEnd + 1)
+        remaining = trimmed.substring(genericEnd + 1).trim()
+      }
+    }
+
+    // Find the main arrow (not nested ones inside parameter types)
+    const arrowIndex = findMainArrowIndex(remaining)
+    if (arrowIndex === -1) {
+      // Fallback if no arrow found
+      const funcType = '() => unknown'
+      return inUnion ? `(${funcType})` : funcType
+    }
+
+    let params = remaining.substring(0, arrowIndex).trim()
+    const body = remaining.substring(arrowIndex + 2).trim()
+
+    // Handle explicit return type annotations in parameters
+    // Look for pattern like (param: Type): ReturnType
+    let explicitReturnType = ''
+    const returnTypeMatch = params.match(/\):\s*([^=]+)$/)
+    if (returnTypeMatch) {
+      explicitReturnType = returnTypeMatch[1].trim()
+      params = `${params.substring(0, params.lastIndexOf('):'))})`
+    }
+
+    // Clean up params - remove default values
+    params = cleanParameterDefaults(params)
+
+    // Clean up params
+    if (params === '()' || params === '') {
+      params = '()'
+    }
+    else if (!params.startsWith('(')) {
+      // Single parameter without parentheses
+      params = `(${params})`
+    }
+
+    // Try to infer return type from body
+    let returnType = 'unknown'
+    if (explicitReturnType) {
+      // Use explicit return type annotation
+      returnType = explicitReturnType
+    }
+    else if (body.startsWith('{')) {
+      // Block body - can't easily infer return type
+      returnType = 'unknown'
+    }
+    else if (body.includes('=>')) {
+      // This is a higher-order function returning another function
+      // For complex nested functions, try to extract just the outer function signature
+      const outerFuncMatch = body.match(/^\s*\(([^)]*)\)\s*=>/)
+      if (outerFuncMatch) {
+        const outerParams = outerFuncMatch[1].trim()
+        // For functions like pipe that transform T => T, infer the return type from generics
+        if (generics.includes('T') && outerParams.includes('T')) {
+          returnType = `(${outerParams}) => T`
+        }
+        else {
+          returnType = `(${outerParams}) => any`
+        }
+      }
+      else {
+        // Fallback for complex cases
+        returnType = 'any'
+      }
+    }
+    else {
+      // Expression body - try to infer, but be conservative in union contexts
+      if (inUnion) {
+        returnType = 'unknown'
+      }
+      else {
+        returnType = inferNarrowType(body, false)
+      }
+    }
+
+    const funcType = `${generics}${params} => ${returnType}`
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Function expressions
+  if (trimmed.startsWith('function')) {
+    // Handle generics in function expressions like function* <T>(items: T[])
+    let generics = ''
+
+    // Look for generics after function keyword
+    const genericMatch = trimmed.match(/function\s*(?:\*\s*)?(<[^>]+>)/)
+    if (genericMatch) {
+      generics = genericMatch[1]
+    }
+
+    // Try to extract function signature
+    const funcMatch = trimmed.match(/function\s*(\*?)\s*(?:<[^>]+>\s*)?([^(]*)\(([^)]*)\)/)
+    if (funcMatch) {
+      const isGenerator = !!funcMatch[1]
+      const params = funcMatch[3].trim()
+
+      let paramTypes = '(...args: any[])'
+      if (params) {
+        // Try to parse parameters
+        paramTypes = `(${params})`
+      }
+      else {
+        paramTypes = '()'
+      }
+
+      if (isGenerator) {
+        // Try to extract return type from the function signature
+        const returnTypeMatch = trimmed.match(/:\s*Generator<([^>]+)>/)
+        if (returnTypeMatch) {
+          const generatorTypes = returnTypeMatch[1]
+          return inUnion ? `(${generics}${paramTypes} => Generator<${generatorTypes}>)` : `${generics}${paramTypes} => Generator<${generatorTypes}>`
+        }
+        return inUnion ? `(${generics}${paramTypes} => Generator<any, any, any>)` : `${generics}${paramTypes} => Generator<any, any, any>`
+      }
+
+      return inUnion ? `(${generics}${paramTypes} => unknown)` : `${generics}${paramTypes} => unknown`
+    }
+
+    const funcType = '(...args: any[]) => unknown'
+    return inUnion ? `(${funcType})` : funcType
+  }
+
+  // Higher-order functions (functions that return functions)
+  if (trimmed.includes('=>') && trimmed.includes('(') && trimmed.includes(')')) {
+    // For very complex function types, fall back to a simpler signature
+    if (trimmed.length > 100 || (trimmed.match(/=>/g) || []).length > 2) {
+      // Extract just the basic signature pattern
+      const genericMatch = trimmed.match(/^<[^>]+>/)
+      const generics = genericMatch ? genericMatch[0] : ''
+
+      // Look for parameter pattern
+      const paramMatch = trimmed.match(/\([^)]*\)/)
+      const params = paramMatch ? paramMatch[0] : '(...args: any[])'
+
+      const funcType = `${generics}${params} => any`
+      return inUnion ? `(${funcType})` : funcType
+    }
+
+    // This might be a higher-order function, try to preserve the structure
+    return inUnion ? `(${trimmed})` : trimmed
+  }
+
+  const funcType = '() => unknown'
+  return inUnion ? `(${funcType})` : funcType
+}
+
+/**
+ * Check if a type annotation is a generic/broad type that should be replaced with narrow inference
+ */
+export function isGenericType(typeAnnotation: string): boolean {
+  const trimmed = typeAnnotation.trim()
+
+  // Generic types that are less specific than narrow inference
+  if (trimmed === 'any' || trimmed === 'object' || trimmed === 'unknown') {
+    return true
+  }
+
+  // Record types like Record<string, string>, Record<string, any>, etc.
+  if (trimmed.startsWith('Record<') && trimmed.endsWith('>')) {
+    return true
+  }
+
+  // Array types like Array<any>, Array<string>, etc. (but not specific tuples)
+  if (trimmed.startsWith('Array<') && trimmed.endsWith('>')) {
+    return true
+  }
+
+  // Object types like { [key: string]: any }
+  if (trimmed.match(/^\{\s*\[.*\]:\s*(any|string|number|unknown)\s*\}$/)) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Extract type from 'satisfies' operator
+ * e.g., "{ port: 3000 } satisfies { port: number }" returns "{ port: number }"
+ */
+export function extractSatisfiesType(value: string): string | null {
+  const satisfiesIndex = value.lastIndexOf(' satisfies ')
+  if (satisfiesIndex === -1) {
+    return null
+  }
+
+  // Extract everything after 'satisfies '
+  let typeStr = value.slice(satisfiesIndex + 11).trim()
+
+  // Remove trailing semicolon if present
+  if (typeStr.endsWith(';')) {
+    typeStr = typeStr.slice(0, -1).trim()
+  }
+
+  return typeStr || null
+}

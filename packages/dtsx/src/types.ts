@@ -36,6 +36,11 @@ export interface DtsGenerationConfig {
    * @default false
    */
   continueOnError?: boolean
+  /**
+   * Log level for controlling output verbosity
+   * @default 'info'
+   */
+  logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'silent'
 }
 
 /**

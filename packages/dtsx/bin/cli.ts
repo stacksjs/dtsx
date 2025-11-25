@@ -1,4 +1,5 @@
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
+import type { LogLevel } from '../src/logger'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { CLI } from '@stacksjs/clapp'
@@ -20,6 +21,7 @@ const defaultOptions: DtsGenerationConfig = {
   dryRun: false,
   stats: false,
   continueOnError: false,
+  logLevel: 'info',
 }
 
 cli
@@ -42,6 +44,7 @@ cli
   .option('--dry-run', 'Show what would be generated without writing files', { default: defaultOptions.dryRun })
   .option('--stats', 'Show statistics after generation', { default: defaultOptions.stats })
   .option('--continue-on-error', 'Continue processing other files if one fails', { default: defaultOptions.continueOnError })
+  .option('--log-level <level>', 'Log level (debug, info, warn, error, silent)', { default: defaultOptions.logLevel })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -61,6 +64,7 @@ cli
         dryRun: options.dryRun ?? defaultOptions.dryRun,
         stats: options.stats ?? defaultOptions.stats,
         continueOnError: options.continueOnError ?? defaultOptions.continueOnError,
+        logLevel: (options.logLevel as LogLevel) ?? defaultOptions.logLevel,
       }
 
       await generate(config)

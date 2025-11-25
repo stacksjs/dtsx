@@ -1,11 +1,10 @@
-/* eslint-disable no-console */
-
 import type { DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { config as defaultConfig } from './config'
 import { extractDeclarations } from './extractor'
+import { logger, setLogLevel } from './logger'
 import { processDeclarations } from './processor'
 import { writeToFile } from './utils'
 
@@ -15,6 +14,14 @@ import { writeToFile } from './utils'
 export async function generate(options?: Partial<DtsGenerationConfig>): Promise<GenerationStats> {
   const startTime = Date.now()
   const config = { ...defaultConfig, ...options }
+
+  // Configure logger based on options
+  if (config.logLevel) {
+    setLogLevel(config.logLevel)
+  }
+  else if (config.verbose) {
+    setLogLevel('debug')
+  }
 
   // Statistics tracking
   const stats: GenerationStats = {
@@ -28,18 +35,14 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     errors: [],
   }
 
-  // Log start if verbose
-  if (config.verbose) {
-    console.log('Starting DTS generation...')
-    console.log('Config:', config)
-  }
+  // Log start
+  logger.debug('Starting DTS generation...')
+  logger.debug('Config:', config)
 
   // Find all TypeScript files based on entrypoints
   const files = await findFiles(config)
 
-  if (config.verbose) {
-    console.log(`Found ${files.length} TypeScript files`)
-  }
+  logger.debug(`Found ${files.length} TypeScript files`)
 
   // Process each file
   for (const file of files) {
@@ -54,12 +57,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
-        console.log(`[dry-run] Would generate: ${outputPath}`)
-        if (config.verbose) {
-          console.log('--- Content preview ---')
-          console.log(dtsContent.slice(0, 500) + (dtsContent.length > 500 ? '\n...' : ''))
-          console.log('--- End preview ---')
-        }
+        logger.info(`[dry-run] Would generate: ${outputPath}`)
+        logger.debug('--- Content preview ---')
+        logger.debug(dtsContent.slice(0, 500) + (dtsContent.length > 500 ? '\n...' : ''))
+        logger.debug('--- End preview ---')
       }
       else {
         // Ensure output directory exists
@@ -69,9 +70,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         await writeToFile(outputPath, dtsContent)
         stats.filesGenerated++
 
-        if (config.verbose) {
-          console.log(`Generated: ${outputPath}`)
-        }
+        logger.debug(`Generated: ${outputPath}`)
       }
     }
     catch (error) {
@@ -80,10 +79,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       stats.errors.push({ file, error: errorMessage })
 
       if (config.continueOnError) {
-        console.error(`[warning] Error processing ${file}: ${errorMessage}`)
+        logger.warn(`Error processing ${file}: ${errorMessage}`)
       }
       else {
-        console.error(`Error processing ${file}:`, error)
+        logger.error(`Error processing ${file}:`, error)
         throw error
       }
     }
@@ -93,28 +92,26 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Show stats if enabled
   if (config.stats) {
-    console.log('\n--- Generation Statistics ---')
-    console.log(`Files processed:     ${stats.filesProcessed}`)
-    console.log(`Files generated:     ${stats.filesGenerated}`)
+    logger.info('\n--- Generation Statistics ---')
+    logger.info(`Files processed:     ${stats.filesProcessed}`)
+    logger.info(`Files generated:     ${stats.filesGenerated}`)
     if (stats.filesFailed > 0) {
-      console.log(`Files failed:        ${stats.filesFailed}`)
+      logger.info(`Files failed:        ${stats.filesFailed}`)
     }
-    console.log(`Declarations found:  ${stats.declarationsFound}`)
-    console.log(`Imports processed:   ${stats.importsProcessed}`)
-    console.log(`Exports processed:   ${stats.exportsProcessed}`)
-    console.log(`Duration:            ${stats.durationMs}ms`)
+    logger.info(`Declarations found:  ${stats.declarationsFound}`)
+    logger.info(`Imports processed:   ${stats.importsProcessed}`)
+    logger.info(`Exports processed:   ${stats.exportsProcessed}`)
+    logger.info(`Duration:            ${stats.durationMs}ms`)
     if (stats.errors.length > 0) {
-      console.log('\nErrors:')
+      logger.info('\nErrors:')
       for (const { file, error } of stats.errors) {
-        console.log(`  - ${file}: ${error}`)
+        logger.info(`  - ${file}: ${error}`)
       }
     }
-    console.log('-----------------------------\n')
+    logger.info('-----------------------------\n')
   }
 
-  if (config.verbose) {
-    console.log('DTS generation complete!')
-  }
+  logger.debug('DTS generation complete!')
 
   return stats
 }
