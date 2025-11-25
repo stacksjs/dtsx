@@ -2,8 +2,9 @@
  * Processor module - converts declarations to DTS format
  */
 
-import type { Declaration, ProcessingContext } from '../types'
+import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/helpers'
+import { assertNever } from '../utils'
 import { clearProcessorCaches, getCachedRegex } from './cache'
 import {
   processClassDeclaration,
@@ -137,7 +138,8 @@ export function processDeclarations(
   const exports: Declaration[] = []
 
   for (const d of declarations) {
-    switch (d.kind) {
+    const kind: DeclarationKind = d.kind
+    switch (kind) {
       case 'import': imports.push(d); break
       case 'function': functions.push(d); break
       case 'variable': variables.push(d); break
@@ -147,6 +149,7 @@ export function processDeclarations(
       case 'enum': enums.push(d); break
       case 'module': modules.push(d); break
       case 'export': exports.push(d); break
+      default: assertNever(kind, `Unhandled declaration kind: ${kind}`)
     }
   }
 
@@ -389,7 +392,8 @@ export function processDeclarations(
 
   for (const decl of otherDecls) {
     let processed = ''
-    switch (decl.kind) {
+    const kind: DeclarationKind = decl.kind
+    switch (kind) {
       case 'function':
         processed = processFunctionDeclaration(decl, keepComments)
         break
@@ -411,6 +415,12 @@ export function processDeclarations(
       case 'module':
         processed = processModuleDeclaration(decl, keepComments)
         break
+      // import and export are handled separately above
+      case 'import':
+      case 'export':
+        break
+      default:
+        assertNever(kind, `Unhandled declaration kind in processor: ${kind}`)
     }
 
     if (processed) {

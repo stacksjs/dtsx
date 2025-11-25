@@ -213,6 +213,11 @@ export function processTypeDeclaration(decl: Declaration, keepComments: boolean 
     result += ' = any'
   }
 
+  // Ensure semicolon at end (unless it's a multi-line type that ends with })
+  if (!result.trimEnd().endsWith(';') && !result.trimEnd().endsWith('}')) {
+    result += ';'
+  }
+
   return comments + result
 }
 

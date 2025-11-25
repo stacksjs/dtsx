@@ -52,4 +52,4 @@ export declare const abseilioPackage: {
   aliases: readonly [];
   fullPath: 'abseil.io'
 };
-export type AbseilioPackage = typeof abseilioPackage
+export type AbseilioPackage = typeof abseilioPackage;

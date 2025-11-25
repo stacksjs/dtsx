@@ -5,6 +5,15 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { config } from './config'
 
+/**
+ * Exhaustive check helper for switch statements
+ * This function should never be called if all cases are handled
+ * TypeScript will error if a case is missing
+ */
+export function assertNever(value: never, message?: string): never {
+  throw new Error(message || `Unexpected value: ${value}`)
+}
+
 export async function writeToFile(filePath: string, content: string): Promise<void> {
   // Normalize line endings to LF and ensure trailing newline
   let normalized = content.replace(/\r\n/g, '\n')

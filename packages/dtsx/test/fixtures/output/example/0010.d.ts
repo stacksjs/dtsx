@@ -34,4 +34,4 @@ export declare interface FormatPhoneOptions {
   includeCountryCode?: boolean
   format?: 'national' | 'international'
 }
-export type DelimiterType = string
+export type DelimiterType = string;

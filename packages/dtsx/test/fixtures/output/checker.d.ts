@@ -37,9 +37,9 @@ declare interface NodeBuilderContext {
   bundled: boolean
   mapper: TypeMapper | undefined
 }
-declare type TypeSystemEntity = Node | Symbol | Type | Signature
+declare type TypeSystemEntity = Node | Symbol | Type | Signature;
 /** @param containingNode Node to check for parse error */
-declare type AddUnusedDiagnostic = (containingNode: Node, type: UnusedKind, diagnostic: DiagnosticWithLocation) => void
+declare type AddUnusedDiagnostic = (containingNode: Node, type: UnusedKind, diagnostic: DiagnosticWithLocation) => void;
 declare class SymbolTrackerImpl implements SymbolTracker {
   moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined;
   context: NodeBuilderContext;

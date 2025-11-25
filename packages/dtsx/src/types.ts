@@ -72,12 +72,17 @@ export type DtsGenerationOption = Partial<DtsGenerationConfig>
 export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
 
 /**
+ * Declaration kind - all possible declaration types
+ */
+export type DeclarationKind = 'function' | 'variable' | 'interface' | 'type' | 'class' | 'enum' | 'import' | 'export' | 'module'
+
+/**
  * Declaration
  *
  * Represents a parsed declaration from TypeScript source
  */
 export interface Declaration {
-  kind: 'function' | 'variable' | 'interface' | 'type' | 'class' | 'enum' | 'import' | 'export' | 'module'
+  kind: DeclarationKind
   name: string
   text: string
   leadingComments?: string[]

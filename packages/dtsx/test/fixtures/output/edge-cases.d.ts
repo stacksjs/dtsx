@@ -42,8 +42,8 @@ export declare const mixedTypeArray: readonly ['string', 123, true, null, undefi
   key: 'value'
 }, readonly [1, 2, 3], (() => unknown), Date, Promise<'async'>];
 // Type with conditional and infer
-export type ExtractPromise<T> = T extends Promise<infer U> ? U : never
-export type ExtractArray<T> = T extends (infer U)[] ? U : never
+export type ExtractPromise<T> = T extends Promise<infer U> ? U : never;
+export type ExtractArray<T> = T extends (infer U)[] ? U : never;
 // Mapped type with template literal
 export type Getters<T> = {
   [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K]
@@ -54,8 +54,8 @@ export type Result<T, E = Error> = | { success: true; data: T; error?: never }
 // Recursive type with constraints
 export type DeepReadonly<T> = T extends any[] ? DeepReadonlyArray<T[number]> :
   T extends object ? DeepReadonlyObject<T> :
-  T
-declare type DeepReadonlyArray<T> = ReadonlyArray<DeepReadonly<T>>
+  T;
+declare type DeepReadonlyArray<T> = ReadonlyArray<DeepReadonly<T>>;
 declare type DeepReadonlyObject<T> = {
   readonly [P in keyof T]: DeepReadonly<T[P]>
 }

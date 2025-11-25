@@ -124,10 +124,10 @@ export declare interface ProcessedMethod {
  *
  * This is the configuration object for the DTS generation process.
  */
-export type DtsGenerationOption = Partial<DtsGenerationConfig>
+export type DtsGenerationOption = Partial<DtsGenerationConfig>;
 /**
  * DtsGenerationOptions
  *
  * This is the configuration object for the DTS generation process.
  */
-export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
+export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[];

@@ -54,6 +54,6 @@ export declare interface Path {
  * @param type - The type of library ('vue-components', 'web-components', or 'functions').
  * @returns The absolute path to the specified library entry file.
  */
-export type LibraryType = 'vue-components' | 'web-components' | 'functions'
+export type LibraryType = 'vue-components' | 'web-components' | 'functions';
 export { basename, forge, generate, pki, tls, delimiter, dirname, dts, extname, isAbsolute, join, normalize, relative, resolve, sep, toNamespacedPath };
 export default forge;
