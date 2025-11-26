@@ -10,23 +10,21 @@ import { getParameterName, hasExportModifier } from './helpers'
  * Build clean function signature for DTS output
  */
 export function buildFunctionSignature(node: FunctionDeclaration): string {
-  let result = ''
+  const parts: string[] = []
 
   // Add modifiers
   if (hasExportModifier(node))
-    result += 'export '
-  result += 'declare '
-  // Note: Generator functions in declaration files should not have the asterisk
-  result += 'function '
+    parts.push('export ')
+  parts.push('declare function ')
 
   // Add name (no space before)
   if (node.name)
-    result += node.name.getText()
+    parts.push(node.name.getText())
 
   // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    result += `<${generics}>`
+    parts.push('<', generics, '>')
   }
 
   // Add parameters (no space before)
@@ -41,50 +39,47 @@ export function buildFunctionSignature(node: FunctionDeclaration): string {
     }
     return `${name}${optional}: ${type}`
   }).join(', ')
-  result += `(${params})`
+  parts.push('(', params, ')')
 
   // Add return type (no space before colon)
   const returnType = node.type?.getText() || 'void'
-  result += `: ${returnType}`
+  parts.push(': ', returnType, ';')
 
-  return `${result};`
+  return parts.join('')
 }
 
 /**
  * Build clean variable declaration for DTS
  */
 export function buildVariableDeclaration(name: string, type: string | undefined, kind: string, isExported: boolean): string {
-  let result = ''
+  const parts: string[] = []
 
   if (isExported)
-    result += 'export '
-  result += 'declare '
-  result += `${kind} `
-  result += name
+    parts.push('export ')
+  parts.push('declare ', kind, ' ', name)
 
   if (type) {
-    result += `: ${type}`
+    parts.push(': ', type)
   }
 
-  return `${result};`
+  parts.push(';')
+  return parts.join('')
 }
 
 /**
  * Build clean interface declaration for DTS
  */
 export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported: boolean): string {
-  let result = ''
+  const parts: string[] = []
 
   if (isExported)
-    result += 'export '
-  result += 'declare '
-  result += 'interface '
-  result += node.name.getText()
+    parts.push('export ')
+  parts.push('declare interface ', node.name.getText())
 
   // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    result += `<${generics}>`
+    parts.push('<', generics, '>')
   }
 
   // Add extends
@@ -94,15 +89,15 @@ export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported
     )
     if (extendsClause) {
       const types = extendsClause.types.map(type => type.getText()).join(', ')
-      result += ` extends ${types}`
+      parts.push(' extends ', types)
     }
   }
 
   // Add body (simplified)
   const body = getInterfaceBody(node)
-  result += ` ${body}`
+  parts.push(' ', body)
 
-  return result
+  return parts.join('')
 }
 
 /**
@@ -185,48 +180,45 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
  * Build clean type declaration for DTS
  */
 export function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boolean): string {
-  let result = ''
+  const parts: string[] = []
 
   if (isExported)
-    result += 'export '
-  result += 'type '
-  result += node.name.getText()
+    parts.push('export ')
+  parts.push('type ', node.name.getText())
 
   // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    result += `<${generics}>`
+    parts.push('<', generics, '>')
   }
 
-  result += ' = '
-  result += node.type.getText()
+  parts.push(' = ', node.type.getText())
 
-  return result
+  return parts.join('')
 }
 
 /**
  * Build clean class declaration for DTS
  */
 export function buildClassDeclaration(node: ClassDeclaration, isExported: boolean): string {
-  let result = ''
+  const parts: string[] = []
 
   // Add export if needed
   if (isExported)
-    result += 'export '
-  result += 'declare '
+    parts.push('export ')
+  parts.push('declare ')
 
   // Add abstract modifier if present
   const isAbstract = node.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
   if (isAbstract)
-    result += 'abstract '
+    parts.push('abstract ')
 
-  result += 'class '
-  result += node.name?.getText() || 'AnonymousClass'
+  parts.push('class ', node.name?.getText() || 'AnonymousClass')
 
   // Add generics (no space before)
   if (node.typeParameters) {
     const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
-    result += `<${generics}>`
+    parts.push('<', generics, '>')
   }
 
   // Add extends clause
@@ -234,7 +226,7 @@ export function buildClassDeclaration(node: ClassDeclaration, isExported: boolea
     clause.token === SyntaxKind.ExtendsKeyword,
   )?.types[0]?.getText()
   if (extendsClause) {
-    result += ` extends ${extendsClause}`
+    parts.push(' extends ', extendsClause)
   }
 
   // Add implements clause
@@ -242,13 +234,32 @@ export function buildClassDeclaration(node: ClassDeclaration, isExported: boolea
     clause.token === SyntaxKind.ImplementsKeyword,
   )?.types.map(type => type.getText())
   if (implementsClause && implementsClause.length > 0) {
-    result += ` implements ${implementsClause.join(', ')}`
+    parts.push(' implements ', implementsClause.join(', '))
   }
 
   // Build class body with only signatures
-  result += ` ${buildClassBody(node)}`
+  parts.push(' ', buildClassBody(node))
 
-  return result
+  return parts.join('')
+}
+
+/**
+ * Helper to build member modifiers string efficiently
+ */
+function buildMemberModifiers(
+  isStatic: boolean,
+  isAbstract: boolean,
+  isReadonly: boolean,
+  isPrivate: boolean,
+  isProtected: boolean,
+): string {
+  const parts: string[] = ['  ']
+  if (isStatic) parts.push('static ')
+  if (isAbstract) parts.push('abstract ')
+  if (isReadonly) parts.push('readonly ')
+  if (isPrivate) parts.push('private ')
+  else if (isProtected) parts.push('protected ')
+  return parts.join('')
 }
 
 /**
@@ -266,14 +277,8 @@ export function buildClassBody(node: ClassDeclaration): string {
           const name = getParameterName(param)
           const type = param.type?.getText() || 'any'
           const optional = param.questionToken || param.initializer ? '?' : ''
-
-          let modifiers = ''
-          if (param.modifiers) {
-            const modifierTexts = param.modifiers.map(mod => mod.getText()).join(' ')
-            if (modifierTexts)
-              modifiers = `${modifierTexts} `
-          }
-
+          const modifierTexts = param.modifiers.map(mod => mod.getText()).join(' ')
+          const modifiers = modifierTexts ? `${modifierTexts} ` : ''
           members.push(`  ${modifiers}${name}${optional}: ${type};`)
         }
       }
@@ -283,8 +288,6 @@ export function buildClassBody(node: ClassDeclaration): string {
         const name = getParameterName(param)
         const type = param.type?.getText() || 'any'
         const optional = param.questionToken || param.initializer ? '?' : ''
-
-        // Don't include access modifiers in constructor signature for DTS
         return `${name}${optional}: ${type}`
       }).join(', ')
 
@@ -293,27 +296,20 @@ export function buildClassBody(node: ClassDeclaration): string {
     else if (isMethodDeclaration(member)) {
       // Method signature without implementation
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
+      const mods = buildMemberModifiers(
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
+        false,
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
+      )
 
-      let signature = '  '
-      if (isStatic)
-        signature += 'static '
-      if (isAbstract)
-        signature += 'abstract '
-      if (isPrivate)
-        signature += 'private '
-      else if (isProtected)
-        signature += 'protected '
-
-      signature += name
+      const parts: string[] = [mods, name]
 
       // Add generics
       if (member.typeParameters) {
         const generics = member.typeParameters.map(tp => tp.getText()).join(', ')
-        signature += `<${generics}>`
+        parts.push('<', generics, '>')
       }
 
       // Add parameters
@@ -323,94 +319,61 @@ export function buildClassBody(node: ClassDeclaration): string {
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      signature += `(${params})`
+      parts.push('(', params, ')')
 
       // Add return type
       const returnType = member.type?.getText() || 'void'
-      signature += `: ${returnType};`
+      parts.push(': ', returnType, ';')
 
-      members.push(signature)
+      members.push(parts.join(''))
     }
     else if (isPropertyDeclaration(member)) {
       // Property declaration
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
-      const isReadonly = member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
-
-      let signature = '  '
-      if (isStatic)
-        signature += 'static '
-      if (isAbstract)
-        signature += 'abstract '
-      if (isReadonly)
-        signature += 'readonly '
-      if (isPrivate)
-        signature += 'private '
-      else if (isProtected)
-        signature += 'protected '
-
-      signature += name
+      const mods = buildMemberModifiers(
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
+      )
 
       const optional = member.questionToken ? '?' : ''
-      signature += optional
-
       const type = member.type?.getText() || 'any'
-      signature += `: ${type};`
 
-      members.push(signature)
+      members.push(`${mods}${name}${optional}: ${type};`)
     }
     else if (isGetAccessorDeclaration(member)) {
       // Get accessor declaration
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
-
-      let signature = '  '
-      if (isStatic)
-        signature += 'static '
-      if (isAbstract)
-        signature += 'abstract '
-      if (isPrivate)
-        signature += 'private '
-      else if (isProtected)
-        signature += 'protected '
+      const mods = buildMemberModifiers(
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
+        false,
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
+      )
 
       const returnType = member.type?.getText() || 'any'
-      signature += `get ${name}(): ${returnType};`
-
-      members.push(signature)
+      members.push(`${mods}get ${name}(): ${returnType};`)
     }
     else if (isSetAccessorDeclaration(member)) {
       // Set accessor declaration
       const name = member.name?.getText() || ''
-      const isStatic = member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
-      const isPrivate = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
-      const isProtected = member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword)
-      const isAbstract = member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
-
-      let signature = '  '
-      if (isStatic)
-        signature += 'static '
-      if (isAbstract)
-        signature += 'abstract '
-      if (isPrivate)
-        signature += 'private '
-      else if (isProtected)
-        signature += 'protected '
+      const mods = buildMemberModifiers(
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
+        false,
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
+      )
 
       // Get parameter type from the setter's parameter
       const param = member.parameters[0]
       const paramType = param?.type?.getText() || 'any'
       const paramName = param?.name?.getText() || 'value'
 
-      signature += `set ${name}(${paramName}: ${paramType});`
-
-      members.push(signature)
+      members.push(`${mods}set ${name}(${paramName}: ${paramType});`)
     }
   }
 
@@ -421,42 +384,35 @@ export function buildClassBody(node: ClassDeclaration): string {
  * Build clean module declaration for DTS
  */
 export function buildModuleDeclaration(node: ModuleDeclaration, isExported: boolean): string {
-  let result = ''
+  const parts: string[] = []
 
   // Check if this is a global augmentation (declare global { ... })
   const isGlobalAugmentation = node.flags & NodeFlags.GlobalAugmentation
 
   if (isGlobalAugmentation) {
     // Global augmentation - output as "declare global"
-    result = 'declare global'
-    result += ` ${buildModuleBody(node)}`
-    return result
+    return `declare global ${buildModuleBody(node)}`
   }
 
   // Add export if needed
   if (isExported) {
-    result += 'export '
+    parts.push('export ')
   }
 
   // Add declare keyword
-  result += 'declare '
+  parts.push('declare ')
 
   // Check if this is a namespace or module
   const isNamespace = node.flags & NodeFlags.Namespace
-  if (isNamespace) {
-    result += 'namespace '
-  }
-  else {
-    result += 'module '
-  }
+  parts.push(isNamespace ? 'namespace ' : 'module ')
 
   // Add module name
-  result += node.name.getText()
+  parts.push(node.name.getText())
 
   // Build module body with only signatures
-  result += ` ${buildModuleBody(node)}`
+  parts.push(' ', buildModuleBody(node))
 
-  return result
+  return parts.join('')
 }
 
 /**
@@ -474,16 +430,14 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const isExported = hasExportModifier(element)
       const name = element.name?.getText() || ''
 
-      let signature = '  '
-      if (isExported)
-        signature += 'export '
-      signature += 'function '
-      signature += name
+      const parts: string[] = ['  ']
+      if (isExported) parts.push('export ')
+      parts.push('function ', name)
 
       // Add generics
       if (element.typeParameters) {
         const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
-        signature += `<${generics}>`
+        parts.push('<', generics, '>')
       }
 
       // Add parameters
@@ -493,13 +447,13 @@ export function buildModuleBody(node: ModuleDeclaration): string {
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      signature += `(${params})`
+      parts.push('(', params, ')')
 
       // Add return type
       const returnType = element.type?.getText() || 'void'
-      signature += `: ${returnType};`
+      parts.push(': ', returnType, ';')
 
-      members.push(signature)
+      members.push(parts.join(''))
     }
     else if (isVariableStatement(element)) {
       // Variable declarations
@@ -513,37 +467,35 @@ export function buildModuleBody(node: ModuleDeclaration): string {
             ? 'const'
             : (element as VariableStatement).declarationList.flags & NodeFlags.Let ? 'let' : 'var'
 
-          let varDecl = '  '
-          if (isExported)
-            varDecl += 'export '
-          varDecl += `${kind} `
-          varDecl += name
+          const parts: string[] = ['  ']
+          if (isExported) parts.push('export ')
+          parts.push(kind, ' ', name)
 
           // Use type annotation if available, otherwise infer from initializer
           if (typeAnnotation) {
-            varDecl += `: ${typeAnnotation}`
+            parts.push(': ', typeAnnotation)
           }
           else if (initializer) {
             // Simple type inference for common cases
             if (initializer.startsWith('\'') || initializer.startsWith('"') || initializer.startsWith('`')) {
-              varDecl += ': string'
+              parts.push(': string')
             }
             else if (/^\d+$/.test(initializer)) {
-              varDecl += ': number'
+              parts.push(': number')
             }
             else if (initializer === 'true' || initializer === 'false') {
-              varDecl += ': boolean'
+              parts.push(': boolean')
             }
             else {
-              varDecl += ': any'
+              parts.push(': any')
             }
           }
           else {
-            varDecl += ': any'
+            parts.push(': any')
           }
 
-          varDecl += ';'
-          members.push(varDecl)
+          parts.push(';')
+          members.push(parts.join(''))
         }
       }
     }
@@ -552,16 +504,14 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
 
-      let interfaceDecl = '  '
-      if (isExported)
-        interfaceDecl += 'export '
-      interfaceDecl += 'interface '
-      interfaceDecl += name
+      const parts: string[] = ['  ']
+      if (isExported) parts.push('export ')
+      parts.push('interface ', name)
 
       // Add generics
       if (element.typeParameters) {
         const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
-        interfaceDecl += `<${generics}>`
+        parts.push('<', generics, '>')
       }
 
       // Add extends
@@ -571,37 +521,34 @@ export function buildModuleBody(node: ModuleDeclaration): string {
         )
         if (extendsClause) {
           const types = extendsClause.types.map(type => type.getText()).join(', ')
-          interfaceDecl += ` extends ${types}`
+          parts.push(' extends ', types)
         }
       }
 
       // Add body
       const body = getInterfaceBody(element)
-      interfaceDecl += ` ${body}`
+      parts.push(' ', body)
 
-      members.push(interfaceDecl)
+      members.push(parts.join(''))
     }
     else if (isTypeAliasDeclaration(element)) {
       // Type alias declaration (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
 
-      let typeDecl = '  '
-      if (isExported)
-        typeDecl += 'export '
-      typeDecl += 'type '
-      typeDecl += name
+      const parts: string[] = ['  ']
+      if (isExported) parts.push('export ')
+      parts.push('type ', name)
 
       // Add generics
       if (element.typeParameters) {
         const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
-        typeDecl += `<${generics}>`
+        parts.push('<', generics, '>')
       }
 
-      typeDecl += ' = '
-      typeDecl += element.type.getText()
+      parts.push(' = ', element.type.getText())
 
-      members.push(typeDecl)
+      members.push(parts.join(''))
     }
     else if (isEnumDeclaration(element)) {
       // Enum declaration
@@ -609,13 +556,10 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const name = element.name.getText()
       const isConst = element.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
 
-      let enumDecl = '  '
-      if (isExported)
-        enumDecl += 'export '
-      if (isConst)
-        enumDecl += 'const '
-      enumDecl += 'enum '
-      enumDecl += name
+      const parts: string[] = ['  ']
+      if (isExported) parts.push('export ')
+      if (isConst) parts.push('const ')
+      parts.push('enum ', name)
 
       // Build enum body
       const enumMembers: string[] = []
@@ -632,40 +576,32 @@ export function buildModuleBody(node: ModuleDeclaration): string {
         }
       }
 
-      enumDecl += ` {\n${enumMembers.join(',\n')}\n  }`
-      members.push(enumDecl)
+      parts.push(' {\n', enumMembers.join(',\n'), '\n  }')
+      members.push(parts.join(''))
     }
     else if (isModuleDeclaration(element)) {
       // Nested namespace/module (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
       const name = element.name.getText()
 
-      let nestedDecl = '  '
-      if (isExported)
-        nestedDecl += 'export '
+      const parts: string[] = ['  ']
+      if (isExported) parts.push('export ')
 
       // Check if this is a namespace or module
       const isNamespace = element.flags & NodeFlags.Namespace
-      if (isNamespace) {
-        nestedDecl += 'namespace '
-      }
-      else {
-        nestedDecl += 'module '
-      }
+      parts.push(isNamespace ? 'namespace ' : 'module ')
+      parts.push(name, ' ', buildModuleBody(element))
 
-      nestedDecl += name
-      nestedDecl += ` ${buildModuleBody(element)}`
-
-      members.push(nestedDecl)
+      members.push(parts.join(''))
     }
     else if (isExportAssignment(element)) {
       // Export default statement
-      let exportDecl = '  export default '
+      const parts: string[] = ['  export default ']
       if (element.expression) {
-        exportDecl += element.expression.getText()
+        parts.push(element.expression.getText())
       }
-      exportDecl += ';'
-      members.push(exportDecl)
+      parts.push(';')
+      members.push(parts.join(''))
     }
   }
 

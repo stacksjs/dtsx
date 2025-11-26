@@ -139,9 +139,11 @@ export function shouldIncludeNonExportedInterface(interfaceName: string, sourceC
   let patterns = interfacePatternCache.get(interfaceName)
   if (!patterns) {
     const escaped = interfaceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Use [^\n]* instead of .*? to avoid backtracking across lines
+    // This is more efficient as it stops at line boundaries
     patterns = {
-      funcPattern: new RegExp(`export\\s+.*?:\\s*.*?${escaped}`, 'g'),
-      typePattern: new RegExp(`export\\s+.*?${escaped}`, 'g'),
+      funcPattern: new RegExp(`export\\s+[^\\n]*:\\s*[^\\n]*\\b${escaped}\\b`, 'gm'),
+      typePattern: new RegExp(`export\\s+[^\\n]*\\b${escaped}\\b`, 'gm'),
     }
     interfacePatternCache.set(interfaceName, patterns)
 

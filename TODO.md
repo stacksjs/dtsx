@@ -62,7 +62,7 @@
 
 ### Type System Support
 
-- [ ] **Conditional types with `infer`** - Currently handled but may not preserve complex nested infer patterns correctly.
+- [x] **Conditional types with `infer`** - ✅ Working correctly, including nested infer patterns
 
 - [x] **Template literal types** - `inferTemplateLiteralType()` returns `string` for complex cases. Should preserve template literal type syntax. ✅ Working correctly
 
@@ -71,57 +71,57 @@
   // Output: `/${string}/${number}` (preserved correctly)
   ```
 
-- [ ] **Mapped type modifiers** - Ensure `+readonly`, `-readonly`, `+?`, `-?` modifiers are preserved.
+- [x] **Mapped type modifiers** - ✅ `+readonly`, `-readonly`, `+?`, `-?` modifiers preserved
 
-- [ ] **`satisfies` operator** - Not currently handled in type inference.
+- [x] **`satisfies` operator** - ✅ Working via `extractSatisfiesType()`
 
-- [ ] **`const` type parameters** - TypeScript 5.0+ feature for const generic parameters.
+- [x] **`const` type parameters** - ✅ TypeScript 5.0+ feature working
 
   ```typescript
-  function foo<const T>(x: T): T
+  function foo<const T>(x: T): T  // Works!
   ```
 
-- [ ] **Variadic tuple types** - `[...T]` spread in tuple types.
+- [x] **Variadic tuple types** - ✅ `[...T]` spread in tuple types working
 
-- [ ] **Named tuple elements** - `[first: string, second: number]`.
+- [x] **Named tuple elements** - ✅ `[first: string, second: number]` working
 
-- [ ] **`NoInfer<T>` utility type** - TypeScript 5.4+ feature.
+- [x] **`NoInfer<T>` utility type** - ✅ TypeScript 5.4+ feature working
 
 ### Declaration Support
 
-- [ ] **Function overloads** - `overloads` field exists in `Declaration` type but extraction/processing is incomplete. Test with complex overload scenarios.
+- [x] **Function overloads** - ✅ Working correctly
 
-- [ ] **Ambient module declarations** - `declare module 'x'` augmentations need better handling.
+- [x] **Ambient module declarations** - ✅ `declare module 'x'` working
 
-- [ ] **Global augmentations** - `declare global { }` blocks.
+- [x] **Global augmentations** - ✅ `declare global { }` blocks working
 
 - [x] **Triple-slash directives** - `/// <reference types="..." />` should be preserved. ✅ Implemented in `extractTripleSlashDirectives()`
 
-- [ ] **`declare const enum`** - Ensure const enums are properly emitted.
+- [x] **`declare const enum`** - ✅ Const enums properly emitted
 
-- [ ] **Accessor declarations** - `get`/`set` accessors in classes and interfaces.
+- [x] **Accessor declarations** - ✅ `get`/`set` accessors working
 
-- [ ] **Index signatures** - `[key: string]: T` in interfaces/types.
+- [x] **Index signatures** - ✅ `[key: string]: T` working
 
-- [ ] **Constructor signatures** - `new (): T` in interfaces.
+- [x] **Constructor signatures** - ✅ `new (): T` working
 
-- [ ] **Call signatures** - `(): T` in interfaces (partially implemented in `getInterfaceBody()`).
+- [x] **Call signatures** - ✅ `(): T` working
 
-- [ ] **`this` parameter types** - `function foo(this: SomeType, ...)`
+- [x] **`this` parameter types** - ✅ `function foo(this: SomeType, ...)` working
 
-- [ ] **`asserts` return type** - `function assert(x): asserts x is string`
+- [x] **`asserts` return type** - ✅ `asserts x is string` working
 
-- [ ] **`is` type predicates** - `function isString(x): x is string`
+- [x] **`is` type predicates** - ✅ `x is string` working
 
 ### Module System
 
-- [ ] **Dynamic imports** - `import('module')` type expressions.
+- [x] **Dynamic imports** - ✅ `import('module')` type expressions working
 
 - [ ] **`import.meta`** - Type declarations for import.meta properties.
 
-- [ ] **`export * as ns from`** - Namespace re-exports.
+- [x] **`export * as ns from`** - ✅ Namespace re-exports working
 
-- [ ] **Side-effect imports** - `import 'module'` should be preserved if they have type effects.
+- [x] **Side-effect imports** - ✅ Preserved (checked in processor)
 
 ---
 
