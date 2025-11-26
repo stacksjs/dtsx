@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { CLI } from '@stacksjs/clapp'
 import { version } from '../../../package.json'
-import { generate, watch } from '../src/generator'
+import { generate, processSource, watch } from '../src/generator'
 
 const cli = new CLI('dtsx')
 
@@ -27,6 +27,8 @@ const defaultOptions: DtsGenerationConfig = {
   progress: false,
   diff: false,
   validate: false,
+  parallel: false,
+  concurrency: 4,
 }
 
 cli
@@ -58,6 +60,8 @@ cli
   .option('--progress', 'Show progress during generation', { default: defaultOptions.progress })
   .option('--diff', 'Show diff of changes compared to existing files', { default: defaultOptions.diff })
   .option('--validate', 'Validate generated .d.ts files against TypeScript', { default: defaultOptions.validate })
+  .option('--parallel', 'Process files in parallel', { default: defaultOptions.parallel })
+  .option('--concurrency <number>', 'Number of concurrent workers (with --parallel)', { default: defaultOptions.concurrency })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -85,6 +89,8 @@ cli
         progress: options.progress ?? defaultOptions.progress,
         diff: options.diff ?? defaultOptions.diff,
         validate: options.validate ?? defaultOptions.validate,
+        parallel: options.parallel ?? defaultOptions.parallel,
+        concurrency: Number(options.concurrency) || defaultOptions.concurrency,
       }
 
       const stats = await generate(config)
@@ -139,6 +145,55 @@ cli
     }
     catch (error) {
       console.error('Error in watch mode:', error)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('stdin', 'Process TypeScript from stdin and output .d.ts to stdout')
+  .option('--keep-comments', 'Keep comments in generated .d.ts files', { default: true })
+  .option('--import-order <patterns>', 'Import order priority patterns (comma-separated)', {
+    default: 'bun',
+    type: [String],
+  })
+  .example('echo "export const foo: string = \'bar\'" | dtsx stdin')
+  .example('cat src/index.ts | dtsx stdin')
+  .action(async (options: { keepComments?: boolean, importOrder?: string[] }) => {
+    try {
+      // Read from stdin
+      const chunks: Buffer[] = []
+      for await (const chunk of process.stdin) {
+        chunks.push(chunk)
+      }
+      const sourceCode = Buffer.concat(chunks).toString('utf-8')
+
+      if (!sourceCode.trim()) {
+        console.error('Error: No input received from stdin')
+        process.exit(1)
+      }
+
+      let importOrder = ['bun']
+      if (options.importOrder) {
+        if (Array.isArray(options.importOrder)) {
+          importOrder = options.importOrder.flatMap((p: string) => p.split(',').map(s => s.trim()).filter(Boolean))
+        }
+        else if (typeof options.importOrder === 'string') {
+          importOrder = (options.importOrder as string).split(',').map(s => s.trim()).filter(Boolean)
+        }
+      }
+
+      const dtsContent = processSource(
+        sourceCode,
+        'stdin.ts',
+        options.keepComments ?? true,
+        importOrder,
+      )
+
+      // Output to stdout
+      console.log(dtsContent)
+    }
+    catch (error) {
+      console.error('Error processing stdin:', error)
       process.exit(1)
     }
   })

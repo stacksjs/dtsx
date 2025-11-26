@@ -29,11 +29,11 @@
 
 ### P0: Memory & Algorithmic Efficiency
 
-- [ ] **Regex compilation caching** - `processor.ts` creates new RegExp objects inside loops (lines 266, 294, 308, etc.). Pre-compile and cache these patterns.
+- [x] **Regex compilation caching** - `processor.ts` creates new RegExp objects inside loops. Pre-compile and cache these patterns. ✅ Implemented module-level caching
 
   ```typescript
-  // Current: new RegExp(`\\b${item.replace(...)}\\b`) inside loops
-  // Fix: Create a Map<string, RegExp> cache for compiled patterns
+  // Fixed: INTERFACE_PATTERN, TYPE_PATTERN, CLASS_PATTERN, ENUM_PATTERN at module level
+  // Also cached interface patterns in extractor/helpers.ts
   ```
 
 - [ ] **O(n²) import usage detection** - `processDeclarations()` iterates over all imports for every declaration type (functions, variables, interfaces, types, classes, enums, modules). Refactor to single-pass analysis.
@@ -302,7 +302,7 @@ Based on code analysis, these are the likely bottlenecks:
 
 ## 🎯 Quick Wins (Low Effort, High Impact)
 
-1. [x] Cache compiled RegExp patterns ✅ Implemented in `processor/cache.ts`
+1. [x] Cache compiled RegExp patterns ✅ Extended with module-level pattern caching in processor/index.ts and extractor/helpers.ts
 2. [x] Add early return in `formatComments()` when `keepComments=false` ✅ Already implemented
 3. [x] Fix duplicate `declare` keyword issue ✅ Not an issue (verified)
 4. [x] Add example 0012 to test suite ✅ Already included
@@ -433,11 +433,11 @@ These files have eslint-disable comments indicating known issues:
 
 - [x] **Exit codes** - Proper exit codes for different error conditions. ✅ 0=success, 1=all failed, 2=partial
 
-- [ ] **Stdin support** - Accept TypeScript code from stdin.
+- [x] **Stdin support** - Accept TypeScript code from stdin. ✅ `dtsx stdin` command
 
 - [x] **JSON output** - `--format json` for programmatic consumption. ✅ `--output-format json`
 
-- [ ] **Parallel processing** - `--parallel` flag for multi-file processing.
+- [x] **Parallel processing** - `--parallel` flag for multi-file processing. ✅ Implemented with `--concurrency` option
 
 ---
 

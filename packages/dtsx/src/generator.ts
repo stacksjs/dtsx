@@ -48,25 +48,22 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Show initial progress if enabled
   if (config.progress && files.length > 0) {
-    logger.info(`Processing ${files.length} files...`)
+    const mode = config.parallel ? 'parallel' : 'sequential'
+    logger.info(`Processing ${files.length} files (${mode})...`)
   }
 
-  // Process each file
-  for (const file of files) {
+  // Helper function to process a single file
+  const processSingleFile = async (file: string): Promise<{
+    success: boolean
+    file: string
+    declarationCount: number
+    importCount: number
+    exportCount: number
+    error?: string
+  }> => {
     try {
       const outputPath = getOutputPath(file, config)
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStats(file, config)
-
-      stats.filesProcessed++
-      stats.declarationsFound += declarationCount
-      stats.importsProcessed += importCount
-      stats.exportsProcessed += exportCount
-
-      // Show progress
-      if (config.progress) {
-        const percent = Math.round((stats.filesProcessed / files.length) * 100)
-        logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)}`)
-      }
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
@@ -99,14 +96,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
         // Write the DTS file
         await writeToFile(outputPath, dtsContent)
-        stats.filesGenerated++
 
         // Validate if enabled
         if (config.validate) {
           const validation = validateDtsContent(dtsContent, outputPath)
-          stats.filesValidated++
           if (!validation.isValid) {
-            stats.validationErrors += validation.errors.length
             logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
             for (const err of validation.errors) {
               logger.warn(`  Line ${err.line}:${err.column} - ${err.message}`)
@@ -119,18 +113,84 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
         logger.debug(`Generated: ${outputPath}`)
       }
+
+      return { success: true, file, declarationCount, importCount, exportCount }
     }
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      stats.filesFailed++
-      stats.errors.push({ file, error: errorMessage })
+      return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, error: errorMessage }
+    }
+  }
 
-      if (config.continueOnError) {
-        logger.warn(`Error processing ${file}: ${errorMessage}`)
+  // Process files either in parallel or sequentially
+  if (config.parallel) {
+    // Parallel processing with concurrency limit
+    const concurrency = config.concurrency || 4
+    const results: Array<Awaited<ReturnType<typeof processSingleFile>>> = []
+
+    for (let i = 0; i < files.length; i += concurrency) {
+      const batch = files.slice(i, i + concurrency)
+      const batchResults = await Promise.all(batch.map(processSingleFile))
+      results.push(...batchResults)
+
+      // Update stats and show progress after each batch
+      for (const result of batchResults) {
+        stats.filesProcessed++
+        if (result.success) {
+          stats.filesGenerated++
+          stats.declarationsFound += result.declarationCount
+          stats.importsProcessed += result.importCount
+          stats.exportsProcessed += result.exportCount
+          if (config.validate) stats.filesValidated++
+        }
+        else {
+          stats.filesFailed++
+          stats.errors.push({ file: result.file, error: result.error || 'Unknown error' })
+          if (config.continueOnError) {
+            logger.warn(`Error processing ${result.file}: ${result.error}`)
+          }
+          else {
+            logger.error(`Error processing ${result.file}: ${result.error}`)
+            throw new Error(result.error)
+          }
+        }
+      }
+
+      if (config.progress) {
+        const percent = Math.round((stats.filesProcessed / files.length) * 100)
+        logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}%`)
+      }
+    }
+  }
+  else {
+    // Sequential processing (original behavior)
+    for (const file of files) {
+      const result = await processSingleFile(file)
+
+      stats.filesProcessed++
+      if (result.success) {
+        stats.filesGenerated++
+        stats.declarationsFound += result.declarationCount
+        stats.importsProcessed += result.importCount
+        stats.exportsProcessed += result.exportCount
+        if (config.validate) stats.filesValidated++
+
+        // Show progress
+        if (config.progress) {
+          const percent = Math.round((stats.filesProcessed / files.length) * 100)
+          logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)}`)
+        }
       }
       else {
-        logger.error(`Error processing ${file}:`, error)
-        throw error
+        stats.filesFailed++
+        stats.errors.push({ file: result.file, error: result.error || 'Unknown error' })
+        if (config.continueOnError) {
+          logger.warn(`Error processing ${file}: ${result.error}`)
+        }
+        else {
+          logger.error(`Error processing ${file}: ${result.error}`)
+          throw new Error(result.error)
+        }
       }
     }
   }
@@ -266,6 +326,32 @@ export async function processFile(
 ): Promise<string> {
   const result = await processFileWithStats(filePath, config)
   return result.content
+}
+
+/**
+ * Process TypeScript source code from a string (for stdin support)
+ */
+export function processSource(
+  sourceCode: string,
+  filename: string = 'stdin.ts',
+  keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
+): string {
+  // Extract declarations
+  const declarations = extractDeclarations(sourceCode, filename, keepComments)
+
+  // Create processing context
+  const context: ProcessingContext = {
+    filePath: filename,
+    sourceCode,
+    declarations,
+    imports: new Map(),
+    exports: new Set(),
+    usedTypes: new Set(),
+  }
+
+  // Process declarations to generate DTS
+  return processDeclarations(declarations, context, keepComments, importOrder)
 }
 
 /**

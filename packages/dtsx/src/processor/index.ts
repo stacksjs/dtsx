@@ -44,6 +44,13 @@ export {
   parseArrayElements,
 } from './type-inference'
 
+// Pre-compiled regex patterns for type extraction (cached at module level)
+const INTERFACE_PATTERN = /(?:export\s+)?(?:declare\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g
+const TYPE_PATTERN = /(?:export\s+)?(?:declare\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g
+const CLASS_PATTERN = /(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g
+const ENUM_PATTERN = /(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g
+const EXPORT_ITEMS_PATTERN = /export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/
+
 /**
  * Replace unresolved types with 'any' in the DTS output
  */
@@ -67,40 +74,29 @@ function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[],
   // This catches types that weren't extracted but are still defined in the output
   const definedInDts = new Set<string>()
 
-  // Look for interface definitions
-  const interfaceMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (interfaceMatches) {
-    interfaceMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?interface\s+/, '')
-      definedInDts.add(name)
-    })
+  // Look for interface definitions (reset lastIndex for global regex)
+  INTERFACE_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = INTERFACE_PATTERN.exec(dtsContent)) !== null) {
+    definedInDts.add(match[1])
   }
 
   // Look for type alias definitions
-  const typeMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (typeMatches) {
-    typeMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?type\s+/, '')
-      definedInDts.add(name)
-    })
+  TYPE_PATTERN.lastIndex = 0
+  while ((match = TYPE_PATTERN.exec(dtsContent)) !== null) {
+    definedInDts.add(match[1])
   }
 
   // Look for class definitions
-  const classMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (classMatches) {
-    classMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
-      definedInDts.add(name)
-    })
+  CLASS_PATTERN.lastIndex = 0
+  while ((match = CLASS_PATTERN.exec(dtsContent)) !== null) {
+    definedInDts.add(match[1])
   }
 
   // Look for enum definitions
-  const enumMatches = dtsContent.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (enumMatches) {
-    enumMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
-      definedInDts.add(name)
-    })
+  ENUM_PATTERN.lastIndex = 0
+  while ((match = ENUM_PATTERN.exec(dtsContent)) !== null) {
+    definedInDts.add(match[1])
   }
 
   // For now, don't do any automatic type replacement
@@ -172,8 +168,8 @@ export function processDeclarations(
         exportText += ';'
       }
 
-      // Extract exported items for tracking
-      const match = exportText.match(/export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/)
+      // Extract exported items for tracking (using cached pattern)
+      const match = exportText.match(EXPORT_ITEMS_PATTERN)
       if (match) {
         const items = match[1].split(',').map(item => item.trim())
         for (const item of items) {

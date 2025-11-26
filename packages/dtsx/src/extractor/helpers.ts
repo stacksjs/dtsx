@@ -128,15 +128,35 @@ export function shouldIncludeNonExportedFunction(_functionName?: string, _source
   return false
 }
 
+// Cache for interface usage patterns
+const interfacePatternCache = new Map<string, { funcPattern: RegExp, typePattern: RegExp }>()
+
 /**
  * Check if a non-exported interface should be included (e.g., if it's used by exported items)
  */
 export function shouldIncludeNonExportedInterface(interfaceName: string, sourceCode: string): boolean {
-  // Check if the interface is used in exported function signatures or other exported types
-  const exportedFunctionPattern = new RegExp(`export\\s+.*?:\\s*.*?${interfaceName}`, 'g')
-  const exportedTypePattern = new RegExp(`export\\s+.*?${interfaceName}`, 'g')
+  // Get or create cached patterns for this interface name
+  let patterns = interfacePatternCache.get(interfaceName)
+  if (!patterns) {
+    const escaped = interfaceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    patterns = {
+      funcPattern: new RegExp(`export\\s+.*?:\\s*.*?${escaped}`, 'g'),
+      typePattern: new RegExp(`export\\s+.*?${escaped}`, 'g'),
+    }
+    interfacePatternCache.set(interfaceName, patterns)
 
-  return exportedFunctionPattern.test(sourceCode) || exportedTypePattern.test(sourceCode)
+    // Evict old entries if cache grows too large
+    if (interfacePatternCache.size > 200) {
+      const firstKey = interfacePatternCache.keys().next().value
+      if (firstKey) interfacePatternCache.delete(firstKey)
+    }
+  }
+
+  // Reset lastIndex before testing (since we use 'g' flag)
+  patterns.funcPattern.lastIndex = 0
+  patterns.typePattern.lastIndex = 0
+
+  return patterns.funcPattern.test(sourceCode) || patterns.typePattern.test(sourceCode)
 }
 
 /**

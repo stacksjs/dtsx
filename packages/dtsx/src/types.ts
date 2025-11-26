@@ -71,6 +71,16 @@ export interface DtsGenerationConfig {
    * @default false
    */
   watch?: boolean
+  /**
+   * Process files in parallel for faster generation
+   * @default false
+   */
+  parallel?: boolean
+  /**
+   * Number of concurrent workers for parallel processing
+   * @default 4
+   */
+  concurrency?: number
 }
 
 /**
