@@ -993,3 +993,391 @@ export function extractSatisfiesType(value: string): string | null {
 
   return typeStr || null
 }
+
+/**
+ * Infer mapped type from type expression
+ * Handles patterns like { [K in keyof T]: V }
+ */
+export function inferMappedType(typeStr: string): string | null {
+  const trimmed = typeStr.trim()
+
+  // Check for mapped type pattern: { [K in keyof T]: V } or { [P in T]: V }
+  const mappedMatch = trimmed.match(/^\{\s*\[(\w+)\s+in\s+(.+?)\](\?)?\s*:\s*(.+)\s*\}$/)
+  if (mappedMatch) {
+    const [, keyVar, constraint, optional, valueType] = mappedMatch
+    const optionalMod = optional ? '?' : ''
+    return `{ [${keyVar} in ${constraint}]${optionalMod}: ${valueType} }`
+  }
+
+  // Check for readonly mapped type: { readonly [K in keyof T]: V }
+  const readonlyMappedMatch = trimmed.match(/^\{\s*readonly\s+\[(\w+)\s+in\s+(.+?)\](\?)?\s*:\s*(.+)\s*\}$/)
+  if (readonlyMappedMatch) {
+    const [, keyVar, constraint, optional, valueType] = readonlyMappedMatch
+    const optionalMod = optional ? '?' : ''
+    return `{ readonly [${keyVar} in ${constraint}]${optionalMod}: ${valueType} }`
+  }
+
+  // Check for mapped type with -readonly or -?: { -readonly [K in keyof T]-?: V }
+  const modifierMappedMatch = trimmed.match(/^\{\s*(-?readonly\s+)?\[(\w+)\s+in\s+(.+?)\](-?\?)?\s*:\s*(.+)\s*\}$/)
+  if (modifierMappedMatch) {
+    const [, readonlyMod, keyVar, constraint, optional, valueType] = modifierMappedMatch
+    const readonlyStr = readonlyMod ? readonlyMod.trim() + ' ' : ''
+    const optionalMod = optional || ''
+    return `{ ${readonlyStr}[${keyVar} in ${constraint}]${optionalMod}: ${valueType} }`
+  }
+
+  return null
+}
+
+/**
+ * Infer conditional type from type expression
+ * Handles patterns like T extends U ? X : Y
+ */
+export function inferConditionalType(typeStr: string): string | null {
+  const trimmed = typeStr.trim()
+
+  // Check for conditional type pattern: T extends U ? X : Y
+  // Handle nested conditionals by finding the first ? and matching :
+  const extendsIndex = trimmed.indexOf(' extends ')
+  if (extendsIndex === -1) return null
+
+  const afterExtends = trimmed.slice(extendsIndex + 9)
+  const questionIndex = findConditionalQuestionMark(afterExtends)
+  if (questionIndex === -1) return null
+
+  const colonIndex = findConditionalColon(afterExtends, questionIndex)
+  if (colonIndex === -1) return null
+
+  const checkType = trimmed.slice(0, extendsIndex).trim()
+  const extendsType = afterExtends.slice(0, questionIndex).trim()
+  const trueType = afterExtends.slice(questionIndex + 1, colonIndex).trim()
+  const falseType = afterExtends.slice(colonIndex + 1).trim()
+
+  return `${checkType} extends ${extendsType} ? ${trueType} : ${falseType}`
+}
+
+/**
+ * Find the question mark in a conditional type (handling nested conditionals)
+ */
+function findConditionalQuestionMark(str: string): number {
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i]
+    const prevChar = i > 0 ? str[i - 1] : ''
+
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+
+      if (char === '?' && depth === 0) {
+        return i
+      }
+    }
+  }
+
+  return -1
+}
+
+/**
+ * Find the colon in a conditional type (handling nested conditionals)
+ */
+function findConditionalColon(str: string, startAfter: number): number {
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = startAfter + 1; i < str.length; i++) {
+    const char = str[i]
+    const prevChar = i > 0 ? str[i - 1] : ''
+
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+
+      // Handle nested ternary - if we see ? at depth 0, increase depth
+      if (char === '?' && depth === 0) {
+        depth++
+      }
+
+      if (char === ':' && depth === 0) {
+        return i
+      }
+
+      // Handle nested ternary colon
+      if (char === ':' && depth > 0) {
+        depth--
+      }
+    }
+  }
+
+  return -1
+}
+
+/**
+ * Infer template literal type from type expression
+ * Handles patterns like `${string}-${number}`
+ */
+export function inferTemplateLiteralTypeAdvanced(typeStr: string): string | null {
+  const trimmed = typeStr.trim()
+
+  // Check if it's a template literal type (backticks with ${...})
+  if (!trimmed.startsWith('`') || !trimmed.endsWith('`')) {
+    return null
+  }
+
+  // Extract the template content
+  const content = trimmed.slice(1, -1)
+
+  // Check for template expressions
+  if (!content.includes('${')) {
+    // Simple string literal
+    return trimmed
+  }
+
+  // Parse template literal type
+  const parts: string[] = []
+  let current = ''
+  let i = 0
+
+  while (i < content.length) {
+    if (content[i] === '$' && content[i + 1] === '{') {
+      // Found expression start
+      if (current) {
+        parts.push(`"${current}"`)
+        current = ''
+      }
+
+      // Find matching }
+      let depth = 1
+      let expr = ''
+      i += 2 // Skip ${
+
+      while (i < content.length && depth > 0) {
+        if (content[i] === '{') depth++
+        if (content[i] === '}') depth--
+        if (depth > 0) expr += content[i]
+        i++
+      }
+
+      parts.push(expr.trim())
+    }
+    else {
+      current += content[i]
+      i++
+    }
+  }
+
+  if (current) {
+    parts.push(`"${current}"`)
+  }
+
+  // Return the template literal type
+  return trimmed
+}
+
+/**
+ * Infer infer keyword usage in conditional types
+ * Handles patterns like T extends (infer U)[] ? U : never
+ */
+export function extractInferTypes(typeStr: string): string[] {
+  const inferTypes: string[] = []
+  const inferRegex = /infer\s+(\w+)/g
+  let match
+
+  while ((match = inferRegex.exec(typeStr)) !== null) {
+    inferTypes.push(match[1])
+  }
+
+  return inferTypes
+}
+
+/**
+ * Check if a type uses advanced TypeScript features
+ */
+export function isComplexType(typeStr: string): boolean {
+  const trimmed = typeStr.trim()
+
+  // Mapped types
+  if (/\[\s*\w+\s+in\s+/.test(trimmed)) return true
+
+  // Conditional types
+  if (/\s+extends\s+.+\s+\?\s+.+\s+:\s+/.test(trimmed)) return true
+
+  // Template literal types
+  if (/^`.*\$\{.*\}.*`$/.test(trimmed)) return true
+
+  // Infer keyword
+  if (/\binfer\s+\w+/.test(trimmed)) return true
+
+  // Key remapping in mapped types
+  if (/\bas\s+/.test(trimmed) && /\[\s*\w+\s+in\s+/.test(trimmed)) return true
+
+  return false
+}
+
+/**
+ * Simplify complex type for declaration output
+ * Returns simplified version if too complex
+ */
+export function simplifyComplexType(typeStr: string, maxDepth: number = 3): string {
+  const trimmed = typeStr.trim()
+
+  // Count nesting depth
+  let depth = 0
+  let maxFound = 0
+
+  for (const char of trimmed) {
+    if (char === '<' || char === '(' || char === '[' || char === '{') {
+      depth++
+      maxFound = Math.max(maxFound, depth)
+    }
+    if (char === '>' || char === ')' || char === ']' || char === '}') {
+      depth--
+    }
+  }
+
+  // If too deeply nested, simplify
+  if (maxFound > maxDepth) {
+    // Try to extract the outermost type
+    const outerMatch = trimmed.match(/^(\w+)</)
+    if (outerMatch) {
+      return `${outerMatch[1]}<any>`
+    }
+    return 'unknown'
+  }
+
+  return trimmed
+}
+
+/**
+ * Parse utility type and extract its parameters
+ * Handles Partial<T>, Required<T>, Pick<T, K>, Omit<T, K>, etc.
+ */
+export function parseUtilityType(typeStr: string): { name: string, params: string[] } | null {
+  const trimmed = typeStr.trim()
+
+  // Match utility type pattern: Name<Params>
+  const match = trimmed.match(/^(\w+)<(.+)>$/)
+  if (!match) return null
+
+  const name = match[1]
+  const paramsStr = match[2]
+
+  // Parse parameters handling nested types
+  const params = parseTypeParameters(paramsStr)
+
+  // Known utility types
+  const utilityTypes = [
+    'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Record',
+    'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'Parameters',
+    'ConstructorParameters', 'InstanceType', 'ThisParameterType',
+    'OmitThisParameter', 'ThisType', 'Uppercase', 'Lowercase',
+    'Capitalize', 'Uncapitalize', 'Awaited', 'NoInfer',
+  ]
+
+  if (utilityTypes.includes(name)) {
+    return { name, params }
+  }
+
+  return null
+}
+
+/**
+ * Parse type parameters from a comma-separated string
+ * Handles nested types properly
+ */
+export function parseTypeParameters(paramsStr: string): string[] {
+  const params: string[] = []
+  let current = ''
+  let depth = 0
+  let inString = false
+  let stringChar = ''
+
+  for (let i = 0; i < paramsStr.length; i++) {
+    const char = paramsStr[i]
+    const prevChar = i > 0 ? paramsStr[i - 1] : ''
+
+    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+      inString = true
+      stringChar = char
+    }
+    else if (inString && char === stringChar && prevChar !== '\\') {
+      inString = false
+    }
+
+    if (!inString) {
+      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+
+      if (char === ',' && depth === 0) {
+        params.push(current.trim())
+        current = ''
+        continue
+      }
+    }
+
+    current += char
+  }
+
+  if (current.trim()) {
+    params.push(current.trim())
+  }
+
+  return params
+}
+
+/**
+ * Infer keyof type
+ */
+export function inferKeyofType(typeStr: string): string | null {
+  const trimmed = typeStr.trim()
+
+  if (trimmed.startsWith('keyof ')) {
+    return trimmed
+  }
+
+  return null
+}
+
+/**
+ * Infer typeof type
+ */
+export function inferTypeofType(typeStr: string): string | null {
+  const trimmed = typeStr.trim()
+
+  if (trimmed.startsWith('typeof ')) {
+    return trimmed
+  }
+
+  return null
+}
+
+/**
+ * Check if type is an indexed access type
+ * e.g., T[K], Person['name']
+ */
+export function isIndexedAccessType(typeStr: string): boolean {
+  const trimmed = typeStr.trim()
+
+  // Check for pattern like T[K] or T['key']
+  return /^[\w.]+\[.+\]$/.test(trimmed) && !trimmed.startsWith('[')
+}

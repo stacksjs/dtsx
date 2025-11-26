@@ -2,10 +2,13 @@ import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext 
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
+import { bundleDeclarations } from './bundler'
+import { BuildCache, ensureGitignore } from './cache'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { logger, setLogLevel } from './logger'
+import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
 import { addSourceMapComment, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
@@ -14,7 +17,7 @@ import { addSourceMapComment, createDiff, generateDeclarationMap, validateDtsCon
  */
 export async function generate(options?: Partial<DtsGenerationConfig>): Promise<GenerationStats> {
   const startTime = Date.now()
-  const config = { ...defaultConfig, ...options }
+  let config = { ...defaultConfig, ...options }
 
   // Configure logger based on options
   if (config.logLevel) {
@@ -22,6 +25,41 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
   else if (config.verbose) {
     setLogLevel('debug')
+  }
+
+  // Initialize plugin manager and register plugins
+  const pluginManager = new PluginManager()
+  if (config.plugins && config.plugins.length > 0) {
+    for (const plugin of config.plugins) {
+      pluginManager.register(plugin)
+      logger.debug(`Registered plugin: ${plugin.name}`)
+    }
+    // Run onStart hooks (may modify config)
+    config = await pluginManager.runOnStart(config)
+  }
+
+  // Initialize incremental build cache if enabled
+  let buildCache: BuildCache | null = null
+  if (config.incremental) {
+    buildCache = new BuildCache(config)
+
+    if (config.clearCache) {
+      logger.debug('Clearing build cache...')
+      buildCache.clear()
+    }
+    else {
+      const loaded = buildCache.load()
+      if (loaded) {
+        const cacheStats = buildCache.getStats()
+        logger.debug(`Loaded build cache with ${cacheStats.entries} entries`)
+      }
+      else {
+        logger.debug('No existing build cache found, starting fresh')
+      }
+    }
+
+    // Ensure .dtsx-cache is in .gitignore
+    ensureGitignore(config.cwd)
   }
 
   // Statistics tracking
@@ -38,12 +76,24 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     errors: [],
   }
 
+  // Track cache hits for stats
+  let cacheHits = 0
+  let cacheSkipped = 0
+
   // Log start
   logger.debug('Starting DTS generation...')
   logger.debug('Config:', config)
 
   // Find all TypeScript files based on entrypoints
   const files = await findFiles(config)
+
+  // Prune cache of deleted files
+  if (buildCache) {
+    const pruned = buildCache.prune(new Set(files), config.cwd)
+    if (pruned > 0) {
+      logger.debug(`Pruned ${pruned} deleted files from cache`)
+    }
+  }
 
   logger.debug(`Found ${files.length} TypeScript files`)
 
@@ -61,14 +111,27 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     importCount: number
     exportCount: number
     dtsError?: DtsError
+    cached?: boolean
   }> => {
     let sourceCode: string | undefined
     try {
       const outputPath = getOutputPath(file, config)
 
+      // Check cache for incremental builds
+      if (buildCache && !buildCache.needsRegeneration(file, config.cwd)) {
+        const cachedContent = buildCache.getCached(file, config.cwd)
+        if (cachedContent) {
+          // Use cached content
+          await mkdir(dirname(outputPath), { recursive: true })
+          await writeToFile(outputPath, cachedContent)
+          logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
+          return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true }
+        }
+      }
+
       // Read source first for better error context
       sourceCode = await readFile(file, 'utf-8')
-      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config)
+      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
@@ -122,6 +185,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Write the DTS file
         await writeToFile(outputPath, finalDtsContent)
 
+        // Update cache for incremental builds
+        if (buildCache && sourceCode) {
+          buildCache.update(file, sourceCode, finalDtsContent, config.cwd)
+        }
+
         // Validate if enabled
         if (config.validate) {
           const validation = validateDtsContent(dtsContent, outputPath)
@@ -151,6 +219,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
     catch (error) {
       const dtsError = createDtsError(error, file, sourceCode)
+      // Run onError hooks
+      if (config.plugins && config.plugins.length > 0) {
+        await pluginManager.runOnError(error instanceof Error ? error : new Error(String(error)), file, sourceCode || '')
+      }
       return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, dtsError }
     }
   }
@@ -170,10 +242,15 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       for (const result of batchResults) {
         stats.filesProcessed++
         if (result.success) {
-          stats.filesGenerated++
-          stats.declarationsFound += result.declarationCount
-          stats.importsProcessed += result.importCount
-          stats.exportsProcessed += result.exportCount
+          if (result.cached) {
+            cacheHits++
+          }
+          else {
+            stats.filesGenerated++
+            stats.declarationsFound += result.declarationCount
+            stats.importsProcessed += result.importCount
+            stats.exportsProcessed += result.exportCount
+          }
           if (config.validate) stats.filesValidated++
         }
         else {
@@ -205,16 +282,22 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
       stats.filesProcessed++
       if (result.success) {
-        stats.filesGenerated++
-        stats.declarationsFound += result.declarationCount
-        stats.importsProcessed += result.importCount
-        stats.exportsProcessed += result.exportCount
+        if (result.cached) {
+          cacheHits++
+        }
+        else {
+          stats.filesGenerated++
+          stats.declarationsFound += result.declarationCount
+          stats.importsProcessed += result.importCount
+          stats.exportsProcessed += result.exportCount
+        }
         if (config.validate) stats.filesValidated++
 
         // Show progress
         if (config.progress) {
           const percent = Math.round((stats.filesProcessed / files.length) * 100)
-          logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)}`)
+          const status = result.cached ? '[cached]' : ''
+          logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)} ${status}`)
         }
       }
       else {
@@ -234,6 +317,42 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
 
+  // Save incremental build cache
+  if (buildCache) {
+    buildCache.save()
+    logger.debug('Saved build cache')
+  }
+
+  // Bundle output if enabled
+  if (config.bundle && (stats.filesGenerated > 0 || cacheHits > 0)) {
+    try {
+      logger.debug('Bundling declarations...')
+
+      // Read all source files
+      const sourceContents = new Map<string, string>()
+      for (const file of files) {
+        const content = await readFile(file, 'utf-8')
+        sourceContents.set(file, content)
+      }
+
+      // Bundle all declarations
+      const bundleResult = await bundleDeclarations(files, sourceContents, config)
+
+      // Write bundled output
+      const bundleFilename = config.bundleOutput || 'index.d.ts'
+      const bundlePath = resolve(config.cwd, config.outdir, bundleFilename)
+
+      await mkdir(dirname(bundlePath), { recursive: true })
+      await writeToFile(bundlePath, bundleResult.content)
+
+      logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+    }
+    catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.error(`Bundle failed: ${errorMessage}`)
+    }
+  }
+
   stats.durationMs = Date.now() - startTime
 
   // Show stats if enabled
@@ -247,6 +366,9 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       logger.info('\n--- Generation Statistics ---')
       logger.info(`Files processed:     ${stats.filesProcessed}`)
       logger.info(`Files generated:     ${stats.filesGenerated}`)
+      if (cacheHits > 0) {
+        logger.info(`Files cached:        ${cacheHits}`)
+      }
       if (stats.filesFailed > 0) {
         logger.info(`Files failed:        ${stats.filesFailed}`)
       }
@@ -279,6 +401,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       }
       logger.info('-----------------------------\n')
     }
+  }
+
+  // Run onEnd hooks
+  if (config.plugins && config.plugins.length > 0) {
+    await pluginManager.runOnEnd(stats)
   }
 
   logger.debug('DTS generation complete!')
@@ -410,22 +537,35 @@ export function processSource(
 async function processFileWithStats(
   filePath: string,
   config: DtsGenerationConfig,
+  pluginManager?: PluginManager,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
   const sourceCode = await readFile(filePath, 'utf-8')
-  return processFileWithStatsFromSource(filePath, sourceCode, config)
+  return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager)
 }
 
 /**
  * Process TypeScript source code and return DTS with statistics (for when source is already read)
  */
-function processFileWithStatsFromSource(
+async function processFileWithStatsFromSource(
   filePath: string,
   sourceCode: string,
   config: DtsGenerationConfig,
-): { content: string, declarationCount: number, importCount: number, exportCount: number } {
+  pluginManager?: PluginManager,
+): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
+  // Run onBeforeFile hooks (may modify source)
+  let processedSource = sourceCode
+  if (pluginManager) {
+    processedSource = await pluginManager.runOnBeforeFile(filePath, sourceCode)
+  }
+
   // Extract declarations
-  const declarations = extractDeclarations(sourceCode, filePath, config.keepComments)
+  let declarations = extractDeclarations(processedSource, filePath, config.keepComments)
+
+  // Run onDeclarations hooks (may modify declarations)
+  if (pluginManager) {
+    declarations = await pluginManager.runOnDeclarations(filePath, processedSource, declarations)
+  }
 
   // Count imports and exports
   const importCount = declarations.filter(d => d.kind === 'import').length
@@ -434,7 +574,7 @@ function processFileWithStatsFromSource(
   // Create processing context
   const context: ProcessingContext = {
     filePath,
-    sourceCode,
+    sourceCode: processedSource,
     declarations,
     imports: new Map(),
     exports: new Set(),
@@ -442,7 +582,12 @@ function processFileWithStatsFromSource(
   }
 
   // Process declarations to generate DTS
-  const dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
+  let dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
+
+  // Run onAfterFile hooks (may modify output)
+  if (pluginManager) {
+    dtsContent = await pluginManager.runOnAfterFile(filePath, processedSource, dtsContent)
+  }
 
   return {
     content: dtsContent,
