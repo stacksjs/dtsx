@@ -1,4 +1,5 @@
 export * from './config'
+export * from './errors'
 export * from './extractor'
 export * from './generator'
 export * from './logger'

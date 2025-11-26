@@ -81,6 +81,32 @@ export interface DtsGenerationConfig {
    * @default 4
    */
   concurrency?: number
+  /**
+   * Generate declaration map files (.d.ts.map) for source mapping
+   * @default false
+   */
+  declarationMap?: boolean
+}
+
+/**
+ * Source location for error reporting
+ */
+export interface SourceLocation {
+  line: number
+  column: number
+  offset?: number
+}
+
+/**
+ * Detailed error information with source location
+ */
+export interface DtsError {
+  file: string
+  message: string
+  code?: string
+  location?: SourceLocation
+  stack?: string
+  suggestion?: string
 }
 
 /**
@@ -96,7 +122,7 @@ export interface GenerationStats {
   importsProcessed: number
   exportsProcessed: number
   durationMs: number
-  errors: Array<{ file: string, error: string }>
+  errors: DtsError[]
 }
 
 /**

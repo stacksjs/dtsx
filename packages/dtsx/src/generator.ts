@@ -1,12 +1,13 @@
-import type { DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
+import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { config as defaultConfig } from './config'
+import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { logger, setLogLevel } from './logger'
 import { processDeclarations } from './processor'
-import { createDiff, validateDtsContent, writeToFile } from './utils'
+import { addSourceMapComment, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -59,11 +60,15 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     declarationCount: number
     importCount: number
     exportCount: number
-    error?: string
+    dtsError?: DtsError
   }> => {
+    let sourceCode: string | undefined
     try {
       const outputPath = getOutputPath(file, config)
-      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStats(file, config)
+
+      // Read source first for better error context
+      sourceCode = await readFile(file, 'utf-8')
+      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config)
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
@@ -94,8 +99,28 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Ensure output directory exists
         await mkdir(dirname(outputPath), { recursive: true })
 
+        // Generate declaration map if enabled
+        let finalDtsContent = dtsContent
+        if (config.declarationMap && sourceCode) {
+          const dtsFilename = outputPath.split('/').pop() || 'output.d.ts'
+          const sourceFilename = relative(dirname(outputPath), file)
+          const mapFilename = `${dtsFilename}.map`
+
+          // Generate the source map
+          const sourceMap = generateDeclarationMap(dtsContent, dtsFilename, sourceFilename, sourceCode)
+
+          // Write the source map file
+          const mapPath = `${outputPath}.map`
+          await writeToFile(mapPath, JSON.stringify(sourceMap))
+
+          // Add source map comment to the declaration file
+          finalDtsContent = addSourceMapComment(dtsContent, mapFilename)
+
+          logger.debug(`  Generated source map: ${relative(config.cwd, mapPath)}`)
+        }
+
         // Write the DTS file
-        await writeToFile(outputPath, dtsContent)
+        await writeToFile(outputPath, finalDtsContent)
 
         // Validate if enabled
         if (config.validate) {
@@ -103,7 +128,15 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           if (!validation.isValid) {
             logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
             for (const err of validation.errors) {
-              logger.warn(`  Line ${err.line}:${err.column} - ${err.message}`)
+              let errMsg = `  Line ${err.line}:${err.column}`
+              if (err.code) {
+                errMsg += ` [${err.code}]`
+              }
+              errMsg += ` - ${err.message}`
+              logger.warn(errMsg)
+              if (err.suggestion) {
+                logger.warn(`    Suggestion: ${err.suggestion}`)
+              }
             }
           }
           else {
@@ -117,8 +150,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       return { success: true, file, declarationCount, importCount, exportCount }
     }
     catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, error: errorMessage }
+      const dtsError = createDtsError(error, file, sourceCode)
+      return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, dtsError }
     }
   }
 
@@ -145,13 +178,16 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         }
         else {
           stats.filesFailed++
-          stats.errors.push({ file: result.file, error: result.error || 'Unknown error' })
-          if (config.continueOnError) {
-            logger.warn(`Error processing ${result.file}: ${result.error}`)
-          }
-          else {
-            logger.error(`Error processing ${result.file}: ${result.error}`)
-            throw new Error(result.error)
+          if (result.dtsError) {
+            stats.errors.push(result.dtsError)
+            const errorMsg = formatDtsError(result.dtsError)
+            if (config.continueOnError) {
+              logger.warn(errorMsg)
+            }
+            else {
+              logger.error(errorMsg)
+              throw new Error(result.dtsError.message)
+            }
           }
         }
       }
@@ -183,13 +219,16 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       }
       else {
         stats.filesFailed++
-        stats.errors.push({ file: result.file, error: result.error || 'Unknown error' })
-        if (config.continueOnError) {
-          logger.warn(`Error processing ${file}: ${result.error}`)
-        }
-        else {
-          logger.error(`Error processing ${file}: ${result.error}`)
-          throw new Error(result.error)
+        if (result.dtsError) {
+          stats.errors.push(result.dtsError)
+          const errorMsg = formatDtsError(result.dtsError)
+          if (config.continueOnError) {
+            logger.warn(errorMsg)
+          }
+          else {
+            logger.error(errorMsg)
+            throw new Error(result.dtsError.message)
+          }
         }
       }
     }
@@ -223,8 +262,19 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       logger.info(`Duration:            ${stats.durationMs}ms`)
       if (stats.errors.length > 0) {
         logger.info('\nErrors:')
-        for (const { file, error } of stats.errors) {
-          logger.info(`  - ${file}: ${error}`)
+        for (const err of stats.errors) {
+          let errLine = `  - ${err.file}`
+          if (err.location) {
+            errLine += `:${err.location.line}:${err.location.column}`
+          }
+          if (err.code) {
+            errLine += ` [${err.code}]`
+          }
+          errLine += `: ${err.message}`
+          logger.info(errLine)
+          if (err.suggestion) {
+            logger.info(`    Suggestion: ${err.suggestion}`)
+          }
         }
       }
       logger.info('-----------------------------\n')
@@ -363,7 +413,17 @@ async function processFileWithStats(
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
   const sourceCode = await readFile(filePath, 'utf-8')
+  return processFileWithStatsFromSource(filePath, sourceCode, config)
+}
 
+/**
+ * Process TypeScript source code and return DTS with statistics (for when source is already read)
+ */
+function processFileWithStatsFromSource(
+  filePath: string,
+  sourceCode: string,
+  config: DtsGenerationConfig,
+): { content: string, declarationCount: number, importCount: number, exportCount: number } {
   // Extract declarations
   const declarations = extractDeclarations(sourceCode, filePath, config.keepComments)
 
@@ -393,6 +453,17 @@ async function processFileWithStats(
 }
 
 /**
+ * Watch mode configuration
+ */
+interface WatchState {
+  pendingChanges: Set<string>
+  debounceTimer: ReturnType<typeof setTimeout> | null
+  isProcessing: boolean
+  errorCount: number
+  lastErrorTime: number
+}
+
+/**
  * Watch mode - regenerate DTS files on source changes
  */
 export async function watch(options?: Partial<DtsGenerationConfig>): Promise<void> {
@@ -404,28 +475,142 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
   }
 
   const rootPath = resolve(config.cwd, config.root)
+  const debounceMs = 150 // Slightly longer debounce for batching multiple saves
+  const maxErrorsBeforePause = 5
+  const errorCooldownMs = 10000
+
+  // Watch state for better change batching and error recovery
+  const state: WatchState = {
+    pendingChanges: new Set(),
+    debounceTimer: null,
+    isProcessing: false,
+    errorCount: 0,
+    lastErrorTime: 0,
+  }
 
   logger.info(`Watching for changes in ${rootPath}...`)
   logger.info('Press Ctrl+C to stop\n')
 
   // Initial generation
-  await generate(config)
+  try {
+    await generate(config)
+    logger.info('[watch] Initial generation complete\n')
+  }
+  catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logger.error(`[watch] Initial generation failed: ${errorMessage}`)
+    logger.info('[watch] Continuing to watch for changes...\n')
+  }
+
+  // Process batched changes
+  async function processPendingChanges() {
+    if (state.isProcessing || state.pendingChanges.size === 0) return
+
+    // Check if we should pause due to too many errors
+    const now = Date.now()
+    if (state.errorCount >= maxErrorsBeforePause) {
+      if (now - state.lastErrorTime < errorCooldownMs) {
+        logger.warn(`[watch] Too many errors, pausing for ${Math.ceil((errorCooldownMs - (now - state.lastErrorTime)) / 1000)}s...`)
+        return
+      }
+      // Reset error count after cooldown
+      state.errorCount = 0
+    }
+
+    state.isProcessing = true
+    const filesToProcess = Array.from(state.pendingChanges)
+    state.pendingChanges.clear()
+
+    const timestamp = new Date().toLocaleTimeString()
+
+    if (filesToProcess.length === 1) {
+      logger.info(`\n[${timestamp}] File changed: ${filesToProcess[0]}`)
+    }
+    else {
+      logger.info(`\n[${timestamp}] ${filesToProcess.length} files changed`)
+    }
+
+    let successCount = 0
+    let errorCount = 0
+
+    for (const filename of filesToProcess) {
+      const filePath = resolve(rootPath, filename)
+
+      try {
+        // Check if file should be processed
+        const excludePatterns = config.exclude || []
+        if (isExcluded(filePath, excludePatterns, rootPath)) {
+          logger.debug(`  Skipping excluded file: ${filename}`)
+          continue
+        }
+
+        // Check if file still exists (might have been deleted)
+        const file = Bun.file(filePath)
+        if (!await file.exists()) {
+          logger.debug(`  Skipping deleted file: ${filename}`)
+          continue
+        }
+
+        // Process just this file
+        const outputPath = getOutputPath(filePath, config)
+        const { content: dtsContent } = await processFileWithStats(filePath, config)
+
+        await mkdir(dirname(outputPath), { recursive: true })
+        await writeToFile(outputPath, dtsContent)
+
+        logger.info(`  ✓ ${relative(config.cwd, outputPath)}`)
+        successCount++
+      }
+      catch (error) {
+        errorCount++
+        state.errorCount++
+        state.lastErrorTime = Date.now()
+
+        const dtsError = createDtsError(error, filePath)
+        logger.error(`  ✗ ${filename}: ${dtsError.message}`)
+        if (dtsError.suggestion) {
+          logger.error(`    Suggestion: ${dtsError.suggestion}`)
+        }
+      }
+    }
+
+    if (filesToProcess.length > 1) {
+      logger.info(`  Done: ${successCount} generated, ${errorCount} failed`)
+    }
+
+    // Reset error count on success
+    if (errorCount === 0) {
+      state.errorCount = 0
+    }
+
+    state.isProcessing = false
+
+    // Process any changes that came in while we were processing
+    if (state.pendingChanges.size > 0) {
+      state.debounceTimer = setTimeout(processPendingChanges, debounceMs)
+    }
+  }
+
+  // Queue a file change with debouncing
+  function queueChange(filename: string) {
+    state.pendingChanges.add(filename)
+
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer)
+    }
+
+    state.debounceTimer = setTimeout(processPendingChanges, debounceMs)
+  }
 
   // Set up file watcher using Bun's watch API
   const watcher = Bun.spawn(['bun', '-e', `
     const fs = require('fs');
-    const path = require('path');
 
     const rootPath = '${rootPath}';
-    const debounceMs = 100;
-    let timeout = null;
 
     fs.watch(rootPath, { recursive: true }, (eventType, filename) => {
       if (filename && filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
-        if (timeout) clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          console.log('CHANGED:' + filename);
-        }, debounceMs);
+        console.log('CHANGED:' + filename);
       }
     });
 
@@ -452,31 +637,7 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
     for (const line of lines) {
       if (line.startsWith('CHANGED:')) {
         const filename = line.slice(8)
-        const filePath = resolve(rootPath, filename)
-
-        logger.info(`\n[${new Date().toLocaleTimeString()}] File changed: ${filename}`)
-
-        try {
-          // Check if file should be processed
-          const excludePatterns = config.exclude || []
-          if (isExcluded(filePath, excludePatterns, rootPath)) {
-            logger.debug(`Skipping excluded file: ${filename}`)
-            continue
-          }
-
-          // Process just this file
-          const outputPath = getOutputPath(filePath, config)
-          const { content: dtsContent } = await processFileWithStats(filePath, config)
-
-          await mkdir(dirname(outputPath), { recursive: true })
-          await writeToFile(outputPath, dtsContent)
-
-          logger.info(`  → Generated: ${relative(config.cwd, outputPath)}`)
-        }
-        catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          logger.error(`  ✗ Error: ${errorMessage}`)
-        }
+        queueChange(filename)
       }
     }
   }

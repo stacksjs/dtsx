@@ -62,6 +62,7 @@ cli
   .option('--validate', 'Validate generated .d.ts files against TypeScript', { default: defaultOptions.validate })
   .option('--parallel', 'Process files in parallel', { default: defaultOptions.parallel })
   .option('--concurrency <number>', 'Number of concurrent workers (with --parallel)', { default: defaultOptions.concurrency })
+  .option('--declaration-map', 'Generate declaration map files (.d.ts.map)', { default: false })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -91,6 +92,7 @@ cli
         validate: options.validate ?? defaultOptions.validate,
         parallel: options.parallel ?? defaultOptions.parallel,
         concurrency: Number(options.concurrency) || defaultOptions.concurrency,
+        declarationMap: options.declarationMap ?? false,
       }
 
       const stats = await generate(config)

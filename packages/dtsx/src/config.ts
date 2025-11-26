@@ -13,6 +13,7 @@ export const defaultConfig: DtsGenerationConfig = {
   outputStructure: 'mirror',
   verbose: false,
   importOrder: ['bun'],
+  declarationMap: false,
 }
 
 // Get loaded config
