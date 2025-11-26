@@ -3,6 +3,8 @@
  * Shows changes between existing and newly generated .d.ts files
  */
 
+import { file } from './compat'
+
 /**
  * Diff operation type
  */
@@ -382,9 +384,9 @@ export async function diffFile(
   let oldContent = ''
 
   try {
-    const file = Bun.file(filePath)
-    if (await file.exists()) {
-      oldContent = await file.text()
+    const fileHandle = file(filePath)
+    if (await fileHandle.exists()) {
+      oldContent = await fileHandle.text()
     }
     else if (!options.treatMissingAsEmpty) {
       // Treat as all additions

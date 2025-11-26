@@ -4,6 +4,7 @@ import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
+import { write } from './compat'
 import { config } from './config'
 
 /**
@@ -21,7 +22,7 @@ export async function writeToFile(filePath: string, content: string): Promise<vo
   if (!normalized.endsWith('\n')) {
     normalized += '\n'
   }
-  await Bun.write(filePath, normalized)
+  await write(filePath, normalized)
 }
 
 export async function getAllTypeScriptFiles(directory?: string): Promise<string[]> {

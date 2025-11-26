@@ -282,7 +282,11 @@
   - Summary table with best/worst markers
   - `--quick` and `--skip-generation` flags
 
-- [ ] **Real-world fixtures** - Add benchmarks for popular libraries (lodash types, react types, etc.).
+- [x] **Real-world fixtures** - Add benchmarks for popular libraries (lodash types, react types, etc.). ✅ Added:
+  - `test/fixtures/input/real-world/lodash-like.ts` - ~500 lines of utility types
+  - `test/fixtures/input/real-world/react-like.ts` - ~900 lines of component types
+  - `runRealWorldBenchmarks()` function in benchmark.ts
+  - `--skip-real-world` flag to skip this suite
 
 ### Optimization Targets
 
@@ -340,7 +344,16 @@ Based on code analysis, these are the likely bottlenecks:
   - Feature comparison table
   - Troubleshooting tips
 
-- [ ] **Troubleshooting guide** - Common issues and solutions.
+- [x] **Troubleshooting guide** - Common issues and solutions. ✅ Created `TROUBLESHOOTING.md`:
+  - Installation issues (Bun, peers, TypeScript)
+  - Configuration issues (config file, tsconfig, paths)
+  - Generation issues (no output, empty files, missing exports)
+  - Output issues (wrong directory, missing types, formatting)
+  - Performance issues (slow builds, high memory, cache)
+  - Build tool integration (Vite, webpack, tsup, esbuild)
+  - Type-specific issues (generics, conditionals, mapped types)
+  - CLI issues (commands, arguments, exit codes)
+  - Quick reference table
 
 ---
 
@@ -387,9 +400,9 @@ Based on code analysis, these are the likely bottlenecks:
 
 ## Notes
 
-- The codebase uses Bun-specific APIs (`Bun.file`, `Bun.write`). Consider abstracting for Node.js compatibility if needed.
+- ~~The codebase uses Bun-specific APIs (`Bun.file`, `Bun.write`). Consider abstracting for Node.js compatibility if needed.~~ ✅ **DONE** - Node.js compatibility layer added in `src/compat.ts`
 - The `bunfig` dependency for config loading may limit portability.
-- Current architecture is single-threaded. Consider worker threads for parallel file processing.
+- ~~Current architecture is single-threaded. Consider worker threads for parallel file processing.~~ ✅ **DONE** - Worker pool implemented in `src/worker.ts`
 
 ---
 
@@ -548,7 +561,15 @@ Based on test fixtures analysis:
 
 - [ ] **CommonJS support** - Currently ESM only. Consider dual package support.
 
-- [ ] **Node.js compatibility** - Abstract Bun-specific APIs for Node.js fallback.
+- [x] **Node.js compatibility** - Abstract Bun-specific APIs for Node.js fallback. ✅ Created `src/compat.ts`:
+  - `isBun` / `isNode` runtime detection
+  - `file()` - Cross-runtime file handle (Bun.file replacement)
+  - `write()` - Cross-runtime file writer (Bun.write replacement)
+  - `spawnProcess()` - Cross-runtime process spawner (Bun.spawn replacement)
+  - `FileHandle` interface compatible with Bun.file()
+  - `SpawnResult` interface compatible with Bun.spawn()
+  - `getRuntimeInfo()` for version and runtime detection
+  - Updated generator.ts, utils.ts, diff.ts to use compat layer
 
 ---
 
@@ -618,9 +639,9 @@ Based on test fixtures analysis:
 
 ## Notes
 
-- The codebase uses Bun-specific APIs (`Bun.file`, `Bun.write`). Consider abstracting for Node.js compatibility if needed.
-- Current architecture is single-threaded. Consider worker threads for parallel file processing.
-- The vite-plugin is essentially a placeholder (`export const wip = true`).
+- ~~The codebase uses Bun-specific APIs (`Bun.file`, `Bun.write`). Consider abstracting for Node.js compatibility if needed.~~ ✅ **DONE** - Node.js compatibility layer added
+- ~~Current architecture is single-threaded. Consider worker threads for parallel file processing.~~ ✅ **DONE** - Worker pool implemented
+- ~~The vite-plugin is essentially a placeholder (`export const wip = true`).~~ ✅ **DONE** - Full Vite plugin implemented
 
 ---
 
@@ -923,6 +944,42 @@ Based on test fixtures analysis:
   - Feature comparison table (6 tools)
   - Path aliases and JSDoc handling
   - Troubleshooting migration issues
+
+#### Latest Features (November 26, 2025 - Session 7)
+
+- **`TROUBLESHOOTING.md`** - Comprehensive troubleshooting guide
+  - Installation issues (Bun, peers, TypeScript)
+  - Configuration issues (config file, tsconfig, paths)
+  - Generation issues (no output, empty files, missing exports)
+  - Output issues (wrong directory, missing types, formatting)
+  - Performance issues (slow builds, high memory, cache)
+  - Build tool integration (Vite, webpack, tsup, esbuild)
+  - Type-specific issues (generics, conditionals, mapped types)
+  - CLI issues (commands, arguments, exit codes)
+  - Quick reference table with common fixes
+
+- **Real-world benchmark fixtures**
+  - `test/fixtures/input/real-world/lodash-like.ts` - ~500 lines of utility types
+    - Collection operations, deep types, iteratees, comparators
+    - Array, collection, object, string method types
+  - `test/fixtures/input/real-world/react-like.ts` - ~900 lines of component types
+    - JSX types, element types, component types
+    - Hooks (useState, useEffect, useContext, useMemo, etc.)
+    - Context API, events, HTML attributes
+  - `runRealWorldBenchmarks()` function in benchmark.ts
+  - `--skip-real-world` flag to skip this suite
+
+- **`src/compat.ts`** - Node.js compatibility layer
+  - `isBun` / `isNode` runtime detection constants
+  - `runtime` - Current runtime name ('bun' | 'node')
+  - `file(path)` - Cross-runtime file handle (Bun.file replacement)
+    - `exists()`, `text()`, `arrayBuffer()`, `size`, `name`
+  - `write(path, content)` - Cross-runtime file writer (Bun.write replacement)
+  - `spawnProcess(cmd, opts)` - Cross-runtime process spawner (Bun.spawn replacement)
+    - Returns `SpawnResult` with pid, stdout, stderr, stdin, exited, kill()
+  - `readTextFile()`, `writeTextFile()`, `fileExists()` - Convenience functions
+  - `getRuntimeInfo()` - Get runtime name and version
+  - Updated `generator.ts`, `utils.ts`, `diff.ts` to use compat layer
 
 ---
 

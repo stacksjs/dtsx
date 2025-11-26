@@ -4,6 +4,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
+import { file, isBun, spawnProcess } from './compat'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
@@ -725,8 +726,8 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
         }
 
         // Check if file still exists (might have been deleted)
-        const file = Bun.file(filePath)
-        if (!await file.exists()) {
+        const fileHandle = file(filePath)
+        if (!await fileHandle.exists()) {
           logger.debug(`  Skipping deleted file: ${filename}`)
           continue
         }
@@ -782,8 +783,9 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
     state.debounceTimer = setTimeout(processPendingChanges, debounceMs)
   }
 
-  // Set up file watcher using Bun's watch API
-  const watcher = Bun.spawn(['bun', '-e', `
+  // Set up file watcher using cross-runtime spawn
+  const runtime = isBun ? 'bun' : 'node'
+  const watcher = spawnProcess([runtime, '-e', `
     const fs = require('fs');
 
     const rootPath = '${rootPath}';
@@ -801,24 +803,48 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
     stderr: 'inherit',
   })
 
-  // Process watcher output
-  const reader = watcher.stdout.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
+  // Process watcher output - handle both Bun (ReadableStream) and Node (Readable) streams
+  if (isBun) {
+    // Bun uses ReadableStream with getReader()
+    const reader = (watcher.stdout as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
 
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
 
-    for (const line of lines) {
-      if (line.startsWith('CHANGED:')) {
-        const filename = line.slice(8)
-        queueChange(filename)
+      for (const line of lines) {
+        if (line.startsWith('CHANGED:')) {
+          const filename = line.slice(8)
+          queueChange(filename)
+        }
       }
     }
+  }
+  else {
+    // Node.js uses Readable stream with 'data' events
+    const stdout = watcher.stdout as NodeJS.ReadableStream
+    let buffer = ''
+
+    stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString()
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('CHANGED:')) {
+          const filename = line.slice(8)
+          queueChange(filename)
+        }
+      }
+    })
+
+    // Keep the async function running until process exits
+    await watcher.exited
   }
 }

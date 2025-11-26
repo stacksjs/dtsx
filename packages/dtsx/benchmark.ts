@@ -146,6 +146,9 @@ async function runExtractionBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
     { path: 'test/fixtures/input/example/0002.ts', name: 'Medium (0002.ts)' },
     { path: 'test/fixtures/input/example/0003.ts', name: 'Complex (0003.ts)' },
     { path: 'test/fixtures/input/example/0005.ts', name: 'Very Complex (0005.ts)' },
+    // Real-world fixtures
+    { path: 'test/fixtures/input/real-world/lodash-like.ts', name: 'Lodash-like (real-world)' },
+    { path: 'test/fixtures/input/real-world/react-like.ts', name: 'React-like (real-world)' },
   ]
 
   for (const testFile of testFiles) {
@@ -309,6 +312,65 @@ async function runMemoryBenchmarks(config: BenchmarkConfig): Promise<SuiteResult
 
   return {
     name: 'Memory',
+    results,
+    totalTimeMs: performance.now() - suiteStart,
+  }
+}
+
+/**
+ * Real-world library benchmark suite
+ * Tests against patterns from popular libraries
+ */
+async function runRealWorldBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
+  console.log('\n🌍 Real-World Library Benchmarks\n')
+
+  const results: BenchmarkResult[] = []
+  const suiteStart = performance.now()
+
+  const realWorldFiles = [
+    {
+      path: 'test/fixtures/input/real-world/lodash-like.ts',
+      name: 'Lodash-like',
+      description: 'Utility library with many overloads and generics',
+    },
+    {
+      path: 'test/fixtures/input/real-world/react-like.ts',
+      name: 'React-like',
+      description: 'Component library with complex JSX types',
+    },
+  ]
+
+  for (const file of realWorldFiles) {
+    try {
+      if (!existsSync(file.path)) {
+        console.log(`  ⚠️  Skipping ${file.name} - file not found`)
+        continue
+      }
+
+      const sourceCode = await readFile(file.path, 'utf-8')
+      const lineCount = sourceCode.split('\n').length
+
+      console.log(`  📁 ${file.name}`)
+      console.log(`     ${file.description}`)
+      console.log(`     ${sourceCode.length} chars, ${lineCount} lines`)
+
+      const result = await runBenchmark(
+        file.name,
+        () => extractDeclarations(sourceCode, file.path),
+        { ...config, benchmarkIterations: Math.min(config.benchmarkIterations, 20) },
+        sourceCode.length,
+      )
+
+      results.push(result)
+      console.log(`     ⚡ ${result.avgTimeMs.toFixed(2)}ms avg (${(result.throughputCharsPerSec / 1000).toFixed(1)}k chars/sec)`)
+      console.log()
+    } catch (error) {
+      console.error(`  ❌ Error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  return {
+    name: 'Real-World',
     results,
     totalTimeMs: performance.now() - suiteStart,
   }
@@ -669,6 +731,11 @@ async function main() {
     suites.push(await runSyntheticBenchmarks(config))
     suites.push(await runMemoryBenchmarks(config))
 
+    // Run real-world benchmarks unless skipped
+    if (!args.includes('--skip-real-world')) {
+      suites.push(await runRealWorldBenchmarks(config))
+    }
+
     // Run phase timing benchmarks unless skipped
     if (!args.includes('--skip-phases')) {
       phaseTimings = await runPhaseTimingBenchmarks(config)
@@ -706,6 +773,7 @@ export {
   runMemoryBenchmarks,
   runSyntheticBenchmarks,
   runPhaseTimingBenchmarks,
+  runRealWorldBenchmarks,
   generateLargeTypeScriptFile,
   type BenchmarkConfig,
   type BenchmarkResult,
