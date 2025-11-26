@@ -13,9 +13,13 @@
 ## Features
 
 - ⚡ Extremely fast .d.ts generation
+- 🔄 Parallel processing support
+- 📥 Stdin/stdout support for piping
 - ⚙️ Highly configurable
 - 🪶 Lightweight library
 - 🤖 Cross-platform binary
+- 👀 Watch mode for development
+- ✅ Built-in validation
 
 ## Install
 
@@ -54,7 +58,7 @@ Given the npm package is installed, you can use the `generate` function to gener
 
 ```ts
 import type { DtsGenerationOptions } from '@stacksjs/dtsx'
-import { generate } from '@stacksjs/dtsx'
+import { generate, processSource } from '@stacksjs/dtsx'
 
 const options: DtsGenerationOptions = {
   cwd: './', // default: process.cwd()
@@ -64,9 +68,28 @@ const options: DtsGenerationOptions = {
   clean: true, // default: false
   verbose: true, // default: false
   keepComments: true, // default: true
+  // New options:
+  parallel: true, // default: false - process files in parallel
+  concurrency: 4, // default: 4 - number of concurrent workers
+  dryRun: false, // default: false - preview without writing
+  stats: true, // default: false - show generation statistics
+  validate: true, // default: false - validate generated .d.ts files
 }
 
-await generate(options)
+const stats = await generate(options)
+console.log(`Generated ${stats.filesGenerated} files in ${stats.durationMs}ms`)
+
+// You can also process source code directly:
+const dtsContent = processSource(`
+  export const greeting: string = "Hello";
+  export function greet(name: string): string {
+    return greeting + " " + name;
+  }
+`)
+console.log(dtsContent)
+// Output:
+// export declare const greeting: string;
+// export declare function greet(name: string): string;
 ```
 
 _Available options:_
@@ -84,6 +107,15 @@ export default {
   keepComments: true,
   clean: true,
   verbose: true,
+  // Performance options
+  parallel: true,
+  concurrency: 4,
+  // Output options
+  stats: true,
+  validate: true,
+  // Filtering
+  exclude: ['**/*.test.ts', '**/__tests__/**'],
+  importOrder: ['node:', 'bun', '@myorg/'],
 }
 ```
 
@@ -100,7 +132,7 @@ _You may also run:_
 
 The `dtsx` CLI provides a simple way to generate TypeScript declaration files from your project. Here's how to use it:
 
-### Usage
+### Generate Command
 
 Generate declaration files using the default options:
 
@@ -117,12 +149,55 @@ dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types
 # Generate declarations with custom configuration:
 dtsx generate --root ./lib --outdir ./types --clean
 
+# Use parallel processing for large projects:
+dtsx generate --parallel --concurrency 8
+
+# Preview what would be generated (dry run):
+dtsx generate --dry-run --stats
+
+# Validate generated declarations:
+dtsx generate --validate
+
+# Exclude test files:
+dtsx generate --exclude "**/*.test.ts,**/__tests__/**"
+
+# Custom import ordering:
+dtsx generate --import-order "node:,bun,@myorg/"
+
 dtsx --help
 dtsx --version
 ```
 
-_Available options:_
+### Watch Command
 
+Watch for changes and regenerate automatically:
+
+```bash
+# Watch with default options:
+dtsx watch
+
+# Watch specific directory:
+dtsx watch --root src --outdir dist/types
+```
+
+### Stdin Command
+
+Process TypeScript from stdin and output declarations to stdout:
+
+```bash
+# Pipe source code directly:
+echo "export const foo: string = 'bar'" | dtsx stdin
+
+# Process a file through stdin:
+cat src/index.ts | dtsx stdin
+
+# Chain with other tools:
+cat src/utils.ts | dtsx stdin > dist/utils.d.ts
+```
+
+### Available Options
+
+**Basic Options:**
 - `--cwd <path>`: Set the current working directory _(default: current directory)_
 - `--root <path>`: Specify the root directory of the project _(default: './src')_
 - `--entrypoints <files>`: Define entry point files _(comma-separated, default: '**/*.ts')_
@@ -130,7 +205,27 @@ _Available options:_
 - `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
 - `--clean`: Clean output directory before generation _(default: false)_
 - `--tsconfig <path>`: Specify the path to tsconfig.json _(default: 'tsconfig.json')_
+
+**Performance Options:**
+- `--parallel`: Process files in parallel _(default: false)_
+- `--concurrency <number>`: Number of concurrent workers with --parallel _(default: 4)_
+
+**Output Options:**
 - `--verbose`: Enable verbose output _(default: false)_
+- `--log-level <level>`: Log level: debug, info, warn, error, silent _(default: 'info')_
+- `--stats`: Show statistics after generation _(default: false)_
+- `--output-format <format>`: Output format: text or json _(default: 'text')_
+- `--progress`: Show progress during generation _(default: false)_
+- `--diff`: Show diff of changes compared to existing files _(default: false)_
+
+**Validation Options:**
+- `--validate`: Validate generated .d.ts files against TypeScript _(default: false)_
+- `--continue-on-error`: Continue processing if a file fails _(default: false)_
+- `--dry-run`: Preview without writing files _(default: false)_
+
+**Filtering Options:**
+- `--exclude <patterns>`: Glob patterns to exclude _(comma-separated)_
+- `--import-order <patterns>`: Import order priority patterns _(comma-separated)_
 
 To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
 

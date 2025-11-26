@@ -28,7 +28,7 @@ declare module 'existing-module' {
   export function newFunction(): void;
 }
 // Global augmentation
-declare namespace global {
+declare global {
   interface Window {
   customProperty: string
   customMethod(): void

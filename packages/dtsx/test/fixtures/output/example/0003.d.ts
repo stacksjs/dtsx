@@ -5,5 +5,5 @@ declare interface AutoImportsPlugin {
   name: string
   setup: (builder: PluginBuilder) => Promise<void>
 }
-export type AutoImportsOptions = UnimportOptions
+export type AutoImportsOptions = UnimportOptions;
 export default autoImports;

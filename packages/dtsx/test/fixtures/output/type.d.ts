@@ -1,6 +1,6 @@
 import type { DtsGenerationOption } from '@stacksjs/dtsx';
 export type { DtsGenerationOption };
-export type AuthStatus = 'authenticated' | 'unauthenticated'
+export type AuthStatus = 'authenticated' | 'unauthenticated';
 // Intersection and Union Types
 export type ComplexUnionIntersection = | (User & { role: 'admin' })
   | (Product & { category: string })
@@ -15,10 +15,10 @@ export type ConditionalResponse<T> = T extends Array<infer U>
   ? ApiResponse<U[]>
   : T extends object
     ? ApiResponse<T>
-    : ApiResponse<string>
-export type EventType = 'click' | 'focus' | 'blur'
-export type ElementType = 'button' | 'input' | 'form'
-export type EventHandler = `on${Capitalize<EventType>}${Capitalize<ElementType>}`
+    : ApiResponse<string>;
+export type EventType = 'click' | 'focus' | 'blur';
+export type ElementType = 'button' | 'input' | 'form';
+export type EventHandler = `on${Capitalize<EventType>}${Capitalize<ElementType>}`;
 // Recursive Types
 export type RecursiveObject = {
   id: string
@@ -34,10 +34,10 @@ export type ProductId = number & {
 // Utility Type Implementations
 export type DeepPartial<T> = T extends object ? {
   [P in keyof T]?: DeepPartial<T[P]>
-} : T
+} : T;
 export type DeepRequired<T> = T extends object ? {
   [P in keyof T]-?: DeepRequired<T[P]>
-} : T
+} : T;
 // Polymorphic Types
 export type PolymorphicComponent<P = {}> = {
   <C extends React.ElementType>(
@@ -66,4 +66,4 @@ export type RecordMerge<T, U> = IsEmptyType<U> extends true
                   ? U[K]
                   : never
             }
-          : U
+          : U;

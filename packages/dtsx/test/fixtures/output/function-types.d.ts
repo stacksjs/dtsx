@@ -34,9 +34,9 @@ export declare interface ConstructorExample {
 }
 // Various function types and signatures
 // Function type aliases
-export type SimpleFunction = () => void
-export type ParameterizedFunction = (a: string, b: number) => boolean
-export type GenericFunction = <T>(value: T) => T
-export type AsyncFunction = (id: string) => Promise<unknown>
+export type SimpleFunction = () => void;
+export type ParameterizedFunction = (a: string, b: number) => boolean;
+export type GenericFunction = <T>(value: T) => T;
+export type AsyncFunction = (id: string) => Promise<unknown>;
 // Callback function type
-export type CallbackFunction = (error: Error | null, result?: unknown) => void
+export type CallbackFunction = (error: Error | null, result?: unknown) => void;

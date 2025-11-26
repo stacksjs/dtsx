@@ -1,21 +1,63 @@
-/* eslint-disable regexp/no-super-linear-backtracking */
+/**
+ * Parser utilities - DEPRECATED
+ *
+ * This module contains legacy string-based parsing utilities.
+ * Most functionality has been superseded by TypeScript AST-based extraction
+ * in the extractor module.
+ *
+ * @deprecated Use extractor module for AST-based extraction and
+ * processor/type-inference for type inference utilities.
+ */
+
+// Re-export commonly used utilities from their new locations
+export { findMatchingBracket } from './processor/type-inference'
+export { formatComments } from './processor/comments'
+export { extractJSDocComments as extractLeadingCommentsFromNode, getNodeText } from './extractor/helpers'
 
 /**
- * Remove leading comments from a declaration
+ * @deprecated Use TypeScript AST-based extraction instead
  */
 export function removeLeadingComments(text: string): string {
-  return text.replace(/^(\s*\/\*[\s\S]*?\*\/\s*|\s*\/\/.*\n)*/g, '').trim()
+  let result = text
+  let changed = true
+
+  while (changed) {
+    changed = false
+    const trimmed = result.trimStart()
+
+    if (trimmed.startsWith('/*')) {
+      const endIndex = trimmed.indexOf('*/', 2)
+      if (endIndex !== -1) {
+        result = trimmed.slice(endIndex + 2)
+        changed = true
+        continue
+      }
+    }
+
+    if (trimmed.startsWith('//')) {
+      const newlineIndex = trimmed.indexOf('\n')
+      if (newlineIndex !== -1) {
+        result = trimmed.slice(newlineIndex + 1)
+        changed = true
+      }
+      else {
+        result = ''
+        changed = true
+      }
+    }
+  }
+
+  return result.trim()
 }
 
 /**
- * Extract leading comments from source code before a position
+ * @deprecated Use extractJSDocComments from extractor/helpers instead
  */
 export function extractLeadingComments(source: string, position: number): string[] {
   const before = source.substring(0, position)
   const lines = before.split('\n')
   const comments: string[] = []
 
-  // Look backwards for comments
   let i = lines.length - 1
   let inMultilineComment = false
   let multilineCommentLines: string[] = []
@@ -23,35 +65,28 @@ export function extractLeadingComments(source: string, position: number): string
   while (i >= 0) {
     const line = lines[i].trim()
 
-    // Check for end of multiline comment
     if (line.endsWith('*/') && !inMultilineComment) {
       inMultilineComment = true
       multilineCommentLines.unshift(line)
     }
-    // Check for start of multiline comment
     else if (line.startsWith('/*') && inMultilineComment) {
       multilineCommentLines.unshift(line)
       comments.unshift(...multilineCommentLines)
       multilineCommentLines = []
       inMultilineComment = false
     }
-    // Inside multiline comment
     else if (inMultilineComment) {
       multilineCommentLines.unshift(line)
     }
-    // Single line comment
     else if (line.startsWith('//')) {
       comments.unshift(line)
     }
-    // JSDoc style comment line
     else if (line.startsWith('*') && (i > 0 && lines[i - 1].trim().startsWith('/*'))) {
       comments.unshift(line)
     }
-    // Empty line between declaration and comments
     else if (line === '' && comments.length > 0) {
-      // Continue to look for more comments
+      // Continue
     }
-    // Non-comment, non-empty line - stop
     else if (line !== '') {
       break
     }
@@ -63,10 +98,9 @@ export function extractLeadingComments(source: string, position: number): string
 }
 
 /**
- * Extract trailing comments from a line
+ * @deprecated Not commonly used - use inline logic instead
  */
 export function extractTrailingComment(line: string): string | null {
-  // Find comment outside of strings
   let inString = false
   let stringChar = ''
   let escaped = false
@@ -98,17 +132,7 @@ export function extractTrailingComment(line: string): string | null {
 }
 
 /**
- * Format comments for output
- */
-export function formatComments(comments: string[]): string[] {
-  return comments.map((comment) => {
-    // Preserve indentation and format
-    return comment
-  })
-}
-
-/**
- * Extract balanced content between symbols (e.g., <>, (), {})
+ * @deprecated Use findMatchingBracket from processor/type-inference instead
  */
 export function extractBalancedSymbols(
   text: string,
@@ -119,17 +143,14 @@ export function extractBalancedSymbols(
   let inString = false
   let stringChar = ''
   let escaped = false
-  let i = 0
 
   if (!text.startsWith(openSymbol)) {
     return null
   }
 
-  for (i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; i++) {
     const char = text[i]
-    const _prevChar = i > 0 ? text[i - 1] : ''
 
-    // Handle string literals
     if (!escaped && (char === '"' || char === '\'' || char === '`')) {
       if (!inString) {
         inString = true
@@ -140,14 +161,12 @@ export function extractBalancedSymbols(
       }
     }
 
-    // Handle escape sequences
     if (char === '\\' && !escaped) {
       escaped = true
       continue
     }
     escaped = false
 
-    // Count brackets only outside strings
     if (!inString) {
       if (text.substring(i, i + openSymbol.length) === openSymbol) {
         depth++
@@ -168,7 +187,7 @@ export function extractBalancedSymbols(
 }
 
 /**
- * Extract function signature parts
+ * @deprecated Interface kept for backward compatibility
  */
 export interface FunctionSignature {
   name: string
@@ -179,14 +198,13 @@ export interface FunctionSignature {
 }
 
 /**
- * Parse a function declaration
+ * @deprecated Use TypeScript AST-based extraction instead
  */
 export function parseFunctionDeclaration(text: string): FunctionSignature | null {
   const clean = removeLeadingComments(text).trim()
 
-  // Match function pattern
   const functionMatch = clean.match(
-    /^(export\s+)?(async\s+)?function\s*(\*?)\s*([a-zA-Z_$][\w$]*)/,
+    /^(export\s+)?(async\s+)?function\s*(\*?)([a-zA-Z_$][\w$]*)/,
   )
 
   if (!functionMatch)
@@ -203,7 +221,6 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
   const name = functionMatch[4]
   let rest = clean.substring(functionMatch[0].length).trim()
 
-  // Extract generics
   let generics = ''
   if (rest.startsWith('<')) {
     const genericResult = extractBalancedSymbols(rest, '<', '>')
@@ -213,7 +230,6 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
     }
   }
 
-  // Extract parameters
   let parameters = ''
   if (rest.startsWith('(')) {
     const paramResult = extractBalancedSymbols(rest, '(', ')')
@@ -223,7 +239,6 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
     }
   }
 
-  // Extract return type
   let returnType = 'void'
   if (rest.startsWith(':')) {
     const typeMatch = rest.match(/^:\s*([^{;]+)/)
@@ -242,21 +257,21 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
 }
 
 /**
- * Check if a line is an export statement
+ * @deprecated Use hasExportModifier from extractor/helpers instead
  */
 export function isExportStatement(line: string): boolean {
   return /^\s*export\s+/.test(line)
 }
 
 /**
- * Check if a line is a type-only export
+ * @deprecated Not commonly used
  */
 export function isTypeOnlyExport(line: string): boolean {
   return /^\s*export\s+type\s+/.test(line)
 }
 
 /**
- * Extract variable name and type from declaration
+ * @deprecated Use TypeScript AST-based extraction instead
  */
 export function parseVariableDeclaration(text: string): {
   name: string
@@ -266,7 +281,6 @@ export function parseVariableDeclaration(text: string): {
 } | null {
   const clean = removeLeadingComments(text).trim()
 
-  // First, find the variable kind and name
   const declarationMatch = clean.match(/^(export\s+)?(const|let|var)\s+([a-zA-Z_$][\w$]*)/)
 
   if (!declarationMatch)
@@ -275,13 +289,10 @@ export function parseVariableDeclaration(text: string): {
   const kind = declarationMatch[2] as 'const' | 'let' | 'var'
   const name = declarationMatch[3]
 
-  // Find where the name ends
   let rest = clean.substring(declarationMatch[0].length).trim()
 
-  // Extract type annotation if present
   let typeAnnotation: string | undefined
   if (rest.startsWith(':')) {
-    // Find the end of the type annotation (before = or end of statement)
     const equalIndex = rest.indexOf('=')
     if (equalIndex !== -1) {
       typeAnnotation = rest.substring(1, equalIndex).trim()
@@ -293,7 +304,6 @@ export function parseVariableDeclaration(text: string): {
     }
   }
 
-  // Extract value if present
   let value: string | undefined
   if (rest.startsWith('=')) {
     value = rest.substring(1).replace(/;?\s*$/, '').trim()
