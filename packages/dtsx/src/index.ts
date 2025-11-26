@@ -1,5 +1,6 @@
 export * from './bundler'
 export * from './cache'
+export * from './circular'
 export * from './compat'
 export * from './incremental'
 export * from './checker'

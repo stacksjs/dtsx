@@ -426,35 +426,51 @@ export function getTypeAtPosition(
   column: number,
   tsconfigPath?: string,
 ): string | null {
-  const compilerOptions: ts.CompilerOptions = tsconfigPath
-    ? loadCompilerOptions(tsconfigPath)
-    : {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
+  try {
+    const compilerOptions: ts.CompilerOptions = tsconfigPath
+      ? loadCompilerOptions(tsconfigPath)
+      : {
+          target: ts.ScriptTarget.ESNext,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+        }
+
+    const program = createProgram([filePath], compilerOptions)
+    const sourceFile = program.getSourceFile(filePath)
+
+    if (!sourceFile) return null
+
+    // Check bounds before calling TypeScript API
+    const lineCount = sourceFile.getLineStarts().length
+    if (line < 1 || line > lineCount) return null
+
+    const lineStart = sourceFile.getLineStarts()[line - 1]
+    const lineEnd = line < lineCount
+      ? sourceFile.getLineStarts()[line]
+      : sourceFile.text.length
+
+    if (column < 1 || column > lineEnd - lineStart) return null
+
+    const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
+    const checker = program.getTypeChecker()
+
+    // Find the node at the position
+    function findNode(node: ts.Node): ts.Node | undefined {
+      if (pos >= node.getStart() && pos < node.getEnd()) {
+        return ts.forEachChild(node, findNode) || node
       }
-
-  const program = createProgram([filePath], compilerOptions)
-  const sourceFile = program.getSourceFile(filePath)
-
-  if (!sourceFile) return null
-
-  const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
-  const checker = program.getTypeChecker()
-
-  // Find the node at the position
-  function findNode(node: ts.Node): ts.Node | undefined {
-    if (pos >= node.getStart() && pos < node.getEnd()) {
-      return ts.forEachChild(node, findNode) || node
+      return undefined
     }
-    return undefined
+
+    const node = findNode(sourceFile)
+    if (!node) return null
+
+    const type = checker.getTypeAtLocation(node)
+    return checker.typeToString(type)
   }
-
-  const node = findNode(sourceFile)
-  if (!node) return null
-
-  const type = checker.getTypeAtLocation(node)
-  return checker.typeToString(type)
+  catch {
+    return null
+  }
 }
 
 /**
@@ -466,45 +482,61 @@ export function getQuickInfo(
   column: number,
   tsconfigPath?: string,
 ): { type: string, documentation?: string } | null {
-  const compilerOptions: ts.CompilerOptions = tsconfigPath
-    ? loadCompilerOptions(tsconfigPath)
-    : {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
+  try {
+    const compilerOptions: ts.CompilerOptions = tsconfigPath
+      ? loadCompilerOptions(tsconfigPath)
+      : {
+          target: ts.ScriptTarget.ESNext,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+        }
+
+    const program = createProgram([filePath], compilerOptions)
+    const sourceFile = program.getSourceFile(filePath)
+
+    if (!sourceFile) return null
+
+    // Check bounds before calling TypeScript API
+    const lineCount = sourceFile.getLineStarts().length
+    if (line < 1 || line > lineCount) return null
+
+    const lineStart = sourceFile.getLineStarts()[line - 1]
+    const lineEnd = line < lineCount
+      ? sourceFile.getLineStarts()[line]
+      : sourceFile.text.length
+
+    if (column < 1 || column > lineEnd - lineStart) return null
+
+    const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
+    const checker = program.getTypeChecker()
+
+    // Find the node at the position
+    function findNode(node: ts.Node): ts.Node | undefined {
+      if (pos >= node.getStart() && pos < node.getEnd()) {
+        return ts.forEachChild(node, findNode) || node
       }
-
-  const program = createProgram([filePath], compilerOptions)
-  const sourceFile = program.getSourceFile(filePath)
-
-  if (!sourceFile) return null
-
-  const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
-  const checker = program.getTypeChecker()
-
-  // Find the node at the position
-  function findNode(node: ts.Node): ts.Node | undefined {
-    if (pos >= node.getStart() && pos < node.getEnd()) {
-      return ts.forEachChild(node, findNode) || node
+      return undefined
     }
-    return undefined
+
+    const node = findNode(sourceFile)
+    if (!node) return null
+
+    const symbol = checker.getSymbolAtLocation(node)
+    if (!symbol) {
+      const type = checker.getTypeAtLocation(node)
+      return { type: checker.typeToString(type) }
+    }
+
+    const type = checker.typeToString(checker.getTypeOfSymbolAtLocation(symbol, node))
+    const documentation = ts.displayPartsToString(symbol.getDocumentationComment(checker))
+
+    return {
+      type,
+      documentation: documentation || undefined,
+    }
   }
-
-  const node = findNode(sourceFile)
-  if (!node) return null
-
-  const symbol = checker.getSymbolAtLocation(node)
-  if (!symbol) {
-    const type = checker.getTypeAtLocation(node)
-    return { type: checker.typeToString(type) }
-  }
-
-  const type = checker.typeToString(checker.getTypeOfSymbolAtLocation(symbol, node))
-  const documentation = ts.displayPartsToString(symbol.getDocumentationComment(checker))
-
-  return {
-    type,
-    documentation: documentation || undefined,
+  catch {
+    return null
   }
 }
 

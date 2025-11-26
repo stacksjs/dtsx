@@ -25,12 +25,21 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/src/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/src/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/cjs/src/index.cjs"
+      }
     },
     "./*": {
-      "import": "./dist/*"
+      "import": "./dist/*",
+      "require": "./dist/cjs/*"
     }
   },
+  "main": "./dist/cjs/src/index.cjs",
   "module": "./dist/src/index.js",
   "types": "./dist/index.d.ts",
   "bin": {

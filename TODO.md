@@ -137,7 +137,14 @@
 
 - [ ] **Type-only vs value imports** - `import type` vs `import` distinction needs more robust handling for re-exports.
 
-- [ ] **Circular type references** - No detection or handling of circular type dependencies.
+- [x] **Circular type references** - No detection or handling of circular type dependencies. ✅ Implemented in `src/circular.ts`:
+  - `buildDependencyGraph()` - Build import/export dependency graph
+  - `detectCircularDependencies()` - Find cycles using DFS
+  - `analyzeCircularDependencies()` - Full analysis with results
+  - `formatCircularAnalysis()` - Human-readable output
+  - Severity levels: 'error' for type cycles, 'warning' for value cycles
+  - Graph utilities: `findAllDependents()`, `findAllDependencies()`
+  - Export formats: DOT (Graphviz), JSON
 
 - [x] **Generic constraint preservation** - Ensure `<T extends U>` constraints are fully preserved. ✅ Working correctly
 
@@ -559,7 +566,11 @@ Based on test fixtures analysis:
 
 - [ ] **Tree-shakeable exports** - Ensure library is fully tree-shakeable.
 
-- [ ] **CommonJS support** - Currently ESM only. Consider dual package support.
+- [x] **CommonJS support** - Currently ESM only. Consider dual package support. ✅ Implemented:
+  - Updated `build.ts` to generate both ESM and CJS builds
+  - ESM output in `dist/esm/`, CJS output in `dist/cjs/`
+  - Updated `package.json` with conditional exports for both formats
+  - Added `main` field for CommonJS entry point
 
 - [x] **Node.js compatibility** - Abstract Bun-specific APIs for Node.js fallback. ✅ Created `src/compat.ts`:
   - `isBun` / `isNode` runtime detection
@@ -577,7 +588,15 @@ Based on test fixtures analysis:
 
 - [x] **Example 0012** - Test file exists in fixtures but not in test array. ✅ Already included
 
-- [ ] **`checker.ts`** - Large fixture file excluded from tests.
+- [x] **`checker.ts`** - Large fixture file excluded from tests. ✅ Added `test/checker.test.ts` with 34 tests covering:
+  - `typeCheck()` - Type checking with various options
+  - `validateDeclarations()` - Validate .d.ts files
+  - `checkIsolatedDeclarations()` - Check isolatedDeclarations compatibility
+  - `getTypeAtPosition()` - Get type info at position
+  - `getQuickInfo()` - Get hover information
+  - `formatTypeCheckResults()` - Format results
+  - `loadCompilerOptions()` - Load from tsconfig
+  - Complex type handling (generics, conditionals, mapped types, template literals)
 
 - [ ] **Error scenarios** - No tests for malformed TypeScript input.
 
@@ -980,6 +999,45 @@ Based on test fixtures analysis:
   - `readTextFile()`, `writeTextFile()`, `fileExists()` - Convenience functions
   - `getRuntimeInfo()` - Get runtime name and version
   - Updated `generator.ts`, `utils.ts`, `diff.ts` to use compat layer
+
+#### Latest Features (November 26, 2025 - Session 8)
+
+- **CommonJS Support** - Dual ESM/CJS package distribution
+  - Updated `build.ts` to generate both ESM (`dist/esm/`) and CJS (`dist/cjs/`)
+  - Updated `package.json` with conditional exports
+  - Added `main` field for CommonJS entry point
+  - CJS uses `.cjs` extension with `package.json` type marker
+
+- **`test/checker.test.ts`** - Comprehensive type checker tests (34 tests)
+  - `typeCheck()` - Type checking with include/exclude patterns, maxErrors, warningsAsErrors
+  - `validateDeclarations()` - Validate .d.ts files
+  - `checkIsolatedDeclarations()` - Check isolatedDeclarations compatibility
+  - `getTypeAtPosition()` - Get type info at position (with bounds checking)
+  - `getQuickInfo()` - Get hover information
+  - `formatTypeCheckResults()` - Format results as string
+  - `loadCompilerOptions()` - Load/merge from tsconfig
+  - Complex type handling (generics, conditionals, mapped types, template literals)
+
+- **`src/checker.ts`** - Improved with bounds checking
+  - `getTypeAtPosition()` now validates line/column bounds before calling TS API
+  - `getQuickInfo()` now validates bounds and handles edge cases gracefully
+  - Returns null for invalid positions instead of throwing
+
+- **`src/circular.ts`** - Circular dependency detection module
+  - `DependencyNode` interface for graph nodes
+  - `CircularDependency` interface with chain, symbols, severity, reason
+  - `buildDependencyGraph()` - Build import/export dependency graph from files
+  - `detectCircularDependencies()` - Find cycles using DFS algorithm
+  - `analyzeCircularDependencies()` - Full analysis with timing
+  - `formatCircularAnalysis()` - Human-readable output with severity icons
+  - `getGraphSummary()` - Statistics about the dependency graph
+  - `findAllDependents()` / `findAllDependencies()` - Transitive dependency lookup
+  - `exportGraphAsDot()` - Export as Graphviz DOT format
+  - `exportGraphAsJson()` - Export as JSON format
+  - Deduplication of rotated cycles
+  - Type-only vs value-only cycle detection
+
+**Total tests: 166** (up from 132)
 
 ---
 
