@@ -1,6 +1,41 @@
 import type { Declaration, DtsGenerationConfig } from './types'
-import { basename, dirname, relative } from 'node:path'
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { basename, dirname, relative, resolve, join } from 'node:path'
 import { extractDeclarations } from './extractor'
+
+/**
+ * Bundle configuration options
+ */
+export interface BundleConfig {
+  /** Entry point file(s) */
+  entry: string | string[]
+  /** Output file path */
+  output: string
+  /** Module name for UMD/AMD bundles */
+  name?: string
+  /** Include source file comments */
+  includeSourceComments?: boolean
+  /** Keep individual file sections */
+  preserveFileSections?: boolean
+  /** External modules to exclude from bundling */
+  externals?: string[]
+  /** Banner comment to add at top */
+  banner?: string
+  /** Footer comment to add at bottom */
+  footer?: string
+  /** Sort declarations alphabetically */
+  sortDeclarations?: boolean
+  /** Merge duplicate declarations */
+  mergeDuplicates?: boolean
+  /** Generate ambient module wrapper */
+  ambient?: boolean
+  /** Module declaration name for ambient */
+  moduleName?: string
+  /** Include triple-slash references */
+  includeReferences?: boolean
+  /** References to include */
+  references?: string[]
+}
 
 /**
  * Bundle result containing the combined declarations
@@ -11,6 +46,10 @@ export interface BundleResult {
   declarationCount: number
   importCount: number
   exportCount: number
+  /** Size in bytes */
+  size: number
+  /** Warnings generated during bundling */
+  warnings: string[]
 }
 
 /**
@@ -323,4 +362,287 @@ function buildParameters(params?: Declaration['parameters']): string {
     if (p.defaultValue) param += ` = ${p.defaultValue}`
     return param
   }).join(', ')
+}
+
+/**
+ * Bundle multiple .d.ts files into a single file
+ */
+export async function bundleDtsFiles(
+  files: string[],
+  config: Partial<BundleConfig> = {},
+): Promise<BundleResult> {
+  const warnings: string[] = []
+  const allImports = new Map<string, ImportInfo>()
+  const allDeclarations: string[] = []
+  const processedFiles: string[] = []
+  const seenDeclarations = new Set<string>()
+
+  let declarationCount = 0
+  let importCount = 0
+  let exportCount = 0
+
+  // Process each file
+  for (const file of files) {
+    if (!existsSync(file)) {
+      warnings.push(`File not found: ${file}`)
+      continue
+    }
+
+    const content = readFileSync(file, 'utf-8')
+    processedFiles.push(file)
+
+    // Parse the .d.ts content
+    const lines = content.split('\n')
+    let currentDeclaration: string[] = []
+    let braceCount = 0
+    let inDeclaration = false
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+
+      // Skip empty lines outside declarations
+      if (!trimmed && !inDeclaration) continue
+
+      // Handle imports
+      if (trimmed.startsWith('import ')) {
+        importCount++
+        const importMatch = trimmed.match(/import\s+(type\s+)?(?:\{([^}]+)\}|(\w+)|\*\s+as\s+(\w+))\s+from\s+['"]([^'"]+)['"]/)
+        if (importMatch) {
+          const [, typeOnly, namedImports, defaultImport, namespaceImport, source] = importMatch
+
+          // Skip if external
+          if (config.externals?.some(ext => source.startsWith(ext))) {
+            allDeclarations.push(trimmed)
+            continue
+          }
+
+          // Skip relative imports (they're being bundled)
+          if (source.startsWith('.')) continue
+
+          if (!allImports.has(source)) {
+            allImports.set(source, {
+              source,
+              specifiers: new Map(),
+              isTypeOnly: !!typeOnly,
+              isSideEffect: false,
+            })
+          }
+
+          const info = allImports.get(source)!
+
+          if (namedImports) {
+            const specs = namedImports.split(',').map(s => s.trim())
+            for (const spec of specs) {
+              const [name, alias] = spec.split(/\s+as\s+/).map(s => s.trim())
+              const isType = name.startsWith('type ')
+              const actualName = isType ? name.replace('type ', '') : name
+              info.specifiers.set(alias || actualName, {
+                name: actualName,
+                alias: alias !== actualName ? alias : undefined,
+                isType,
+              })
+            }
+          }
+
+          if (!typeOnly) {
+            info.isTypeOnly = false
+          }
+        }
+        continue
+      }
+
+      // Handle declarations
+      const isDeclarationStart = /^(export\s+)?(declare\s+)?(interface|type|class|function|const|let|var|enum|namespace|module)\s/.test(trimmed)
+
+      if (isDeclarationStart) {
+        inDeclaration = true
+        currentDeclaration = [line]
+        braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
+
+        // Single-line declaration
+        if (braceCount === 0 && (trimmed.endsWith(';') || !trimmed.includes('{'))) {
+          // Check for duplicates
+          const declKey = extractDeclarationKey(trimmed)
+          if (!seenDeclarations.has(declKey) || !config.mergeDuplicates) {
+            seenDeclarations.add(declKey)
+            allDeclarations.push(line)
+            declarationCount++
+            if (trimmed.startsWith('export')) exportCount++
+          }
+          inDeclaration = false
+          currentDeclaration = []
+        }
+      }
+      else if (inDeclaration) {
+        currentDeclaration.push(line)
+        braceCount += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
+
+        if (braceCount <= 0) {
+          const fullDecl = currentDeclaration.join('\n')
+          const declKey = extractDeclarationKey(currentDeclaration[0])
+
+          if (!seenDeclarations.has(declKey) || !config.mergeDuplicates) {
+            seenDeclarations.add(declKey)
+            allDeclarations.push(fullDecl)
+            declarationCount++
+            if (currentDeclaration[0].trim().startsWith('export')) exportCount++
+          }
+
+          inDeclaration = false
+          currentDeclaration = []
+        }
+      }
+      else if (trimmed.startsWith('export ') && !trimmed.includes('declare')) {
+        // Re-export statements
+        allDeclarations.push(line)
+        exportCount++
+      }
+    }
+  }
+
+  // Build output
+  const output: string[] = []
+
+  // Add banner
+  if (config.banner) {
+    output.push(config.banner)
+    output.push('')
+  }
+
+  // Add triple-slash references
+  if (config.includeReferences && config.references) {
+    for (const ref of config.references) {
+      output.push(`/// <reference types="${ref}" />`)
+    }
+    output.push('')
+  }
+
+  // Add imports
+  const sortedImports = Array.from(allImports.values()).sort((a, b) =>
+    a.source.localeCompare(b.source),
+  )
+
+  for (const info of sortedImports) {
+    if (info.specifiers.size > 0) {
+      const specs = Array.from(info.specifiers.values())
+      const specStrings = specs.map(s => {
+        const typePrefix = s.isType ? 'type ' : ''
+        return s.alias ? `${typePrefix}${s.name} as ${s.alias}` : `${typePrefix}${s.name}`
+      })
+      const typePrefix = info.isTypeOnly ? 'type ' : ''
+      output.push(`import ${typePrefix}{ ${specStrings.join(', ')} } from '${info.source}';`)
+    }
+  }
+
+  if (sortedImports.length > 0) {
+    output.push('')
+  }
+
+  // Add declarations
+  if (config.ambient && config.moduleName) {
+    output.push(`declare module '${config.moduleName}' {`)
+    for (const decl of allDeclarations) {
+      // Indent and remove 'declare' keyword inside module
+      const indented = decl.split('\n').map(line => '  ' + line.replace(/^(\s*)(export\s+)?declare\s+/, '$1$2')).join('\n')
+      output.push(indented)
+    }
+    output.push('}')
+  }
+  else {
+    if (config.sortDeclarations) {
+      allDeclarations.sort((a, b) => {
+        const aName = extractDeclarationKey(a)
+        const bName = extractDeclarationKey(b)
+        return aName.localeCompare(bName)
+      })
+    }
+
+    for (const decl of allDeclarations) {
+      output.push(decl)
+    }
+  }
+
+  // Add footer
+  if (config.footer) {
+    output.push('')
+    output.push(config.footer)
+  }
+
+  const content = output.join('\n')
+
+  return {
+    content,
+    files: processedFiles,
+    declarationCount,
+    importCount,
+    exportCount,
+    size: Buffer.byteLength(content, 'utf-8'),
+    warnings,
+  }
+}
+
+/**
+ * Extract a key for deduplication from a declaration line
+ */
+function extractDeclarationKey(line: string): string {
+  const match = line.match(/(interface|type|class|function|const|let|var|enum|namespace|module)\s+(\w+)/)
+  return match ? `${match[1]}:${match[2]}` : line.trim()
+}
+
+/**
+ * Bundle and write to file
+ */
+export async function bundleAndWrite(
+  files: string[],
+  outputPath: string,
+  config: Partial<BundleConfig> = {},
+): Promise<BundleResult> {
+  const result = await bundleDtsFiles(files, config)
+
+  // Ensure output directory exists
+  const outDir = dirname(outputPath)
+  if (!existsSync(outDir)) {
+    mkdirSync(outDir, { recursive: true })
+  }
+
+  writeFileSync(outputPath, result.content)
+
+  return result
+}
+
+/**
+ * Create a bundler with preset configuration
+ */
+export function createBundler(config: Partial<BundleConfig> = {}) {
+  return {
+    bundle: (files: string[]) => bundleDtsFiles(files, config),
+    bundleAndWrite: (files: string[], output: string) =>
+      bundleAndWrite(files, output, { ...config, output }),
+  }
+}
+
+/**
+ * Resolve entry files from glob patterns
+ */
+export async function resolveEntryFiles(
+  patterns: string | string[],
+  cwd: string = process.cwd(),
+): Promise<string[]> {
+  const patternList = Array.isArray(patterns) ? patterns : [patterns]
+  const files: string[] = []
+
+  for (const pattern of patternList) {
+    if (pattern.includes('*')) {
+      // Would need glob library for full support
+      // For now, just handle direct file paths
+      continue
+    }
+
+    const fullPath = resolve(cwd, pattern)
+    if (existsSync(fullPath)) {
+      files.push(fullPath)
+    }
+  }
+
+  return files
 }

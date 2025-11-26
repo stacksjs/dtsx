@@ -8,8 +8,8 @@ import { logger } from './logger'
  * Documentation configuration
  */
 export interface DocsConfig {
-  /** Output format: 'markdown' or 'html' */
-  format: 'markdown' | 'html'
+  /** Output format: 'markdown', 'html', or 'json' */
+  format: 'markdown' | 'html' | 'json'
   /** Output directory for documentation */
   outdir: string
   /** Include private members (prefixed with _) */
@@ -26,6 +26,16 @@ export interface DocsConfig {
   includeSourceLinks?: boolean
   /** Base URL for source links */
   sourceBaseUrl?: string
+  /** Include type information in output */
+  includeTypes?: boolean
+  /** Generate separate files per module */
+  splitByModule?: boolean
+  /** Template for markdown output */
+  template?: 'default' | 'minimal' | 'detailed'
+  /** Custom CSS for HTML output */
+  customCss?: string
+  /** Include navigation sidebar in HTML */
+  includeSidebar?: boolean
 }
 
 /**
@@ -715,6 +725,123 @@ export function generateHTML(docs: Documentation, config: Partial<DocsConfig> = 
 }
 
 /**
+ * Generate JSON documentation
+ */
+export function generateJSON(docs: Documentation, config: Partial<DocsConfig> = {}): string {
+  const output = {
+    title: docs.title,
+    description: docs.description,
+    generatedAt: docs.generatedAt.toISOString(),
+    version: '1.0.0',
+    entries: docs.entries.map(entry => ({
+      name: entry.name,
+      kind: entry.kind,
+      signature: entry.signature,
+      description: entry.jsdoc.description,
+      isExported: entry.isExported,
+      isDefault: entry.isDefault,
+      deprecated: entry.jsdoc.deprecated,
+      since: entry.jsdoc.since,
+      category: entry.jsdoc.category,
+      params: entry.jsdoc.params,
+      returns: entry.jsdoc.returns,
+      examples: entry.jsdoc.examples,
+      throws: entry.jsdoc.throws,
+      see: entry.jsdoc.see,
+      tags: entry.jsdoc.tags,
+      sourceFile: entry.sourceFile,
+      sourceLine: entry.sourceLine,
+      members: entry.members?.map(m => ({
+        name: m.name,
+        kind: m.kind,
+        signature: m.signature,
+        description: m.jsdoc.description,
+        deprecated: m.jsdoc.deprecated,
+        params: m.jsdoc.params,
+        returns: m.jsdoc.returns,
+      })),
+    })),
+    categories: config.groupByCategory
+      ? Object.fromEntries(
+          Array.from(docs.categories.entries()).map(([cat, entries]) => [
+            cat,
+            entries.map(e => e.name),
+          ]),
+        )
+      : undefined,
+  }
+
+  return JSON.stringify(output, null, 2)
+}
+
+/**
+ * Generate documentation in TypeDoc-compatible JSON format
+ */
+export function generateTypeDocJSON(docs: Documentation): string {
+  const output = {
+    id: 0,
+    name: docs.title,
+    kind: 1, // Project
+    kindString: 'Project',
+    flags: {},
+    children: docs.entries.map((entry, idx) => ({
+      id: idx + 1,
+      name: entry.name,
+      kind: kindToTypeDocKind(entry.kind),
+      kindString: entry.kind,
+      flags: {
+        isExported: entry.isExported,
+        isDefault: entry.isDefault,
+      },
+      comment: entry.jsdoc.description
+        ? {
+            summary: [{ kind: 'text', text: entry.jsdoc.description }],
+            blockTags: entry.jsdoc.deprecated
+              ? [{ tag: '@deprecated', content: [{ kind: 'text', text: entry.jsdoc.deprecated }] }]
+              : undefined,
+          }
+        : undefined,
+      sources: entry.sourceFile
+        ? [{ fileName: entry.sourceFile, line: entry.sourceLine || 1, character: 0 }]
+        : undefined,
+      signatures: entry.kind === 'function'
+        ? [{
+            id: idx + 1000,
+            name: entry.name,
+            kind: 4096, // Call signature
+            kindString: 'Call signature',
+            parameters: entry.jsdoc.params.map((p, pidx) => ({
+              id: idx + 2000 + pidx,
+              name: p.name,
+              kind: 32768, // Parameter
+              kindString: 'Parameter',
+              flags: { isOptional: p.optional },
+              type: p.type ? { type: 'intrinsic', name: p.type } : undefined,
+              comment: p.description
+                ? { summary: [{ kind: 'text', text: p.description }] }
+                : undefined,
+            })),
+            type: entry.jsdoc.returns?.type
+              ? { type: 'intrinsic', name: entry.jsdoc.returns.type }
+              : undefined,
+          }]
+        : undefined,
+      children: entry.members?.map((m, midx) => ({
+        id: idx + 3000 + midx,
+        name: m.name,
+        kind: kindToTypeDocKind(m.kind),
+        kindString: m.kind,
+        comment: m.jsdoc.description
+          ? { summary: [{ kind: 'text', text: m.jsdoc.description }] }
+          : undefined,
+      })),
+    })),
+  }
+
+  return JSON.stringify(output, null, 2)
+}
+
+/**
  * Generate and write documentation files
  */
 export async function generateDocs(
@@ -733,10 +860,50 @@ export async function generateDocs(
   }
 
   if (config.format === 'markdown') {
-    const markdown = generateMarkdown(docs, config)
-    const outputPath = join(config.outdir, 'API.md')
-    writeFileSync(outputPath, markdown)
+    if (config.splitByModule) {
+      // Generate separate files per source file
+      const byFile = groupBySourceFile(docs.entries)
+      for (const [sourceFile, entries] of byFile) {
+        const moduleDocs: Documentation = {
+          title: basename(sourceFile, '.ts'),
+          description: `Documentation for ${sourceFile}`,
+          entries,
+          categories: new Map(),
+          generatedAt: docs.generatedAt,
+        }
+        const markdown = generateMarkdown(moduleDocs, config)
+        const outputPath = join(config.outdir, `${basename(sourceFile, '.ts')}.md`)
+        writeFileSync(outputPath, markdown)
+        logger.info(`Generated: ${outputPath}`)
+      }
+
+      // Generate index file
+      const indexLines = [`# ${docs.title}`, '', docs.description || '', '', '## Modules', '']
+      for (const [sourceFile] of byFile) {
+        const moduleName = basename(sourceFile, '.ts')
+        indexLines.push(`- [${moduleName}](./${moduleName}.md)`)
+      }
+      writeFileSync(join(config.outdir, 'README.md'), indexLines.join('\n'))
+      logger.info(`Generated: ${join(config.outdir, 'README.md')}`)
+    }
+    else {
+      const markdown = generateMarkdown(docs, config)
+      const outputPath = join(config.outdir, 'API.md')
+      writeFileSync(outputPath, markdown)
+      logger.info(`Generated: ${outputPath}`)
+    }
+  }
+  else if (config.format === 'json') {
+    const json = generateJSON(docs, config)
+    const outputPath = join(config.outdir, 'api.json')
+    writeFileSync(outputPath, json)
     logger.info(`Generated: ${outputPath}`)
+
+    // Also generate TypeDoc-compatible format
+    const typeDocJson = generateTypeDocJSON(docs)
+    const typeDocPath = join(config.outdir, 'typedoc.json')
+    writeFileSync(typeDocPath, typeDocJson)
+    logger.info(`Generated: ${typeDocPath}`)
   }
   else {
     const html = generateHTML(docs, config)
@@ -791,4 +958,47 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function groupBySourceFile(entries: DocEntry[]): Map<string, DocEntry[]> {
+  const groups = new Map<string, DocEntry[]>()
+
+  for (const entry of entries) {
+    const sourceFile = entry.sourceFile || 'unknown'
+    if (!groups.has(sourceFile)) {
+      groups.set(sourceFile, [])
+    }
+    groups.get(sourceFile)!.push(entry)
+  }
+
+  return groups
+}
+
+function kindToTypeDocKind(kind: string): number {
+  const kinds: Record<string, number> = {
+    function: 64, // Function
+    variable: 32, // Variable
+    interface: 256, // Interface
+    type: 4194304, // Type alias
+    class: 128, // Class
+    enum: 8, // Enum
+    property: 1024, // Property
+    method: 2048, // Method
+    module: 2, // Module
+    namespace: 4, // Namespace
+  }
+  return kinds[kind] || 0
+}
+
+/**
+ * Create a documentation generator with preset configuration
+ */
+export function createDocsGenerator(config: Partial<DocsConfig> = {}) {
+  return {
+    extract: (files: string[]) => extractDocumentation(files, config),
+    generateMarkdown: (docs: Documentation) => generateMarkdown(docs, config),
+    generateHTML: (docs: Documentation) => generateHTML(docs, config),
+    generateJSON: (docs: Documentation) => generateJSON(docs, config),
+    parseJSDoc,
+  }
 }

@@ -240,11 +240,11 @@
 
 - [x] **Configurable indentation** - Tabs vs spaces, indent size. ✅ Added `--indent-style` and `--indent-size` CLI options
 
-- [ ] **Import sorting** - Configurable import organization (currently hardcoded to sort 'bun' first).
+- [x] **Import sorting** - Configurable import organization. ✅ Implemented in `src/import-sorter.ts` with presets (default, node, bun, typeSeparated, alphabetical)
 
-- [ ] **Declaration merging** - Merge related declarations when appropriate.
+- [x] **Declaration merging** - Merge related declarations when appropriate. ✅ Implemented in `src/merger.ts` with support for interfaces, namespaces, enums, type aliases
 
-- [ ] **Tree shaking** - Remove unused internal types from output.
+- [x] **Tree shaking** - Remove unused internal types from output. ✅ Implemented in `src/tree-shaker.ts` with dependency graph analysis
 
 ### Developer Experience
 
@@ -254,7 +254,7 @@
 
 - [x] **Diff output** - Show what changed between generations. ✅ Implemented in `src/diff.ts`
 
-- [ ] **Validation mode** - Check generated .d.ts files against TypeScript compiler.
+- [x] **Validation mode** - Check generated .d.ts files against TypeScript compiler. ✅ Implemented `--validate` flag with error counting
 
 - [x] **IDE integration** - Language server protocol support. ✅ Implemented `src/lsp.ts` with hover, completion, diagnostics
 
@@ -285,7 +285,7 @@ Based on code analysis, these are the likely bottlenecks:
 
 ## 📝 Documentation
 
-- [ ] **API documentation** - Document all exported functions with JSDoc.
+- [x] **API documentation** - Document all exported functions with JSDoc. ✅ Implemented in `src/docs.ts` with markdown, HTML, and JSON output
 
 - [ ] **Architecture guide** - Document the processing pipeline.
 
@@ -330,7 +330,7 @@ Based on code analysis, these are the likely bottlenecks:
 
 - [x] Better error messages ✅ Implemented in `src/errors.ts` with typed errors and context
 - [x] IDE integration ✅ Implemented LSP server in `src/lsp.ts`
-- [ ] Prettier integration
+- [x] Prettier integration ✅ Implemented in `src/formatter.ts`
 
 ### v2.0 (Advanced)
 
@@ -641,8 +641,89 @@ Based on test fixtures analysis:
 
 - **`test/plugins.test.ts`** - Plugin system tests (22 tests)
 - **`test/transformers.test.ts`** - Transformer API tests (35 tests)
+- **`test/cli.test.ts`** - CLI integration tests (21 tests)
+
+#### More Features (November 26, 2025 - Continued)
+
+- **`src/import-sorter.ts`** - Configurable import sorting
+  - Group-based sorting (builtin, external, internal, parent, sibling, index, type)
+  - Alphabetization options with case sensitivity control
+  - Custom order patterns with regex support
+  - Presets: default, node, bun, typeSeparated, alphabetical, none
+  - `sortImports()`, `sortImportsInContent()`, `createImportSorter()`
+
+- **`src/merger.ts`** - Declaration merging module
+  - Interface merging (combines members, extends clauses)
+  - Namespace/module merging
+  - Enum merging with conflict resolution
+  - Type alias merging (creates unions)
+  - Conflict strategies: first, last, error
+  - Deduplication of identical declarations
+  - `mergeDeclarations()`, `mergeDeclarationsInContent()`
+
+- **`src/tree-shaker.ts`** - Tree shaking for unused types
+  - Dependency graph analysis with `buildDependencyGraph()`
+  - Entry point detection (exported declarations)
+  - Keep/remove patterns with glob and regex support
+  - Configurable shakable kinds (type, interface, etc.)
+  - `treeShake()`, `treeShakeContent()`, `findUnusedDeclarations()`
+  - `analyzeDependencies()` for dependency inspection
+
+- **`src/watcher.ts`** - Watch mode for auto-regeneration
+  - File system watching with debounce
+  - Include/exclude patterns with glob support
+  - Callbacks: onChange, onBuildStart, onBuildComplete, onError
+  - `createWatcher()`, `watchAndGenerate()`
+  - `formatWatchResult()`, `createWatchLogger()`
+
+- **`src/incremental.ts`** - Incremental build support
+  - `IncrementalCache` class with file hash validation
+  - Cache manifest with dependency tracking
+  - Config hash invalidation when settings change
+  - Cache statistics (hits, misses, hit ratio, time saved)
+  - `createIncrementalBuilder()` for build integration
+  - `extractDependencies()` for import analysis
+
+- **`src/sourcemap.ts`** - Source map support
+  - `SourceMapGenerator` with VLQ encoding
+  - `SourceMapConsumer` for reading source maps
+  - Source map v3 format support
+  - Inline and external source map options
+  - `createSourceMap()`, `appendSourceMapComment()`, `appendInlineSourceMap()`
+  - `extractSourceMap()` for reading existing maps
+  - `buildDeclarationMappings()` for declaration-to-source mapping
 
 **Total tests: 132** (up from 54)
+
+#### Latest Features (November 26, 2025 - Session 2)
+
+- **`src/lsp.ts`** - Enhanced LSP with additional features
+  - `references()` - Find all references to a symbol
+  - `prepareRename()` / `rename()` - Rename symbol across files
+  - `documentSymbols()` - Document outline/symbols
+  - `workspaceSymbols()` - Search symbols across workspace
+  - `codeActions()` - Quick fixes and refactorings
+  - `signatureHelp()` - Function parameter hints
+  - `documentHighlight()` - Highlight occurrences
+  - `formatting()` - Format document
+  - New types: `SymbolKind`, `CompletionItemKind`, `DocumentHighlightKind`
+  - Code actions: add type annotation, replace 'any' with 'unknown', extract signature
+
+- **`src/docs.ts`** - Enhanced API documentation generation
+  - JSON output format with `generateJSON()`
+  - TypeDoc-compatible JSON with `generateTypeDocJSON()`
+  - Split by module option (`splitByModule`)
+  - New config options: `includeTypes`, `template`, `customCss`, `includeSidebar`
+  - `createDocsGenerator()` factory function
+
+- **`src/bundler.ts`** - Enhanced declaration bundling
+  - `BundleConfig` interface with comprehensive options
+  - `bundleDtsFiles()` - Bundle multiple .d.ts files into one
+  - `bundleAndWrite()` - Bundle and write to file
+  - `createBundler()` - Factory with preset config
+  - Features: ambient module wrapper, external exclusion, duplicate merging
+  - Banner/footer support, triple-slash references
+  - Alphabetical declaration sorting option
 
 ---
 
