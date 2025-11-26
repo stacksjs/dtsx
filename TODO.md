@@ -36,14 +36,13 @@
   // Also cached interface patterns in extractor/helpers.ts
   ```
 
-- [ ] **O(n²) import usage detection** - `processDeclarations()` iterates over all imports for every declaration type (functions, variables, interfaces, types, classes, enums, modules). Refactor to single-pass analysis.
+- [x] **O(n²) import usage detection** - `processDeclarations()` iterates over all imports for every declaration type. ✅ Refactored to combine all texts and do single-pass search
 
   ```typescript
-  // Current: 7 separate loops checking imports against declarations
-  // Fix: Build a single usage map in one pass
+  // Fixed: Combine all declaration texts, single regex test per import name
   ```
 
-- [ ] **Redundant `extractAllImportedItems()` calls** - Called multiple times for the same import in `processDeclarations()`. Cache results per import.
+- [x] **Redundant `extractAllImportedItems()` calls** - Called multiple times for the same import. ✅ Already cached via `getImportItemsFromCache()`
 
 - [ ] **String concatenation in hot paths** - `processor.ts` uses string concatenation (`result +=`) extensively. Use array joins for better performance.
 

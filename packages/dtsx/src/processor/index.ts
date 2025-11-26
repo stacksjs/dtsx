@@ -196,23 +196,6 @@ export function processDeclarations(
   // Get all unique imported item names for regex matching
   const allImportedItemNames = Array.from(allImportedItemsMap.keys())
 
-  // Helper function to check which imports are used in a text
-  function findUsedImports(text: string, additionalTexts: string[] = []): Set<string> {
-    const used = new Set<string>()
-    const textsToCheck = [text, ...additionalTexts]
-
-    for (const item of allImportedItemNames) {
-      const regex = getCachedRegex(item)
-      for (const textToCheck of textsToCheck) {
-        if (regex.test(textToCheck)) {
-          used.add(item)
-          break // Found in at least one text, no need to check others
-        }
-      }
-    }
-    return used
-  }
-
   // Filter imports to only include those that are used in exports or declarations
   const usedImportItems = new Set<string>()
 
@@ -237,27 +220,27 @@ export function processDeclarations(
     }
   }
 
-  // Build reference check sets for interfaces
+  // Build reference check sets for interfaces (optimized: single pass over text sources)
   const interfaceReferences = new Set<string>()
-  for (const func of functions) {
-    if (func.isExported) {
-      for (const iface of interfaces) {
-        if (func.text.includes(iface.name)) {
-          interfaceReferences.add(iface.name)
-        }
-      }
+  if (interfaces.length > 0) {
+    // Collect all texts to search in one array
+    const textsToSearch: string[] = []
+    for (const func of functions) {
+      if (func.isExported) textsToSearch.push(func.text)
     }
-  }
-  for (const cls of classes) {
-    for (const iface of interfaces) {
-      if (cls.text.includes(iface.name)) {
-        interfaceReferences.add(iface.name)
-      }
+    for (const cls of classes) {
+      textsToSearch.push(cls.text)
     }
-  }
-  for (const type of types) {
+    for (const type of types) {
+      textsToSearch.push(type.text)
+    }
+
+    // Join all texts for a single search per interface (faster than N*M individual searches)
+    const combinedText = textsToSearch.join('\n')
+
+    // Single pass: check each interface name against combined text
     for (const iface of interfaces) {
-      if (type.text.includes(iface.name)) {
+      if (combinedText.includes(iface.name)) {
         interfaceReferences.add(iface.name)
       }
     }
@@ -289,10 +272,21 @@ export function processDeclarations(
     declarationTexts.push({ text: exp.text, additionalTexts: [] })
   }
 
-  // Single pass: find all used imports across all declarations
+  // Optimized: combine ALL declaration texts into one and do a single pass for import detection
+  const allTexts: string[] = []
   for (const { text, additionalTexts } of declarationTexts) {
-    const used = findUsedImports(text, additionalTexts)
-    for (const item of used) {
+    allTexts.push(text)
+    if (additionalTexts.length > 0) {
+      allTexts.push(...additionalTexts)
+    }
+  }
+  const combinedDeclarationText = allTexts.join('\n')
+
+  // Single pass: find all used imports in combined text
+  for (const item of allImportedItemNames) {
+    const regex = getCachedRegex(item)
+    regex.lastIndex = 0
+    if (regex.test(combinedDeclarationText)) {
       usedImportItems.add(item)
     }
   }
