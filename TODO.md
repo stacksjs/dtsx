@@ -236,7 +236,7 @@
 
 ### Output Quality
 
-- [ ] **Prettier integration** - Option to format output with Prettier.
+- [x] **Prettier integration** - Option to format output with Prettier. ✅ Implemented in `src/formatter.ts`
 
 - [ ] **Configurable indentation** - Tabs vs spaces, indent size.
 
@@ -252,7 +252,7 @@
 
 - [x] **Progress reporting** - Show progress for large codebases. ✅ Implemented `--progress` CLI option
 
-- [ ] **Diff output** - Show what changed between generations.
+- [x] **Diff output** - Show what changed between generations. ✅ Implemented in `src/diff.ts`
 
 - [ ] **Validation mode** - Check generated .d.ts files against TypeScript compiler.
 
@@ -504,7 +504,9 @@ Based on test fixtures analysis:
 
 - [ ] **Edge case coverage** - `edge-cases.ts` fixture exists but verify all cases pass.
 
-- [ ] **Plugin tests** - No tests for bun-plugin or vite-plugin.
+- [x] **Plugin tests** - No tests for bun-plugin or vite-plugin. ✅ Added `test/plugins.test.ts` with 22 tests
+
+- [x] **Transformer tests** - ✅ Added `test/transformers.test.ts` with 35 tests
 
 - [ ] **CLI tests** - No integration tests for CLI commands.
 
@@ -623,6 +625,24 @@ Based on test fixtures analysis:
 
 - `dtsx check` - Type check files with isolated declarations support
 - `dtsx convert` - Convert TypeScript types to different schema formats
+
+#### Latest Features (November 26, 2025)
+
+- **`src/formatter.ts`** - Prettier integration and built-in formatter
+  - Auto-detects and uses Prettier if available
+  - Built-in fallback formatter with import sorting/grouping
+  - Line wrapping for long type definitions
+
+- **`src/diff.ts`** - Diff output for comparing declarations
+  - LCS-based diff algorithm
+  - Unified diff format output
+  - Colored terminal output
+  - Summary statistics
+
+- **`test/plugins.test.ts`** - Plugin system tests (22 tests)
+- **`test/transformers.test.ts`** - Transformer API tests (35 tests)
+
+**Total tests: 111** (up from 54)
 
 ---
 
