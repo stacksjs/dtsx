@@ -69,6 +69,9 @@ cli
   .option('--config <path>', 'Path to config file (dtsx.config.ts)', { default: '' })
   .option('--incremental', 'Enable incremental builds (only regenerate changed files)', { default: false })
   .option('--clear-cache', 'Clear the incremental build cache before generating', { default: false })
+  .option('--indent-style <style>', 'Indentation style: spaces or tabs', { default: 'spaces' })
+  .option('--indent-size <size>', 'Number of spaces for indentation', { default: 2 })
+  .option('--prettier', 'Use Prettier for output formatting if available', { default: false })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
@@ -109,6 +112,9 @@ cli
         bundleOutput: options.bundleOutput ?? fileConfig.bundleOutput ?? 'index.d.ts',
         incremental: options.incremental ?? fileConfig.incremental ?? false,
         clearCache: options.clearCache ?? false,
+        indentStyle: (options.indentStyle as 'spaces' | 'tabs') ?? fileConfig.indentStyle ?? 'spaces',
+        indentSize: Number(options.indentSize) || fileConfig.indentSize || 2,
+        prettier: options.prettier ?? fileConfig.prettier ?? false,
         plugins: fileConfig.plugins, // Plugins only from config file
       }
 
@@ -613,7 +619,7 @@ cli
     jsonSchemaDraft?: string
   }) => {
     try {
-      const { convertToFormat, getFormatExtension, type OutputFormat } = await import('../src/formats')
+      const formats = await import('../src/formats')
       const { extractDeclarations } = await import('../src/extractor')
       const { Glob } = await import('bun')
       const { resolve, relative, join, dirname, basename } = await import('node:path')
@@ -621,7 +627,7 @@ cli
 
       const cwd = process.cwd()
       const patterns = options.files || ['**/*.ts']
-      const format = (options.format || 'json-schema') as OutputFormat
+      const format = (options.format || 'json-schema') as formats.OutputFormat
       const outdir = resolve(options.outdir || './schemas')
 
       // Find all TypeScript files
@@ -665,7 +671,7 @@ cli
 
         if (typeDeclarations.length === 0) continue
 
-        const output = convertToFormat(typeDeclarations, {
+        const output = formats.convertToFormat(typeDeclarations, {
           format,
           includeDescriptions: options.includeDescriptions ?? true,
           allOptional: options.allOptional ?? false,
@@ -676,7 +682,7 @@ cli
         // Determine output filename
         const relPath = relative(cwd, file)
         const baseName = basename(file, '.ts')
-        const ext = getFormatExtension(format)
+        const ext = formats.getFormatExtension(format)
         const outputFile = join(outdir, dirname(relPath), `${baseName}${ext}`)
 
         // Ensure output subdirectory exists

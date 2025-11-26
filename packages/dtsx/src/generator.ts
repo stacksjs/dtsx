@@ -7,6 +7,7 @@ import { BuildCache, ensureGitignore } from './cache'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
+import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
@@ -112,6 +113,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     exportCount: number
     dtsError?: DtsError
     cached?: boolean
+    validationErrorCount?: number
   }> => {
     let sourceCode: string | undefined
     try {
@@ -125,13 +127,15 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           await mkdir(dirname(outputPath), { recursive: true })
           await writeToFile(outputPath, cachedContent)
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
-          return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true }
+          return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount: 0 }
         }
       }
 
       // Read source first for better error context
       sourceCode = await readFile(file, 'utf-8')
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
+
+      let validationErrorCount = 0
 
       if (config.dryRun) {
         // Dry run - just show what would be generated
@@ -182,6 +186,26 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           logger.debug(`  Generated source map: ${relative(config.cwd, mapPath)}`)
         }
 
+        // Apply formatting if enabled
+        if (config.prettier || config.indentStyle || config.indentSize) {
+          const formatted = await formatDts(finalDtsContent, {
+            usePrettier: config.prettier,
+            builtIn: {
+              indentSize: config.indentSize || 2,
+              useTabs: config.indentStyle === 'tabs',
+              normalizeWhitespace: true,
+              sortImports: true,
+              trailingNewline: true,
+            },
+          }, outputPath)
+          finalDtsContent = formatted.content
+          if (formatted.warnings?.length) {
+            for (const warn of formatted.warnings) {
+              logger.warn(`[format] ${warn}`)
+            }
+          }
+        }
+
         // Write the DTS file
         await writeToFile(outputPath, finalDtsContent)
 
@@ -194,6 +218,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         if (config.validate) {
           const validation = validateDtsContent(dtsContent, outputPath)
           if (!validation.isValid) {
+            validationErrorCount = validation.errors.length
             logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
             for (const err of validation.errors) {
               let errMsg = `  Line ${err.line}:${err.column}`
@@ -215,7 +240,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         logger.debug(`Generated: ${outputPath}`)
       }
 
-      return { success: true, file, declarationCount, importCount, exportCount }
+      return { success: true, file, declarationCount, importCount, exportCount, validationErrorCount }
     }
     catch (error) {
       const dtsError = createDtsError(error, file, sourceCode)
@@ -223,7 +248,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       if (config.plugins && config.plugins.length > 0) {
         await pluginManager.runOnError(error instanceof Error ? error : new Error(String(error)), file, sourceCode || '')
       }
-      return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, dtsError }
+      return { success: false, file, declarationCount: 0, importCount: 0, exportCount: 0, dtsError, validationErrorCount: 0 }
     }
   }
 
@@ -251,7 +276,12 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
             stats.importsProcessed += result.importCount
             stats.exportsProcessed += result.exportCount
           }
-          if (config.validate) stats.filesValidated++
+          if (config.validate) {
+            stats.filesValidated++
+            if (result.validationErrorCount) {
+              stats.validationErrors += result.validationErrorCount
+            }
+          }
         }
         else {
           stats.filesFailed++
@@ -291,7 +321,12 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           stats.importsProcessed += result.importCount
           stats.exportsProcessed += result.exportCount
         }
-        if (config.validate) stats.filesValidated++
+        if (config.validate) {
+          stats.filesValidated++
+          if (result.validationErrorCount) {
+            stats.validationErrors += result.validationErrorCount
+          }
+        }
 
         // Show progress
         if (config.progress) {

@@ -238,7 +238,7 @@
 
 - [x] **Prettier integration** - Option to format output with Prettier. ✅ Implemented in `src/formatter.ts`
 
-- [ ] **Configurable indentation** - Tabs vs spaces, indent size.
+- [x] **Configurable indentation** - Tabs vs spaces, indent size. ✅ Added `--indent-style` and `--indent-size` CLI options
 
 - [ ] **Import sorting** - Configurable import organization (currently hardcoded to sort 'bun' first).
 
@@ -508,7 +508,7 @@ Based on test fixtures analysis:
 
 - [x] **Transformer tests** - ✅ Added `test/transformers.test.ts` with 35 tests
 
-- [ ] **CLI tests** - No integration tests for CLI commands.
+- [x] **CLI tests** - No integration tests for CLI commands. ✅ Added `test/cli.test.ts` with 21 tests
 
 - [ ] **Benchmark regression** - No CI integration for performance benchmarks.
 
@@ -642,7 +642,7 @@ Based on test fixtures analysis:
 - **`test/plugins.test.ts`** - Plugin system tests (22 tests)
 - **`test/transformers.test.ts`** - Transformer API tests (35 tests)
 
-**Total tests: 111** (up from 54)
+**Total tests: 132** (up from 54)
 
 ---
 

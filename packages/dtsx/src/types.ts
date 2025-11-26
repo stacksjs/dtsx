@@ -111,6 +111,21 @@ export interface DtsGenerationConfig {
    * @default false
    */
   clearCache?: boolean
+  /**
+   * Indentation style: 'spaces' or 'tabs'
+   * @default 'spaces'
+   */
+  indentStyle?: 'spaces' | 'tabs'
+  /**
+   * Number of spaces for indentation (when indentStyle is 'spaces')
+   * @default 2
+   */
+  indentSize?: number
+  /**
+   * Use Prettier for output formatting if available
+   * @default false
+   */
+  prettier?: boolean
 }
 
 /**
