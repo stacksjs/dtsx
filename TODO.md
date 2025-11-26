@@ -44,9 +44,9 @@
 
 - [x] **Redundant `extractAllImportedItems()` calls** - Called multiple times for the same import. ✅ Already cached via `getImportItemsFromCache()`
 
-- [ ] **String concatenation in hot paths** - `processor.ts` uses string concatenation (`result +=`) extensively. Use array joins for better performance.
+- [x] **String concatenation in hot paths** - `processor.ts` uses string concatenation (`result +=`) extensively. Use array joins for better performance. ✅ Refactored to use array `.join()` pattern in builders.ts
 
-- [ ] **Repeated source code parsing** - `extractDeclarations()` creates a new SourceFile for each file. Consider caching parsed ASTs when processing related files.
+- [x] **Repeated source code parsing** - `extractDeclarations()` creates a new SourceFile for each file. Consider caching parsed ASTs when processing related files. ✅ AST caching exists in extractor/cache.ts
 
 ### P1: Parser Efficiency
 
@@ -228,11 +228,11 @@
 
 - [ ] **Include patterns** - More granular control over what gets processed.
 
-- [ ] **Source maps** - Generate source maps for debugging.
+- [x] **Source maps** - Generate source maps for debugging. ✅ Implemented with VLQ encoding
 
 - [x] **Watch mode** - File watching for incremental regeneration. ✅ Implemented `dtsx watch` command
 
-- [ ] **Incremental builds** - Cache and reuse unchanged declarations.
+- [x] **Incremental builds** - Cache and reuse unchanged declarations. ✅ Implemented in `src/cache.ts` with content hashing
 
 ### Output Quality
 
@@ -248,7 +248,7 @@
 
 ### Developer Experience
 
-- [ ] **Better error messages** - Include file location and context in errors.
+- [x] **Better error messages** - Include file location and context in errors. ✅ Implemented in `src/errors.ts`
 
 - [x] **Progress reporting** - Show progress for large codebases. ✅ Implemented `--progress` CLI option
 
@@ -256,7 +256,7 @@
 
 - [ ] **Validation mode** - Check generated .d.ts files against TypeScript compiler.
 
-- [ ] **IDE integration** - Language server protocol support.
+- [x] **IDE integration** - Language server protocol support. ✅ Implemented `src/lsp.ts` with hover, completion, diagnostics
 
 ---
 
@@ -322,21 +322,21 @@ Based on code analysis, these are the likely bottlenecks:
 
 ### v1.1 (Performance)
 
-- Incremental builds
-- Watch mode
-- Memory optimization
+- [x] Incremental builds ✅ Implemented in `src/cache.ts` with content hashing and mtime tracking
+- [x] Watch mode ✅ Implemented `dtsx watch` command
+- [ ] Memory optimization
 
 ### v1.2 (DX)
 
-- Better error messages
-- IDE integration
-- Prettier integration
+- [x] Better error messages ✅ Implemented in `src/errors.ts` with typed errors and context
+- [x] IDE integration ✅ Implemented LSP server in `src/lsp.ts`
+- [ ] Prettier integration
 
 ### v2.0 (Advanced)
 
-- Source maps
-- Declaration bundling
-- Monorepo support
+- [x] Source maps ✅ Implemented with VLQ encoding
+- [x] Declaration bundling ✅ Implemented in `src/bundler.ts`
+- [x] Monorepo support ✅ Implemented in `src/workspace.ts`
 
 ---
 
@@ -349,6 +349,23 @@ Based on code analysis, these are the likely bottlenecks:
 ---
 
 ## 🟣 Plugin Ecosystem
+
+### Core Plugin System ✅ NEW
+
+- [x] **Plugin architecture** - Implemented in `src/plugins.ts` with full lifecycle hooks:
+  - `onStart` - Before generation starts
+  - `onBeforeFile` - Before processing each file
+  - `onDeclarations` - Transform declarations
+  - `onAfterFile` - After generating each .d.ts file
+  - `onEnd` - After all files processed
+  - `onError` - Error handling hook
+
+- [x] **Built-in plugins** - Several built-in plugins available:
+  - `stripInternalPlugin` - Remove @internal declarations
+  - `createBannerPlugin()` - Add custom header banners
+  - `createFilterPlugin()` - Filter declarations by name
+
+- [x] **Plugin API** - `definePlugin()` helper for TypeScript support
 
 ### Vite Plugin
 
@@ -547,5 +564,67 @@ Based on test fixtures analysis:
 
 ---
 
-*Last updated: November 25, 2025*
+---
+
+## ✅ Recently Implemented Features
+
+### Session: November 26, 2025
+
+#### New Modules Created
+
+- **`src/plugins.ts`** - Full plugin system with lifecycle hooks
+- **`src/bundler.ts`** - Declaration file bundling with import deduplication
+- **`src/cache.ts`** - Incremental build caching with content hashing
+- **`src/workspace.ts`** - Multi-project/monorepo support
+- **`src/docs.ts`** - API documentation generator from JSDoc
+- **`src/optimizer.ts`** - Declaration file optimizer (tree-shaking, minification)
+- **`src/lsp.ts`** - Language Server Protocol implementation
+- **`src/errors.ts`** - Typed error system with context
+- **`test/generator.test.ts`** - Comprehensive generator tests (27 tests)
+
+#### CLI Commands Added
+
+- `dtsx workspace` - Generate declarations for monorepo projects
+- `dtsx docs` - Generate API documentation
+- `dtsx optimize` - Optimize declaration files
+- `dtsx lsp` - Start LSP server for IDE integration
+
+#### Config Enhancements
+
+- `defineConfig()` helper for TypeScript intellisense
+- Support for `dtsx.config.ts` configuration files
+- New options: `plugins`, `bundle`, `bundleOutput`, `incremental`, `clearCache`
+
+#### Additional Features (November 26, 2025)
+
+- **`src/transformers.ts`** - Custom transformers API for AST-level transformations
+  - `Transformer` type for declaration-level transforms
+  - `composeTransformers()` for chaining transformers
+  - `filterByKind()`, `filterByPredicate()` for conditional transforms
+  - Built-in transformers: rename, prefix, suffix, remove, JSDoc, type, readonly, required, optional
+  - `createTransformerPlugin()` to convert transformers to plugins
+
+- **`src/checker.ts`** - TypeScript type checking integration
+  - `typeCheck()` - Full type checking with diagnostics
+  - `validateDeclarations()` - Validate generated .d.ts files
+  - `checkIsolatedDeclarations()` - Check isolatedDeclarations compatibility
+  - `getTypeAtPosition()`, `getQuickInfo()` - Type information at cursor
+  - `formatTypeCheckResults()` - Human-readable output
+
+- **`src/formats.ts`** - Additional output formats
+  - `toJsonSchema()` - Convert to JSON Schema (draft-07, 2019-09, 2020-12)
+  - `toZod()` - Convert to Zod schemas
+  - `toValibot()` - Convert to Valibot schemas
+  - `toIoTs()` - Convert to io-ts codecs
+  - `toYup()` - Convert to Yup schemas
+  - `toArkType()` - Convert to ArkType schemas
+
+#### CLI Commands Added
+
+- `dtsx check` - Type check files with isolated declarations support
+- `dtsx convert` - Convert TypeScript types to different schema formats
+
+---
+
+*Last updated: November 26, 2025*
 *Generated from codebase analysis of dtsx v0.9.9*
