@@ -1,5 +1,6 @@
 /**
  * Error handling utilities for dtsx
+ * Provides custom error classes and formatting utilities
  */
 
 import type { DtsError, SourceLocation } from './types'
@@ -20,6 +21,8 @@ export const ErrorCodes = {
   // Type errors
   TYPE_INFERENCE_ERROR: 'TYPE_INFERENCE_ERROR',
   UNRESOLVED_TYPE: 'UNRESOLVED_TYPE',
+  EXTRACTION_ERROR: 'EXTRACTION_ERROR',
+  PROCESSING_ERROR: 'PROCESSING_ERROR',
 
   // Validation errors
   VALIDATION_ERROR: 'VALIDATION_ERROR',
@@ -29,11 +32,191 @@ export const ErrorCodes = {
   CONFIG_ERROR: 'CONFIG_ERROR',
   INVALID_ENTRYPOINT: 'INVALID_ENTRYPOINT',
 
+  // Dependency errors
+  CIRCULAR_DEPENDENCY: 'CIRCULAR_DEPENDENCY',
+
+  // Operation errors
+  TIMEOUT_ERROR: 'TIMEOUT_ERROR',
+  NOT_SUPPORTED: 'NOT_SUPPORTED',
+
   // Unknown
   UNKNOWN_ERROR: 'UNKNOWN_ERROR',
 } as const
 
 export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes]
+
+/**
+ * Base error class for dtsx errors
+ */
+export class DtsxError extends Error {
+  /** Error code for programmatic handling */
+  readonly code: ErrorCode
+
+  /** Additional context about the error */
+  readonly context?: Record<string, unknown>
+
+  constructor(message: string, code: ErrorCode = 'UNKNOWN_ERROR', context?: Record<string, unknown>) {
+    super(message)
+    this.name = 'DtsxError'
+    this.code = code
+    this.context = context
+
+    // Maintains proper stack trace
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor)
+    }
+  }
+
+  /** Format error for logging */
+  toString(): string {
+    let str = `${this.name} [${this.code}]: ${this.message}`
+    if (this.context) {
+      str += `\nContext: ${JSON.stringify(this.context, null, 2)}`
+    }
+    return str
+  }
+
+  /** Convert to JSON for serialization */
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      code: this.code,
+      message: this.message,
+      context: this.context,
+      stack: this.stack,
+    }
+  }
+}
+
+/**
+ * Error during file parsing
+ */
+export class ParseError extends DtsxError {
+  readonly filePath: string
+  readonly line?: number
+  readonly column?: number
+
+  constructor(message: string, filePath: string, options?: { line?: number, column?: number, cause?: Error }) {
+    super(message, 'PARSE_ERROR', { filePath, line: options?.line, column: options?.column })
+    this.name = 'ParseError'
+    this.filePath = filePath
+    this.line = options?.line
+    this.column = options?.column
+    if (options?.cause) this.cause = options.cause
+  }
+
+  get locationString(): string {
+    if (this.line !== undefined && this.column !== undefined) {
+      return `${this.filePath}:${this.line}:${this.column}`
+    }
+    return this.line !== undefined ? `${this.filePath}:${this.line}` : this.filePath
+  }
+}
+
+/**
+ * Error during declaration extraction
+ */
+export class ExtractionError extends DtsxError {
+  readonly filePath: string
+  readonly declarationKind?: string
+
+  constructor(message: string, filePath: string, declarationKind?: string, cause?: Error) {
+    super(message, 'EXTRACTION_ERROR', { filePath, declarationKind })
+    this.name = 'ExtractionError'
+    this.filePath = filePath
+    this.declarationKind = declarationKind
+    if (cause) this.cause = cause
+  }
+}
+
+/**
+ * Error during type processing
+ */
+export class ProcessingError extends DtsxError {
+  readonly declarationName?: string
+
+  constructor(message: string, declarationName?: string, cause?: Error) {
+    super(message, 'PROCESSING_ERROR', { declarationName })
+    this.name = 'ProcessingError'
+    this.declarationName = declarationName
+    if (cause) this.cause = cause
+  }
+}
+
+/**
+ * Error during file I/O operations
+ */
+export class FileError extends DtsxError {
+  readonly filePath: string
+  readonly operation: 'read' | 'write' | 'delete' | 'stat' | 'glob'
+
+  constructor(message: string, filePath: string, operation: 'read' | 'write' | 'delete' | 'stat' | 'glob', cause?: Error) {
+    super(message, operation === 'read' ? 'FILE_READ_ERROR' : 'FILE_WRITE_ERROR', { filePath, operation })
+    this.name = 'FileError'
+    this.filePath = filePath
+    this.operation = operation
+    if (cause) this.cause = cause
+  }
+}
+
+/**
+ * Error during configuration loading or validation
+ */
+export class ConfigError extends DtsxError {
+  readonly configPath?: string
+  readonly invalidKey?: string
+
+  constructor(message: string, options?: { configPath?: string, invalidKey?: string, cause?: Error }) {
+    super(message, 'CONFIG_ERROR', { configPath: options?.configPath, invalidKey: options?.invalidKey })
+    this.name = 'ConfigError'
+    this.configPath = options?.configPath
+    this.invalidKey = options?.invalidKey
+    if (options?.cause) this.cause = options.cause
+  }
+}
+
+/**
+ * Error when circular dependency is detected
+ */
+export class CircularDependencyError extends DtsxError {
+  readonly cycle: string[]
+
+  constructor(cycle: string[]) {
+    super(`Circular dependency detected: ${cycle.join(' -> ')}`, 'CIRCULAR_DEPENDENCY', { cycle })
+    this.name = 'CircularDependencyError'
+    this.cycle = cycle
+  }
+}
+
+/**
+ * Type guards for error types
+ */
+export function isDtsxError(error: unknown): error is DtsxError {
+  return error instanceof DtsxError
+}
+
+export function isParseError(error: unknown): error is ParseError {
+  return error instanceof ParseError
+}
+
+export function isFileError(error: unknown): error is FileError {
+  return error instanceof FileError
+}
+
+export function isConfigError(error: unknown): error is ConfigError {
+  return error instanceof ConfigError
+}
+
+/**
+ * Wrap an unknown error in a DtsxError
+ */
+export function wrapError(error: unknown, code: ErrorCode = 'UNKNOWN_ERROR', message?: string): DtsxError {
+  if (error instanceof DtsxError) return error
+  const errorMessage = message || (error instanceof Error ? error.message : String(error))
+  const wrapped = new DtsxError(errorMessage, code)
+  if (error instanceof Error) wrapped.cause = error
+  return wrapped
+}
 
 /**
  * Calculate line and column from source code offset

@@ -54,7 +54,11 @@
 
 - [x] **Lazy comment extraction** - `extractJSDocComments()` is called even when `keepComments=false`. Short-circuit early. ✅ Already implemented
 
-- [ ] **Reduce regex backtracking** - Multiple regexes in `processor.ts` have super-linear backtracking (noted by eslint-disable comments). Rewrite with non-backtracking patterns.
+- [x] **Reduce regex backtracking** - ✅ Refactored to use string operations instead of regex:
+  - `processor/imports.ts` uses string operations to avoid backtracking
+  - `processor/type-inference.ts` uses non-backtracking patterns
+  - `processor/index.ts` parses imports with string operations
+  - No eslint-disable comments for regex in codebase
 
 ---
 
@@ -193,15 +197,15 @@
 
 ### Edge Cases
 
-- [ ] **Empty files** - Handle files with no exports gracefully.
+- [x] **Empty files** - ✅ Handle files with no exports gracefully. Tested in `test/edge-cases.test.ts`
 
-- [ ] **Re-export only files** - Files that only re-export from other modules.
+- [x] **Re-export only files** - ✅ Files that only re-export from other modules. Tested in `test/edge-cases.test.ts`
 
-- [ ] **Barrel files** - Optimize handling of `index.ts` barrel exports.
+- [x] **Barrel files** - ✅ Optimize handling of `index.ts` barrel exports. Tested in `test/edge-cases.test.ts`
 
-- [ ] **Very long lines** - Handle extremely long type definitions without truncation.
+- [x] **Very long lines** - ✅ Handle extremely long type definitions without truncation. Tested in `test/edge-cases.test.ts`
 
-- [ ] **Unicode identifiers** - Support non-ASCII identifiers in declarations.
+- [x] **Unicode identifiers** - ✅ Support non-ASCII identifiers (Japanese, German, French, Greek, Cyrillic). Tested in `test/edge-cases.test.ts`
 
 ---
 
@@ -209,22 +213,35 @@
 
 ### Code Organization
 
-- [ ] **Split `processor.ts`** - At 1847 lines, this file is too large. Split into:
-  - `processor/imports.ts` - Import processing logic
+- [x] **Split `processor.ts`** - ✅ Already split into modular structure:
+  - `processor/index.ts` - Main exports and processDeclarations
   - `processor/declarations.ts` - Declaration processing
-  - `processor/inference.ts` - Type inference logic
-  - `processor/formatting.ts` - Output formatting
+  - `processor/imports.ts` - Import handling
+  - `processor/type-inference.ts` - Type inference utilities
+  - `processor/comments.ts` - Comment formatting
+  - `processor/cache.ts` - Caching utilities
 
-- [ ] **Split `extractor.ts`** - At 1375 lines, split into:
+- [x] **Split `extractor.ts`** - ✅ Already split into modular structure:
   - `extractor/declarations.ts` - Declaration extraction
   - `extractor/signatures.ts` - Signature building
   - `extractor/comments.ts` - Comment extraction
 
-- [ ] **Remove dead code** - `parser.ts` appears to have overlapping functionality with `extractor.ts`. Consolidate or remove.
+- [x] **Remove dead code** - ✅ `parser.ts` is marked as deprecated and only re-exports. Legacy functions kept for backward compatibility.
 
-- [ ] **Consistent error handling** - Add proper error types and error boundaries.
+- [x] **Consistent error handling** - ✅ Enhanced `src/errors.ts` with:
+  - `DtsxError` base class with error codes
+  - `ParseError`, `ExtractionError`, `ProcessingError`, `FileError`, `ConfigError`, `CircularDependencyError`
+  - Type guards: `isDtsxError`, `isParseError`, `isFileError`, `isConfigError`
+  - `wrapError()` utility for wrapping unknown errors
 
-- [ ] **Logging abstraction** - Replace `console.log` with a proper logging system that respects verbosity levels.
+- [x] **Logging abstraction** - ✅ Enhanced `src/logger.ts` with:
+  - `Logger` interface with debug, info, warn, error, setLevel, getLevel
+  - `child(scope)` - Create scoped child loggers
+  - `time(label)` - Timer for performance logging
+  - `progress(message)` - Progress messages (TTY-aware)
+  - `scopedLogger(scope)` - Create module-specific loggers
+  - `nullLogger` - No-op logger for testing
+  - Timestamp support, custom output functions
 
 ### Type Safety
 
@@ -1194,6 +1211,34 @@ Based on test fixtures analysis:
   - using declarations (Disposable)
 
 **Total tests: 277** (up from 262)
+
+#### Latest Features (November 27, 2025 - Session 12)
+
+- **Edge Cases Support** - `test/edge-cases.test.ts` (27 tests)
+  - Empty files, whitespace-only, comment-only files
+  - Re-export only files (named, type, namespace re-exports)
+  - Barrel files (index.ts patterns)
+  - Very long lines (unions, interfaces, deeply nested types)
+  - Unicode identifiers (Japanese, German, French, Greek, Cyrillic)
+  - Template literal types, regex patterns
+  - Numeric, boolean, bigint literal types
+  - Unique symbol types
+
+- **Enhanced Logger** - `src/logger.ts`
+  - `Logger` interface with child scopes
+  - `time(label)` for performance timing
+  - `progress(message)` for TTY-aware progress
+  - `scopedLogger(scope)` for module-specific loggers
+  - `nullLogger` for testing
+  - Timestamp support
+
+- **Enhanced Error Handling** - `src/errors.ts`
+  - `DtsxError` base class with error codes
+  - `ParseError`, `ExtractionError`, `ProcessingError`, `FileError`, `ConfigError`, `CircularDependencyError`
+  - Type guards for error identification
+  - `wrapError()` utility
+
+**Total tests: 304** (up from 277)
 
 ---
 
