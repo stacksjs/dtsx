@@ -492,11 +492,29 @@ Based on code analysis, these are the likely bottlenecks:
 
 ### Bun Plugin
 
-- [ ] **Error handling** - `bun-plugin/src/index.ts` doesn't handle generation errors gracefully.
+- [x] **Error handling** - ✅ Enhanced `bun-plugin/src/index.ts` with:
+  - `DtsxPluginError` class with error codes (CONFIG_ERROR, GENERATION_ERROR, FILE_ERROR, CACHE_ERROR, TIMEOUT_ERROR)
+  - `wrapError()` for categorizing errors
+  - Detailed error logging with code, message, context
+  - `continueOnError` option for graceful degradation
+  - `verbose` option for stack traces
 
-- [ ] **Incremental mode** - Add support for only regenerating changed files.
+- [x] **Incremental mode** - ✅ Added incremental build support:
+  - `incremental` option to enable
+  - `cacheDir` option (default: '.dtsx-cache')
+  - `IncrementalCache` class with manifest management
+  - Content hashing for change detection
+  - Config hash for cache invalidation
+  - `clearCache()` function to reset cache
 
-- [ ] **Build events** - Emit events for build tooling integration.
+- [x] **Build events** - ✅ Added build event system:
+  - `BuildEventEmitter` class for event handling
+  - Event types: 'start', 'progress', 'file', 'complete', 'error'
+  - `on` option for registering listeners
+  - `BuildEvent` interface with type, timestamp, data
+  - `dtsWatch()` helper for watch mode with incremental
+  - `dtsCheck()` helper for type checking only
+  - `timeout` option for generation timeout
 
 ### Future Plugins
 
@@ -690,17 +708,36 @@ Based on test fixtures analysis:
 
 ## 🎨 Output Quality & Formatting
 
-- [ ] **Consistent newlines** - Ensure consistent line endings (LF vs CRLF).
+- [x] **Consistent newlines** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `normalizeLineEndings()` - Convert to LF or CRLF
+  - `detectLineEnding()` - Auto-detect current line ending style
+  - `LineEnding` type: 'lf' | 'crlf' | 'auto'
 
-- [ ] **Trailing newline** - Always end files with a single newline.
+- [x] **Trailing newline** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `ensureTrailingNewline()` - Ensure single trailing newline
+  - `trailingNewline` and `insertFinalNewline` options
 
-- [ ] **Import grouping** - Group imports by source (node:, external, internal).
+- [x] **Import grouping** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `processImports()` - Group and sort imports
+  - Groups: builtin, external, scoped, internal, parent, sibling, index, type
+  - `ImportGrouping` config with separateGroups, alphabetize options
+  - Integrates with existing `src/import-sorter.ts`
 
-- [ ] **Declaration ordering** - Consistent ordering (types, interfaces, classes, functions, variables).
+- [x] **Declaration ordering** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `orderDeclarations()` - Sort by declaration kind
+  - `DeclarationOrder` config with kinds, alphabetize, groupExports
+  - Default order: import, type, interface, enum, class, function, variable, export, module, namespace
 
-- [ ] **Whitespace normalization** - Remove excessive blank lines in output.
+- [x] **Whitespace normalization** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `removeTrailingWhitespace()` - Strip trailing spaces/tabs from lines
+  - `normalizeBlankLines()` - Limit consecutive blank lines
+  - `normalizeIndent()` - Consistent indentation (spaces/tabs)
+  - `maxBlankLines` option (default: 1)
 
-- [ ] **Comment preservation fidelity** - Ensure JSDoc tags are preserved exactly.
+- [x] **Comment preservation fidelity** - ✅ Implemented in `src/output-normalizer.ts`:
+  - `preserveCommentFormatting()` - Preserve JSDoc, block, and line comments
+  - `preserveComments` option (default: true)
+  - JSDoc tags preserved exactly as written
 
 ---
 
@@ -1239,6 +1276,48 @@ Based on test fixtures analysis:
   - `wrapError()` utility
 
 **Total tests: 304** (up from 277)
+
+#### Latest Features (November 27, 2025 - Session 13)
+
+- **Bun Plugin Improvements** - `packages/bun-plugin/src/index.ts`
+  - `DtsxPluginError` class with error codes (CONFIG_ERROR, GENERATION_ERROR, FILE_ERROR, CACHE_ERROR, TIMEOUT_ERROR)
+  - `wrapError()` for categorizing and wrapping errors
+  - `IncrementalCache` class with manifest management
+  - `BuildEventEmitter` for event handling
+  - Event types: start, progress, file, complete, error
+  - `dtsWatch()` - Watch mode with incremental builds
+  - `dtsCheck()` - Type checking only
+  - `clearCache()` - Clear incremental cache
+  - Options: incremental, cacheDir, on, timeout, continueOnError, verbose
+
+- **Output Normalizer** - `src/output-normalizer.ts` (NEW)
+  - `normalizeOutput()` - Full normalization pipeline
+  - `normalizeLineEndings()` - LF/CRLF conversion
+  - `detectLineEnding()` - Auto-detect line ending style
+  - `removeTrailingWhitespace()` - Strip trailing whitespace
+  - `normalizeBlankLines()` - Limit consecutive blank lines
+  - `ensureTrailingNewline()` - Ensure single trailing newline
+  - `normalizeIndent()` - Consistent indentation (spaces/tabs)
+  - `processImports()` - Group and sort imports by type
+  - `orderDeclarations()` - Sort by declaration kind
+  - `preserveCommentFormatting()` - Preserve JSDoc and comments
+  - `createOutputNormalizer()` - Factory function
+  - Presets: default, minimal, strict, windows, tabs
+  - Types: LineEnding, ImportGroupType, DeclarationOrder, OutputNormalizerConfig
+
+- **`test/output-normalizer.test.ts`** - Output normalizer tests (47 tests)
+  - Line ending normalization
+  - Trailing whitespace removal
+  - Blank line normalization
+  - Trailing newline handling
+  - Indentation normalization
+  - Import processing and grouping
+  - Declaration ordering
+  - Comment preservation
+  - Preset configurations
+  - Edge cases
+
+**Total tests: 351** (up from 304)
 
 ---
 
