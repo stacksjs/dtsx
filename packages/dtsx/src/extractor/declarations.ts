@@ -4,7 +4,7 @@
 
 import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, ModuleDeclaration, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from '../types'
-import { forEachChild, isFunctionDeclaration, isIdentifier, isStringLiteral, NodeFlags, SyntaxKind } from 'typescript'
+import { forEachChild, isAsExpression, isFunctionDeclaration, isIdentifier, isStringLiteral, isTypeAssertionExpression, NodeFlags, SyntaxKind } from 'typescript'
 import { buildClassDeclaration, buildFunctionSignature, buildInterfaceDeclaration, buildModuleDeclaration, buildTypeDeclaration, buildVariableDeclaration } from './builders'
 import { extractJSDocComments, extractTypesFromModuleText, getNodeText, getParameterName, hasAsyncModifier, hasExportModifier, isBuiltInType } from './helpers'
 
@@ -140,6 +140,64 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
 }
 
 /**
+ * Check if an expression is an 'as const' assertion
+ */
+function isAsConstAssertion(node: import('typescript').Expression): boolean {
+  if (isAsExpression(node)) {
+    const typeNode = node.type
+    // Check if it's 'as const'
+    if (typeNode.kind === SyntaxKind.TypeReference) {
+      const text = typeNode.getText()
+      return text === 'const'
+    }
+  }
+  return false
+}
+
+/**
+ * Get the underlying expression from an 'as const' assertion
+ */
+function getAsConstValue(node: import('typescript').Expression): import('typescript').Expression | null {
+  if (isAsExpression(node) && isAsConstAssertion(node)) {
+    return node.expression
+  }
+  return null
+}
+
+/**
+ * Infer a literal type from a value for 'as const' declarations
+ * This creates readonly types for objects and arrays
+ */
+function inferAsConstType(expression: import('typescript').Expression): string {
+  const text = expression.getText()
+
+  // For object literals, convert to readonly type
+  if (expression.kind === SyntaxKind.ObjectLiteralExpression) {
+    // Return typeof with const assertion
+    return `typeof ${text} as const`
+  }
+
+  // For array literals, create readonly tuple
+  if (expression.kind === SyntaxKind.ArrayLiteralExpression) {
+    return `readonly ${text}`
+  }
+
+  // For string/number/boolean literals, return literal type
+  if (expression.kind === SyntaxKind.StringLiteral) {
+    return text // Already includes quotes
+  }
+  if (expression.kind === SyntaxKind.NumericLiteral) {
+    return text
+  }
+  if (expression.kind === SyntaxKind.TrueKeyword || expression.kind === SyntaxKind.FalseKeyword) {
+    return text
+  }
+
+  // Fallback to typeof
+  return `typeof ${text}`
+}
+
+/**
  * Extract variable statement (only exported ones for DTS)
  */
 export function extractVariableStatement(node: VariableStatement, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration[] {
@@ -155,11 +213,26 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
       continue
 
     const name = declaration.name.getText()
-    const typeAnnotation = declaration.type?.getText()
-    const initializer = declaration.initializer?.getText()
+    let typeAnnotation = declaration.type?.getText()
+    const initializer = declaration.initializer
+    const initializerText = initializer?.getText()
     const kind = node.declarationList.flags & NodeFlags.Const
       ? 'const'
       : node.declarationList.flags & NodeFlags.Let ? 'let' : 'var'
+
+    // Check for 'as const' assertion
+    let isAsConst = false
+    if (initializer && isAsExpression(initializer)) {
+      const typeText = initializer.type.getText()
+      if (typeText === 'const') {
+        isAsConst = true
+        // For 'as const', we need to preserve the literal type
+        const valueExpr = initializer.expression
+        if (!typeAnnotation) {
+          typeAnnotation = inferAsConstType(valueExpr)
+        }
+      }
+    }
 
     // Build clean variable declaration for DTS
     const dtsText = buildVariableDeclaration(name, typeAnnotation, kind, true)
@@ -173,8 +246,8 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
       text: dtsText,
       isExported: true,
       typeAnnotation,
-      value: initializer,
-      modifiers: [kind],
+      value: initializerText,
+      modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
       leadingComments,
       start: node.getStart(),
       end: node.getEnd(),

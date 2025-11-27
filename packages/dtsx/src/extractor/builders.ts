@@ -3,7 +3,7 @@
  */
 
 import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, TypeAliasDeclaration, VariableStatement } from 'typescript'
-import { forEachChild, isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
+import { forEachChild, isCallSignatureDeclaration, isComputedPropertyName, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
 import { getParameterName, hasExportModifier } from './helpers'
 
 /**
@@ -101,6 +101,17 @@ export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported
 }
 
 /**
+ * Get the interface member name, handling computed properties
+ */
+function getInterfaceMemberName(member: { name?: import('typescript').PropertyName }): string {
+  if (!member.name) return ''
+
+  // For computed property names, the getText() already includes brackets
+  // So we just return it directly
+  return member.name.getText()
+}
+
+/**
  * Get interface body with proper formatting
  */
 export function getInterfaceBody(node: InterfaceDeclaration): string {
@@ -108,13 +119,14 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
 
   for (const member of node.members) {
     if (isPropertySignature(member)) {
-      const name = member.name?.getText() || ''
+      const name = getInterfaceMemberName(member)
       const type = member.type?.getText() || 'any'
       const optional = member.questionToken ? '?' : ''
-      members.push(`  ${name}${optional}: ${type}`)
+      const readonly = member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword) ? 'readonly ' : ''
+      members.push(`  ${readonly}${name}${optional}: ${type}`)
     }
     else if (isMethodSignature(member)) {
-      const name = member.name?.getText() || ''
+      const name = getInterfaceMemberName(member)
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
         const paramType = param.type?.getText() || 'any'
@@ -127,7 +139,8 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
       const returnType = member.type?.getText() || 'void'
-      members.push(`  ${name}(${params}): ${returnType}`)
+      const optional = member.questionToken ? '?' : ''
+      members.push(`  ${name}${optional}(${params}): ${returnType}`)
     }
     else if (isCallSignatureDeclaration(member)) {
       // Call signature: (param: type) => returnType
@@ -263,12 +276,46 @@ function buildMemberModifiers(
 }
 
 /**
+ * Check if a member name is a private identifier (#field)
+ */
+function isPrivateMemberName(member: { name?: import('typescript').PropertyName }): boolean {
+  return member.name ? isPrivateIdentifier(member.name) : false
+}
+
+/**
+ * Check if a property name is a symbol expression (Symbol.iterator, etc.)
+ */
+function isSymbolPropertyName(member: { name?: import('typescript').PropertyName }): boolean {
+  if (!member.name) return false
+  const text = member.name.getText()
+  // Check for [Symbol.xxx] pattern
+  return text.startsWith('[Symbol.') || text.startsWith('[customSymbol')
+}
+
+/**
+ * Get the property name text, handling computed properties and symbols
+ */
+function getMemberNameText(member: { name?: import('typescript').PropertyName }): string {
+  if (!member.name) return ''
+
+  // For computed property names, the getText() already includes brackets
+  // So we just return it directly
+  return member.name.getText()
+}
+
+/**
  * Build clean class body for DTS (signatures only, no implementations)
+ * Excludes: private fields (#field), private methods (#method), static blocks
  */
 export function buildClassBody(node: ClassDeclaration): string {
   const members: string[] = []
 
   for (const member of node.members) {
+    // Skip static blocks - they're implementation details
+    if (member.kind === SyntaxKind.ClassStaticBlockDeclaration) {
+      continue
+    }
+
     if (isConstructorDeclaration(member)) {
       // First, add property declarations for parameter properties
       for (const param of member.parameters) {
@@ -294,8 +341,14 @@ export function buildClassBody(node: ClassDeclaration): string {
       members.push(`  constructor(${params});`)
     }
     else if (isMethodDeclaration(member)) {
+      // Skip private identifier methods (#privateMethod)
+      if (isPrivateMemberName(member)) {
+        continue
+      }
+
       // Method signature without implementation
-      const name = member.name?.getText() || ''
+      const name = getMemberNameText(member)
+      const isGenerator = !!member.asteriskToken
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -304,7 +357,14 @@ export function buildClassBody(node: ClassDeclaration): string {
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
-      const parts: string[] = [mods, name]
+      const parts: string[] = [mods]
+
+      // For generator methods, add the asterisk (including for symbol-named methods)
+      if (isGenerator) {
+        parts.push('*')
+      }
+
+      parts.push(name)
 
       // Add generics
       if (member.typeParameters) {
@@ -321,15 +381,23 @@ export function buildClassBody(node: ClassDeclaration): string {
       }).join(', ')
       parts.push('(', params, ')')
 
-      // Add return type
-      const returnType = member.type?.getText() || 'void'
+      // Add return type - for generators, ensure proper Generator/Iterator type
+      let returnType = member.type?.getText() || 'void'
+      if (isGenerator && returnType === 'void') {
+        returnType = 'Generator<unknown>'
+      }
       parts.push(': ', returnType, ';')
 
       members.push(parts.join(''))
     }
     else if (isPropertyDeclaration(member)) {
+      // Skip private identifier properties (#privateField)
+      if (isPrivateMemberName(member)) {
+        continue
+      }
+
       // Property declaration
-      const name = member.name?.getText() || ''
+      const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -344,8 +412,13 @@ export function buildClassBody(node: ClassDeclaration): string {
       members.push(`${mods}${name}${optional}: ${type};`)
     }
     else if (isGetAccessorDeclaration(member)) {
+      // Skip private identifier accessors
+      if (isPrivateMemberName(member)) {
+        continue
+      }
+
       // Get accessor declaration
-      const name = member.name?.getText() || ''
+      const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -358,8 +431,13 @@ export function buildClassBody(node: ClassDeclaration): string {
       members.push(`${mods}get ${name}(): ${returnType};`)
     }
     else if (isSetAccessorDeclaration(member)) {
+      // Skip private identifier accessors
+      if (isPrivateMemberName(member)) {
+        continue
+      }
+
       // Set accessor declaration
-      const name = member.name?.getText() || ''
+      const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
