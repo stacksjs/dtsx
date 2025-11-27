@@ -642,7 +642,10 @@ Based on test fixtures analysis:
 
 ## 📦 Package & Distribution
 
-- [ ] **Types path mismatch** - `package.json` has `"types": "./dist/index.d.ts"` but exports point to `./dist/src/index.js`. Verify alignment.
+- [x] **Types path mismatch** - ✅ Fixed in `package.json`:
+  - Added `types` field to exports for proper TypeScript resolution
+  - Main export: `{ types: "./dist/index.d.ts", import: "./dist/src/index.js" }`
+  - Subpath exports: `{ types: "./dist/*.d.ts", import: "./dist/*" }`
 
 - [ ] **Peer dependencies** - Consider making `typescript` a peer dependency.
 
@@ -759,17 +762,37 @@ Based on test fixtures analysis:
 
 ---
 
-## 🔐 Security & Robustness
+## 🔐 Security & Robustness ✅ RESOLVED
 
-- [ ] **Path traversal protection** - Validate file paths don't escape project root.
+- [x] **Path traversal protection** - ✅ Implemented in `src/security.ts`:
+  - `validatePath()` - Validates paths are within root directory
+  - `validatePaths()` - Batch path validation
+  - `sanitizeFilename()` - Removes traversal sequences
+  - `isSafePath()` - Quick safety check
+  - `SecurityError` with error codes
 
-- [ ] **Symlink handling** - Decide behavior for symbolic links.
+- [x] **Symlink handling** - ✅ Implemented in `src/security.ts`:
+  - `isSymlink()` - Check if path is symbolic link
+  - `validateSymlink()` - Follow or reject symlinks based on config
+  - `followSymlinks` option (default: false)
 
-- [ ] **Large file protection** - Add configurable size limits to prevent OOM.
+- [x] **Large file protection** - ✅ Implemented in `src/security.ts`:
+  - `validateFileSize()` - Check file size against limit
+  - `maxFileSize` option (default: 10MB)
+  - `maxTotalSize` option (default: 100MB)
+  - `maxFiles` option (default: 10000)
 
-- [ ] **Timeout handling** - Add configurable timeout for processing.
+- [x] **Timeout handling** - ✅ Implemented in `src/security.ts`:
+  - `withTimeout()` - Wrap promises with timeout
+  - `createSecureProcessor()` - Process with all protections
+  - `timeout` option (default: 30 seconds)
 
-- [x] **Graceful degradation** - Continue processing other files if one fails. ✅ `--continue-on-error` option
+- [x] **Blocked patterns** - ✅ Blocks sensitive files by default:
+  - `.git/**`, `node_modules/**`, `.env*`, `secrets/**`, `*.key`, `*.pem`
+  - `isBlockedPath()` - Check against patterns
+  - Custom `blockedPatterns` config
+
+- [x] **Graceful degradation** - ✅ `--continue-on-error` option
 
 ---
 
@@ -1419,7 +1442,23 @@ Based on test fixtures analysis:
   - Verified generator.ts console usage is intentional (JSON output, subprocess communication)
   - Verified parser.ts is deprecated with simple regex patterns
 
-**Total tests: 481** (up from 439)
+- **Security Module** - `src/security.ts` (NEW):
+  - `SecurityConfig` interface with all security options
+  - `SecurityError` class with typed error codes
+  - Path traversal protection: `validatePath()`, `validatePaths()`, `sanitizeFilename()`, `isSafePath()`
+  - Symlink handling: `isSymlink()`, `validateSymlink()`
+  - File size protection: `validateFileSize()`, `validateFileBatch()`
+  - Timeout handling: `withTimeout()`, `createSecureProcessor()`, `createSecureBatchProcessor()`
+  - Blocked patterns: `isBlockedPath()` with glob pattern matching
+  - `createSecurityMiddleware()` - Factory for security checks
+  - `DEFAULT_SECURITY_CONFIG` with sensible defaults
+  - Added `test/security.test.ts` (39 tests)
+
+- **Package.json Fix**:
+  - Added `types` field to exports for proper TypeScript module resolution
+  - Ensures TypeScript finds declaration files correctly
+
+**Total tests: 520** (up from 481)
 
 ---
 
