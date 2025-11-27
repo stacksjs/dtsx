@@ -706,6 +706,124 @@ cli
     }
   })
 
+cli
+  .command('circular', 'Detect circular dependencies in TypeScript files')
+  .option('--files <patterns>', 'Glob patterns for files to check', {
+    default: '**/*.ts',
+    type: [String],
+  })
+  .option('--root <path>', 'Root directory for resolution', { default: '.' })
+  .option('--ignore <patterns>', 'Glob patterns to ignore (comma-separated)', {
+    default: '',
+    type: [String],
+  })
+  .option('--types-only', 'Only report type-level cycles', { default: false })
+  .option('--max-depth <number>', 'Maximum depth for cycle detection', { default: 100 })
+  .option('--include-node-modules', 'Include node_modules in analysis', { default: false })
+  .option('--format <format>', 'Output format: text, json, dot', { default: 'text' })
+  .option('--summary', 'Show graph summary statistics', { default: false })
+  .example('dtsx circular')
+  .example('dtsx circular --files "src/**/*.ts"')
+  .example('dtsx circular --ignore "**/*.test.ts,**/__tests__/**"')
+  .example('dtsx circular --format dot > deps.dot')
+  .example('dtsx circular --summary')
+  .action(async (options: {
+    files?: string[]
+    root?: string
+    ignore?: string[]
+    typesOnly?: boolean
+    maxDepth?: number
+    includeNodeModules?: boolean
+    format?: string
+    summary?: boolean
+  }) => {
+    try {
+      const {
+        analyzeCircularDependencies,
+        formatCircularAnalysis,
+        getGraphSummary,
+        exportGraphAsDot,
+        exportGraphAsJson,
+      } = await import('../src/circular')
+      const { Glob } = await import('bun')
+      const { resolve, relative } = await import('node:path')
+
+      const cwd = process.cwd()
+      const rootDir = resolve(options.root || '.')
+      const patterns = options.files || ['**/*.ts']
+
+      // Find all files matching patterns
+      const files: string[] = []
+      for (const pattern of patterns) {
+        const glob = new Glob(pattern)
+        for await (const file of glob.scan({
+          cwd: rootDir,
+          absolute: true,
+          onlyFiles: true,
+        })) {
+          if (!file.endsWith('.d.ts')) {
+            if (!options.includeNodeModules && file.includes('node_modules')) {
+              continue
+            }
+            files.push(file)
+          }
+        }
+      }
+
+      if (files.length === 0) {
+        console.error('No TypeScript files found')
+        process.exit(1)
+      }
+
+      console.log(`Analyzing ${files.length} files for circular dependencies...`)
+
+      const result = await analyzeCircularDependencies(files, {
+        rootDir,
+        ignore: options.ignore?.filter(Boolean),
+        typesOnly: options.typesOnly ?? false,
+        maxDepth: options.maxDepth ?? 100,
+        includeNodeModules: options.includeNodeModules ?? false,
+      })
+
+      // Handle different output formats
+      if (options.format === 'json') {
+        console.log(exportGraphAsJson(result.graph, rootDir))
+      }
+      else if (options.format === 'dot') {
+        console.log(exportGraphAsDot(result.graph, rootDir))
+      }
+      else {
+        // Text format
+        console.log(formatCircularAnalysis(result, rootDir))
+
+        // Show summary if requested
+        if (options.summary) {
+          const summary = getGraphSummary(result.graph)
+          console.log('\n--- Dependency Graph Summary ---')
+          console.log(`Total files: ${summary.totalFiles}`)
+          console.log(`Total dependencies: ${summary.totalDependencies}`)
+          console.log(`Average dependencies per file: ${summary.avgDependencies.toFixed(2)}`)
+          if (summary.maxDependencies.count > 0) {
+            console.log(`Most dependencies: ${relative(rootDir, summary.maxDependencies.file)} (${summary.maxDependencies.count})`)
+          }
+          if (summary.mostDepended.count > 0) {
+            console.log(`Most depended on: ${relative(rootDir, summary.mostDepended.file)} (${summary.mostDepended.count} dependents)`)
+          }
+          if (summary.isolatedFiles.length > 0) {
+            console.log(`Isolated files (no dependencies): ${summary.isolatedFiles.length}`)
+          }
+        }
+      }
+
+      // Exit with error code if cycles found
+      process.exit(result.hasCircular ? 1 : 0)
+    }
+    catch (error) {
+      console.error('Error analyzing dependencies:', error)
+      process.exit(1)
+    }
+  })
+
 cli.command('version', 'Show the version of dtsx').action(() => {
   console.log(version)
 })
