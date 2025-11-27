@@ -50,7 +50,7 @@
 
 ### P1: Parser Efficiency
 
-- [ ] **Avoid double-parsing** - `parser.ts` and `extractor.ts` both parse similar constructs. Consolidate into a single AST-based approach.
+- [x] **Avoid double-parsing** - ✅ Already resolved. `parser.ts` is deprecated (only re-exports for backward compatibility). All parsing now uses TypeScript AST via `extractor/cache.ts` with `createSourceFile`.
 
 - [x] **Lazy comment extraction** - `extractJSDocComments()` is called even when `keepComments=false`. Short-circuit early. ✅ Already implemented
 
@@ -261,7 +261,7 @@
 
 - [x] **Add missing test for example 0012** - Test file exists but not in test array. ✅ Already included
 
-- [ ] **Add `checker.ts` test** - Large file excluded from tests, should have coverage.
+- [x] **Add `checker.ts` test** - ✅ Added `test/checker.test.ts` with 34 tests (Session 8).
 
 - [x] **Property-based testing** - ✅ Added `test/fuzzing.test.ts` with 25 tests:
   - Random declaration generators (functions, interfaces, types, classes, enums)
@@ -269,9 +269,18 @@
   - Stress tests (many declarations, deep nesting)
   - Performance characteristics tests
 
-- [ ] **Snapshot testing** - Add snapshot tests for complex type transformations.
+- [x] **Snapshot testing** - ✅ Added `test/snapshots.test.ts` (24 tests):
+  - Generic types (complex constraints, recursive, multiple constraints)
+  - Conditional types (nested, distributive, infer)
+  - Mapped types (modifiers, key remapping)
+  - Template literal types
+  - Function overloads
+  - Class patterns (abstract, decorators, multiple interfaces)
+  - Module patterns (namespaces, module augmentation)
+  - Utility type patterns (Pick, Partial, Omit, Exclude)
+  - Edge cases (deeply nested, large unions, index signatures, const assertions, callable types)
 
-- [ ] **Error case testing** - Test malformed input handling.
+- [x] **Error case testing** - ✅ Test malformed input handling covered in `test/errors.test.ts` (52 tests).
 
 - [ ] **Performance regression tests** - Add benchmarks to CI.
 
@@ -694,7 +703,7 @@ Based on test fixtures analysis:
   - Edge cases (Unicode, null bytes, BOM, mixed line endings)
   - Complex declarations (abstract class, const enum, namespace, module)
 
-- [ ] **Edge case coverage** - `edge-cases.ts` fixture exists but verify all cases pass.
+- [x] **Edge case coverage** - ✅ Verified. `test/edge-cases.test.ts` (27 tests) + fixture test in `dts.test.ts` all pass.
 
 - [x] **Plugin tests** - No tests for bun-plugin or vite-plugin. ✅ Added `test/plugins.test.ts` with 22 tests
 
@@ -1459,6 +1468,21 @@ Based on test fixtures analysis:
   - Ensures TypeScript finds declaration files correctly
 
 **Total tests: 520** (up from 481)
+
+#### Latest Features (November 27, 2025 - Session 16)
+
+- **Snapshot Testing** - `test/snapshots.test.ts` (NEW, 24 tests):
+  - Complex generic types with constraints and recursion
+  - Conditional types (nested, distributive, infer)
+  - Mapped types with modifiers and key remapping
+  - Template literal types with union expansion
+  - Function overloads
+  - Class patterns (abstract, decorators, multiple interfaces)
+  - Module patterns (namespaces, module augmentation)
+  - Utility type patterns (Pick, Partial, Omit, Exclude)
+  - Edge cases (deeply nested, large unions, index signatures, callable types)
+
+**Total tests: 544** (up from 520)
 
 ---
 
