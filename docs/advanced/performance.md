@@ -47,14 +47,20 @@ import { User, Role, Permission } from './types';
 2. **Memory-Efficient Type Tracking**
 
    ```typescript
-   interface TypeTracker {
-     // Track only necessary type information
-     trackTypes: boolean;
-     // Track type relationships
-     trackRelationships: boolean;
-     // Track type usage
-     trackUsage: boolean;
-   }
+   // Use the tracking config option
+   const config = {
+     tracking: {
+       // Track only necessary type information
+       types: true,
+       // Track type relationships
+       relationships: true,
+       // Track type usage
+       usage: true,
+       // Track imports
+       imports: true,
+       importUsage: true,
+     },
+   };
    ```
 
 ## Parallel Processing

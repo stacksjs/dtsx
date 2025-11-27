@@ -501,7 +501,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
   // Visit all nodes in the source file to find interface/type/class/enum declarations
   function visitAllNodes(node: import('typescript').Node) {
     switch (node.kind) {
-      case SyntaxKind.InterfaceDeclaration:
+      case SyntaxKind.InterfaceDeclaration: {
         const interfaceNode = node as InterfaceDeclaration
         const interfaceName = interfaceNode.name.getText()
         if (referencedTypes.has(interfaceName)) {
@@ -510,8 +510,9 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
           referencedTypes.delete(interfaceName) // Remove to avoid duplicates
         }
         break
+      }
 
-      case SyntaxKind.TypeAliasDeclaration:
+      case SyntaxKind.TypeAliasDeclaration: {
         const typeNode = node as TypeAliasDeclaration
         const typeName = typeNode.name.getText()
         if (referencedTypes.has(typeName)) {
@@ -520,8 +521,9 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
           referencedTypes.delete(typeName)
         }
         break
+      }
 
-      case SyntaxKind.ClassDeclaration:
+      case SyntaxKind.ClassDeclaration: {
         const classNode = node as ClassDeclaration
         if (classNode.name) {
           const className = classNode.name.getText()
@@ -532,8 +534,9 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
           }
         }
         break
+      }
 
-      case SyntaxKind.EnumDeclaration:
+      case SyntaxKind.EnumDeclaration: {
         const enumNode = node as EnumDeclaration
         const enumName = enumNode.name.getText()
         if (referencedTypes.has(enumName)) {
@@ -542,6 +545,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
           referencedTypes.delete(enumName)
         }
         break
+      }
     }
 
     // Continue visiting child nodes

@@ -69,9 +69,11 @@ const config = {
 ```typescript
 // Track type usage
 const config = {
-  trackTypes: true,
-  trackRelationships: true,
-  trackUsage: true,
+  tracking: {
+    types: true,
+    relationships: true,
+    usage: true,
+  },
 };
 ```
 
@@ -80,9 +82,11 @@ const config = {
 ```typescript
 // Track import usage
 const config = {
-  trackImports: true,
-  trackImportUsage: true,
-  trackImportRelationships: true,
+  tracking: {
+    imports: true,
+    importUsage: true,
+    importRelationships: true,
+  },
 };
 ```
 

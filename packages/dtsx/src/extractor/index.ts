@@ -101,26 +101,29 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
         declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode))
         break
 
-      case SyntaxKind.FunctionDeclaration:
+      case SyntaxKind.FunctionDeclaration: {
         const funcDecl = extractFunctionDeclaration(node as FunctionDeclaration, sourceCode, sourceFile, keepComments)
         // Only include exported functions or functions that are referenced by exported items
         if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
           declarations.push(funcDecl)
         }
         break
+      }
 
-      case SyntaxKind.VariableStatement:
+      case SyntaxKind.VariableStatement: {
         const varDecls = extractVariableStatement(node as VariableStatement, sourceCode, sourceFile, keepComments)
         declarations.push(...varDecls)
         break
+      }
 
-      case SyntaxKind.InterfaceDeclaration:
+      case SyntaxKind.InterfaceDeclaration: {
         const interfaceDecl = extractInterfaceDeclaration(node as InterfaceDeclaration, sourceCode, sourceFile, keepComments)
         // Include interfaces that are exported or referenced by exported items
         if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
           declarations.push(interfaceDecl)
         }
         break
+      }
 
       case SyntaxKind.TypeAliasDeclaration:
         declarations.push(extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
@@ -184,26 +187,29 @@ function extractDeclarationsFromSourceFile(
         declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode))
         break
 
-      case SyntaxKind.FunctionDeclaration:
+      case SyntaxKind.FunctionDeclaration: {
         const funcDecl = extractFunctionDeclaration(node as FunctionDeclaration, sourceCode, sourceFile, keepComments)
         // Only include exported functions or functions that are referenced by exported items
         if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
           declarations.push(funcDecl)
         }
         break
+      }
 
-      case SyntaxKind.VariableStatement:
+      case SyntaxKind.VariableStatement: {
         const varDecls = extractVariableStatement(node as VariableStatement, sourceCode, sourceFile, keepComments)
         declarations.push(...varDecls)
         break
+      }
 
-      case SyntaxKind.InterfaceDeclaration:
+      case SyntaxKind.InterfaceDeclaration: {
         const interfaceDecl = extractInterfaceDeclaration(node as InterfaceDeclaration, sourceCode, sourceFile, keepComments)
         // Include interfaces that are exported or referenced by exported items
         if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
           declarations.push(interfaceDecl)
         }
         break
+      }
 
       case SyntaxKind.TypeAliasDeclaration:
         declarations.push(extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments))

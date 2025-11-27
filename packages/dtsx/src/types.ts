@@ -164,6 +164,198 @@ export interface DtsGenerationConfig {
     /** Group by export status */
     groupExports?: boolean
   }
+  /**
+   * Type tracking configuration for debugging
+   */
+  tracking?: TrackingConfig
+  /**
+   * Performance profiling configuration
+   */
+  profiling?: ProfilingConfig
+  /**
+   * Type inference configuration
+   */
+  typeInference?: TypeInferenceConfig
+  /**
+   * Type checking configuration
+   */
+  typeChecking?: TypeCheckingConfig
+  /**
+   * Type validation configuration
+   */
+  typeValidation?: TypeValidationConfig
+}
+
+/**
+ * Tracking configuration for debugging type and import usage
+ */
+export interface TrackingConfig {
+  /**
+   * Track type definitions and their usage
+   * @default false
+   */
+  types?: boolean
+  /**
+   * Track relationships between types (extends, implements, references)
+   * @default false
+   */
+  relationships?: boolean
+  /**
+   * Track declaration usage across files
+   * @default false
+   */
+  usage?: boolean
+  /**
+   * Track imports and their sources
+   * @default false
+   */
+  imports?: boolean
+  /**
+   * Track which imports are actually used
+   * @default false
+   */
+  importUsage?: boolean
+  /**
+   * Track import relationships (re-exports, barrel imports)
+   * @default false
+   */
+  importRelationships?: boolean
+}
+
+/**
+ * Profiling configuration for performance analysis
+ */
+export interface ProfilingConfig {
+  /**
+   * Enable memory profiling
+   * @default false
+   */
+  memory?: boolean
+  /**
+   * Memory limit in MB (warning when exceeded)
+   * @default 1024
+   */
+  memoryLimit?: number
+  /**
+   * Enable CPU profiling
+   * @default false
+   */
+  cpu?: boolean
+  /**
+   * CPU sampling interval in milliseconds
+   * @default 100
+   */
+  samplingInterval?: number
+  /**
+   * Enable I/O profiling
+   * @default false
+   */
+  io?: boolean
+  /**
+   * I/O operations to track
+   * @default ['read', 'write']
+   */
+  trackOperations?: ('read' | 'write')[]
+  /**
+   * Output profiling results to file
+   */
+  outputFile?: string
+}
+
+/**
+ * Type inference configuration
+ */
+export interface TypeInferenceConfig {
+  /**
+   * Enable type inference
+   * @default true
+   */
+  enabled?: boolean
+  /**
+   * Inference strictness level
+   * - 'loose': Infer any when uncertain
+   * - 'normal': Balance between inference and explicit types
+   * - 'strict': Require explicit types for ambiguous cases
+   * @default 'normal'
+   */
+  strictness?: 'loose' | 'normal' | 'strict'
+  /**
+   * Infer return types for functions without explicit annotations
+   * @default true
+   */
+  inferReturnTypes?: boolean
+  /**
+   * Infer const assertion types
+   * @default true
+   */
+  inferConstTypes?: boolean
+}
+
+/**
+ * Type checking configuration
+ */
+export interface TypeCheckingConfig {
+  /**
+   * Enable type checking during generation
+   * @default false
+   */
+  enabled?: boolean
+  /**
+   * Type checking strictness level
+   * @default 'normal'
+   */
+  strictness?: 'loose' | 'normal' | 'strict'
+  /**
+   * Treat warnings as errors
+   * @default false
+   */
+  warningsAsErrors?: boolean
+  /**
+   * Maximum number of type errors before stopping
+   * @default 100
+   */
+  maxErrors?: number
+}
+
+/**
+ * Type validation configuration
+ */
+export interface TypeValidationConfig {
+  /**
+   * Enable type validation
+   * @default false
+   */
+  enabled?: boolean
+  /**
+   * Validation rules
+   */
+  rules?: {
+    /**
+     * Disallow 'any' type
+     * @default false
+     */
+    noAny?: boolean
+    /**
+     * Disallow 'unknown' type
+     * @default false
+     */
+    noUnknown?: boolean
+    /**
+     * Disallow implicit any
+     * @default false
+     */
+    noImplicitAny?: boolean
+    /**
+     * Require explicit return types
+     * @default false
+     */
+    explicitReturnTypes?: boolean
+    /**
+     * Require explicit function parameter types
+     * @default false
+     */
+    explicitParameterTypes?: boolean
+  }
 }
 
 /**
