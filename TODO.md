@@ -117,7 +117,7 @@
 
 - [x] **Dynamic imports** - ✅ `import('module')` type expressions working
 
-- [ ] **`import.meta`** - Type declarations for import.meta properties.
+- [x] **`import.meta`** - ✅ Type declarations for import.meta properties supported via interface declarations.
 
 - [x] **`export * as ns from`** - ✅ Namespace re-exports working
 
@@ -159,17 +159,37 @@
 
 ### Type Inference Improvements
 
-- [ ] **`as const` nested objects** - Deep readonly inference for nested `as const` assertions.
+- [x] **`as const` nested objects** - ✅ Deep readonly inference for nested `as const` assertions.
+  - Detects `as const` assertions in variable declarations
+  - Infers `typeof X as const` for objects
+  - Infers `readonly [...]` for arrays
+  - Preserves literal types for primitives
 
-- [ ] **Computed property names** - `{ [key]: value }` type inference.
+- [x] **Computed property names** - ✅ `{ [key]: value }` type inference.
+  - Handles computed property names in interfaces
+  - Handles computed property names in classes
+  - Preserves bracket notation in output
 
-- [ ] **Symbol property keys** - `{ [Symbol.iterator]: ... }` handling.
+- [x] **Symbol property keys** - ✅ `{ [Symbol.iterator]: ... }` handling.
+  - Handles Symbol.iterator, Symbol.toStringTag, Symbol.dispose, etc.
+  - Works in both interfaces and classes
+  - Properly formats generator methods with symbols (`*[Symbol.iterator]()`)
 
-- [ ] **Private class fields** - `#privateField` syntax.
+- [x] **Private class fields** - ✅ `#privateField` syntax.
+  - Private fields (#field) are excluded from .d.ts output
+  - Private methods (#method) are excluded from output
+  - Private accessors (get #x, set #x) are excluded from output
+  - Private static fields are excluded from output
 
-- [ ] **Static blocks** - `static { }` in classes.
+- [x] **Static blocks** - ✅ `static { }` in classes.
+  - Static initialization blocks are excluded from .d.ts output
+  - Multiple static blocks handled correctly
+  - Static properties are preserved
 
-- [ ] **`using` declarations** - TypeScript 5.2+ explicit resource management.
+- [x] **`using` declarations** - ✅ TypeScript 5.2+ explicit resource management.
+  - Classes implementing Disposable/AsyncDisposable work correctly
+  - Symbol.dispose and Symbol.asyncDispose handled in declarations
+  - Disposable interface declarations supported
 
 ### Edge Cases
 
@@ -1127,6 +1147,53 @@ Based on test fixtures analysis:
   - Added documentation for selective imports and bundle size
 
 **Total tests: 262** (up from 218)
+
+#### Latest Features (November 27, 2025 - Session 11)
+
+- **Advanced TypeScript Features Support**
+  - Private class fields (#field) - Excluded from .d.ts output
+  - Private methods (#method) - Excluded from .d.ts output
+  - Private accessors - Excluded from .d.ts output
+  - Static blocks - Excluded from .d.ts output (implementation detail)
+  - Symbol property keys - [Symbol.iterator], [Symbol.dispose], etc.
+  - Generator methods with symbols - `*[Symbol.iterator]()`
+  - `as const` assertions - Preserves literal types
+  - Computed property names - `[KEY]: type` syntax
+  - readonly interface properties - Preserved in output
+
+- **`src/extractor/builders.ts`** - Enhanced class/interface building
+  - `isPrivateMemberName()` - Detect private identifiers (#field)
+  - `isSymbolPropertyName()` - Detect symbol property names
+  - `getMemberNameText()` - Handle computed property names
+  - `getInterfaceMemberName()` - Handle computed properties in interfaces
+  - Updated `buildClassBody()` to exclude private members and static blocks
+  - Updated `getInterfaceBody()` to preserve readonly modifiers
+
+- **`src/extractor/declarations.ts`** - Enhanced variable extraction
+  - `isAsConstAssertion()` - Detect `as const` assertions
+  - `inferAsConstType()` - Infer literal types for `as const`
+  - Updated `extractVariableStatement()` to handle `as const`
+
+- **`test/fixtures/input/ts-features.ts`** - Comprehensive test fixture
+  - import.meta types
+  - as const objects and arrays
+  - Computed property names
+  - Symbol property keys
+  - Private class fields
+  - Static blocks
+  - using declarations
+
+- **`test/ts-features.test.ts`** - Feature tests (15 tests)
+  - Private class fields exclusion
+  - Static blocks exclusion
+  - Symbol property keys in interfaces and classes
+  - as const assertions
+  - Computed property names
+  - Generator methods
+  - readonly interface properties
+  - using declarations (Disposable)
+
+**Total tests: 277** (up from 262)
 
 ---
 

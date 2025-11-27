@@ -17,31 +17,31 @@ export declare interface DtsGenerationConfig {
  * Regular expression patterns used throughout the module
  */
 export declare interface RegexPatterns {
-  typeImport: RegExp
-  regularImport: RegExp
-  bracketOpen: RegExp
-  bracketClose: RegExp
-  functionReturn: RegExp
-  typeAnnotation: RegExp
-  asyncFunction: RegExp
-  genericParams: RegExp
-  functionParams: RegExp
-  functionReturnType: RegExp
-  destructuredParams: RegExp
-  typePattern: RegExp
-  valueReference: RegExp
-  typeReference: RegExp
-  functionName: RegExp
-  exportCleanup: RegExp
-  defaultExport: RegExp
-  complexType: RegExp
-  unionIntersection: RegExp
-  mappedType: RegExp
-  conditionalType: RegExp
-  genericConstraints: RegExp
-  functionOverload: RegExp
-  moduleDeclaration: RegExp
-  moduleAugmentation: RegExp
+  readonly typeImport: RegExp
+  readonly regularImport: RegExp
+  readonly bracketOpen: RegExp
+  readonly bracketClose: RegExp
+  readonly functionReturn: RegExp
+  readonly typeAnnotation: RegExp
+  readonly asyncFunction: RegExp
+  readonly genericParams: RegExp
+  readonly functionParams: RegExp
+  readonly functionReturnType: RegExp
+  readonly destructuredParams: RegExp
+  readonly typePattern: RegExp
+  readonly valueReference: RegExp
+  readonly typeReference: RegExp
+  readonly functionName: RegExp
+  readonly exportCleanup: RegExp
+  readonly defaultExport: RegExp
+  readonly complexType: RegExp
+  readonly unionIntersection: RegExp
+  readonly mappedType: RegExp
+  readonly conditionalType: RegExp
+  readonly genericConstraints: RegExp
+  readonly functionOverload: RegExp
+  readonly moduleDeclaration: RegExp
+  readonly moduleAugmentation: RegExp
 }
 export declare interface ImportTrackingState {
   typeImports: Map<string, Set<string>>

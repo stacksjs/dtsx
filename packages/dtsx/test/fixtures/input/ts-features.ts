@@ -105,7 +105,7 @@ export interface SymbolKeyed {
 
 /** Class with symbol properties */
 export class SymbolClass {
-  [Symbol.toStringTag] = 'SymbolClass'
+  [Symbol.toStringTag] = 'SymbolClass';
 
   *[Symbol.iterator](): Generator<number> {
     yield 1
