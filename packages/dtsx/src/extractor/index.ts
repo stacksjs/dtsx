@@ -4,8 +4,8 @@
 
 import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from '../types'
-import { forEachChild, SyntaxKind } from 'typescript'
 import type { AsyncParseConfig } from './cache'
+import { forEachChild, SyntaxKind } from 'typescript'
 import { getSourceFile, getSourceFileAsync } from './cache'
 import {
   extractClassDeclaration,
@@ -23,6 +23,17 @@ import {
 } from './declarations'
 import { shouldIncludeNonExportedFunction, shouldIncludeNonExportedInterface } from './helpers'
 
+export {
+  buildClassBody,
+  buildClassDeclaration,
+  buildFunctionSignature,
+  buildInterfaceDeclaration,
+  buildModuleBody,
+  buildModuleDeclaration,
+  buildTypeDeclaration,
+  buildVariableDeclaration,
+  getInterfaceBody,
+} from './builders'
 // Re-export all public APIs
 export {
   batchParseSourceFiles,
@@ -59,17 +70,6 @@ export {
   shouldIncludeNonExportedFunction,
   shouldIncludeNonExportedInterface,
 } from './helpers'
-export {
-  buildClassBody,
-  buildClassDeclaration,
-  buildFunctionSignature,
-  buildInterfaceDeclaration,
-  buildModuleBody,
-  buildModuleDeclaration,
-  buildTypeDeclaration,
-  buildVariableDeclaration,
-  getInterfaceBody,
-} from './builders'
 
 /**
  * Extract only public API declarations from TypeScript source code

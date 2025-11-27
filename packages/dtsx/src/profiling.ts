@@ -10,9 +10,9 @@
 import type { ProfilingConfig } from './types'
 
 /**
- * Memory profiling data
+ * Memory profiling data snapshot
  */
-export interface MemoryProfile {
+export interface MemoryProfileSnapshot {
   timestamp: number
   heapUsed: number
   heapTotal: number
@@ -50,9 +50,9 @@ export interface ProfilingResults {
   endTime: number
   durationMs: number
   memory: {
-    samples: MemoryProfile[]
-    peak: MemoryProfile
-    average: MemoryProfile
+    samples: MemoryProfileSnapshot[]
+    peak: MemoryProfileSnapshot
+    average: MemoryProfileSnapshot
     warnings: string[]
   }
   cpu: {
@@ -76,7 +76,7 @@ export interface ProfilingResults {
  */
 export class Profiler {
   private config: Required<ProfilingConfig>
-  private memorySamples: MemoryProfile[] = []
+  private memorySamples: MemoryProfileSnapshot[] = []
   private cpuSamples: CpuProfile[] = []
   private ioOperations: IoOperation[] = []
   private startTime: number = 0
@@ -361,7 +361,7 @@ export class Profiler {
 /**
  * Get current memory usage
  */
-function getMemoryUsage(): MemoryProfile {
+function getMemoryUsage(): MemoryProfileSnapshot {
   // Try to get Node.js process memory
   if (typeof process !== 'undefined' && process.memoryUsage) {
     const mem = process.memoryUsage()

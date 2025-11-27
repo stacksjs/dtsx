@@ -1,16 +1,15 @@
+import type { Plugin, TransformContext } from '../src/plugins'
+import type { Declaration, DtsGenerationConfig } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import {
-  PluginManager,
-  definePlugin,
-  stripInternalPlugin,
   createBannerPlugin,
   createFilterPlugin,
-  type Plugin,
-  type PluginContext,
-  type TransformContext,
-  type DeclarationContext,
+  definePlugin,
+
+  PluginManager,
+  stripInternalPlugin,
+
 } from '../src/plugins'
-import type { Declaration, DtsGenerationConfig, GenerationStats } from '../src/types'
 
 // Mock config for testing
 const mockConfig: DtsGenerationConfig = {
@@ -217,7 +216,7 @@ describe('PluginManager', () => {
       name: 'plugin-1',
       onBeforeFile: (ctx) => {
         order.push('plugin-1')
-        return ctx.content + '-1'
+        return `${ctx.content}-1`
       },
     })
 
@@ -225,7 +224,7 @@ describe('PluginManager', () => {
       name: 'plugin-2',
       onBeforeFile: (ctx) => {
         order.push('plugin-2')
-        return ctx.content + '-2'
+        return `${ctx.content}-2`
       },
     })
 

@@ -1,6 +1,6 @@
+import type { watchFile } from 'node:fs'
 import type { Declaration, DtsGenerationConfig } from './types'
-import { existsSync, readFileSync, watchFile, unwatchFile } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { existsSync, readFileSync, unwatchFile } from 'node:fs'
 import { extractDeclarations } from './extractor'
 import { processDeclarations } from './processor'
 
@@ -114,9 +114,9 @@ export interface Range {
 }
 
 /**
- * Diagnostic severity
+ * LSP Diagnostic severity (matches LSP specification)
  */
-export enum DiagnosticSeverity {
+export enum LspDiagnosticSeverity {
   Error = 1,
   Warning = 2,
   Information = 3,
@@ -128,7 +128,7 @@ export enum DiagnosticSeverity {
  */
 export interface Diagnostic {
   range: Range
-  severity?: DiagnosticSeverity
+  severity?: LspDiagnosticSeverity
   code?: string | number
   source?: string
   message: string
@@ -335,7 +335,7 @@ export class DtsxLanguageServer {
         textDocumentSync: 1, // Full sync
         hoverProvider: true,
         completionProvider: {
-          triggerCharacters: ['.', ':', '<', '"', "'", '/'],
+          triggerCharacters: ['.', ':', '<', '"', '\'', '/'],
           resolveProvider: true,
         },
         definitionProvider: true,
@@ -409,7 +409,8 @@ export class DtsxLanguageServer {
    */
   getDiagnostics(uri: string): Diagnostic[] {
     const doc = this.documents.get(uri)
-    if (!doc) return []
+    if (!doc)
+      return []
 
     const diagnostics: Diagnostic[] = []
 
@@ -419,7 +420,7 @@ export class DtsxLanguageServer {
       if (decl.isExported && decl.kind === 'variable' && !decl.typeAnnotation) {
         diagnostics.push({
           range: this.getDeclarationRange(decl, doc.content),
-          severity: DiagnosticSeverity.Warning,
+          severity: LspDiagnosticSeverity.Warning,
           code: 'missing-type',
           source: 'dtsx',
           message: `Exported variable '${decl.name}' should have an explicit type annotation for better declaration generation`,
@@ -430,7 +431,7 @@ export class DtsxLanguageServer {
       if (decl.typeAnnotation === 'any' || decl.returnType === 'any') {
         diagnostics.push({
           range: this.getDeclarationRange(decl, doc.content),
-          severity: DiagnosticSeverity.Information,
+          severity: LspDiagnosticSeverity.Information,
           code: 'any-type',
           source: 'dtsx',
           message: `Consider using a more specific type instead of 'any'`,
@@ -441,7 +442,7 @@ export class DtsxLanguageServer {
       if (decl.kind === 'function' && decl.isExported && !decl.returnType) {
         diagnostics.push({
           range: this.getDeclarationRange(decl, doc.content),
-          severity: DiagnosticSeverity.Information,
+          severity: LspDiagnosticSeverity.Information,
           code: 'missing-return-type',
           source: 'dtsx',
           message: `Function '${decl.name}' should have an explicit return type for better declaration generation`,
@@ -457,7 +458,8 @@ export class DtsxLanguageServer {
    */
   hover(params: { textDocument: { uri: string }, position: Position }): Hover | null {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const { line, character } = params.position
     const lines = doc.content.split('\n')
@@ -467,13 +469,15 @@ export class DtsxLanguageServer {
     const wordMatch = lineText.slice(0, character).match(/[\w$]+$/)
     const afterMatch = lineText.slice(character).match(/^[\w$]+/)
 
-    if (!wordMatch && !afterMatch) return null
+    if (!wordMatch && !afterMatch)
+      return null
 
     const word = (wordMatch?.[0] || '') + (afterMatch?.[0] || '')
 
     // Find declaration for this word
     const decl = doc.declarations.find(d => d.name === word)
-    if (!decl) return null
+    if (!decl)
+      return null
 
     // Generate hover content
     const signature = this.buildSignature(decl)
@@ -482,7 +486,7 @@ export class DtsxLanguageServer {
     // Add JSDoc description if available
     if (decl.leadingComments && decl.leadingComments.length > 0) {
       const jsdoc = decl.leadingComments.join('\n')
-      const descMatch = jsdoc.match(/\*\s*([^@*][^*]*)/m)
+      const descMatch = jsdoc.match(/\*\s*([^@*][^*]*)/)
       if (descMatch) {
         content += `\n\n${descMatch[1].trim()}`
       }
@@ -501,13 +505,15 @@ export class DtsxLanguageServer {
    */
   completion(params: { textDocument: { uri: string }, position: Position }): Array<{ label: string, kind: number, detail?: string, documentation?: string }> {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return []
+    if (!doc)
+      return []
 
     const items: Array<{ label: string, kind: number, detail?: string, documentation?: string }> = []
 
     // Add all exported declarations as completion items
     for (const decl of doc.declarations) {
-      if (!decl.isExported) continue
+      if (!decl.isExported)
+        continue
 
       let kind = 6 // Variable
       switch (decl.kind) {
@@ -533,7 +539,8 @@ export class DtsxLanguageServer {
    */
   definition(params: { textDocument: { uri: string }, position: Position }): Location | null {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const { line, character } = params.position
     const lines = doc.content.split('\n')
@@ -543,13 +550,15 @@ export class DtsxLanguageServer {
     const wordMatch = lineText.slice(0, character).match(/[\w$]+$/)
     const afterMatch = lineText.slice(character).match(/^[\w$]+/)
 
-    if (!wordMatch && !afterMatch) return null
+    if (!wordMatch && !afterMatch)
+      return null
 
     const word = (wordMatch?.[0] || '') + (afterMatch?.[0] || '')
 
     // Find declaration for this word
     const decl = doc.declarations.find(d => d.name === word)
-    if (!decl) return null
+    if (!decl)
+      return null
 
     return {
       uri: params.textDocument.uri,
@@ -563,7 +572,8 @@ export class DtsxLanguageServer {
   references(params: { textDocument: { uri: string }, position: Position, context: { includeDeclaration: boolean } }): Location[] {
     const locations: Location[] = []
     const word = this.getWordAtPosition(params.textDocument.uri, params.position)
-    if (!word) return locations
+    if (!word)
+      return locations
 
     // Search in all open documents
     for (const [uri, doc] of this.documents) {
@@ -575,7 +585,8 @@ export class DtsxLanguageServer {
 
         while (col < line.length) {
           const idx = line.indexOf(word, col)
-          if (idx === -1) break
+          if (idx === -1)
+            break
 
           // Check it's a whole word
           const before = idx > 0 ? line[idx - 1] : ' '
@@ -604,14 +615,17 @@ export class DtsxLanguageServer {
    */
   prepareRename(params: { textDocument: { uri: string }, position: Position }): { range: Range, placeholder: string } | null {
     const word = this.getWordAtPosition(params.textDocument.uri, params.position)
-    if (!word) return null
+    if (!word)
+      return null
 
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     // Check if it's a declaration we can rename
     const decl = doc.declarations.find(d => d.name === word)
-    if (!decl) return null
+    if (!decl)
+      return null
 
     const range = this.getDeclarationRange(decl, doc.content)
     return { range, placeholder: word }
@@ -622,7 +636,8 @@ export class DtsxLanguageServer {
    */
   rename(params: { textDocument: { uri: string }, position: Position, newName: string }): WorkspaceEdit | null {
     const word = this.getWordAtPosition(params.textDocument.uri, params.position)
-    if (!word) return null
+    if (!word)
+      return null
 
     const references = this.references({
       textDocument: params.textDocument,
@@ -630,7 +645,8 @@ export class DtsxLanguageServer {
       context: { includeDeclaration: true },
     })
 
-    if (references.length === 0) return null
+    if (references.length === 0)
+      return null
 
     const changes: Record<string, TextEdit[]> = {}
 
@@ -652,7 +668,8 @@ export class DtsxLanguageServer {
    */
   documentSymbols(params: { textDocument: { uri: string } }): DocumentSymbol[] {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return []
+    if (!doc)
+      return []
 
     const symbols: DocumentSymbol[] = []
 
@@ -693,8 +710,10 @@ export class DtsxLanguageServer {
 
     for (const [uri, doc] of this.documents) {
       for (const decl of doc.declarations) {
-        if (!decl.isExported) continue
-        if (query && !decl.name.toLowerCase().includes(query)) continue
+        if (!decl.isExported)
+          continue
+        if (query && !decl.name.toLowerCase().includes(query))
+          continue
 
         symbols.push({
           name: decl.name,
@@ -716,7 +735,8 @@ export class DtsxLanguageServer {
   codeActions(params: { textDocument: { uri: string }, range: Range, context: { diagnostics: Diagnostic[] } }): CodeAction[] {
     const actions: CodeAction[] = []
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return actions
+    if (!doc)
+      return actions
 
     for (const diagnostic of params.context.diagnostics) {
       if (diagnostic.code === 'missing-type') {
@@ -745,7 +765,7 @@ export class DtsxLanguageServer {
       if (diagnostic.code === 'any-type') {
         // Suggest replacing any with unknown
         actions.push({
-          title: "Replace 'any' with 'unknown'",
+          title: 'Replace \'any\' with \'unknown\'',
           kind: 'quickfix',
           diagnostics: [diagnostic],
           isPreferred: true,
@@ -798,7 +818,8 @@ export class DtsxLanguageServer {
    */
   signatureHelp(params: { textDocument: { uri: string }, position: Position }): SignatureHelp | null {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const { line, character } = params.position
     const lines = doc.content.split('\n')
@@ -811,7 +832,9 @@ export class DtsxLanguageServer {
 
     for (let i = character - 1; i >= 0; i--) {
       const char = lineText[i]
-      if (char === ')') parenDepth++
+      if (char === ')') {
+        parenDepth++
+      }
       else if (char === '(') {
         if (parenDepth === 0) {
           funcStart = i
@@ -824,23 +847,29 @@ export class DtsxLanguageServer {
       }
     }
 
-    if (funcStart === -1) return null
+    if (funcStart === -1)
+      return null
 
     // Find function name
     const beforeParen = lineText.slice(0, funcStart).trimEnd()
     const funcMatch = beforeParen.match(/[\w$]+$/)
-    if (!funcMatch) return null
+    if (!funcMatch)
+      return null
 
     const funcName = funcMatch[0]
     const decl = doc.declarations.find(d => d.name === funcName && d.kind === 'function')
-    if (!decl || !decl.parameters) return null
+    if (!decl || !decl.parameters)
+      return null
 
-    const params_list = decl.parameters.map(p => {
+    const params_list = decl.parameters.map((p) => {
       let s = ''
-      if (p.rest) s += '...'
+      if (p.rest)
+        s += '...'
       s += p.name
-      if (p.optional) s += '?'
-      if (p.type) s += `: ${p.type}`
+      if (p.optional)
+        s += '?'
+      if (p.type)
+        s += `: ${p.type}`
       return s
     })
 
@@ -851,7 +880,7 @@ export class DtsxLanguageServer {
         label: signature,
         parameters: decl.parameters.map(p => ({
           label: p.name,
-          documentation: p.description,
+          documentation: p.type ? `Type: ${p.type}` : undefined,
         })),
       }],
       activeSignature: 0,
@@ -865,10 +894,12 @@ export class DtsxLanguageServer {
   documentHighlight(params: { textDocument: { uri: string }, position: Position }): DocumentHighlight[] {
     const highlights: DocumentHighlight[] = []
     const word = this.getWordAtPosition(params.textDocument.uri, params.position)
-    if (!word) return highlights
+    if (!word)
+      return highlights
 
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return highlights
+    if (!doc)
+      return highlights
 
     const lines = doc.content.split('\n')
 
@@ -878,15 +909,16 @@ export class DtsxLanguageServer {
 
       while (col < line.length) {
         const idx = line.indexOf(word, col)
-        if (idx === -1) break
+        if (idx === -1)
+          break
 
         const before = idx > 0 ? line[idx - 1] : ' '
         const after = idx + word.length < line.length ? line[idx + word.length] : ' '
 
         if (!/[\w$]/.test(before) && !/[\w$]/.test(after)) {
           // Determine if it's a write or read
-          const isWrite = /^\s*[=:]/.test(line.slice(idx + word.length)) ||
-                         /^(const|let|var|function|class|interface|type|enum)\s+$/.test(line.slice(0, idx))
+          const isWrite = /^\s*[=:]/.test(line.slice(idx + word.length))
+            || /^(const|let|var|function|class|interface|type|enum)\s+$/.test(line.slice(0, idx))
 
           highlights.push({
             range: {
@@ -909,11 +941,13 @@ export class DtsxLanguageServer {
    */
   async formatting(params: { textDocument: { uri: string }, options: { tabSize: number, insertSpaces: boolean } }): Promise<TextEdit[]> {
     const doc = this.documents.get(params.textDocument.uri)
-    if (!doc) return []
+    if (!doc)
+      return []
 
     // Generate formatted .d.ts
     const dts = this.generateDts(params.textDocument.uri)
-    if (!dts) return []
+    if (!dts)
+      return []
 
     const lines = doc.content.split('\n')
     return [{
@@ -930,7 +964,8 @@ export class DtsxLanguageServer {
    */
   private getWordAtPosition(uri: string, position: Position): string | null {
     const doc = this.documents.get(uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const lines = doc.content.split('\n')
     const lineText = lines[position.line] || ''
@@ -938,7 +973,8 @@ export class DtsxLanguageServer {
     const wordMatch = lineText.slice(0, position.character).match(/[\w$]+$/)
     const afterMatch = lineText.slice(position.character).match(/^[\w$]+/)
 
-    if (!wordMatch && !afterMatch) return null
+    if (!wordMatch && !afterMatch)
+      return null
     return (wordMatch?.[0] || '') + (afterMatch?.[0] || '')
   }
 
@@ -947,7 +983,8 @@ export class DtsxLanguageServer {
    */
   private getWordAtRange(uri: string, range: Range): string | null {
     const doc = this.documents.get(uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const lines = doc.content.split('\n')
     if (range.start.line === range.end.line) {
@@ -961,7 +998,8 @@ export class DtsxLanguageServer {
    */
   private getDeclarationAtPosition(uri: string, position: Position): Declaration | null {
     const doc = this.documents.get(uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     for (const decl of doc.declarations) {
       const range = this.getDeclarationRange(decl, doc.content)
@@ -976,9 +1014,12 @@ export class DtsxLanguageServer {
    * Helper: Check if position is in range
    */
   private positionInRange(pos: Position, range: Range): boolean {
-    if (pos.line < range.start.line || pos.line > range.end.line) return false
-    if (pos.line === range.start.line && pos.character < range.start.character) return false
-    if (pos.line === range.end.line && pos.character > range.end.character) return false
+    if (pos.line < range.start.line || pos.line > range.end.line)
+      return false
+    if (pos.line === range.start.line && pos.character < range.start.character)
+      return false
+    if (pos.line === range.end.line && pos.character > range.end.character)
+      return false
     return true
   }
 
@@ -1007,7 +1048,8 @@ export class DtsxLanguageServer {
    */
   generateDts(uri: string): string | null {
     const doc = this.documents.get(uri)
-    if (!doc) return null
+    if (!doc)
+      return null
 
     const context = {
       filePath: this.uriToPath(uri),
@@ -1029,10 +1071,13 @@ export class DtsxLanguageServer {
       case 'function': {
         const params = decl.parameters?.map((p) => {
           let s = ''
-          if (p.rest) s += '...'
+          if (p.rest)
+            s += '...'
           s += p.name
-          if (p.optional) s += '?'
-          if (p.type) s += `: ${p.type}`
+          if (p.optional)
+            s += '?'
+          if (p.type)
+            s += `: ${p.type}`
           return s
         }).join(', ') || ''
         const generics = decl.generics || ''
@@ -1309,7 +1354,8 @@ export function startLSPServer(): void {
     while (true) {
       // Parse headers
       const headerEnd = buffer.indexOf('\r\n\r\n')
-      if (headerEnd === -1) break
+      if (headerEnd === -1)
+        break
 
       const headers = buffer.slice(0, headerEnd)
       const contentLengthMatch = headers.match(/Content-Length:\s*(\d+)/i)
@@ -1318,11 +1364,12 @@ export function startLSPServer(): void {
         continue
       }
 
-      const contentLength = parseInt(contentLengthMatch[1], 10)
+      const contentLength = Number.parseInt(contentLengthMatch[1], 10)
       const contentStart = headerEnd + 4
       const contentEnd = contentStart + contentLength
 
-      if (buffer.length < contentEnd) break
+      if (buffer.length < contentEnd)
+        break
 
       const content = buffer.slice(contentStart, contentEnd)
       buffer = buffer.slice(contentEnd)
@@ -1352,7 +1399,8 @@ export function createFileWatcher(
   onDiagnostics: (uri: string, diagnostics: Diagnostic[]) => void,
 ): (filePath: string) => void {
   return (filePath: string) => {
-    if (!existsSync(filePath)) return
+    if (!existsSync(filePath))
+      return
 
     const content = readFileSync(filePath, 'utf-8')
     const uri = `file://${filePath}`

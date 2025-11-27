@@ -133,11 +133,11 @@ export function mergeDeclarations(
     }
 
     // Check if we should merge this kind
-    const shouldMerge =
-      (decl.kind === 'interface' && mergeInterfaces) ||
-      (decl.kind === 'module' && mergeNamespaces) ||
-      (decl.kind === 'type' && mergeTypes) ||
-      (decl.kind === 'enum' && mergeEnums)
+    const shouldMerge
+      = (decl.kind === 'interface' && mergeInterfaces)
+        || (decl.kind === 'module' && mergeNamespaces)
+        || (decl.kind === 'type' && mergeTypes)
+        || (decl.kind === 'enum' && mergeEnums)
 
     if (!shouldMerge) {
       // Keep all declarations as-is
@@ -283,7 +283,7 @@ function mergeInterfaces_(
   const members = Array.from(allMembers.values())
   const memberTexts = members.map(m => `  ${m.text}`).join('\n')
 
-  let generics = base.generics || ''
+  const generics = base.generics || ''
   let extendsClause = base.extends || ''
 
   // Collect all extends
@@ -499,7 +499,7 @@ function mergeTypeAliases(
  */
 export function mergeDeclarationsInContent(
   content: string,
-  config: MergeConfig = {},
+  _config: MergeConfig = {},
 ): string {
   // This is a simplified version that works on text
   // For full support, use extractDeclarations + mergeDeclarations + regenerate
@@ -553,8 +553,9 @@ export function mergeDeclarationsInContent(
   const result = [...lines]
   const linesToRemove = new Set<number>()
 
-  for (const [name, blocks] of toMerge) {
-    if (blocks.length <= 1) continue
+  for (const [_name, blocks] of toMerge) {
+    if (blocks.length <= 1)
+      continue
 
     // Merge all blocks into the first one
     const [first, ...rest] = blocks
@@ -587,7 +588,7 @@ export function mergeDeclarationsInContent(
     // Rebuild first block
     const firstDecl = first.content[0]
     const newContent = [
-      firstDecl.endsWith('{') ? firstDecl : firstDecl + ' {',
+      firstDecl.endsWith('{') ? firstDecl : `${firstDecl} {`,
       ...allMembers,
       '}',
     ]

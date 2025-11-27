@@ -1,4 +1,4 @@
-import type { Declaration, DeclarationKind, ParameterDeclaration } from './types'
+import type { Declaration } from './types'
 
 /**
  * Supported output formats
@@ -45,6 +45,7 @@ interface JSONSchemaType {
   oneOf?: JSONSchemaType[]
   anyOf?: JSONSchemaType[]
   allOf?: JSONSchemaType[]
+  not?: JSONSchemaType
   $ref?: string
   definitions?: Record<string, JSONSchemaType>
   $defs?: Record<string, JSONSchemaType>
@@ -54,6 +55,8 @@ interface JSONSchemaType {
   maxLength?: number
   minimum?: number
   maximum?: number
+  minItems?: number
+  maxItems?: number
   default?: any
 }
 
@@ -64,17 +67,28 @@ function tsTypeToJsonSchema(tsType: string, definitions: Map<string, JSONSchemaT
   const type = tsType.trim()
 
   // Primitives
-  if (type === 'string') return { type: 'string' }
-  if (type === 'number') return { type: 'number' }
-  if (type === 'boolean') return { type: 'boolean' }
-  if (type === 'null') return { type: 'null' }
-  if (type === 'undefined') return { type: 'null' } // JSON doesn't have undefined
-  if (type === 'any' || type === 'unknown') return {} // Any type
-  if (type === 'never') return { not: {} }
-  if (type === 'void') return { type: 'null' }
-  if (type === 'bigint') return { type: 'integer' }
-  if (type === 'symbol') return { type: 'string', description: 'Symbol type' }
-  if (type === 'object') return { type: 'object' }
+  if (type === 'string')
+    return { type: 'string' }
+  if (type === 'number')
+    return { type: 'number' }
+  if (type === 'boolean')
+    return { type: 'boolean' }
+  if (type === 'null')
+    return { type: 'null' }
+  if (type === 'undefined')
+    return { type: 'null' } // JSON doesn't have undefined
+  if (type === 'any' || type === 'unknown')
+    return {} // Any type
+  if (type === 'never')
+    return { not: {} }
+  if (type === 'void')
+    return { type: 'null' }
+  if (type === 'bigint')
+    return { type: 'integer' }
+  if (type === 'symbol')
+    return { type: 'string', description: 'Symbol type' }
+  if (type === 'object')
+    return { type: 'object' }
 
   // String literal
   if (type.startsWith('\'') || type.startsWith('"')) {
@@ -87,8 +101,10 @@ function tsTypeToJsonSchema(tsType: string, definitions: Map<string, JSONSchemaT
   }
 
   // Boolean literal
-  if (type === 'true') return { const: true }
-  if (type === 'false') return { const: false }
+  if (type === 'true')
+    return { const: true }
+  if (type === 'false')
+    return { const: false }
 
   // Array types
   const arrayMatch = type.match(/^(.+)\[\]$/) || type.match(/^Array<(.+)>$/i)
@@ -289,9 +305,9 @@ function declarationToJsonSchema(
         schema.properties[member.name] = propSchema
 
         // Check if required (not optional)
-        const isOptional = member.modifiers?.includes('?') ||
-          member.text?.includes('?:') ||
-          options.allOptional
+        const isOptional = member.modifiers?.includes('?')
+          || member.text?.includes('?:')
+          || options.allOptional
         if (!isOptional) {
           schema.required.push(member.name)
         }
@@ -353,9 +369,9 @@ function declarationToZod(
       .filter(m => m.name && m.typeAnnotation)
       .map((member) => {
         let zodType = tsTypeToZod(member.typeAnnotation!)
-        const isOptional = member.modifiers?.includes('?') ||
-          member.text?.includes('?:') ||
-          options.allOptional
+        const isOptional = member.modifiers?.includes('?')
+          || member.text?.includes('?:')
+          || options.allOptional
 
         if (isOptional) {
           zodType = `${zodType}.optional()`
@@ -390,18 +406,30 @@ function tsTypeToZod(tsType: string): string {
   const type = tsType.trim()
 
   // Primitives
-  if (type === 'string') return 'z.string()'
-  if (type === 'number') return 'z.number()'
-  if (type === 'boolean') return 'z.boolean()'
-  if (type === 'null') return 'z.null()'
-  if (type === 'undefined') return 'z.undefined()'
-  if (type === 'any') return 'z.any()'
-  if (type === 'unknown') return 'z.unknown()'
-  if (type === 'never') return 'z.never()'
-  if (type === 'void') return 'z.void()'
-  if (type === 'bigint') return 'z.bigint()'
-  if (type === 'symbol') return 'z.symbol()'
-  if (type === 'Date') return 'z.date()'
+  if (type === 'string')
+    return 'z.string()'
+  if (type === 'number')
+    return 'z.number()'
+  if (type === 'boolean')
+    return 'z.boolean()'
+  if (type === 'null')
+    return 'z.null()'
+  if (type === 'undefined')
+    return 'z.undefined()'
+  if (type === 'any')
+    return 'z.any()'
+  if (type === 'unknown')
+    return 'z.unknown()'
+  if (type === 'never')
+    return 'z.never()'
+  if (type === 'void')
+    return 'z.void()'
+  if (type === 'bigint')
+    return 'z.bigint()'
+  if (type === 'symbol')
+    return 'z.symbol()'
+  if (type === 'Date')
+    return 'z.date()'
 
   // String literal
   if (type.startsWith('\'') || type.startsWith('"')) {
@@ -442,8 +470,10 @@ function tsTypeToZod(tsType: string): string {
 
       if ((hasNull || hasUndefined) && nonNullTypes.length === 1) {
         let schema = tsTypeToZod(nonNullTypes[0])
-        if (hasNull) schema = `${schema}.nullable()`
-        if (hasUndefined) schema = `${schema}.optional()`
+        if (hasNull)
+          schema = `${schema}.nullable()`
+        if (hasUndefined)
+          schema = `${schema}.optional()`
         return schema
       }
 
@@ -546,9 +576,9 @@ function declarationToValibot(
       .filter(m => m.name && m.typeAnnotation)
       .map((member) => {
         let valibotType = tsTypeToValibot(member.typeAnnotation!)
-        const isOptional = member.modifiers?.includes('?') ||
-          member.text?.includes('?:') ||
-          options.allOptional
+        const isOptional = member.modifiers?.includes('?')
+          || member.text?.includes('?:')
+          || options.allOptional
 
         if (isOptional) {
           valibotType = `v.optional(${valibotType})`
@@ -574,18 +604,30 @@ function declarationToValibot(
 function tsTypeToValibot(tsType: string): string {
   const type = tsType.trim()
 
-  if (type === 'string') return 'v.string()'
-  if (type === 'number') return 'v.number()'
-  if (type === 'boolean') return 'v.boolean()'
-  if (type === 'null') return 'v.null_()'
-  if (type === 'undefined') return 'v.undefined_()'
-  if (type === 'any') return 'v.any()'
-  if (type === 'unknown') return 'v.unknown()'
-  if (type === 'never') return 'v.never()'
-  if (type === 'void') return 'v.void_()'
-  if (type === 'bigint') return 'v.bigint()'
-  if (type === 'symbol') return 'v.symbol()'
-  if (type === 'Date') return 'v.date()'
+  if (type === 'string')
+    return 'v.string()'
+  if (type === 'number')
+    return 'v.number()'
+  if (type === 'boolean')
+    return 'v.boolean()'
+  if (type === 'null')
+    return 'v.null_()'
+  if (type === 'undefined')
+    return 'v.undefined_()'
+  if (type === 'any')
+    return 'v.any()'
+  if (type === 'unknown')
+    return 'v.unknown()'
+  if (type === 'never')
+    return 'v.never()'
+  if (type === 'void')
+    return 'v.void_()'
+  if (type === 'bigint')
+    return 'v.bigint()'
+  if (type === 'symbol')
+    return 'v.symbol()'
+  if (type === 'Date')
+    return 'v.date()'
 
   // Literals
   if (type.startsWith('\'') || type.startsWith('"')) {
@@ -621,8 +663,10 @@ function tsTypeToValibot(tsType: string): string {
 
       if ((hasNull || hasUndefined) && nonNullTypes.length === 1) {
         let schema = tsTypeToValibot(nonNullTypes[0])
-        if (hasNull) schema = `v.nullable(${schema})`
-        if (hasUndefined) schema = `v.optional(${schema})`
+        if (hasNull)
+          schema = `v.nullable(${schema})`
+        if (hasUndefined)
+          schema = `v.optional(${schema})`
         return schema
       }
 
@@ -694,12 +738,13 @@ function declarationToIoTs(
     const optional: string[] = []
 
     for (const member of decl.members) {
-      if (!member.name || !member.typeAnnotation) continue
+      if (!member.name || !member.typeAnnotation)
+        continue
 
       const ioTsType = tsTypeToIoTs(member.typeAnnotation)
-      const isOptional = member.modifiers?.includes('?') ||
-        member.text?.includes('?:') ||
-        options.allOptional
+      const isOptional = member.modifiers?.includes('?')
+        || member.text?.includes('?:')
+        || options.allOptional
 
       const prop = `  ${member.name}: ${ioTsType}`
       if (isOptional) {
@@ -739,15 +784,24 @@ ${required.join(',\n')}
 function tsTypeToIoTs(tsType: string): string {
   const type = tsType.trim()
 
-  if (type === 'string') return 't.string'
-  if (type === 'number') return 't.number'
-  if (type === 'boolean') return 't.boolean'
-  if (type === 'null') return 't.null'
-  if (type === 'undefined') return 't.undefined'
-  if (type === 'any') return 't.unknown'
-  if (type === 'unknown') return 't.unknown'
-  if (type === 'never') return 't.never'
-  if (type === 'void') return 't.void'
+  if (type === 'string')
+    return 't.string'
+  if (type === 'number')
+    return 't.number'
+  if (type === 'boolean')
+    return 't.boolean'
+  if (type === 'null')
+    return 't.null'
+  if (type === 'undefined')
+    return 't.undefined'
+  if (type === 'any')
+    return 't.unknown'
+  if (type === 'unknown')
+    return 't.unknown'
+  if (type === 'never')
+    return 't.never'
+  if (type === 'void')
+    return 't.void'
 
   // Literals
   if (type.startsWith('\'') || type.startsWith('"')) {
@@ -845,9 +899,9 @@ function declarationToYup(
       .filter(m => m.name && m.typeAnnotation)
       .map((member) => {
         let yupType = tsTypeToYup(member.typeAnnotation!)
-        const isOptional = member.modifiers?.includes('?') ||
-          member.text?.includes('?:') ||
-          options.allOptional
+        const isOptional = member.modifiers?.includes('?')
+          || member.text?.includes('?:')
+          || options.allOptional
 
         if (!isOptional) {
           yupType = `${yupType}.required()`
@@ -873,11 +927,16 @@ function declarationToYup(
 function tsTypeToYup(tsType: string): string {
   const type = tsType.trim()
 
-  if (type === 'string') return 'yup.string()'
-  if (type === 'number') return 'yup.number()'
-  if (type === 'boolean') return 'yup.boolean()'
-  if (type === 'Date') return 'yup.date()'
-  if (type === 'any' || type === 'unknown') return 'yup.mixed()'
+  if (type === 'string')
+    return 'yup.string()'
+  if (type === 'number')
+    return 'yup.number()'
+  if (type === 'boolean')
+    return 'yup.boolean()'
+  if (type === 'Date')
+    return 'yup.date()'
+  if (type === 'any' || type === 'unknown')
+    return 'yup.mixed()'
 
   // Array
   const arrayMatch = type.match(/^(.+)\[\]$/) || type.match(/^Array<(.+)>$/i)
@@ -948,9 +1007,9 @@ function declarationToArkType(
       .filter(m => m.name && m.typeAnnotation)
       .map((member) => {
         const arkType = tsTypeToArkType(member.typeAnnotation!)
-        const isOptional = member.modifiers?.includes('?') ||
-          member.text?.includes('?:') ||
-          options.allOptional
+        const isOptional = member.modifiers?.includes('?')
+          || member.text?.includes('?:')
+          || options.allOptional
 
         const key = isOptional ? `'${member.name}?'` : `${member.name}`
         return `  ${key}: ${arkType}`
@@ -974,15 +1033,24 @@ function tsTypeToArkType(tsType: string): string {
   const type = tsType.trim()
 
   // Primitives - ArkType uses string syntax
-  if (type === 'string') return '\'string\''
-  if (type === 'number') return '\'number\''
-  if (type === 'boolean') return '\'boolean\''
-  if (type === 'null') return '\'null\''
-  if (type === 'undefined') return '\'undefined\''
-  if (type === 'bigint') return '\'bigint\''
-  if (type === 'symbol') return '\'symbol\''
-  if (type === 'Date') return '\'Date\''
-  if (type === 'any' || type === 'unknown') return '\'unknown\''
+  if (type === 'string')
+    return '\'string\''
+  if (type === 'number')
+    return '\'number\''
+  if (type === 'boolean')
+    return '\'boolean\''
+  if (type === 'null')
+    return '\'null\''
+  if (type === 'undefined')
+    return '\'undefined\''
+  if (type === 'bigint')
+    return '\'bigint\''
+  if (type === 'symbol')
+    return '\'symbol\''
+  if (type === 'Date')
+    return '\'Date\''
+  if (type === 'any' || type === 'unknown')
+    return '\'unknown\''
 
   // Array
   const arrayMatch = type.match(/^(.+)\[\]$/) || type.match(/^Array<(.+)>$/i)
@@ -1055,7 +1123,7 @@ function extractDescription(comments: string[]): string | null {
     const cleaned = comment
       .replace(/^\/\*\*|\*\/$/g, '')
       .replace(/^\s*\*\s?/gm, '')
-      .replace(/@\w+.*/g, '')
+      .replace(/@\w.*/g, '')
       .trim()
 
     if (cleaned) {

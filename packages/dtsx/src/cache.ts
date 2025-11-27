@@ -1,7 +1,7 @@
 import type { DtsGenerationConfig } from './types'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 /**
  * Cache entry for a single file
@@ -305,7 +305,7 @@ export function ensureGitignore(cwd: string): void {
     }
 
     if (!content.includes(CACHE_DIR)) {
-      const newContent = content.trimEnd() + `\n\n# dtsx cache\n${CACHE_DIR}/\n`
+      const newContent = `${content.trimEnd()}\n\n# dtsx cache\n${CACHE_DIR}/\n`
       writeFileSync(gitignorePath, newContent)
     }
   }

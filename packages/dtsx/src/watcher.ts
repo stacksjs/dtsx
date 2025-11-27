@@ -2,10 +2,11 @@
  * Watch mode for automatic .d.ts regeneration on source changes
  */
 
-import { watch, type FSWatcher } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import type { FSWatcher } from 'node:fs'
 import type { DtsGenerationConfig } from './types'
+import { watch } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 
 /**
  * Watch configuration
@@ -139,7 +140,7 @@ export function createWatcher(
   const watchers: FSWatcher[] = []
   const watchedFiles = new Set<string>()
   let isActive = false
-  let pendingChanges = new Map<string, WatchEvent>()
+  const pendingChanges = new Map<string, WatchEvent>()
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let isBuilding = false
 
@@ -292,7 +293,7 @@ export function createWatcher(
           // Check if directory should be excluded
           let shouldExclude = false
           for (const pattern of exclude) {
-            if (matchGlob(relPath, pattern) || matchGlob(relPath + '/', pattern)) {
+            if (matchGlob(relPath, pattern) || matchGlob(`${relPath}/`, pattern)) {
               shouldExclude = true
               break
             }
@@ -459,22 +460,27 @@ export function formatWatchResult(result: WatchBuildResult): string {
 /**
  * Create a simple console logger for watch mode
  */
-export function createWatchLogger() {
+export function createWatchLogger(): {
+  onChange: (event: WatchEvent) => void
+  onBuildStart: () => void
+  onBuildComplete: (result: WatchBuildResult) => void
+  onError: (error: Error) => void
+} {
   return {
-    onChange: (event: WatchEvent) => {
+    onChange: (event: WatchEvent): void => {
       const icon = event.type === 'add' ? '+' : event.type === 'unlink' ? '-' : '~'
       console.log(`[${icon}] ${event.relativePath}`)
     },
 
-    onBuildStart: () => {
+    onBuildStart: (): void => {
       console.log('\nRebuilding...')
     },
 
-    onBuildComplete: (result: WatchBuildResult) => {
+    onBuildComplete: (result: WatchBuildResult): void => {
       console.log(formatWatchResult(result))
     },
 
-    onError: (error: Error) => {
+    onError: (error: Error): void => {
       console.error(`Error: ${error.message}`)
     },
   }

@@ -1,8 +1,6 @@
 import type { Declaration } from './types'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
 import { extractDeclarations } from './extractor'
-import { logger } from './logger'
 
 /**
  * Optimizer configuration
@@ -49,7 +47,7 @@ export interface OptimizationResult {
 /**
  * Type usage tracker for tree shaking
  */
-class TypeUsageTracker {
+class _TypeUsageTracker {
   private usedTypes = new Set<string>()
   private declaredTypes = new Map<string, Declaration>()
   private typeReferences = new Map<string, Set<string>>()
@@ -78,7 +76,8 @@ class TypeUsageTracker {
 
     while (queue.length > 0) {
       const current = queue.shift()!
-      if (reachable.has(current)) continue
+      if (reachable.has(current))
+        continue
       reachable.add(current)
 
       const refs = this.typeReferences.get(current)
@@ -125,20 +124,67 @@ function extractTypeReferences(typeStr: string): string[] {
  */
 function isBuiltInType(name: string): boolean {
   const builtIns = new Set([
-    'Array', 'Object', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
-    'Function', 'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet',
-    'Date', 'RegExp', 'Error', 'TypeError', 'RangeError', 'SyntaxError',
-    'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Record',
-    'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'Parameters',
-    'ConstructorParameters', 'InstanceType', 'ThisType',
-    'Uppercase', 'Lowercase', 'Capitalize', 'Uncapitalize',
-    'Awaited', 'NoInfer', 'Generator', 'AsyncGenerator',
-    'IterableIterator', 'AsyncIterableIterator',
-    'PropertyKey', 'Iterable', 'AsyncIterable',
-    'ArrayLike', 'PromiseLike', 'ArrayBuffer', 'SharedArrayBuffer',
-    'DataView', 'Int8Array', 'Uint8Array', 'Int16Array', 'Uint16Array',
-    'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
-    'BigInt64Array', 'BigUint64Array',
+    'Array',
+    'Object',
+    'String',
+    'Number',
+    'Boolean',
+    'Symbol',
+    'BigInt',
+    'Function',
+    'Promise',
+    'Map',
+    'Set',
+    'WeakMap',
+    'WeakSet',
+    'Date',
+    'RegExp',
+    'Error',
+    'TypeError',
+    'RangeError',
+    'SyntaxError',
+    'Partial',
+    'Required',
+    'Readonly',
+    'Pick',
+    'Omit',
+    'Record',
+    'Exclude',
+    'Extract',
+    'NonNullable',
+    'ReturnType',
+    'Parameters',
+    'ConstructorParameters',
+    'InstanceType',
+    'ThisType',
+    'Uppercase',
+    'Lowercase',
+    'Capitalize',
+    'Uncapitalize',
+    'Awaited',
+    'NoInfer',
+    'Generator',
+    'AsyncGenerator',
+    'IterableIterator',
+    'AsyncIterableIterator',
+    'PropertyKey',
+    'Iterable',
+    'AsyncIterable',
+    'ArrayLike',
+    'PromiseLike',
+    'ArrayBuffer',
+    'SharedArrayBuffer',
+    'DataView',
+    'Int8Array',
+    'Uint8Array',
+    'Int16Array',
+    'Uint16Array',
+    'Int32Array',
+    'Uint32Array',
+    'Float32Array',
+    'Float64Array',
+    'BigInt64Array',
+    'BigUint64Array',
   ])
   return builtIns.has(name)
 }
@@ -147,15 +193,18 @@ function isBuiltInType(name: string): boolean {
  * Check if a type alias is "simple" (can be inlined)
  */
 function isSimpleTypeAlias(decl: Declaration): boolean {
-  if (decl.kind !== 'type') return false
+  if (decl.kind !== 'type')
+    return false
 
   const type = decl.typeAnnotation || ''
 
   // Don't inline generic types
-  if (decl.generics) return false
+  if (decl.generics)
+    return false
 
   // Don't inline complex types
-  if (type.includes('{') || type.includes('(') || type.includes('<')) return false
+  if (type.includes('{') || type.includes('(') || type.includes('<'))
+    return false
 
   // Simple type references, unions, or intersections
   return /^[\w\s|&]+$/.test(type)
@@ -165,12 +214,14 @@ function isSimpleTypeAlias(decl: Declaration): boolean {
  * Check if an interface is empty
  */
 function isEmptyInterface(decl: Declaration): boolean {
-  if (decl.kind !== 'interface') return false
+  if (decl.kind !== 'interface')
+    return false
 
   // Has no members
   if (!decl.members || decl.members.length === 0) {
     // And doesn't extend anything
-    if (!decl.extends) return true
+    if (!decl.extends)
+      return true
   }
 
   return false
@@ -208,7 +259,8 @@ function sortDeclarationsFn(declarations: Declaration[]): Declaration[] {
   return [...declarations].sort((a, b) => {
     // First by kind
     const kindDiff = kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind)
-    if (kindDiff !== 0) return kindDiff
+    if (kindDiff !== 0)
+      return kindDiff
 
     // Then alphabetically by name
     return a.name.localeCompare(b.name)
@@ -229,14 +281,18 @@ function sortImports(declarations: Declaration[]): Declaration[] {
     // Built-in modules first (node:, bun)
     const isBuiltInA = sourceA.startsWith('node:') || sourceA === 'bun'
     const isBuiltInB = sourceB.startsWith('node:') || sourceB === 'bun'
-    if (isBuiltInA && !isBuiltInB) return -1
-    if (!isBuiltInA && isBuiltInB) return 1
+    if (isBuiltInA && !isBuiltInB)
+      return -1
+    if (!isBuiltInA && isBuiltInB)
+      return 1
 
     // External packages next
     const isExternalA = !sourceA.startsWith('.')
     const isExternalB = !sourceB.startsWith('.')
-    if (isExternalA && !isExternalB) return -1
-    if (!isExternalA && isExternalB) return 1
+    if (isExternalA && !isExternalB)
+      return -1
+    if (!isExternalA && isExternalB)
+      return 1
 
     // Alphabetically
     return sourceA.localeCompare(sourceB)
@@ -253,7 +309,8 @@ function removeUnusedImportsFn(declarations: Declaration[]): { declarations: Dec
   const usedTypes = new Set<string>()
 
   for (const decl of declarations) {
-    if (decl.kind === 'import') continue
+    if (decl.kind === 'import')
+      continue
 
     // Extract types from the declaration text
     const text = decl.text || ''
@@ -293,7 +350,8 @@ function removeUnusedImportsFn(declarations: Declaration[]): { declarations: Dec
   // Filter imports
   let removed = 0
   const filteredDeclarations = declarations.map((decl) => {
-    if (decl.kind !== 'import' || !decl.specifiers) return decl
+    if (decl.kind !== 'import' || !decl.specifiers)
+      return decl
 
     const usedSpecifiers = decl.specifiers.filter((spec) => {
       const name = spec.alias || spec.name
@@ -382,7 +440,7 @@ function mergeInterfacesFn(declarations: Declaration[]): { declarations: Declara
   let merged = 0
   const mergedInterfaces: Declaration[] = []
 
-  for (const [name, decls] of interfaces) {
+  for (const [_name, decls] of interfaces) {
     if (decls.length > 1) {
       // Merge all declarations
       let result = decls[0]
@@ -599,8 +657,10 @@ function rebuildDeclarations(declarations: Declaration[], config: OptimizerConfi
 function buildDeclarationText(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
-  if (decl.isDefault) parts.push('default')
+  if (decl.isExported)
+    parts.push('export')
+  if (decl.isDefault)
+    parts.push('default')
 
   switch (decl.kind) {
     case 'import':
@@ -624,22 +684,27 @@ function buildDeclarationText(decl: Declaration): string {
     case 'function':
       parts.push('declare function')
       parts.push(decl.name)
-      if (decl.generics) parts.push(decl.generics)
+      if (decl.generics)
+        parts.push(decl.generics)
       parts.push(`(${buildParams(decl.parameters)})`)
-      if (decl.returnType) parts.push(`: ${decl.returnType}`)
+      if (decl.returnType)
+        parts.push(`: ${decl.returnType}`)
       break
 
     case 'variable':
       parts.push('declare const')
       parts.push(decl.name)
-      if (decl.typeAnnotation) parts.push(`: ${decl.typeAnnotation}`)
+      if (decl.typeAnnotation)
+        parts.push(`: ${decl.typeAnnotation}`)
       break
 
     case 'interface':
       parts.push('interface')
       parts.push(decl.name)
-      if (decl.generics) parts.push(decl.generics)
-      if (decl.extends) parts.push(`extends ${decl.extends}`)
+      if (decl.generics)
+        parts.push(decl.generics)
+      if (decl.extends)
+        parts.push(`extends ${decl.extends}`)
       parts.push('{')
       if (decl.members) {
         for (const m of decl.members) {
@@ -652,7 +717,8 @@ function buildDeclarationText(decl: Declaration): string {
     case 'type':
       parts.push('type')
       parts.push(decl.name)
-      if (decl.generics) parts.push(decl.generics)
+      if (decl.generics)
+        parts.push(decl.generics)
       parts.push('=')
       parts.push(decl.typeAnnotation || 'unknown')
       break
@@ -660,9 +726,12 @@ function buildDeclarationText(decl: Declaration): string {
     case 'class':
       parts.push('declare class')
       parts.push(decl.name)
-      if (decl.generics) parts.push(decl.generics)
-      if (decl.extends) parts.push(`extends ${decl.extends}`)
-      if (decl.implements?.length) parts.push(`implements ${decl.implements.join(', ')}`)
+      if (decl.generics)
+        parts.push(decl.generics)
+      if (decl.extends)
+        parts.push(`extends ${decl.extends}`)
+      if (decl.implements?.length)
+        parts.push(`implements ${decl.implements.join(', ')}`)
       parts.push('{ }')
       break
 
@@ -683,13 +752,17 @@ function buildDeclarationText(decl: Declaration): string {
  * Build parameter string
  */
 function buildParams(params?: Declaration['parameters']): string {
-  if (!params) return ''
+  if (!params)
+    return ''
   return params.map((p) => {
     let s = ''
-    if (p.rest) s += '...'
+    if (p.rest)
+      s += '...'
     s += p.name
-    if (p.optional) s += '?'
-    if (p.type) s += `: ${p.type}`
+    if (p.optional)
+      s += '?'
+    if (p.type)
+      s += `: ${p.type}`
     return s
   }).join(', ')
 }
@@ -704,12 +777,12 @@ export function minifyDts(content: string): string {
     // Remove empty lines
     .replace(/^\s*[\r\n]/gm, '')
     // Collapse multiple spaces
-    .replace(/  +/g, ' ')
+    .replace(/ {2,}/g, ' ')
     // Remove space before/after brackets
-    .replace(/\s*([{}\[\]();,:])\s*/g, '$1')
+    .replace(/\s*([{}[\]();,:])\s*/g, '$1')
     // Add back necessary spaces
-    .replace(/([a-zA-Z0-9_])([{])/g, '$1 $2')
-    .replace(/([}])([a-zA-Z])/g, '$1 $2')
+    .replace(/(\w)(\{)/g, '$1 $2')
+    .replace(/(\})([a-z])/gi, '$1 $2')
     .replace(/(export|import|type|interface|class|function|const|let|var|extends|implements|declare)\s*/g, '$1 ')
     // Clean up
     .trim()

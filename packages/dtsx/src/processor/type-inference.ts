@@ -1021,7 +1021,7 @@ export function inferMappedType(typeStr: string): string | null {
   const modifierMappedMatch = trimmed.match(/^\{\s*(-?readonly\s+)?\[(\w+)\s+in\s+(.+?)\](-?\?)?\s*:\s*(.+)\s*\}$/)
   if (modifierMappedMatch) {
     const [, readonlyMod, keyVar, constraint, optional, valueType] = modifierMappedMatch
-    const readonlyStr = readonlyMod ? readonlyMod.trim() + ' ' : ''
+    const readonlyStr = readonlyMod ? `${readonlyMod.trim()} ` : ''
     const optionalMod = optional || ''
     return `{ ${readonlyStr}[${keyVar} in ${constraint}]${optionalMod}: ${valueType} }`
   }
@@ -1039,14 +1039,17 @@ export function inferConditionalType(typeStr: string): string | null {
   // Check for conditional type pattern: T extends U ? X : Y
   // Handle nested conditionals by finding the first ? and matching :
   const extendsIndex = trimmed.indexOf(' extends ')
-  if (extendsIndex === -1) return null
+  if (extendsIndex === -1)
+    return null
 
   const afterExtends = trimmed.slice(extendsIndex + 9)
   const questionIndex = findConditionalQuestionMark(afterExtends)
-  if (questionIndex === -1) return null
+  if (questionIndex === -1)
+    return null
 
   const colonIndex = findConditionalColon(afterExtends, questionIndex)
-  if (colonIndex === -1) return null
+  if (colonIndex === -1)
+    return null
 
   const checkType = trimmed.slice(0, extendsIndex).trim()
   const extendsType = afterExtends.slice(0, questionIndex).trim()
@@ -1077,8 +1080,10 @@ function findConditionalQuestionMark(str: string): number {
     }
 
     if (!inString) {
-      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
-      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+      if (char === '<' || char === '(' || char === '[' || char === '{')
+        depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}')
+        depth--
 
       if (char === '?' && depth === 0) {
         return i
@@ -1110,8 +1115,10 @@ function findConditionalColon(str: string, startAfter: number): number {
     }
 
     if (!inString) {
-      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
-      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+      if (char === '<' || char === '(' || char === '[' || char === '{')
+        depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}')
+        depth--
 
       // Handle nested ternary - if we see ? at depth 0, increase depth
       if (char === '?' && depth === 0) {
@@ -1172,9 +1179,12 @@ export function inferTemplateLiteralTypeAdvanced(typeStr: string): string | null
       i += 2 // Skip ${
 
       while (i < content.length && depth > 0) {
-        if (content[i] === '{') depth++
-        if (content[i] === '}') depth--
-        if (depth > 0) expr += content[i]
+        if (content[i] === '{')
+          depth++
+        if (content[i] === '}')
+          depth--
+        if (depth > 0)
+          expr += content[i]
         i++
       }
 
@@ -1217,19 +1227,24 @@ export function isComplexType(typeStr: string): boolean {
   const trimmed = typeStr.trim()
 
   // Mapped types
-  if (/\[\s*\w+\s+in\s+/.test(trimmed)) return true
+  if (/\[\s*\w+\s+in\s+/.test(trimmed))
+    return true
 
   // Conditional types
-  if (/\s+extends\s+.+\s+\?\s+.+\s+:\s+/.test(trimmed)) return true
+  if (/\s+extends\s+(?:\S.*|[\t\v\f \xA0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])\s+\?\s+(?:\S.*|[\t\v\f \xA0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])\s+:\s+/.test(trimmed))
+    return true
 
   // Template literal types
-  if (/^`.*\$\{.*\}.*`$/.test(trimmed)) return true
+  if (/^`.*\$\{[^\n\r}\u2028\u2029]*\}.*`$/.test(trimmed))
+    return true
 
   // Infer keyword
-  if (/\binfer\s+\w+/.test(trimmed)) return true
+  if (/\binfer\s+\w+/.test(trimmed))
+    return true
 
   // Key remapping in mapped types
-  if (/\bas\s+/.test(trimmed) && /\[\s*\w+\s+in\s+/.test(trimmed)) return true
+  if (/\bas\s+/.test(trimmed) && /\[\s*\w+\s+in\s+/.test(trimmed))
+    return true
 
   return false
 }
@@ -1277,7 +1292,8 @@ export function parseUtilityType(typeStr: string): { name: string, params: strin
 
   // Match utility type pattern: Name<Params>
   const match = trimmed.match(/^(\w+)<(.+)>$/)
-  if (!match) return null
+  if (!match)
+    return null
 
   const name = match[1]
   const paramsStr = match[2]
@@ -1287,11 +1303,28 @@ export function parseUtilityType(typeStr: string): { name: string, params: strin
 
   // Known utility types
   const utilityTypes = [
-    'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Record',
-    'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'Parameters',
-    'ConstructorParameters', 'InstanceType', 'ThisParameterType',
-    'OmitThisParameter', 'ThisType', 'Uppercase', 'Lowercase',
-    'Capitalize', 'Uncapitalize', 'Awaited', 'NoInfer',
+    'Partial',
+    'Required',
+    'Readonly',
+    'Pick',
+    'Omit',
+    'Record',
+    'Exclude',
+    'Extract',
+    'NonNullable',
+    'ReturnType',
+    'Parameters',
+    'ConstructorParameters',
+    'InstanceType',
+    'ThisParameterType',
+    'OmitThisParameter',
+    'ThisType',
+    'Uppercase',
+    'Lowercase',
+    'Capitalize',
+    'Uncapitalize',
+    'Awaited',
+    'NoInfer',
   ]
 
   if (utilityTypes.includes(name)) {
@@ -1325,8 +1358,10 @@ export function parseTypeParameters(paramsStr: string): string[] {
     }
 
     if (!inString) {
-      if (char === '<' || char === '(' || char === '[' || char === '{') depth++
-      if (char === '>' || char === ')' || char === ']' || char === '}') depth--
+      if (char === '<' || char === '(' || char === '[' || char === '{')
+        depth++
+      if (char === '>' || char === ')' || char === ']' || char === '}')
+        depth--
 
       if (char === ',' && depth === 0) {
         params.push(current.trim())

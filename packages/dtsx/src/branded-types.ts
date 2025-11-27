@@ -105,7 +105,7 @@ export function asGlobPattern(pattern: string): GlobPattern {
  */
 export function asSourceCode(code: string): SourceCode {
   if (typeof code !== 'string') {
-    throw new Error('Invalid source code: must be a string')
+    throw new TypeError('Invalid source code: must be a string')
   }
   return code as SourceCode
 }
@@ -115,7 +115,7 @@ export function asSourceCode(code: string): SourceCode {
  */
 export function asDtsContent(content: string): DtsContent {
   if (typeof content !== 'string') {
-    throw new Error('Invalid DTS content: must be a string')
+    throw new TypeError('Invalid DTS content: must be a string')
   }
   return content as DtsContent
 }
@@ -164,7 +164,7 @@ export function asAbsolutePath(path: string): AbsolutePath {
     throw new Error('Invalid absolute path: must be a non-empty string')
   }
   // Check if it starts with / (Unix) or drive letter (Windows)
-  if (!path.startsWith('/') && !/^[A-Za-z]:/.test(path)) {
+  if (!path.startsWith('/') && !/^[A-Z]:/i.test(path)) {
     throw new Error('Invalid absolute path: must start with / or drive letter')
   }
   return path as AbsolutePath
@@ -178,7 +178,7 @@ export function asRelativePath(path: string): RelativePath {
     throw new Error('Invalid relative path: must be a non-empty string')
   }
   // Relative paths start with . or don't start with / or drive letter
-  if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+  if (path.startsWith('/') || /^[A-Z]:/i.test(path)) {
     throw new Error('Invalid relative path: must not be absolute')
   }
   return path as RelativePath
@@ -189,7 +189,7 @@ export function asRelativePath(path: string): RelativePath {
  */
 export function asJsonString(json: string): JsonString {
   if (typeof json !== 'string') {
-    throw new Error('Invalid JSON string: must be a string')
+    throw new TypeError('Invalid JSON string: must be a string')
   }
   try {
     JSON.parse(json)

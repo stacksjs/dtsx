@@ -3,10 +3,10 @@
  * Uses Bun workers for high-performance parallel declaration generation
  */
 
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads'
+import type { Declaration, DtsGenerationConfig } from './types'
 import { cpus } from 'node:os'
 import { resolve } from 'node:path'
-import type { Declaration, DtsGenerationConfig } from './types'
+import { Worker } from 'node:worker_threads'
 
 /**
  * Worker pool configuration
@@ -93,6 +93,7 @@ export class WorkerPool {
     resolve: (result: WorkerResult) => void
     reject: (error: Error) => void
   }> = []
+
   private config: Required<WorkerPoolConfig>
   private stats: WorkerStats = {
     totalTasks: 0,
@@ -102,6 +103,7 @@ export class WorkerPool {
     activeWorkers: 0,
     idleWorkers: 0,
   }
+
   private isShuttingDown = false
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null
 
@@ -238,7 +240,8 @@ export class WorkerPool {
     // Update stats
     if (result.success) {
       this.stats.completedTasks++
-    } else {
+    }
+    else {
       this.stats.failedTasks++
     }
 
@@ -259,7 +262,7 @@ export class WorkerPool {
   /**
    * Handle worker error
    */
-  private handleWorkerError(instance: WorkerInstance, error: Error): void {
+  private handleWorkerError(instance: WorkerInstance, _error: Error): void {
     instance.busy = false
     this.stats.failedTasks++
     this.updateStats()
@@ -302,9 +305,9 @@ export class WorkerPool {
 
     for (const instance of [...this.workers]) {
       if (
-        !instance.busy &&
-        now - instance.lastActive > this.config.idleTimeout &&
-        this.workers.length > minWorkers
+        !instance.busy
+        && now - instance.lastActive > this.config.idleTimeout
+        && this.workers.length > minWorkers
       ) {
         this.removeWorker(instance)
       }
@@ -315,7 +318,8 @@ export class WorkerPool {
    * Process the task queue
    */
   private processQueue(): void {
-    if (this.taskQueue.length === 0) return
+    if (this.taskQueue.length === 0)
+      return
 
     // Find an available worker
     let worker = this.workers.find(w => !w.busy)
@@ -325,7 +329,8 @@ export class WorkerPool {
       worker = this.createWorker()
     }
 
-    if (!worker) return
+    if (!worker)
+      return
 
     const { task, resolve, reject } = this.taskQueue.shift()!
 
@@ -420,7 +425,7 @@ export class WorkerPool {
 
     // Terminate all workers
     await Promise.all(
-      this.workers.map(instance => instance.worker.terminate())
+      this.workers.map(instance => instance.worker.terminate()),
     )
 
     this.workers = []
@@ -447,7 +452,8 @@ export async function parallelProcess(
 
   try {
     return await pool.processFiles(files, config)
-  } finally {
+  }
+  finally {
     await pool.shutdown()
   }
 }

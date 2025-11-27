@@ -38,7 +38,7 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
 }
 
 // only checks for 2 potentially nested levels
-export async function checkIsolatedDeclarations(options?: DtsGenerationConfig): Promise<boolean> {
+export async function checkIsolatedDeclarationsConfig(options?: DtsGenerationConfig): Promise<boolean> {
   try {
     const cwd = options?.cwd || process.cwd()
     const tsconfigPath = options?.tsconfigPath || join(cwd, 'tsconfig.json')
@@ -126,16 +126,17 @@ export function validateDtsContent(content: string, filename: string): Validatio
   // Create a minimal compiler host
   const compilerHost: ts.CompilerHost = {
     getSourceFile: (name) => {
-      if (name === filename) return sourceFile
+      if (name === filename)
+        return sourceFile
       return undefined
     },
     getDefaultLibFileName: () => 'lib.d.ts',
     writeFile: () => {},
     getCurrentDirectory: () => '',
-    getCanonicalFileName: (f) => f,
+    getCanonicalFileName: f => f,
     useCaseSensitiveFileNames: () => true,
     getNewLine: () => '\n',
-    fileExists: (f) => f === filename,
+    fileExists: f => f === filename,
     readFile: () => undefined,
   }
 

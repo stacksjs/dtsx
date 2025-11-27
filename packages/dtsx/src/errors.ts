@@ -102,7 +102,8 @@ export class ParseError extends DtsxError {
     this.filePath = filePath
     this.line = options?.line
     this.column = options?.column
-    if (options?.cause) this.cause = options.cause
+    if (options?.cause)
+      this.cause = options.cause
   }
 
   get locationString(): string {
@@ -125,7 +126,8 @@ export class ExtractionError extends DtsxError {
     this.name = 'ExtractionError'
     this.filePath = filePath
     this.declarationKind = declarationKind
-    if (cause) this.cause = cause
+    if (cause)
+      this.cause = cause
   }
 }
 
@@ -139,7 +141,8 @@ export class ProcessingError extends DtsxError {
     super(message, 'PROCESSING_ERROR', { declarationName })
     this.name = 'ProcessingError'
     this.declarationName = declarationName
-    if (cause) this.cause = cause
+    if (cause)
+      this.cause = cause
   }
 }
 
@@ -155,7 +158,8 @@ export class FileError extends DtsxError {
     this.name = 'FileError'
     this.filePath = filePath
     this.operation = operation
-    if (cause) this.cause = cause
+    if (cause)
+      this.cause = cause
   }
 }
 
@@ -171,7 +175,8 @@ export class ConfigError extends DtsxError {
     this.name = 'ConfigError'
     this.configPath = options?.configPath
     this.invalidKey = options?.invalidKey
-    if (options?.cause) this.cause = options.cause
+    if (options?.cause)
+      this.cause = options.cause
   }
 }
 
@@ -211,10 +216,12 @@ export function isConfigError(error: unknown): error is ConfigError {
  * Wrap an unknown error in a DtsxError
  */
 export function wrapError(error: unknown, code: ErrorCode = 'UNKNOWN_ERROR', message?: string): DtsxError {
-  if (error instanceof DtsxError) return error
+  if (error instanceof DtsxError)
+    return error
   const errorMessage = message || (error instanceof Error ? error.message : String(error))
   const wrapped = new DtsxError(errorMessage, code)
-  if (error instanceof Error) wrapped.cause = error
+  if (error instanceof Error)
+    wrapped.cause = error
   return wrapped
 }
 
@@ -227,7 +234,8 @@ export function getLocationFromOffset(sourceCode: string, offset: number): Sourc
   let currentOffset = 0
 
   for (const char of sourceCode) {
-    if (currentOffset >= offset) break
+    if (currentOffset >= offset)
+      break
 
     if (char === '\n') {
       line++
@@ -293,7 +301,7 @@ export function formatErrorWithContext(
 export function createDtsError(
   error: unknown,
   file: string,
-  sourceCode?: string,
+  _sourceCode?: string,
 ): DtsError {
   const baseError: DtsError = {
     file,

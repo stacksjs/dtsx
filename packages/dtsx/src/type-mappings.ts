@@ -180,7 +180,7 @@ export function getPresetMappings(preset: TypeMappingPreset): TypeMappingRule[] 
         {
           pattern: /^string$/,
           replacement: 'string',
-          condition: ctx => ctx.declarationKind === 'variable' && ctx.declarationName?.includes('path'),
+          condition: ctx => ctx.declarationKind === 'variable' && (ctx.declarationName?.includes('path') ?? false),
           priority: 5,
         },
       ]
@@ -315,12 +315,12 @@ export function createTypeMapper(config: TypeMappingConfig = { rules: [] }): Typ
 /**
  * Default type mapper instance
  */
-export const defaultTypeMapper = createTypeMapper({ rules: [] })
+export const defaultTypeMapper: TypeMapper = createTypeMapper({ rules: [] })
 
 /**
  * Strict type mapper instance
  */
-export const strictTypeMapper = createTypeMapper({
+export const strictTypeMapper: TypeMapper = createTypeMapper({
   rules: [],
   presets: ['strict'],
 })

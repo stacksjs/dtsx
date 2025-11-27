@@ -109,7 +109,7 @@ export const DEFAULT_IMPORT_GROUP_ORDER: ImportGroupType[] = [
 /**
  * Parsed line information
  */
-interface ParsedLine {
+interface _ParsedLine {
   content: string
   indent: string
   isBlank: boolean
@@ -138,7 +138,7 @@ export function normalizeOutput(
     indent = { style: 'spaces', size: 2 },
     declarationOrder,
     importGrouping,
-    preserveComments = true,
+    preserveComments: _preserveComments = true,
     insertFinalNewline = true,
   } = config
 
@@ -230,9 +230,9 @@ export function normalizeBlankLines(content: string, max: number): string {
  */
 export function ensureTrailingNewline(content: string): string {
   // Remove trailing whitespace and newlines
-  let result = content.replace(/[\s\n]+$/, '')
+  const result = content.replace(/\s+$/, '')
   // Add single newline
-  return result + '\n'
+  return `${result}\n`
 }
 
 /**
@@ -250,7 +250,7 @@ export function normalizeIndent(
 
   for (const line of lines) {
     // Match leading whitespace
-    const match = line.match(/^([\t ]*)(.*?)$/)
+    const match = line.match(/^([\t ]*)(.*)$/)
     if (!match) {
       result.push(line)
       continue
@@ -350,7 +350,8 @@ export function processImports(content: string, config: ImportGrouping): string 
 
   for (const group of groups) {
     const groupImports = grouped.get(group) || []
-    if (groupImports.length === 0) continue
+    if (groupImports.length === 0)
+      continue
 
     // Add blank line between groups
     if (separateGroups && lastGroup !== null) {
@@ -423,9 +424,26 @@ function detectImportGroup(source: string): ImportGroupType {
 
   // Check for built-in modules without node: prefix
   const builtins = [
-    'assert', 'buffer', 'child_process', 'cluster', 'crypto', 'dgram',
-    'dns', 'events', 'fs', 'http', 'https', 'net', 'os', 'path',
-    'querystring', 'readline', 'stream', 'url', 'util', 'zlib',
+    'assert',
+    'buffer',
+    'child_process',
+    'cluster',
+    'crypto',
+    'dgram',
+    'dns',
+    'events',
+    'fs',
+    'http',
+    'https',
+    'net',
+    'os',
+    'path',
+    'querystring',
+    'readline',
+    'stream',
+    'url',
+    'util',
+    'zlib',
   ]
   if (builtins.includes(source) || builtins.includes(source.split('/')[0])) {
     return 'builtin'
@@ -601,30 +619,30 @@ function detectDeclaration(line: string): { kind: DeclarationKind, name: string,
   }
 
   // Class
-  if (effectiveLine.startsWith('class ') || effectiveLine.startsWith('abstract class ') ||
-      effectiveLine.startsWith('declare class ') || effectiveLine.startsWith('declare abstract class ')) {
+  if (effectiveLine.startsWith('class ') || effectiveLine.startsWith('abstract class ')
+    || effectiveLine.startsWith('declare class ') || effectiveLine.startsWith('declare abstract class ')) {
     const match = effectiveLine.match(/class\s+(\w+)/)
     return { kind: 'class', name: match?.[1] || '', isExport }
   }
 
   // Enum
-  if (effectiveLine.startsWith('enum ') || effectiveLine.startsWith('const enum ') ||
-      effectiveLine.startsWith('declare enum ') || effectiveLine.startsWith('declare const enum ')) {
+  if (effectiveLine.startsWith('enum ') || effectiveLine.startsWith('const enum ')
+    || effectiveLine.startsWith('declare enum ') || effectiveLine.startsWith('declare const enum ')) {
     const match = effectiveLine.match(/enum\s+(\w+)/)
     return { kind: 'enum', name: match?.[1] || '', isExport }
   }
 
   // Function
-  if (effectiveLine.startsWith('function ') || effectiveLine.startsWith('async function ') ||
-      effectiveLine.startsWith('declare function ') || effectiveLine.startsWith('declare async function ')) {
+  if (effectiveLine.startsWith('function ') || effectiveLine.startsWith('async function ')
+    || effectiveLine.startsWith('declare function ') || effectiveLine.startsWith('declare async function ')) {
     const match = effectiveLine.match(/function\s+(\w+)/)
     return { kind: 'function', name: match?.[1] || '', isExport }
   }
 
   // Variable (const, let, var)
-  if (effectiveLine.startsWith('const ') || effectiveLine.startsWith('let ') ||
-      effectiveLine.startsWith('var ') || effectiveLine.startsWith('declare const ') ||
-      effectiveLine.startsWith('declare let ') || effectiveLine.startsWith('declare var ')) {
+  if (effectiveLine.startsWith('const ') || effectiveLine.startsWith('let ')
+    || effectiveLine.startsWith('var ') || effectiveLine.startsWith('declare const ')
+    || effectiveLine.startsWith('declare let ') || effectiveLine.startsWith('declare var ')) {
     const match = effectiveLine.match(/(?:const|let|var)\s+(\w+)/)
     return { kind: 'variable', name: match?.[1] || '', isExport }
   }
@@ -687,15 +705,23 @@ export function preserveCommentFormatting(content: string): string {
 /**
  * Create a configured normalizer
  */
-export function createOutputNormalizer(config: OutputNormalizerConfig = {}) {
+export function createOutputNormalizer(config: OutputNormalizerConfig = {}): {
+  normalize: (content: string) => string
+  normalizeLineEndings: (content: string) => string
+  removeTrailingWhitespace: typeof removeTrailingWhitespace
+  normalizeBlankLines: (content: string) => string
+  ensureTrailingNewline: typeof ensureTrailingNewline
+  processImports: (content: string) => string
+  orderDeclarations: (content: string) => string
+} {
   return {
-    normalize: (content: string) => normalizeOutput(content, config),
-    normalizeLineEndings: (content: string) => normalizeLineEndings(content, config.lineEnding || 'lf'),
+    normalize: (content: string): string => normalizeOutput(content, config),
+    normalizeLineEndings: (content: string): string => normalizeLineEndings(content, config.lineEnding || 'lf'),
     removeTrailingWhitespace,
-    normalizeBlankLines: (content: string) => normalizeBlankLines(content, config.maxBlankLines || 1),
+    normalizeBlankLines: (content: string): string => normalizeBlankLines(content, config.maxBlankLines || 1),
     ensureTrailingNewline,
-    processImports: (content: string) => processImports(content, config.importGrouping || {}),
-    orderDeclarations: (content: string) => orderDeclarations(content, config.declarationOrder || {}),
+    processImports: (content: string): string => processImports(content, config.importGrouping || {}),
+    orderDeclarations: (content: string): string => orderDeclarations(content, config.declarationOrder || {}),
   }
 }
 

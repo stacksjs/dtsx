@@ -5,9 +5,9 @@
  * This is important for avoiding infinite loops during type resolution.
  */
 
-import ts from 'typescript'
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve, relative } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
+import ts from 'typescript'
 
 /**
  * A node in the dependency graph
@@ -238,7 +238,7 @@ function hasExportModifier(node: ts.Node): boolean {
 function resolveImportPath(
   specifier: string,
   fromFile: string,
-  rootDir: string,
+  _rootDir: string,
 ): string | null {
   // Skip external modules
   if (!specifier.startsWith('.') && !specifier.startsWith('/')) {
@@ -246,7 +246,7 @@ function resolveImportPath(
   }
 
   const dir = dirname(fromFile)
-  let resolved = resolve(dir, specifier)
+  const resolved = resolve(dir, specifier)
 
   // Try common extensions
   const extensions = ['.ts', '.tsx', '.d.ts', '/index.ts', '/index.tsx', '/index.d.ts']
@@ -261,7 +261,7 @@ function resolveImportPath(
     }
   }
 
-  return resolved + '.ts'
+  return `${resolved}.ts`
 }
 
 /**
@@ -292,7 +292,8 @@ export function detectCircularDependencies(
     path: string[],
     depth: number,
   ): void {
-    if (depth > maxDepth) return
+    if (depth > maxDepth)
+      return
 
     if (recursionStack.has(filePath)) {
       // Found a cycle!
@@ -319,10 +320,12 @@ export function detectCircularDependencies(
       return
     }
 
-    if (visited.has(filePath)) return
+    if (visited.has(filePath))
+      return
 
     const node = graph.get(filePath)
-    if (!node) return
+    if (!node)
+      return
 
     visited.add(filePath)
     recursionStack.add(filePath)
@@ -408,7 +411,8 @@ function deduplicateCycles(cycles: CircularDependency[]): CircularDependency[] {
  * Normalize a cycle to its lexicographically smallest rotation
  */
 function normalizeCycle(chain: string[]): string[] {
-  if (chain.length <= 1) return chain
+  if (chain.length <= 1)
+    return chain
 
   // Remove the duplicate last element
   const cycle = chain.slice(0, -1)
@@ -593,12 +597,12 @@ export function exportGraphAsDot(
 
   for (const [file, node] of graph) {
     const label = rootDir ? relative(rootDir, file) : file
-    const nodeId = file.replace(/[^a-zA-Z0-9]/g, '_')
+    const nodeId = file.replace(/[^a-z0-9]/gi, '_')
 
     lines.push(`  ${nodeId} [label="${label}"];`)
 
     for (const dep of node.dependencies) {
-      const depId = dep.replace(/[^a-zA-Z0-9]/g, '_')
+      const depId = dep.replace(/[^a-z0-9]/gi, '_')
       lines.push(`  ${nodeId} -> ${depId};`)
     }
   }

@@ -231,11 +231,43 @@ export function detectGroup(source: string, isTypeOnly = false): ImportGroup {
  */
 function isBuiltinModule(name: string): boolean {
   const builtins = [
-    'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
-    'crypto', 'dgram', 'dns', 'domain', 'events', 'fs', 'http', 'https',
-    'module', 'net', 'os', 'path', 'perf_hooks', 'process', 'punycode',
-    'querystring', 'readline', 'repl', 'stream', 'string_decoder', 'sys',
-    'timers', 'tls', 'tty', 'url', 'util', 'v8', 'vm', 'wasi', 'worker_threads', 'zlib',
+    'assert',
+    'buffer',
+    'child_process',
+    'cluster',
+    'console',
+    'constants',
+    'crypto',
+    'dgram',
+    'dns',
+    'domain',
+    'events',
+    'fs',
+    'http',
+    'https',
+    'module',
+    'net',
+    'os',
+    'path',
+    'perf_hooks',
+    'process',
+    'punycode',
+    'querystring',
+    'readline',
+    'repl',
+    'stream',
+    'string_decoder',
+    'sys',
+    'timers',
+    'tls',
+    'tty',
+    'url',
+    'util',
+    'v8',
+    'vm',
+    'wasi',
+    'worker_threads',
+    'zlib',
   ]
   return builtins.includes(name)
 }
@@ -254,7 +286,7 @@ export function sortImports(
     alphabetize = true,
     caseInsensitive = true,
     typeImportsLast = false,
-    separateTypeImports = false,
+    separateTypeImports: _separateTypeImports = false,
   } = config
 
   // Parse all imports
@@ -435,10 +467,15 @@ export function sortImportsInContent(
 /**
  * Create a configured import sorter
  */
-export function createImportSorter(config: ImportSortConfig = {}) {
+export function createImportSorter(config: ImportSortConfig = {}): {
+  sort: (imports: string[]) => string[]
+  sortContent: (content: string) => string
+  parse: typeof parseImport
+  detectGroup: typeof detectGroup
+} {
   return {
-    sort: (imports: string[]) => sortImports(imports, config),
-    sortContent: (content: string) => sortImportsInContent(content, config),
+    sort: (imports: string[]): string[] => sortImports(imports, config),
+    sortContent: (content: string): string => sortImportsInContent(content, config),
     parse: parseImport,
     detectGroup,
   }

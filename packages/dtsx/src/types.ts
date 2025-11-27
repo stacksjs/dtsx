@@ -412,7 +412,7 @@ export type DtsGenerationOptions = DtsGenerationOption | DtsGenerationOption[]
 /**
  * Declaration kind - all possible declaration types
  */
-export type DeclarationKind = 'function' | 'variable' | 'interface' | 'type' | 'class' | 'enum' | 'import' | 'export' | 'module'
+export type DeclarationKind = 'function' | 'variable' | 'interface' | 'type' | 'class' | 'enum' | 'import' | 'export' | 'module' | 'namespace' | 'unknown'
 
 /**
  * Declaration

@@ -5,7 +5,7 @@
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/helpers'
 import { assertNever } from '../utils'
-import { clearProcessorCaches, getCachedRegex } from './cache'
+import { getCachedRegex } from './cache'
 import {
   processClassDeclaration,
   processEnumDeclaration,
@@ -145,6 +145,8 @@ export function processDeclarations(
       case 'enum': enums.push(d); break
       case 'module': modules.push(d); break
       case 'export': exports.push(d); break
+      case 'namespace': modules.push(d); break // namespaces are treated like modules
+      case 'unknown': break // skip unknown declarations
       default: assertNever(kind, `Unhandled declaration kind: ${kind}`)
     }
   }
@@ -226,7 +228,8 @@ export function processDeclarations(
     // Collect all texts to search in one array
     const textsToSearch: string[] = []
     for (const func of functions) {
-      if (func.isExported) textsToSearch.push(func.text)
+      if (func.isExported)
+        textsToSearch.push(func.text)
     }
     for (const cls of classes) {
       textsToSearch.push(cls.text)
@@ -310,7 +313,8 @@ export function processDeclarations(
 
     // Parse import using string operations to avoid regex backtracking
     const parsed = parseImportStatement(imp.text)
-    if (!parsed) continue
+    if (!parsed)
+      continue
 
     const { defaultName, namedItems, source, isTypeOnly } = parsed
 
@@ -408,6 +412,12 @@ export function processDeclarations(
       // import and export are handled separately above
       case 'import':
       case 'export':
+        break
+      case 'namespace':
+        processed = processModuleDeclaration(decl, keepComments)
+        break
+      case 'unknown':
+        // Skip unknown declarations
         break
       default:
         assertNever(kind, `Unhandled declaration kind in processor: ${kind}`)

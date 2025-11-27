@@ -1,5 +1,6 @@
+import type { DeclarationContext, Plugin, TransformContext } from './plugins'
 import type { Declaration, DeclarationKind, ParameterDeclaration } from './types'
-import { definePlugin, type Plugin, type DeclarationContext, type TransformContext } from './plugins'
+import { definePlugin } from './plugins'
 
 /**
  * Result of a transformer, can be:
@@ -80,6 +81,8 @@ export interface DeclarationVisitor {
   import?: (decl: Declaration, parent: Declaration | null) => void
   export?: (decl: Declaration, parent: Declaration | null) => void
   module?: (decl: Declaration, parent: Declaration | null) => void
+  namespace?: (decl: Declaration, parent: Declaration | null) => void
+  unknown?: (decl: Declaration, parent: Declaration | null) => void
 }
 
 /**
@@ -215,9 +218,12 @@ export function composeTransformers(...transformers: Transformer[]): Transformer
         const results: Declaration[] = []
         for (const d of current) {
           const result = await transformer(d, context)
-          if (result === null) continue
-          if (result === undefined) results.push(d)
-          else if (Array.isArray(result)) results.push(...result)
+          if (result === null)
+            continue
+          if (result === undefined)
+            results.push(d)
+          else if (Array.isArray(result))
+            results.push(...result)
           else results.push(result)
         }
         current = results.length > 0 ? results : null
@@ -307,30 +313,30 @@ export function createTransformerPlugin(options: {
 
     onBeforeFile: options.beforeParse
       ? async (ctx: TransformContext) => {
-          return options.beforeParse!(ctx.content, {
-            filePath: ctx.filePath,
-            phase: 'before',
-          })
-        }
+        return options.beforeParse!(ctx.content, {
+          filePath: ctx.filePath,
+          phase: 'before',
+        })
+      }
       : undefined,
 
     onDeclarations: options.transform
       ? async (ctx: DeclarationContext) => {
-          return mapDeclarations(ctx.declarations, options.transform!, {
-            filePath: ctx.filePath,
-            sourceCode: ctx.sourceCode,
-            ...helpers,
-          })
-        }
+        return mapDeclarations(ctx.declarations, options.transform!, {
+          filePath: ctx.filePath,
+          sourceCode: ctx.sourceCode,
+          ...helpers,
+        })
+      }
       : undefined,
 
     onAfterFile: options.afterGenerate
       ? async (ctx: TransformContext) => {
-          return options.afterGenerate!(ctx.content, {
-            filePath: ctx.filePath,
-            phase: 'after',
-          })
-        }
+        return options.afterGenerate!(ctx.content, {
+          filePath: ctx.filePath,
+          phase: 'after',
+        })
+      }
       : undefined,
   })
 }
@@ -378,8 +384,10 @@ export function createPrefixTransformer(
   filter?: (decl: Declaration) => boolean,
 ): Transformer {
   return (decl) => {
-    if (decl.kind === 'import') return undefined // Don't prefix imports
-    if (filter && !filter(decl)) return undefined
+    if (decl.kind === 'import')
+      return undefined // Don't prefix imports
+    if (filter && !filter(decl))
+      return undefined
 
     const newName = `${prefix}${decl.name}`
     const newText = decl.text.replace(
@@ -399,8 +407,10 @@ export function createSuffixTransformer(
   filter?: (decl: Declaration) => boolean,
 ): Transformer {
   return (decl) => {
-    if (decl.kind === 'import') return undefined
-    if (filter && !filter(decl)) return undefined
+    if (decl.kind === 'import')
+      return undefined
+    if (filter && !filter(decl))
+      return undefined
 
     const newName = `${decl.name}${suffix}`
     const newText = decl.text.replace(
@@ -441,12 +451,15 @@ export function createJSDocTransformer(
 ): Transformer {
   return (decl) => {
     const jsdoc = getJSDoc(decl)
-    if (!jsdoc) return undefined
+    if (!jsdoc)
+      return undefined
 
     const comments = Array.isArray(jsdoc) ? jsdoc : [jsdoc]
     const formatted = comments.map((c) => {
-      if (c.startsWith('/**')) return c
-      if (c.startsWith('/*')) return c
+      if (c.startsWith('/**'))
+        return c
+      if (c.startsWith('/*'))
+        return c
       return `/** ${c} */`
     })
 
@@ -464,11 +477,14 @@ export function createTypeTransformer(
   transformer: (type: string, decl: Declaration) => string | null | undefined,
 ): Transformer {
   return (decl) => {
-    if (!decl.typeAnnotation) return undefined
+    if (!decl.typeAnnotation)
+      return undefined
 
     const newType = transformer(decl.typeAnnotation, decl)
-    if (newType === null) return null
-    if (newType === undefined) return undefined
+    if (newType === null)
+      return null
+    if (newType === undefined)
+      return undefined
 
     // Update the text to reflect the new type
     const newText = decl.text.replace(
@@ -491,11 +507,14 @@ export function createReturnTypeTransformer(
   transformer: (returnType: string, decl: Declaration) => string | null | undefined,
 ): Transformer {
   return filterByKind('function', (decl) => {
-    if (!decl.returnType) return undefined
+    if (!decl.returnType)
+      return undefined
 
     const newType = transformer(decl.returnType, decl)
-    if (newType === null) return null
-    if (newType === undefined) return undefined
+    if (newType === null)
+      return null
+    if (newType === undefined)
+      return undefined
 
     // Update the text to reflect the new return type
     const newText = decl.text.replace(
@@ -521,21 +540,28 @@ export function createParameterTransformer(
   ) => ParameterDeclaration[] | null | undefined,
 ): Transformer {
   return filterByKind(['function', 'class'], (decl) => {
-    if (!decl.parameters) return undefined
+    if (!decl.parameters)
+      return undefined
 
     const newParams = transformer(decl.parameters, decl)
-    if (newParams === null) return null
-    if (newParams === undefined) return undefined
+    if (newParams === null)
+      return null
+    if (newParams === undefined)
+      return undefined
 
     // Rebuild the parameter string
     const paramStr = newParams
       .map((p) => {
         let s = ''
-        if (p.rest) s += '...'
+        if (p.rest)
+          s += '...'
         s += p.name
-        if (p.optional) s += '?'
-        if (p.type) s += `: ${p.type}`
-        if (p.defaultValue) s += ` = ${p.defaultValue}`
+        if (p.optional)
+          s += '?'
+        if (p.type)
+          s += `: ${p.type}`
+        if (p.defaultValue)
+          s += ` = ${p.defaultValue}`
         return s
       })
       .join(', ')
@@ -562,8 +588,10 @@ export function createModifierTransformer(
   filter?: (decl: Declaration) => boolean,
 ): Transformer {
   return (decl) => {
-    if (filter && !filter(decl)) return undefined
-    if (decl.modifiers?.includes(modifier)) return undefined
+    if (filter && !filter(decl))
+      return undefined
+    if (decl.modifiers?.includes(modifier))
+      return undefined
 
     const newModifiers = [...(decl.modifiers || []), modifier]
 
@@ -575,7 +603,7 @@ export function createModifierTransformer(
       for (const kw of keywords) {
         const idx = newText.indexOf(kw)
         if (idx >= 0) {
-          newText = newText.slice(0, idx) + `${modifier} ` + newText.slice(idx)
+          newText = `${newText.slice(0, idx)}${modifier} ${newText.slice(idx)}`
           break
         }
       }
@@ -601,7 +629,8 @@ export const readonlyTransformer: Transformer = filterByKind(
       '$1readonly $2$3',
     )
 
-    if (newText === decl.text) return undefined
+    if (newText === decl.text)
+      return undefined
 
     return { ...decl, text: newText }
   },
@@ -619,7 +648,8 @@ export const requiredTransformer: Transformer = filterByKind(
       '$1:',
     )
 
-    if (newText === decl.text) return undefined
+    if (newText === decl.text)
+      return undefined
 
     return { ...decl, text: newText }
   },
@@ -637,7 +667,8 @@ export const optionalTransformer: Transformer = filterByKind(
       '$1?:',
     )
 
-    if (newText === decl.text) return undefined
+    if (newText === decl.text)
+      return undefined
 
     return { ...decl, text: newText }
   },
@@ -650,7 +681,8 @@ export function createStripTagsTransformer(tags: string[]): Transformer {
   const tagPattern = new RegExp(`@(${tags.join('|')})\\b[^@]*`, 'g')
 
   return (decl) => {
-    if (!decl.leadingComments?.length) return undefined
+    if (!decl.leadingComments?.length)
+      return undefined
 
     const newComments = decl.leadingComments.map((comment) => {
       return comment.replace(tagPattern, '').replace(/\n\s*\*\s*\n/g, '\n')
@@ -658,7 +690,8 @@ export function createStripTagsTransformer(tags: string[]): Transformer {
 
     // Check if anything changed
     const changed = newComments.some((c, i) => c !== decl.leadingComments![i])
-    if (!changed) return undefined
+    if (!changed)
+      return undefined
 
     return { ...decl, leadingComments: newComments }
   }
@@ -672,8 +705,10 @@ export function createWrapTypeTransformer(
   filter?: (decl: Declaration) => boolean,
 ): Transformer {
   return (decl) => {
-    if (filter && !filter(decl)) return undefined
-    if (!decl.typeAnnotation) return undefined
+    if (filter && !filter(decl))
+      return undefined
+    if (!decl.typeAnnotation)
+      return undefined
 
     const newType = `${utilityType}<${decl.typeAnnotation}>`
     const newText = decl.text.replace(
@@ -696,7 +731,7 @@ export function createWrapTypeTransformer(
 /**
  * Plugin that makes all interface properties readonly
  */
-export const readonlyPlugin = createTransformerPlugin({
+export const readonlyPlugin: Plugin = createTransformerPlugin({
   name: 'readonly',
   version: '1.0.0',
   description: 'Makes all interface properties readonly',
@@ -706,12 +741,13 @@ export const readonlyPlugin = createTransformerPlugin({
 /**
  * Plugin that strips @internal, @private, and @hidden tags
  */
-export const stripPrivatePlugin = createTransformerPlugin({
+export const stripPrivatePlugin: Plugin = createTransformerPlugin({
   name: 'strip-private',
   version: '1.0.0',
   description: 'Strips @internal, @private, and @hidden declarations',
   transform: createRemoveTransformer((decl) => {
-    if (!decl.leadingComments) return false
+    if (!decl.leadingComments)
+      return false
     return decl.leadingComments.some(
       c => /@(internal|private|hidden)\b/.test(c),
     )
@@ -721,7 +757,7 @@ export const stripPrivatePlugin = createTransformerPlugin({
 /**
  * Plugin that adds 'declare' keyword to all declarations
  */
-export const declarePlugin = createTransformerPlugin({
+export const declarePlugin: Plugin = createTransformerPlugin({
   name: 'declare',
   version: '1.0.0',
   description: 'Adds declare keyword to all declarations',

@@ -42,6 +42,9 @@
     "dist"
   ],
   "scripts": {
+    "benchmark": "bun run benchmark.ts",
+    "benchmark:ci": "bun run benchmark.ts --ci --json",
+    "benchmark:quick": "bun run benchmark.ts --quick",
     "build": "bun build.ts && bun run compile",
     "compile": "bun build ./bin/cli.ts --compile --minify --outfile bin/dtsx",
     "compile:all": "bun run compile:linux-x64 && bun run compile:linux-arm64 && bun run compile:windows-x64 && bun run compile:darwin-x64 && bun run compile:darwin-arm64",
@@ -66,12 +69,21 @@
     "zip:darwin-x64": "zip -j bin/dtsx-darwin-x64.zip bin/dtsx-darwin-x64",
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": false
+    }
+  },
   "dependencies": {
     "@stacksjs/clapp": "^0.2.0"
   },
   "devDependencies": {
     "bunfig": "^0.15.6",
-    "tinyglobby": "^0.2.15"
+    "tinyglobby": "^0.2.15",
+    "typescript": "^5.0.0"
   },
   "git-hooks": {
     "pre-commit": {

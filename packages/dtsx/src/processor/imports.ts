@@ -48,15 +48,18 @@ export function parseImportStatement(importText: string): {
 } | null {
   // Find 'from' and extract source
   const fromIndex = importText.indexOf(' from ')
-  if (fromIndex === -1) return null
+  if (fromIndex === -1)
+    return null
 
   // Extract source (between quotes after 'from')
   const afterFrom = importText.slice(fromIndex + 6).trim()
   const quoteChar = afterFrom[0]
-  if (quoteChar !== '"' && quoteChar !== '\'') return null
+  if (quoteChar !== '"' && quoteChar !== '\'')
+    return null
 
   const endQuote = afterFrom.indexOf(quoteChar, 1)
-  if (endQuote === -1) return null
+  if (endQuote === -1)
+    return null
 
   const source = afterFrom.slice(1, endQuote)
 
@@ -190,15 +193,18 @@ export function extractAllImportedItems(importText: string): string[] {
 export function parseImportDetailed(importText: string): ParsedImport | null {
   // Find 'from' and extract source
   const fromIndex = importText.indexOf(' from ')
-  if (fromIndex === -1) return null
+  if (fromIndex === -1)
+    return null
 
   // Extract source (between quotes after 'from')
   const afterFrom = importText.slice(fromIndex + 6).trim()
   const quoteChar = afterFrom[0]
-  if (quoteChar !== '"' && quoteChar !== '\'') return null
+  if (quoteChar !== '"' && quoteChar !== '\'')
+    return null
 
   const endQuote = afterFrom.indexOf(quoteChar, 1)
-  if (endQuote === -1) return null
+  if (endQuote === -1)
+    return null
 
   const source = afterFrom.slice(1, endQuote)
 
@@ -250,7 +256,7 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
 
     for (const item of items) {
       const itemIsTypeOnly = item.startsWith('type ')
-      let cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
+      const cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
 
       // Handle aliases: 'OriginalName as AliasName'
       const asIndex = cleanItem.indexOf(' as ')
@@ -376,7 +382,7 @@ export function parseExportDetailed(exportText: string): {
 
   for (const item of items) {
     const itemIsTypeOnly = item.startsWith('type ')
-    let cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
+    const cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
 
     // Handle aliases: 'OriginalName as AliasName'
     const asIndex = cleanItem.indexOf(' as ')
@@ -422,7 +428,8 @@ export function isTypeOnlyImportItem(itemText: string): boolean {
  */
 export function convertToTypeOnlyImport(importText: string): string {
   const parsed = parseImportDetailed(importText)
-  if (!parsed || parsed.isTypeOnly) return importText
+  if (!parsed || parsed.isTypeOnly)
+    return importText
 
   // Already type-only at statement level
   if (parsed.namedItems.every(item => item.isTypeOnly)) {
@@ -441,7 +448,8 @@ export function mergeImports(imports: string[]): string[] {
 
   for (const imp of imports) {
     const parsed = parseImportDetailed(imp)
-    if (!parsed) continue
+    if (!parsed)
+      continue
 
     const existing = bySource.get(parsed.source) || { types: [], values: [], defaultName: null }
 

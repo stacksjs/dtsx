@@ -1,14 +1,14 @@
-import { describe, expect, it, beforeAll, afterAll } from 'bun:test'
-import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import {
+  checkIsolatedDeclarations,
+  formatTypeCheckResults,
+  getQuickInfo,
+  getTypeAtPosition,
+  loadCompilerOptions,
   typeCheck,
   validateDeclarations,
-  checkIsolatedDeclarations,
-  getTypeAtPosition,
-  getQuickInfo,
-  formatTypeCheckResults,
-  loadCompilerOptions,
 } from '../src/checker'
 
 const TEST_DIR = join(import.meta.dir, '.checker-test-fixtures')
@@ -413,7 +413,7 @@ export type DeepPartial<T> = {
     it('should include source context when available', async () => {
       const result = await typeCheck([join(TEST_DIR, 'syntax-error.ts')])
 
-      const diagWithSource = result.diagnostics.find((d) => d.source)
+      const diagWithSource = result.diagnostics.find(d => d.source)
       // Source context is optional but should be present for most diagnostics
       if (diagWithSource) {
         expect(diagWithSource.source).toBeDefined()

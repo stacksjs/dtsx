@@ -5,10 +5,10 @@
  * consistent, correct output for complex TypeScript patterns.
  */
 
+import type { ProcessingContext } from '../src/types'
 import { describe, expect, test } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
 import { processDeclarations } from '../src/processor'
-import type { ProcessingContext } from '../src/types'
 
 const TEST_FILE = 'test.ts'
 
@@ -301,9 +301,9 @@ describe('Snapshot Tests', () => {
       const result = generateDeclarations(source)
 
       // Should have all overloads
-      expect(result).toContain("createElement(tag: 'div'): HTMLDivElement")
-      expect(result).toContain("createElement(tag: 'span'): HTMLSpanElement")
-      expect(result).toContain("createElement(tag: 'input'): HTMLInputElement")
+      expect(result).toContain('createElement(tag: \'div\'): HTMLDivElement')
+      expect(result).toContain('createElement(tag: \'span\'): HTMLSpanElement')
+      expect(result).toContain('createElement(tag: \'input\'): HTMLInputElement')
       expect(result).toContain('createElement(tag: string): HTMLElement')
     })
 
@@ -471,7 +471,7 @@ describe('Snapshot Tests', () => {
 
       const result = generateDeclarations(source)
 
-      expect(result).toContain("declare module 'express'")
+      expect(result).toContain('declare module \'express\'')
       expect(result).toContain('declare global')
     })
   })
@@ -502,9 +502,9 @@ describe('Snapshot Tests', () => {
 
       expect(result).toContain('type Dict<T> = Record<string, T>')
       expect(result).toContain('type StringDict = Dict<string>')
-      expect(result).toContain("type UserKeys = 'id' | 'name' | 'email'")
+      expect(result).toContain('type UserKeys = \'id\' | \'name\' | \'email\'')
       expect(result).toContain('type UserRecord = Record<UserKeys, string>')
-      expect(result).toContain("type PublicUser = Pick<User, 'id' | 'name' | 'email'>")
+      expect(result).toContain('type PublicUser = Pick<User, \'id\' | \'name\' | \'email\'>')
     })
 
     test('omit and exclude utilities', () => {
@@ -528,7 +528,7 @@ describe('Snapshot Tests', () => {
 
       const result = generateDeclarations(source)
 
-      expect(result).toContain("type SafeUser = Omit<User, 'password' | 'salt'>")
+      expect(result).toContain('type SafeUser = Omit<User, \'password\' | \'salt\'>')
       expect(result).toContain('type Primitive = string | number | boolean | null | undefined')
       expect(result).toContain('type NonPrimitive<T> = Exclude<T, Primitive>')
     })

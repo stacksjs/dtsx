@@ -5,14 +5,15 @@
  * Automatically detects the runtime and uses the appropriate APIs
  */
 
+import type { ChildProcess, SpawnOptions } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { readFile, stat, writeFile } from 'node:fs/promises'
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 
 /**
  * Runtime detection
  */
-export const isBun = typeof globalThis.Bun !== 'undefined'
-export const isNode = !isBun && typeof process !== 'undefined' && process.versions?.node
+export const isBun: boolean = typeof globalThis.Bun !== 'undefined'
+export const isNode: boolean = !isBun && typeof process !== 'undefined' && !!process.versions?.node
 
 /**
  * Current runtime name
@@ -24,11 +25,11 @@ export const runtime: 'bun' | 'node' = isBun ? 'bun' : 'node'
  */
 export interface FileHandle {
   /** Check if file exists */
-  exists(): Promise<boolean>
+  exists: () => Promise<boolean>
   /** Read file as text */
-  text(): Promise<string>
+  text: () => Promise<string>
   /** Read file as ArrayBuffer */
-  arrayBuffer(): Promise<ArrayBuffer>
+  arrayBuffer: () => Promise<ArrayBuffer>
   /** Get file size */
   size: number
   /** File path */
@@ -50,11 +51,11 @@ export interface SpawnResult {
   /** Exit code promise */
   exited: Promise<number>
   /** Kill the process */
-  kill(signal?: number): void
+  kill: (signal?: number) => void
   /** Reference to underlying process */
-  ref(): void
+  ref: () => void
   /** Unreference the process */
-  unref(): void
+  unref: () => void
 }
 
 /**
@@ -265,7 +266,18 @@ export function getRuntimeInfo(): RuntimeInfo {
 /**
  * Namespace export for drop-in Bun API replacement
  */
-export const compat = {
+export const compat: {
+  file: typeof file
+  write: typeof write
+  spawn: typeof spawnProcess
+  readTextFile: typeof readTextFile
+  writeTextFile: typeof writeTextFile
+  fileExists: typeof fileExists
+  getRuntimeInfo: typeof getRuntimeInfo
+  runtime: typeof runtime
+  isBun: typeof isBun
+  isNode: typeof isNode
+} = {
   file,
   write,
   spawn: spawnProcess,

@@ -446,7 +446,7 @@ export const value = 1`
     })
 
     test('handles very long lines', () => {
-      const longType = 'A | '.repeat(100) + 'Z'
+      const longType = `${'A | '.repeat(100)}Z`
       const input = `export type Long = ${longType}`
       const result = normalizeOutput(input)
       expect(result).toContain(longType)

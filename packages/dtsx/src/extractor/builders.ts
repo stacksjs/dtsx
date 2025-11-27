@@ -3,7 +3,7 @@
  */
 
 import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, TypeAliasDeclaration, VariableStatement } from 'typescript'
-import { forEachChild, isCallSignatureDeclaration, isComputedPropertyName, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
+import { isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
 import { getParameterName, hasExportModifier } from './helpers'
 
 /**
@@ -122,7 +122,8 @@ export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported
  * Get the interface member name, handling computed properties
  */
 function getInterfaceMemberName(member: { name?: import('typescript').PropertyName }): string {
-  if (!member.name) return ''
+  if (!member.name)
+    return ''
 
   // For computed property names, the getText() already includes brackets
   // So we just return it directly
@@ -285,11 +286,16 @@ function buildMemberModifiers(
   isProtected: boolean,
 ): string {
   const parts: string[] = ['  ']
-  if (isStatic) parts.push('static ')
-  if (isAbstract) parts.push('abstract ')
-  if (isReadonly) parts.push('readonly ')
-  if (isPrivate) parts.push('private ')
-  else if (isProtected) parts.push('protected ')
+  if (isStatic)
+    parts.push('static ')
+  if (isAbstract)
+    parts.push('abstract ')
+  if (isReadonly)
+    parts.push('readonly ')
+  if (isPrivate)
+    parts.push('private ')
+  else if (isProtected)
+    parts.push('protected ')
   return parts.join('')
 }
 
@@ -303,8 +309,9 @@ function isPrivateMemberName(member: { name?: import('typescript').PropertyName 
 /**
  * Check if a property name is a symbol expression (Symbol.iterator, etc.)
  */
-function isSymbolPropertyName(member: { name?: import('typescript').PropertyName }): boolean {
-  if (!member.name) return false
+function _isSymbolPropertyName(member: { name?: import('typescript').PropertyName }): boolean {
+  if (!member.name)
+    return false
   const text = member.name.getText()
   // Check for [Symbol.xxx] pattern
   return text.startsWith('[Symbol.') || text.startsWith('[customSymbol')
@@ -314,7 +321,8 @@ function isSymbolPropertyName(member: { name?: import('typescript').PropertyName
  * Get the property name text, handling computed properties and symbols
  */
 function getMemberNameText(member: { name?: import('typescript').PropertyName }): string {
-  if (!member.name) return ''
+  if (!member.name)
+    return ''
 
   // For computed property names, the getText() already includes brackets
   // So we just return it directly
@@ -539,7 +547,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const name = element.name?.getText() || ''
 
       const parts: string[] = ['  ']
-      if (isExported) parts.push('export ')
+      if (isExported)
+        parts.push('export ')
       parts.push('function ', name)
 
       // Add generics
@@ -576,7 +585,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
             : (element as VariableStatement).declarationList.flags & NodeFlags.Let ? 'let' : 'var'
 
           const parts: string[] = ['  ']
-          if (isExported) parts.push('export ')
+          if (isExported)
+            parts.push('export ')
           parts.push(kind, ' ', name)
 
           // Use type annotation if available, otherwise infer from initializer
@@ -613,7 +623,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const name = element.name.getText()
 
       const parts: string[] = ['  ']
-      if (isExported) parts.push('export ')
+      if (isExported)
+        parts.push('export ')
       parts.push('interface ', name)
 
       // Add generics
@@ -645,7 +656,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const name = element.name.getText()
 
       const parts: string[] = ['  ']
-      if (isExported) parts.push('export ')
+      if (isExported)
+        parts.push('export ')
       parts.push('type ', name)
 
       // Add generics
@@ -665,8 +677,10 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const isConst = element.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
 
       const parts: string[] = ['  ']
-      if (isExported) parts.push('export ')
-      if (isConst) parts.push('const ')
+      if (isExported)
+        parts.push('export ')
+      if (isConst)
+        parts.push('const ')
       parts.push('enum ', name)
 
       // Build enum body
@@ -693,7 +707,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const name = element.name.getText()
 
       const parts: string[] = ['  ']
-      if (isExported) parts.push('export ')
+      if (isExported)
+        parts.push('export ')
 
       // Check if this is a namespace or module
       const isNamespace = element.flags & NodeFlags.Namespace

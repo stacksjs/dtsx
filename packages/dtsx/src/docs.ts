@@ -1,6 +1,6 @@
-import type { Declaration, DtsGenerationConfig } from './types'
+import type { Declaration } from './types'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, join } from 'node:path'
 import { extractDeclarations } from './extractor'
 import { logger } from './logger'
 
@@ -128,7 +128,7 @@ export function parseJSDoc(comments: string[] | undefined): JSDocInfo {
 
       switch (tagName) {
         case 'param': {
-          const paramMatch = trimmedContent.match(/^(\[)?(\w+)(?:\])?\s*(?:-\s*)?(.*)/)
+          const paramMatch = trimmedContent.match(/^(\[)?(\w+)\]?\s*(?:-\s*)?(.*)/)
           if (paramMatch) {
             info.params.push({
               name: paramMatch[2],
@@ -243,8 +243,10 @@ function createDocEntry(decl: Declaration, sourceFile?: string): DocEntry {
 function buildFunctionSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
-  if (decl.isDefault) parts.push('default')
+  if (decl.isExported)
+    parts.push('export')
+  if (decl.isDefault)
+    parts.push('default')
   parts.push('function')
   parts.push(decl.name)
 
@@ -255,10 +257,13 @@ function buildFunctionSignature(decl: Declaration): string {
   if (decl.parameters) {
     const params = decl.parameters.map((p) => {
       let param = ''
-      if (p.rest) param += '...'
+      if (p.rest)
+        param += '...'
       param += p.name
-      if (p.optional) param += '?'
-      if (p.type) param += `: ${p.type}`
+      if (p.optional)
+        param += '?'
+      if (p.type)
+        param += `: ${p.type}`
       return param
     }).join(', ')
     parts.push(`(${params})`)
@@ -280,7 +285,8 @@ function buildFunctionSignature(decl: Declaration): string {
 function buildVariableSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
+  if (decl.isExported)
+    parts.push('export')
   parts.push('const')
   parts.push(decl.name)
 
@@ -297,7 +303,8 @@ function buildVariableSignature(decl: Declaration): string {
 function buildInterfaceSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
+  if (decl.isExported)
+    parts.push('export')
   parts.push('interface')
   parts.push(decl.name)
 
@@ -318,7 +325,8 @@ function buildInterfaceSignature(decl: Declaration): string {
 function buildTypeSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
+  if (decl.isExported)
+    parts.push('export')
   parts.push('type')
   parts.push(decl.name)
 
@@ -341,8 +349,10 @@ function buildTypeSignature(decl: Declaration): string {
 function buildClassSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
-  if (decl.isDefault) parts.push('default')
+  if (decl.isExported)
+    parts.push('export')
+  if (decl.isDefault)
+    parts.push('default')
   parts.push('class')
   parts.push(decl.name)
 
@@ -367,7 +377,8 @@ function buildClassSignature(decl: Declaration): string {
 function buildEnumSignature(decl: Declaration): string {
   const parts: string[] = []
 
-  if (decl.isExported) parts.push('export')
+  if (decl.isExported)
+    parts.push('export')
   parts.push('enum')
   parts.push(decl.name)
 
@@ -395,13 +406,16 @@ export async function extractDocumentation(
 
     for (const decl of declarations) {
       // Skip imports
-      if (decl.kind === 'import') continue
+      if (decl.kind === 'import')
+        continue
 
       // Skip private members if not configured
-      if (!config.includePrivate && decl.name.startsWith('_')) continue
+      if (!config.includePrivate && decl.name.startsWith('_'))
+        continue
 
       // Skip internal members if not configured
-      if (!config.includeInternal && decl.leadingComments?.some(c => c.includes('@internal'))) continue
+      if (!config.includeInternal && decl.leadingComments?.some(c => c.includes('@internal')))
+        continue
 
       const entry = createDocEntry(decl, file)
       entries.push(entry)
@@ -993,12 +1007,18 @@ function kindToTypeDocKind(kind: string): number {
 /**
  * Create a documentation generator with preset configuration
  */
-export function createDocsGenerator(config: Partial<DocsConfig> = {}) {
+export function createDocsGenerator(config: Partial<DocsConfig> = {}): {
+  extract: (files: string[]) => Promise<Documentation>
+  generateMarkdown: (docs: Documentation) => string
+  generateHTML: (docs: Documentation) => string
+  generateJSON: (docs: Documentation) => string
+  parseJSDoc: typeof parseJSDoc
+} {
   return {
-    extract: (files: string[]) => extractDocumentation(files, config),
-    generateMarkdown: (docs: Documentation) => generateMarkdown(docs, config),
-    generateHTML: (docs: Documentation) => generateHTML(docs, config),
-    generateJSON: (docs: Documentation) => generateJSON(docs, config),
+    extract: (files: string[]): Promise<Documentation> => extractDocumentation(files, config),
+    generateMarkdown: (docs: Documentation): string => generateMarkdown(docs, config),
+    generateHTML: (docs: Documentation): string => generateHTML(docs, config),
+    generateJSON: (docs: Documentation): string => generateJSON(docs, config),
     parseJSDoc,
   }
 }

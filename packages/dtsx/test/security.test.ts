@@ -176,7 +176,7 @@ describe('Security Module', () => {
 
   describe('withTimeout', () => {
     test('resolves if promise completes in time', async () => {
-      const promise = new Promise<string>(resolve => {
+      const promise = new Promise<string>((resolve) => {
         setTimeout(() => resolve('done'), 10)
       })
 
@@ -185,7 +185,7 @@ describe('Security Module', () => {
     })
 
     test('rejects if promise times out', async () => {
-      const promise = new Promise<string>(resolve => {
+      const promise = new Promise<string>((resolve) => {
         setTimeout(() => resolve('done'), 200)
       })
 
@@ -217,7 +217,7 @@ describe('Security Module', () => {
   describe('createSecureProcessor', () => {
     test('processes valid files', async () => {
       const processor = createSecureProcessor(
-        async (path) => `Processed: ${path}`,
+        async path => `Processed: ${path}`,
         { rootDir: testRoot, timeout: 1000 },
       )
 
@@ -233,7 +233,7 @@ describe('Security Module', () => {
 
     test('rejects path traversal attempts', async () => {
       const processor = createSecureProcessor(
-        async (path) => `Processed: ${path}`,
+        async path => `Processed: ${path}`,
         { rootDir: testRoot },
       )
 

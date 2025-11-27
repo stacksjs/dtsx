@@ -265,7 +265,8 @@ export class Tracker {
       totalImports: Array.from(this.imports.values()).flat().length,
       usedImports: Array.from(this.imports.values())
         .flat()
-        .filter(i => i.usedSpecifiers.size > 0).length,
+        .filter(i => i.usedSpecifiers.size > 0)
+        .length,
       unusedImports: unusedImports.length,
       totalRelationships: this.relationships.length,
       circularDependencies: circularReferences.length,
@@ -442,12 +443,30 @@ function extractTypeReferences(typeAnnotation: string): string[] {
 
   // Match type identifiers (capitalized words that aren't keywords)
   const keywords = new Set([
-    'string', 'number', 'boolean', 'any', 'unknown', 'void', 'never',
-    'null', 'undefined', 'object', 'symbol', 'bigint', 'true', 'false',
-    'readonly', 'keyof', 'typeof', 'infer', 'extends', 'in', 'out',
+    'string',
+    'number',
+    'boolean',
+    'any',
+    'unknown',
+    'void',
+    'never',
+    'null',
+    'undefined',
+    'object',
+    'symbol',
+    'bigint',
+    'true',
+    'false',
+    'readonly',
+    'keyof',
+    'typeof',
+    'infer',
+    'extends',
+    'in',
+    'out',
   ])
 
-  const identifierPattern = /\b([A-Z][a-zA-Z0-9_]*)\b/g
+  const identifierPattern = /\b([A-Z]\w*)\b/g
   let match
   while ((match = identifierPattern.exec(typeAnnotation)) !== null) {
     const name = match[1]

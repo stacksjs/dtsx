@@ -307,9 +307,9 @@ describe('edge cases', () => {
       export * as utils from './utils';
     `
     const result = processSource(source)
-    expect(result).toContain("export { foo, bar as baz } from './other';")
-    expect(result).toContain("export * from './all';")
-    expect(result).toContain("export * as utils from './utils';")
+    expect(result).toContain('export { foo, bar as baz } from \'./other\';')
+    expect(result).toContain('export * from \'./all\';')
+    expect(result).toContain('export * as utils from \'./utils\';')
   })
 
   it('should handle default exports', () => {

@@ -1,6 +1,6 @@
-import ts from 'typescript'
-import { resolve, dirname } from 'node:path'
 import type { DtsGenerationConfig } from './types'
+import { dirname, resolve } from 'node:path'
+import ts from 'typescript'
 
 /**
  * Diagnostic severity levels
@@ -394,10 +394,14 @@ export async function checkIsolatedDeclarations(
 
         // Try to determine what kind of annotation is missing
         let missingAnnotation: IsolatedDeclarationsIssue['missingAnnotation']
-        if (message.includes('return type')) missingAnnotation = 'return'
-        else if (message.includes('parameter')) missingAnnotation = 'parameter'
-        else if (message.includes('variable')) missingAnnotation = 'variable'
-        else if (message.includes('property')) missingAnnotation = 'property'
+        if (message.includes('return type'))
+          missingAnnotation = 'return'
+        else if (message.includes('parameter'))
+          missingAnnotation = 'parameter'
+        else if (message.includes('variable'))
+          missingAnnotation = 'variable'
+        else if (message.includes('property'))
+          missingAnnotation = 'property'
 
         issues.push({
           line: line + 1,
@@ -438,18 +442,21 @@ export function getTypeAtPosition(
     const program = createProgram([filePath], compilerOptions)
     const sourceFile = program.getSourceFile(filePath)
 
-    if (!sourceFile) return null
+    if (!sourceFile)
+      return null
 
     // Check bounds before calling TypeScript API
     const lineCount = sourceFile.getLineStarts().length
-    if (line < 1 || line > lineCount) return null
+    if (line < 1 || line > lineCount)
+      return null
 
     const lineStart = sourceFile.getLineStarts()[line - 1]
     const lineEnd = line < lineCount
       ? sourceFile.getLineStarts()[line]
       : sourceFile.text.length
 
-    if (column < 1 || column > lineEnd - lineStart) return null
+    if (column < 1 || column > lineEnd - lineStart)
+      return null
 
     const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
     const checker = program.getTypeChecker()
@@ -463,7 +470,8 @@ export function getTypeAtPosition(
     }
 
     const node = findNode(sourceFile)
-    if (!node) return null
+    if (!node)
+      return null
 
     const type = checker.getTypeAtLocation(node)
     return checker.typeToString(type)
@@ -494,18 +502,21 @@ export function getQuickInfo(
     const program = createProgram([filePath], compilerOptions)
     const sourceFile = program.getSourceFile(filePath)
 
-    if (!sourceFile) return null
+    if (!sourceFile)
+      return null
 
     // Check bounds before calling TypeScript API
     const lineCount = sourceFile.getLineStarts().length
-    if (line < 1 || line > lineCount) return null
+    if (line < 1 || line > lineCount)
+      return null
 
     const lineStart = sourceFile.getLineStarts()[line - 1]
     const lineEnd = line < lineCount
       ? sourceFile.getLineStarts()[line]
       : sourceFile.text.length
 
-    if (column < 1 || column > lineEnd - lineStart) return null
+    if (column < 1 || column > lineEnd - lineStart)
+      return null
 
     const pos = sourceFile.getPositionOfLineAndCharacter(line - 1, column - 1)
     const checker = program.getTypeChecker()
@@ -519,7 +530,8 @@ export function getQuickInfo(
     }
 
     const node = findNode(sourceFile)
-    if (!node) return null
+    if (!node)
+      return null
 
     const symbol = checker.getSymbolAtLocation(node)
     if (!symbol) {
@@ -599,13 +611,13 @@ export async function validateGeneratedDeclarations(
   dtsFiles: string[],
   tsconfigPath?: string,
 ): Promise<{
-  valid: boolean
-  mismatches: Array<{
-    sourceName: string
-    sourceType: string
-    dtsType: string
-  }>
-}> {
+    valid: boolean
+    mismatches: Array<{
+      sourceName: string
+      sourceType: string
+      dtsType: string
+    }>
+  }> {
   const mismatches: Array<{
     sourceName: string
     sourceType: string
@@ -632,12 +644,14 @@ export async function validateGeneratedDeclarations(
     const sourceFile = sourceProgram.getSourceFile(sourceFiles[i])
     const dtsFile = dtsProgram.getSourceFile(dtsFiles[i])
 
-    if (!sourceFile || !dtsFile) continue
+    if (!sourceFile || !dtsFile)
+      continue
 
     const sourceSymbol = sourceChecker.getSymbolAtLocation(sourceFile)
     const dtsSymbol = dtsChecker.getSymbolAtLocation(dtsFile)
 
-    if (!sourceSymbol || !dtsSymbol) continue
+    if (!sourceSymbol || !dtsSymbol)
+      continue
 
     const sourceExports = sourceChecker.getExportsOfModule(sourceSymbol)
     const dtsExports = dtsChecker.getExportsOfModule(dtsSymbol)
@@ -697,15 +711,17 @@ function areTypesCompatible(sourceType: string, dtsType: string): boolean {
   const normalizedSource = normalizeType(sourceType)
   const normalizedDts = normalizeType(dtsType)
 
-  if (normalizedSource === normalizedDts) return true
+  if (normalizedSource === normalizedDts)
+    return true
 
   // Allow 'any' in dts to match anything
-  if (normalizedDts === 'any') return true
+  if (normalizedDts === 'any')
+    return true
 
   // Allow Promise<T> to match PromiseLike<T>
   if (
-    normalizedSource.startsWith('Promise<') &&
-    normalizedDts.startsWith('PromiseLike<')
+    normalizedSource.startsWith('Promise<')
+    && normalizedDts.startsWith('PromiseLike<')
   ) {
     return true
   }

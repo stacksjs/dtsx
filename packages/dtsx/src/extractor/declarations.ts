@@ -4,9 +4,9 @@
 
 import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, ModuleDeclaration, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from '../types'
-import { forEachChild, isAsExpression, isFunctionDeclaration, isIdentifier, isStringLiteral, isTypeAssertionExpression, NodeFlags, SyntaxKind } from 'typescript'
+import { forEachChild, isAsExpression, isFunctionDeclaration, isIdentifier, isStringLiteral, NodeFlags, SyntaxKind } from 'typescript'
 import { buildClassDeclaration, buildFunctionSignature, buildInterfaceDeclaration, buildModuleDeclaration, buildTypeDeclaration, buildVariableDeclaration } from './builders'
-import { extractJSDocComments, extractTypesFromModuleText, getNodeText, getParameterName, hasAsyncModifier, hasExportModifier, isBuiltInType } from './helpers'
+import { extractJSDocComments, extractTypesFromModuleText, getNodeText, hasAsyncModifier, hasExportModifier, isBuiltInType } from './helpers'
 
 /**
  * Extract import declaration
@@ -173,7 +173,7 @@ function isAsConstAssertion(node: import('typescript').Expression): boolean {
 /**
  * Get the underlying expression from an 'as const' assertion
  */
-function getAsConstValue(node: import('typescript').Expression): import('typescript').Expression | null {
+function _getAsConstValue(node: import('typescript').Expression): import('typescript').Expression | null {
   if (isAsExpression(node) && isAsConstAssertion(node)) {
     return node.expression
   }

@@ -1,7 +1,7 @@
+import type { ProcessingContext } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
 import { processDeclarations } from '../src/processor'
-import type { ProcessingContext } from '../src/types'
 
 const TEST_FILE = 'test.ts'
 
@@ -138,14 +138,14 @@ describe('Error Handling', () => {
     })
 
     it('should handle extremely long lines', () => {
-      const longType = 'string | '.repeat(1000) + 'number'
+      const longType = `${'string | '.repeat(1000)}number`
       const code = `export type LongUnion = ${longType}`
       const result = extractDeclarations(code, TEST_FILE)
       expect(result).toBeDefined()
     })
 
     it('should handle deeply nested types', () => {
-      const nested = 'Array<'.repeat(50) + 'string' + '>'.repeat(50)
+      const nested = `${'Array<'.repeat(50)}string${'>'.repeat(50)}`
       const code = `export type DeepNested = ${nested}`
       const result = extractDeclarations(code, TEST_FILE)
       expect(result).toBeDefined()

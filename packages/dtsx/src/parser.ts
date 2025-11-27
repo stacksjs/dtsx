@@ -9,10 +9,10 @@
  * processor/type-inference for type inference utilities.
  */
 
+export { extractJSDocComments as extractLeadingCommentsFromNode, getNodeText } from './extractor/helpers'
+export { formatComments } from './processor/comments'
 // Re-export commonly used utilities from their new locations
 export { findMatchingBracket } from './processor/type-inference'
-export { formatComments } from './processor/comments'
-export { extractJSDocComments as extractLeadingCommentsFromNode, getNodeText } from './extractor/helpers'
 
 /**
  * @deprecated Use TypeScript AST-based extraction instead

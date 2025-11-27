@@ -8,8 +8,8 @@
  * - Symlink attacks
  */
 
-import { resolve, relative, normalize, isAbsolute } from 'node:path'
-import { stat, lstat, realpath } from 'node:fs/promises'
+import { lstat, realpath, stat } from 'node:fs/promises'
+import { isAbsolute, normalize, relative, resolve } from 'node:path'
 
 /**
  * Security configuration options
@@ -402,7 +402,7 @@ export function sanitizeFilename(filename: string): string {
     .replace(/\0/g, '')
     // Remove absolute path indicators
     .replace(/^\/+/, '')
-    .replace(/^[A-Za-z]:/, '')
+    .replace(/^[A-Z]:/i, '')
 
   // Remove path traversal sequences iteratively
   let prev = ''
@@ -452,50 +452,59 @@ function formatBytes(bytes: number): string {
 /**
  * Create security middleware for the generator
  */
-export function createSecurityMiddleware(config: SecurityConfig = {}) {
-  const mergedConfig = { ...DEFAULT_SECURITY_CONFIG, ...config }
+export function createSecurityMiddleware(config: SecurityConfig = {}): {
+  validatePath: (filePath: string) => string
+  validatePaths: (filePaths: string[]) => string[]
+  validateFile: (filePath: string) => Promise<{ path: string, size: number }>
+  validateBatch: (filePaths: string[]) => Promise<{ paths: string[], totalSize: number }>
+  withTimeout: <T>(promise: Promise<T>, operation?: string) => Promise<T>
+  secureProcessor: <T>(processor: (filePath: string) => Promise<T>) => (filePath: string) => Promise<T>
+  isBlocked: (filePath: string) => boolean
+  getConfig: () => Required<SecurityConfig>
+} {
+  const mergedConfig: Required<SecurityConfig> = { ...DEFAULT_SECURITY_CONFIG, ...config } as Required<SecurityConfig>
 
   return {
     /**
      * Validate a single file path
      */
-    validatePath: (filePath: string) => validatePath(filePath, mergedConfig),
+    validatePath: (filePath: string): string => validatePath(filePath, mergedConfig),
 
     /**
      * Validate multiple file paths
      */
-    validatePaths: (filePaths: string[]) => validatePaths(filePaths, mergedConfig),
+    validatePaths: (filePaths: string[]): string[] => validatePaths(filePaths, mergedConfig),
 
     /**
      * Full file validation with size and symlink checks
      */
-    validateFile: (filePath: string) => validateFilePath(filePath, mergedConfig),
+    validateFile: (filePath: string): Promise<{ path: string, size: number }> => validateFilePath(filePath, mergedConfig),
 
     /**
      * Validate a batch of files
      */
-    validateBatch: (filePaths: string[]) => validateFileBatch(filePaths, mergedConfig),
+    validateBatch: (filePaths: string[]): Promise<{ paths: string[], totalSize: number }> => validateFileBatch(filePaths, mergedConfig),
 
     /**
      * Wrap an operation with timeout
      */
-    withTimeout: <T>(promise: Promise<T>, operation?: string) =>
+    withTimeout: <T>(promise: Promise<T>, operation?: string): Promise<T> =>
       withTimeout(promise, mergedConfig.timeout, operation),
 
     /**
      * Create a secure processor
      */
-    secureProcessor: <T>(processor: (filePath: string) => Promise<T>) =>
+    secureProcessor: <T>(processor: (filePath: string) => Promise<T>): ((filePath: string) => Promise<T>) =>
       createSecureProcessor(processor, mergedConfig),
 
     /**
      * Check if path is blocked
      */
-    isBlocked: (filePath: string) => isBlockedPath(filePath, mergedConfig),
+    isBlocked: (filePath: string): boolean => isBlockedPath(filePath, mergedConfig),
 
     /**
      * Get the configuration
      */
-    getConfig: () => mergedConfig,
+    getConfig: (): Required<SecurityConfig> => mergedConfig,
   }
 }

@@ -1,12 +1,12 @@
 /* eslint-disable no-console */
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { performance } from 'node:perf_hooks'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import { extractDeclarations } from './src/extractor'
 import { generate } from './src/generator'
+import { createStreamingProcessor, formatMemoryStats } from './src/memory'
 import { processDeclarations } from './src/processor'
-import { formatMemoryStats, createStreamingProcessor } from './src/memory'
 
 /**
  * Benchmark configuration
@@ -118,6 +118,15 @@ async function runBenchmark(
 }
 
 /**
+ * Conditional logger for benchmark output
+ */
+function log(message: string, verbose: boolean): void {
+  if (verbose) {
+    console.log(message)
+  }
+}
+
+/**
  * Format benchmark result for display
  */
 function formatResult(result: BenchmarkResult): string {
@@ -135,7 +144,7 @@ function formatResult(result: BenchmarkResult): string {
  * Extraction benchmark suite
  */
 async function runExtractionBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
-  console.log('\n📦 Extraction Benchmarks\n')
+  log('\n📦 Extraction Benchmarks\n', config.verbose)
 
   const results: BenchmarkResult[] = []
   const suiteStart = performance.now()
@@ -154,7 +163,7 @@ async function runExtractionBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
   for (const testFile of testFiles) {
     try {
       if (!existsSync(testFile.path)) {
-        console.log(`  ⚠️  Skipping ${testFile.name} - file not found`)
+        log(`  ⚠️  Skipping ${testFile.name} - file not found`, config.verbose)
         continue
       }
 
@@ -168,9 +177,10 @@ async function runExtractionBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
       )
 
       results.push(result)
-      console.log(formatResult(result))
-      console.log()
-    } catch (error) {
+      log(formatResult(result), config.verbose)
+      log('', config.verbose)
+    }
+    catch (error) {
       console.error(`  ❌ Error: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -186,7 +196,7 @@ async function runExtractionBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
  * Generation benchmark suite
  */
 async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
-  console.log('\n🔨 Generation Benchmarks\n')
+  log('\n🔨 Generation Benchmarks\n', config.verbose)
 
   const results: BenchmarkResult[] = []
   const suiteStart = performance.now()
@@ -216,8 +226,8 @@ async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
     singleFileSource.length,
   )
   results.push(singleResult)
-  console.log(formatResult(singleResult))
-  console.log()
+  log(formatResult(singleResult), config.verbose)
+  log('', config.verbose)
 
   // Medium file generation
   const mediumFileSource = generateLargeTypeScriptFile(1000)
@@ -239,8 +249,8 @@ async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
     mediumFileSource.length,
   )
   results.push(mediumResult)
-  console.log(formatResult(mediumResult))
-  console.log()
+  log(formatResult(mediumResult), config.verbose)
+  log('', config.verbose)
 
   // Large file generation
   const largeFileSource = generateLargeTypeScriptFile(5000)
@@ -262,7 +272,7 @@ async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
     largeFileSource.length,
   )
   results.push(largeResult)
-  console.log(formatResult(largeResult))
+  log(formatResult(largeResult), config.verbose)
 
   return {
     name: 'Generation',
@@ -275,7 +285,7 @@ async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
  * Memory benchmark suite
  */
 async function runMemoryBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
-  console.log('\n💾 Memory Benchmarks\n')
+  log('\n💾 Memory Benchmarks\n', config.verbose)
 
   const results: BenchmarkResult[] = []
   const suiteStart = performance.now()
@@ -283,22 +293,23 @@ async function runMemoryBenchmarks(config: BenchmarkConfig): Promise<SuiteResult
 
   // Large file memory test
   const largeSource = generateLargeTypeScriptFile(10000)
-  console.log(`  Testing with ${largeSource.length} chars (${largeSource.split('\n').length} lines)`)
+  log(`  Testing with ${largeSource.length} chars (${largeSource.split('\n').length} lines)`, config.verbose)
 
   // Force GC
-  if (global.gc) global.gc()
+  if (global.gc)
+    global.gc()
 
   const memBefore = processor.getMemoryStats()
-  console.log(`  Memory before: ${formatMemoryStats(memBefore)}`)
+  log(`  Memory before: ${formatMemoryStats(memBefore)}`, config.verbose)
 
   const extractStart = performance.now()
   const declarations = extractDeclarations(largeSource, 'large.ts')
   const extractEnd = performance.now()
 
   const memAfter = processor.getMemoryStats()
-  console.log(`  Memory after: ${formatMemoryStats(memAfter)}`)
-  console.log(`  Declarations found: ${declarations.length}`)
-  console.log(`  Time: ${(extractEnd - extractStart).toFixed(2)}ms`)
+  log(`  Memory after: ${formatMemoryStats(memAfter)}`, config.verbose)
+  log(`  Declarations found: ${declarations.length}`, config.verbose)
+  log(`  Time: ${(extractEnd - extractStart).toFixed(2)}ms`, config.verbose)
 
   results.push({
     name: 'Large File Memory',
@@ -322,7 +333,7 @@ async function runMemoryBenchmarks(config: BenchmarkConfig): Promise<SuiteResult
  * Tests against patterns from popular libraries
  */
 async function runRealWorldBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
-  console.log('\n🌍 Real-World Library Benchmarks\n')
+  log('\n🌍 Real-World Library Benchmarks\n', config.verbose)
 
   const results: BenchmarkResult[] = []
   const suiteStart = performance.now()
@@ -343,16 +354,16 @@ async function runRealWorldBenchmarks(config: BenchmarkConfig): Promise<SuiteRes
   for (const file of realWorldFiles) {
     try {
       if (!existsSync(file.path)) {
-        console.log(`  ⚠️  Skipping ${file.name} - file not found`)
+        log(`  ⚠️  Skipping ${file.name} - file not found`, config.verbose)
         continue
       }
 
       const sourceCode = await readFile(file.path, 'utf-8')
       const lineCount = sourceCode.split('\n').length
 
-      console.log(`  📁 ${file.name}`)
-      console.log(`     ${file.description}`)
-      console.log(`     ${sourceCode.length} chars, ${lineCount} lines`)
+      log(`  📁 ${file.name}`, config.verbose)
+      log(`     ${file.description}`, config.verbose)
+      log(`     ${sourceCode.length} chars, ${lineCount} lines`, config.verbose)
 
       const result = await runBenchmark(
         file.name,
@@ -362,9 +373,10 @@ async function runRealWorldBenchmarks(config: BenchmarkConfig): Promise<SuiteRes
       )
 
       results.push(result)
-      console.log(`     ⚡ ${result.avgTimeMs.toFixed(2)}ms avg (${(result.throughputCharsPerSec / 1000).toFixed(1)}k chars/sec)`)
-      console.log()
-    } catch (error) {
+      log(`     ⚡ ${result.avgTimeMs.toFixed(2)}ms avg (${(result.throughputCharsPerSec / 1000).toFixed(1)}k chars/sec)`, config.verbose)
+      log('', config.verbose)
+    }
+    catch (error) {
       console.error(`  ❌ Error: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -381,7 +393,7 @@ async function runRealWorldBenchmarks(config: BenchmarkConfig): Promise<SuiteRes
  * Breaks down time spent in each processing phase
  */
 async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseTimingSuiteResult[]> {
-  console.log('\n⏱️  Per-Phase Timing Benchmarks\n')
+  log('\n⏱️  Per-Phase Timing Benchmarks\n', config.verbose)
 
   const results: PhaseTimingSuiteResult[] = []
 
@@ -393,7 +405,7 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
     const lineCount = source.split('\n').length
     const iterations = Math.max(3, Math.floor(20 / (size / 1000)))
 
-    console.log(`  Testing ${size} lines (${source.length} chars)...`)
+    log(`  Testing ${size} lines (${source.length} chars)...`, config.verbose)
 
     // Phase timings
     const phaseTimes: Record<string, number[]> = {
@@ -423,7 +435,7 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
       const extractStart = performance.now()
       const declarations = extractDeclarations(source, `phase-test-${size}.ts`)
       const extractEnd = performance.now()
-      phaseTimes['Extraction'].push(extractEnd - extractStart)
+      phaseTimes.Extraction.push(extractEnd - extractStart)
 
       // Phase 3: Processing
       const processStart = performance.now()
@@ -433,24 +445,25 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
         usedTypes: new Set(),
       })
       const processEnd = performance.now()
-      phaseTimes['Processing'].push(processEnd - processStart)
+      phaseTimes.Processing.push(processEnd - processStart)
 
       // Phase 4: Formatting (string operations)
       const formatStart = performance.now()
       const _output = processed.join('\n')
       const formatEnd = performance.now()
-      phaseTimes['Formatting'].push(formatEnd - formatStart)
+      phaseTimes.Formatting.push(formatEnd - formatStart)
 
       const totalEnd = performance.now()
-      phaseTimes['Total'].push(totalEnd - totalStart)
+      phaseTimes.Total.push(totalEnd - totalStart)
     }
 
     // Calculate averages
     const phases: PhaseTimingResult[] = []
-    const totalAvg = phaseTimes['Total'].reduce((a, b) => a + b, 0) / iterations
+    const totalAvg = phaseTimes.Total.reduce((a, b) => a + b, 0) / iterations
 
     for (const [phase, times] of Object.entries(phaseTimes)) {
-      if (phase === 'Total') continue
+      if (phase === 'Total')
+        continue
 
       const avgTime = times.reduce((a, b) => a + b, 0) / iterations
       phases.push({
@@ -473,12 +486,12 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
     })
 
     // Print results
-    console.log(`    Total: ${totalAvg.toFixed(2)}ms`)
+    log(`    Total: ${totalAvg.toFixed(2)}ms`, config.verbose)
     for (const phase of phases) {
       const bar = '█'.repeat(Math.ceil(phase.percentOfTotal / 5))
-      console.log(`    ${phase.phase.padEnd(12)} ${phase.avgTimeMs.toFixed(2).padStart(8)}ms (${phase.percentOfTotal.toFixed(1).padStart(5)}%) ${bar}`)
+      log(`    ${phase.phase.padEnd(12)} ${phase.avgTimeMs.toFixed(2).padStart(8)}ms (${phase.percentOfTotal.toFixed(1).padStart(5)}%) ${bar}`, config.verbose)
     }
-    console.log()
+    log('', config.verbose)
   }
 
   return results
@@ -488,7 +501,7 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
  * Synthetic file benchmark suite
  */
 async function runSyntheticBenchmarks(config: BenchmarkConfig): Promise<SuiteResult> {
-  console.log('\n🧪 Synthetic Benchmarks\n')
+  log('\n🧪 Synthetic Benchmarks\n', config.verbose)
 
   const results: BenchmarkResult[] = []
   const suiteStart = performance.now()
@@ -506,7 +519,7 @@ async function runSyntheticBenchmarks(config: BenchmarkConfig): Promise<SuiteRes
     )
 
     results.push(result)
-    console.log(`  ${size} lines: ${result.avgTimeMs.toFixed(2)}ms (${(result.throughputCharsPerSec / 1000).toFixed(1)}k chars/sec)`)
+    log(`  ${size} lines: ${result.avgTimeMs.toFixed(2)}ms (${(result.throughputCharsPerSec / 1000).toFixed(1)}k chars/sec)`, config.verbose)
   }
 
   return {
@@ -611,10 +624,10 @@ function generateLargeTypeScriptFile(lines: number): string {
 }
 
 /**
- * Print phase timing summary
+ * Print phase timing summary (only called in non-JSON mode)
  */
 function printPhaseTimingSummary(timings: PhaseTimingSuiteResult[]): void {
-  console.log('\n' + '='.repeat(60))
+  console.log(`\n${'='.repeat(60)}`)
   console.log('⏱️  PHASE TIMING SUMMARY')
   console.log('='.repeat(60))
 
@@ -633,7 +646,7 @@ function printPhaseTimingSummary(timings: PhaseTimingSuiteResult[]): void {
   console.log('\nAverage Time Distribution:')
   console.log('-'.repeat(50))
 
-  const averages: { phase: string; avgPercent: number }[] = []
+  const averages: { phase: string, avgPercent: number }[] = []
   for (const [phase, percents] of phaseAverages) {
     const avgPercent = percents.reduce((a, b) => a + b, 0) / percents.length
     averages.push({ phase, avgPercent })
@@ -666,10 +679,10 @@ function printPhaseTimingSummary(timings: PhaseTimingSuiteResult[]): void {
 }
 
 /**
- * Print summary table
+ * Print summary table (only called in non-JSON mode)
  */
 function printSummary(suites: SuiteResult[]): void {
-  console.log('\n' + '='.repeat(60))
+  console.log(`\n${'='.repeat(60)}`)
   console.log('📊 BENCHMARK SUMMARY')
   console.log('='.repeat(60))
 
@@ -695,31 +708,60 @@ function printSummary(suites: SuiteResult[]): void {
     }
   }
 
-  console.log('\n' + '='.repeat(60))
+  console.log(`\n${'='.repeat(60)}`)
+}
+
+/**
+ * Benchmark output for CI
+ */
+interface BenchmarkOutput {
+  timestamp: string
+  platform: string
+  nodeVersion: string
+  suites: SuiteResult[]
+  phaseTimings: PhaseTimingSuiteResult[]
+  summary: {
+    totalTimeMs: number
+    totalBenchmarks: number
+    avgTimeMs: number
+  }
 }
 
 /**
  * Main benchmark runner
  */
 async function main() {
-  console.log('🚀 dtsx Performance Benchmark Suite\n')
-  console.log(`Node: ${process.version}`)
-  console.log(`Platform: ${process.platform} ${process.arch}`)
-  console.log(`Date: ${new Date().toISOString()}`)
+  const args = process.argv.slice(2)
+  const jsonOutput = args.includes('--json')
+  const outputFile = args.find(a => a.startsWith('--output='))?.split('=')[1]
 
-  const processor = createStreamingProcessor()
-  console.log(`Memory: ${formatMemoryStats(processor.getMemoryStats())}`)
+  if (!jsonOutput) {
+    console.log('🚀 dtsx Performance Benchmark Suite\n')
+    console.log(`Node: ${process.version}`)
+    console.log(`Platform: ${process.platform} ${process.arch}`)
+    console.log(`Date: ${new Date().toISOString()}`)
+
+    const processor = createStreamingProcessor()
+    console.log(`Memory: ${formatMemoryStats(processor.getMemoryStats())}`)
+  }
 
   const config = { ...defaultConfig }
 
   // Parse command line args
-  const args = process.argv.slice(2)
   if (args.includes('--quick')) {
     config.warmupIterations = 1
     config.benchmarkIterations = 10
   }
+  if (args.includes('--ci')) {
+    // CI mode: fewer iterations for speed, but still meaningful
+    config.warmupIterations = 2
+    config.benchmarkIterations = 20
+  }
   if (args.includes('--verbose')) {
     config.verbose = true
+  }
+  if (jsonOutput) {
+    config.verbose = false
   }
 
   const suites: SuiteResult[] = []
@@ -745,21 +787,54 @@ async function main() {
       suites.push(await runGenerationBenchmarks(config))
     }
 
-    // Print summary
-    printSummary(suites)
+    // Calculate summary
+    const totalTimeMs = suites.reduce((sum, s) => sum + s.totalTimeMs, 0)
+    const totalBenchmarks = suites.reduce((sum, s) => sum + s.results.length, 0)
+    const avgTimeMs = suites.flatMap(s => s.results).reduce((sum, r) => sum + r.avgTimeMs, 0) / totalBenchmarks
 
-    // Print phase timing summary
-    if (phaseTimings.length > 0) {
-      printPhaseTimingSummary(phaseTimings)
+    // Output results
+    if (jsonOutput) {
+      const output: BenchmarkOutput = {
+        timestamp: new Date().toISOString(),
+        platform: `${process.platform} ${process.arch}`,
+        nodeVersion: process.version,
+        suites,
+        phaseTimings,
+        summary: {
+          totalTimeMs,
+          totalBenchmarks,
+          avgTimeMs,
+        },
+      }
+
+      const jsonStr = JSON.stringify(output, null, 2)
+
+      if (outputFile) {
+        await writeFile(outputFile, jsonStr)
+        console.error(`Benchmark results written to ${outputFile}`)
+      }
+      else {
+        console.log(jsonStr)
+      }
+    }
+    else {
+      // Print summary
+      printSummary(suites)
+
+      // Print phase timing summary
+      if (phaseTimings.length > 0) {
+        printPhaseTimingSummary(phaseTimings)
+      }
+
+      console.log('\n✅ Benchmark complete!')
     }
 
     // Cleanup
     if (existsSync(config.outputDir)) {
       await rm(config.outputDir, { recursive: true })
     }
-
-    console.log('\n✅ Benchmark complete!')
-  } catch (error) {
+  }
+  catch (error) {
     console.error('\n❌ Benchmark failed:', error)
     process.exit(1)
   }
@@ -767,19 +842,20 @@ async function main() {
 
 // Export for programmatic use
 export {
+  type BenchmarkConfig,
+  type BenchmarkOutput,
+  type BenchmarkResult,
+  generateLargeTypeScriptFile,
+  type PhaseTimingResult,
+  type PhaseTimingSuiteResult,
   runBenchmark,
   runExtractionBenchmarks,
   runGenerationBenchmarks,
   runMemoryBenchmarks,
-  runSyntheticBenchmarks,
   runPhaseTimingBenchmarks,
   runRealWorldBenchmarks,
-  generateLargeTypeScriptFile,
-  type BenchmarkConfig,
-  type BenchmarkResult,
+  runSyntheticBenchmarks,
   type SuiteResult,
-  type PhaseTimingResult,
-  type PhaseTimingSuiteResult,
 }
 
 // Run if executed directly

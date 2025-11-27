@@ -339,9 +339,9 @@ export class SourceMapConsumer {
 
     for (const mapping of mappings) {
       if (
-        mapping.sourceIndex === sourceIndex &&
-        mapping.original.line === original.line &&
-        mapping.original.column <= original.column
+        mapping.sourceIndex === sourceIndex
+        && mapping.original.line === original.line
+        && mapping.original.column <= original.column
       ) {
         return mapping.generated
       }
@@ -383,7 +383,7 @@ function encodeVLQ(values: number[]): string {
  * Encode a single value to VLQ
  */
 function encodeVLQValue(value: number): string {
-  const VLQ_BASE = 32 // 2^5
+  const _VLQ_BASE = 32 // 2^5
   const VLQ_CONTINUATION_BIT = 32 // 0b100000
   const VLQ_BASE_MASK = 31 // 0b11111
 
@@ -431,7 +431,8 @@ function decodeMappings(mappings: string): Mapping[] {
       const segmentStrs = lineSegments.split(',')
 
       for (const segment of segmentStrs) {
-        if (!segment) continue
+        if (!segment)
+          continue
 
         const values = decodeVLQSegment(segment, chars)
 
@@ -478,7 +479,8 @@ function decodeVLQSegment(segment: string, chars: string): number[] {
 
   for (const char of segment) {
     const digit = chars.indexOf(char)
-    if (digit === -1) continue
+    if (digit === -1)
+      continue
 
     const hasContinuation = digit & VLQ_CONTINUATION_BIT
     value += (digit & 31) << shift
@@ -589,7 +591,7 @@ export async function extractSourceMap(
 ): Promise<SourceMapConsumer | null> {
   // Check for inline source map
   const inlineMatch = content.match(
-    /\/\/# sourceMappingURL=data:application\/json[^,]+,([^\s]+)/,
+    /\/\/# sourceMappingURL=data:application\/json[^,]+,(\S+)/,
   )
 
   if (inlineMatch) {
@@ -626,12 +628,12 @@ export function buildDeclarationMappings(
     originalColumn: number
   }>,
 ): Array<{
-  generatedLine: number
-  generatedColumn: number
-  originalLine: number
-  originalColumn: number
-  name: string
-}> {
+    generatedLine: number
+    generatedColumn: number
+    originalLine: number
+    originalColumn: number
+    name: string
+  }> {
   const lines = generatedContent.split('\n')
   const mappings: Array<{
     generatedLine: number

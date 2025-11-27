@@ -3,10 +3,10 @@
  * Caches AST, declarations, and file hashes to skip unchanged files
  */
 
-import { createHash } from 'node:crypto'
-import { readFile, writeFile, mkdir, stat, unlink } from 'node:fs/promises'
-import { join, dirname, relative } from 'node:path'
 import type { Declaration, DtsGenerationConfig } from './types'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 /**
  * Incremental build configuration
@@ -50,9 +50,9 @@ export interface IncrementalConfig {
 }
 
 /**
- * Cached file entry
+ * Cached file entry for incremental builds
  */
-export interface CacheEntry {
+export interface IncrementalCacheEntry {
   /** File path */
   filePath: string
   /** Content hash */
@@ -72,11 +72,11 @@ export interface CacheEntry {
 }
 
 /**
- * Cache manifest
+ * Cache manifest for incremental builds
  */
-export interface CacheManifest {
+export interface IncrementalCacheManifest {
   version: string
-  entries: Record<string, CacheEntry>
+  entries: Record<string, IncrementalCacheEntry>
   createdAt: number
   updatedAt: number
 }
@@ -122,7 +122,7 @@ const MANIFEST_FILE = 'manifest.json'
  */
 export class IncrementalCache {
   private config: Required<IncrementalConfig>
-  private manifest: CacheManifest | null = null
+  private manifest: IncrementalCacheManifest | null = null
   private dirty = false
   private stats: CacheStats = {
     totalEntries: 0,
@@ -216,7 +216,7 @@ export class IncrementalCache {
   async get(
     filePath: string,
     configHash: string,
-  ): Promise<CacheEntry | null> {
+  ): Promise<IncrementalCacheEntry | null> {
     if (!this.config.enabled || !this.manifest || this.config.force) {
       this.stats.misses++
       return null
@@ -323,7 +323,7 @@ export class IncrementalCache {
       // Use current time if file doesn't exist
     }
 
-    const entry: CacheEntry = {
+    const entry: IncrementalCacheEntry = {
       filePath,
       hash: this.hashContent(content),
       mtime,
@@ -509,7 +509,7 @@ export function createIncrementalBuilder(
  */
 export async function pruneCache(
   cache: IncrementalCache,
-  maxAge: number = 86400000 * 7, // 7 days default
+  _maxAge: number = 86400000 * 7, // 7 days default
 ): Promise<number> {
   const stats = cache.getStats()
   // This would need access to internal manifest
@@ -545,7 +545,7 @@ export function formatIncrementalResult(result: IncrementalBuildResult): string 
  */
 export function extractDependencies(content: string, basePath: string): string[] {
   const deps: string[] = []
-  const importRegex = /import\s+(?:type\s+)?(?:.+\s+from\s+)?['"]([^'"]+)['"]/g
+  const importRegex = /import\s+(?:type\s+)?(?:.+(?:[\n\r\u2028\u2029]\s*|[\t\v\f \xA0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])from\s+)?['"]([^'"]+)['"]/g
 
   let match
   while ((match = importRegex.exec(content)) !== null) {
@@ -556,8 +556,8 @@ export function extractDependencies(content: string, basePath: string): string[]
       const resolved = join(dirname(basePath), importPath)
       // Add common extensions
       deps.push(resolved)
-      deps.push(resolved + '.ts')
-      deps.push(resolved + '.tsx')
+      deps.push(`${resolved}.ts`)
+      deps.push(`${resolved}.tsx`)
       deps.push(join(resolved, 'index.ts'))
       deps.push(join(resolved, 'index.tsx'))
     }

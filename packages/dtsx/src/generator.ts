@@ -80,7 +80,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Track cache hits for stats
   let cacheHits = 0
-  let cacheSkipped = 0
+  const _cacheSkipped = 0
 
   // Log start
   logger.debug('Starting DTS generation...')
@@ -685,7 +685,8 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
 
   // Process batched changes
   async function processPendingChanges() {
-    if (state.isProcessing || state.pendingChanges.size === 0) return
+    if (state.isProcessing || state.pendingChanges.size === 0)
+      return
 
     // Check if we should pause due to too many errors
     const now = Date.now()
@@ -812,7 +813,8 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
 
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done)
+        break
 
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')

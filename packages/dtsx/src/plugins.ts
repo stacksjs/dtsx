@@ -254,7 +254,7 @@ export class PluginManager {
 /**
  * Global plugin manager instance
  */
-export const pluginManager = new PluginManager()
+export const pluginManager: PluginManager = new PluginManager()
 
 /**
  * Helper to create a plugin
@@ -267,7 +267,7 @@ export function definePlugin(plugin: Plugin): Plugin {
  * Built-in plugin: Strip internal declarations
  * Removes declarations marked with @internal in JSDoc
  */
-export const stripInternalPlugin = definePlugin({
+export const stripInternalPlugin: Plugin = definePlugin({
   name: 'strip-internal',
   version: '1.0.0',
   description: 'Removes declarations marked with @internal',
@@ -314,7 +314,8 @@ export function createFilterPlugin(filter: (name: string) => boolean): Plugin {
     description: 'Filters declarations by name',
     onDeclarations: (ctx) => {
       return ctx.declarations.filter((decl) => {
-        if (decl.kind === 'import') return true // Keep imports
+        if (decl.kind === 'import')
+          return true // Keep imports
         return filter(decl.name)
       })
     },

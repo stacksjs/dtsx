@@ -70,7 +70,7 @@ export interface DiffOptions {
 function computeLCSTable(oldLines: string[], newLines: string[]): number[][] {
   const m = oldLines.length
   const n = newLines.length
-  const table: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0))
+  const table: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
 
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -143,12 +143,14 @@ export function computeDiff(
   const { context = 3, ignoreWhitespace = false, ignoreBlankLines = false } = options
 
   // Split into lines
-  let oldLines = oldContent.split('\n')
-  let newLines = newContent.split('\n')
+  const oldLines = oldContent.split('\n')
+  const newLines = newContent.split('\n')
 
   // Remove trailing empty line if present (common in files)
-  if (oldLines[oldLines.length - 1] === '') oldLines.pop()
-  if (newLines[newLines.length - 1] === '') newLines.pop()
+  if (oldLines[oldLines.length - 1] === '')
+    oldLines.pop()
+  if (newLines[newLines.length - 1] === '')
+    newLines.pop()
 
   // Apply normalization for comparison
   const oldNormalized = oldLines.map(l => normalizeLine(l, { ignoreWhitespace }))
@@ -194,8 +196,10 @@ export function computeDiff(
   let unchanged = 0
 
   for (const op of operations) {
-    if (op.op === 'add') additions++
-    else if (op.op === 'remove') deletions++
+    if (op.op === 'add')
+      additions++
+    else if (op.op === 'remove')
+      deletions++
     else unchanged++
   }
 
@@ -268,8 +272,10 @@ function createHunks(
     // Find starting positions
     for (let i = 0; i < start; i++) {
       const op = operations[i]
-      if (op.op === 'equal' || op.op === 'remove') oldStart++
-      if (op.op === 'equal' || op.op === 'add') newStart++
+      if (op.op === 'equal' || op.op === 'remove')
+        oldStart++
+      if (op.op === 'equal' || op.op === 'add')
+        newStart++
     }
 
     // Build hunk content
@@ -330,29 +336,29 @@ export function formatUnifiedDiff(result: DiffResult): string {
  */
 export function formatColoredDiff(result: DiffResult): string {
   if (result.identical) {
-    return `\x1b[32m✓ ${result.filePath} (unchanged)\x1b[0m`
+    return `\x1B[32m✓ ${result.filePath} (unchanged)\x1B[0m`
   }
 
   const lines: string[] = []
 
   // Header with stats
   const statsStr = `+${result.stats.additions} -${result.stats.deletions}`
-  lines.push(`\x1b[1m${result.filePath}\x1b[0m \x1b[90m(${statsStr})\x1b[0m`)
+  lines.push(`\x1B[1m${result.filePath}\x1B[0m \x1B[90m(${statsStr})\x1B[0m`)
   lines.push('')
 
   // Hunks
   for (const hunk of result.hunks) {
-    lines.push(`\x1b[36m@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@\x1b[0m`)
+    lines.push(`\x1B[36m@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@\x1B[0m`)
 
     for (const line of hunk.lines) {
       if (line.startsWith('+')) {
-        lines.push(`\x1b[32m${line}\x1b[0m`)
+        lines.push(`\x1B[32m${line}\x1B[0m`)
       }
       else if (line.startsWith('-')) {
-        lines.push(`\x1b[31m${line}\x1b[0m`)
+        lines.push(`\x1B[31m${line}\x1B[0m`)
       }
       else {
-        lines.push(`\x1b[90m${line}\x1b[0m`)
+        lines.push(`\x1B[90m${line}\x1B[0m`)
       }
     }
 
@@ -483,10 +489,10 @@ export function printDiffs(results: Map<string, DiffResult>, showUnchanged = fal
   // Print summary
   const summary = summarizeDiffs(results)
   console.log('')
-  console.log(`\x1b[1mSummary:\x1b[0m ${summary.totalFiles} files, ${summary.changedFiles} changed, ${summary.unchangedFiles} unchanged`)
+  console.log(`\x1B[1mSummary:\x1B[0m ${summary.totalFiles} files, ${summary.changedFiles} changed, ${summary.unchangedFiles} unchanged`)
 
   if (summary.changedFiles > 0) {
-    console.log(`         \x1b[32m+${summary.totalAdditions}\x1b[0m \x1b[31m-${summary.totalDeletions}\x1b[0m lines`)
+    console.log(`         \x1B[32m+${summary.totalAdditions}\x1B[0m \x1B[31m-${summary.totalDeletions}\x1B[0m lines`)
   }
 
   if (summary.newFiles > 0) {

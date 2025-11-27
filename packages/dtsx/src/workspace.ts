@@ -1,6 +1,6 @@
 import type { DtsGenerationConfig, GenerationStats } from './types'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { generate } from './generator'
 import { logger, setLogLevel } from './logger'
 
@@ -182,7 +182,8 @@ export function sortProjectsByDependencies(projects: WorkspaceProject[]): Worksp
   const visiting = new Set<string>()
 
   function visit(name: string): void {
-    if (visited.has(name)) return
+    if (visited.has(name))
+      return
     if (visiting.has(name)) {
       logger.warn(`Circular dependency detected involving: ${name}`)
       return

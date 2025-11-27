@@ -2,6 +2,7 @@
  * Tests for type and import tracking
  */
 
+import type { Declaration } from '../src/types'
 import { describe, expect, test } from 'bun:test'
 import {
   analyzeImports,
@@ -10,7 +11,6 @@ import {
   trackDeclarations,
   Tracker,
 } from '../src/tracking'
-import type { Declaration } from '../src/types'
 
 describe('Tracking Module', () => {
   describe('Tracker', () => {

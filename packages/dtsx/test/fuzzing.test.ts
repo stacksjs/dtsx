@@ -1,7 +1,7 @@
+import type { ProcessingContext } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
 import { processDeclarations } from '../src/processor'
-import type { ProcessingContext } from '../src/types'
 
 const TEST_FILE = 'fuzz.ts'
 
@@ -21,7 +21,7 @@ function randomString(length: number, charset = 'abcdefghijklmnopqrstuvwxyzABCDE
 
 function randomIdentifier(): string {
   const first = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
-  const rest = first + '0123456789'
+  const rest = `${first}0123456789`
   const length = Math.floor(Math.random() * 20) + 1
   return first[Math.floor(Math.random() * first.length)] + randomString(length - 1, rest)
 }
@@ -303,7 +303,7 @@ describe('Property-Based / Fuzzing Tests', () => {
       const depths = [5, 10, 20, 30]
 
       for (const depth of depths) {
-        const nested = 'Promise<'.repeat(depth) + 'string' + '>'.repeat(depth)
+        const nested = `${'Promise<'.repeat(depth)}string${'>'.repeat(depth)}`
         const code = `export type Deep = ${nested}`
         const result = extractDeclarations(code, TEST_FILE)
         expect(result).toBeDefined()
@@ -441,19 +441,19 @@ describe('Property-Based / Fuzzing Tests', () => {
   describe('Import statement fuzzing', () => {
     it('should handle various import patterns', () => {
       const imports = [
-        "import { a } from 'mod'",
-        "import { a, b, c } from 'mod'",
-        "import { a as b } from 'mod'",
-        "import { type a } from 'mod'",
-        "import { type a, b } from 'mod'",
-        "import type { a } from 'mod'",
-        "import type { a, b } from 'mod'",
-        "import * as ns from 'mod'",
-        "import def from 'mod'",
-        "import def, { a } from 'mod'",
-        "import def, { a, b } from 'mod'",
-        "import def, * as ns from 'mod'",
-        "import 'mod'",
+        'import { a } from \'mod\'',
+        'import { a, b, c } from \'mod\'',
+        'import { a as b } from \'mod\'',
+        'import { type a } from \'mod\'',
+        'import { type a, b } from \'mod\'',
+        'import type { a } from \'mod\'',
+        'import type { a, b } from \'mod\'',
+        'import * as ns from \'mod\'',
+        'import def from \'mod\'',
+        'import def, { a } from \'mod\'',
+        'import def, { a, b } from \'mod\'',
+        'import def, * as ns from \'mod\'',
+        'import \'mod\'',
       ]
 
       for (const imp of imports) {
@@ -465,20 +465,20 @@ describe('Property-Based / Fuzzing Tests', () => {
 
     it('should handle various export patterns', () => {
       const exports = [
-        "export { a }",
-        "export { a, b, c }",
-        "export { a as b }",
-        "export { type a }",
-        "export { type a, b }",
-        "export type { a }",
-        "export type { a, b }",
-        "export * from 'mod'",
-        "export * as ns from 'mod'",
-        "export { a } from 'mod'",
-        "export { a as b } from 'mod'",
-        "export type * from 'mod'",
-        "export default function() {}",
-        "export default class {}",
+        'export { a }',
+        'export { a, b, c }',
+        'export { a as b }',
+        'export { type a }',
+        'export { type a, b }',
+        'export type { a }',
+        'export type { a, b }',
+        'export * from \'mod\'',
+        'export * as ns from \'mod\'',
+        'export { a } from \'mod\'',
+        'export { a as b } from \'mod\'',
+        'export type * from \'mod\'',
+        'export default function() {}',
+        'export default class {}',
       ]
 
       for (const exp of exports) {

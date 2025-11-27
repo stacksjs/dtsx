@@ -282,7 +282,13 @@
 
 - [x] **Error case testing** - ✅ Test malformed input handling covered in `test/errors.test.ts` (52 tests).
 
-- [ ] **Performance regression tests** - Add benchmarks to CI.
+- [x] **Performance regression tests** - ✅ Added `.github/workflows/benchmark.yml`:
+  - Runs on push/PR to main affecting src or benchmark files
+  - CI mode with `--ci` flag (20 iterations for meaningful results)
+  - JSON output with `--json` flag for machine parsing
+  - Stores results as artifacts for comparison
+  - PR comments with performance comparison
+  - Performance threshold checks
 
 ---
 
@@ -462,7 +468,7 @@ Based on code analysis, these are the likely bottlenecks:
 
 - [x] Incremental builds ✅ Implemented in `src/cache.ts` with content hashing and mtime tracking
 - [x] Watch mode ✅ Implemented `dtsx watch` command
-- [ ] Memory optimization
+- [x] Memory optimization ✅ Implemented in `src/memory.ts` with StreamingProcessor, DeclarationPool, LazyLoader, StringInterner, ObjectPool
 
 ### v1.2 (DX)
 
@@ -656,7 +662,11 @@ Based on test fixtures analysis:
   - Main export: `{ types: "./dist/index.d.ts", import: "./dist/src/index.js" }`
   - Subpath exports: `{ types: "./dist/*.d.ts", import: "./dist/*" }`
 
-- [ ] **Peer dependencies** - Consider making `typescript` a peer dependency.
+- [x] **Peer dependencies** - ✅ Added TypeScript as peer dependency in `package.json`:
+  - `peerDependencies: { "typescript": ">=5.0.0" }`
+  - Required because dtsx uses TypeScript's compiler API (createSourceFile, SyntaxKind, etc.)
+  - Allows users to control TypeScript version in their project
+  - Also added as devDependency for local development
 
 - [x] **Bundle size** - Analyzed and documented. ✅ Bundle is ~4.1MB due to TypeScript compiler (~3.5MB). This is unavoidable for AST-based parsing.
   - TypeScript compiler is required for core AST parsing functionality
@@ -711,7 +721,7 @@ Based on test fixtures analysis:
 
 - [x] **CLI tests** - No integration tests for CLI commands. ✅ Added `test/cli.test.ts` with 21 tests
 
-- [ ] **Benchmark regression** - No CI integration for performance benchmarks.
+- [x] **Benchmark regression** - ✅ CI integration added in `.github/workflows/benchmark.yml`.
 
 ---
 
@@ -732,7 +742,14 @@ Based on test fixtures analysis:
 
 - [x] **File batching** - Group small files for batch processing to reduce overhead. ✅ `batchFiles()` and `calculateOptimalBatchSize()` in `src/worker.ts`
 
-- [ ] **Dependency graph parallelism** - Build dependency graph and process independent files in parallel.
+- [x] **Dependency graph parallelism** - ✅ Added `src/parallel-processor.ts`:
+  - `buildProcessingGraph()` - Build dependency graph from source files
+  - `processInParallel()` - Process files respecting dependencies
+  - `getTopologicalOrder()` - Get safe processing order
+  - `getProcessingLevels()` - Group files by parallelization level
+  - `findIndependentFiles()` - Find files with no internal dependencies
+  - `analyzeParallelizationPotential()` - Analyze speedup potential
+  - Added 17 tests in `test/parallel-processor.test.ts`
 
 ---
 

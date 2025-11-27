@@ -1,6 +1,6 @@
 import type { Declaration, DtsGenerationConfig } from './types'
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
-import { basename, dirname, relative, resolve, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import { extractDeclarations } from './extractor'
 
 /**
@@ -86,7 +86,8 @@ export async function bundleDeclarations(
   // Process each file
   for (const file of files) {
     const sourceCode = sourceContents.get(file)
-    if (!sourceCode) continue
+    if (!sourceCode)
+      continue
 
     const declarations = extractDeclarations(sourceCode, file, config.keepComments)
     totalDeclarations += declarations.length
@@ -163,9 +164,12 @@ export async function bundleDeclarations(
     const aIndex = importOrder.findIndex(pattern => a.source.startsWith(pattern))
     const bIndex = importOrder.findIndex(pattern => b.source.startsWith(pattern))
 
-    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-    if (aIndex !== -1) return -1
-    if (bIndex !== -1) return 1
+    if (aIndex !== -1 && bIndex !== -1)
+      return aIndex - bIndex
+    if (aIndex !== -1)
+      return -1
+    if (bIndex !== -1)
+      return 1
 
     return a.source.localeCompare(b.source)
   })
@@ -219,12 +223,15 @@ export async function bundleDeclarations(
     output.push('')
   }
 
+  const content = output.join('\n')
   return {
-    content: output.join('\n'),
+    content,
     files,
     declarationCount: totalDeclarations,
     importCount: totalImports,
     exportCount: totalExports,
+    size: Buffer.byteLength(content, 'utf8'),
+    warnings: [],
   }
 }
 
@@ -351,15 +358,20 @@ function buildDeclarationText(decl: Declaration): string {
  * Build parameter list string
  */
 function buildParameters(params?: Declaration['parameters']): string {
-  if (!params || params.length === 0) return ''
+  if (!params || params.length === 0)
+    return ''
 
   return params.map((p) => {
     let param = ''
-    if (p.rest) param += '...'
+    if (p.rest)
+      param += '...'
     param += p.name
-    if (p.optional) param += '?'
-    if (p.type) param += `: ${p.type}`
-    if (p.defaultValue) param += ` = ${p.defaultValue}`
+    if (p.optional)
+      param += '?'
+    if (p.type)
+      param += `: ${p.type}`
+    if (p.defaultValue)
+      param += ` = ${p.defaultValue}`
     return param
   }).join(', ')
 }
@@ -401,14 +413,15 @@ export async function bundleDtsFiles(
       const trimmed = line.trim()
 
       // Skip empty lines outside declarations
-      if (!trimmed && !inDeclaration) continue
+      if (!trimmed && !inDeclaration)
+        continue
 
       // Handle imports
       if (trimmed.startsWith('import ')) {
         importCount++
         const importMatch = trimmed.match(/import\s+(type\s+)?(?:\{([^}]+)\}|(\w+)|\*\s+as\s+(\w+))\s+from\s+['"]([^'"]+)['"]/)
         if (importMatch) {
-          const [, typeOnly, namedImports, defaultImport, namespaceImport, source] = importMatch
+          const [, typeOnly, namedImports, _defaultImport, _namespaceImport, source] = importMatch
 
           // Skip if external
           if (config.externals?.some(ext => source.startsWith(ext))) {
@@ -417,7 +430,8 @@ export async function bundleDtsFiles(
           }
 
           // Skip relative imports (they're being bundled)
-          if (source.startsWith('.')) continue
+          if (source.startsWith('.'))
+            continue
 
           if (!allImports.has(source)) {
             allImports.set(source, {
@@ -467,7 +481,8 @@ export async function bundleDtsFiles(
             seenDeclarations.add(declKey)
             allDeclarations.push(line)
             declarationCount++
-            if (trimmed.startsWith('export')) exportCount++
+            if (trimmed.startsWith('export'))
+              exportCount++
           }
           inDeclaration = false
           currentDeclaration = []
@@ -485,7 +500,8 @@ export async function bundleDtsFiles(
             seenDeclarations.add(declKey)
             allDeclarations.push(fullDecl)
             declarationCount++
-            if (currentDeclaration[0].trim().startsWith('export')) exportCount++
+            if (currentDeclaration[0].trim().startsWith('export'))
+              exportCount++
           }
 
           inDeclaration = false
@@ -525,7 +541,7 @@ export async function bundleDtsFiles(
   for (const info of sortedImports) {
     if (info.specifiers.size > 0) {
       const specs = Array.from(info.specifiers.values())
-      const specStrings = specs.map(s => {
+      const specStrings = specs.map((s) => {
         const typePrefix = s.isType ? 'type ' : ''
         return s.alias ? `${typePrefix}${s.name} as ${s.alias}` : `${typePrefix}${s.name}`
       })
@@ -543,7 +559,7 @@ export async function bundleDtsFiles(
     output.push(`declare module '${config.moduleName}' {`)
     for (const decl of allDeclarations) {
       // Indent and remove 'declare' keyword inside module
-      const indented = decl.split('\n').map(line => '  ' + line.replace(/^(\s*)(export\s+)?declare\s+/, '$1$2')).join('\n')
+      const indented = decl.split('\n').map(line => `  ${line.replace(/^(\s*)(export\s+)?declare\s+/, '$1$2')}`).join('\n')
       output.push(indented)
     }
     output.push('}')
@@ -613,10 +629,13 @@ export async function bundleAndWrite(
 /**
  * Create a bundler with preset configuration
  */
-export function createBundler(config: Partial<BundleConfig> = {}) {
+export function createBundler(config: Partial<BundleConfig> = {}): {
+  bundle: (files: string[]) => Promise<BundleResult>
+  bundleAndWrite: (files: string[], output: string) => Promise<BundleResult>
+} {
   return {
-    bundle: (files: string[]) => bundleDtsFiles(files, config),
-    bundleAndWrite: (files: string[], output: string) =>
+    bundle: (files: string[]): Promise<BundleResult> => bundleDtsFiles(files, config),
+    bundleAndWrite: (files: string[], output: string): Promise<BundleResult> =>
       bundleAndWrite(files, output, { ...config, output }),
   }
 }

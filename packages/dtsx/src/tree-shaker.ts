@@ -76,10 +76,10 @@ export interface TreeShakeStats {
 /**
  * Type reference information
  */
-interface TypeReference {
+interface _TypeReference {
   name: string
   isGeneric: boolean
-  genericArgs: TypeReference[]
+  genericArgs: _TypeReference[]
 }
 
 /**
@@ -107,7 +107,7 @@ export function treeShake(
   }
 
   // Build dependency graph
-  const dependencyGraph = buildDependencyGraph(declarations)
+  const dependencyGraph = buildDeclarationDependencyGraph(declarations)
   log('Dependency graph:', Object.fromEntries(
     Array.from(dependencyGraph.entries()).map(([k, v]) => [k, Array.from(v)]),
   ))
@@ -212,9 +212,9 @@ export function treeShake(
 }
 
 /**
- * Build a dependency graph from declarations
+ * Build a declaration dependency graph for tree shaking
  */
-export function buildDependencyGraph(
+export function buildDeclarationDependencyGraph(
   declarations: Declaration[],
 ): Map<string, Set<string>> {
   const graph = new Map<string, Set<string>>()
@@ -292,19 +292,64 @@ function extractRefsFromType(typeStr: string, refs: Set<string>): void {
   // Match identifiers that could be type references
   // Exclude built-in types and keywords
   const builtins = new Set([
-    'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
-    'null', 'undefined', 'symbol', 'bigint', 'true', 'false',
-    'Array', 'Object', 'String', 'Number', 'Boolean', 'Function', 'Symbol',
-    'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Record', 'Partial',
-    'Required', 'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
-    'Parameters', 'ReturnType', 'InstanceType', 'ConstructorParameters',
-    'ThisParameterType', 'OmitThisParameter', 'ThisType', 'Uppercase',
-    'Lowercase', 'Capitalize', 'Uncapitalize', 'Awaited',
-    'keyof', 'typeof', 'infer', 'extends', 'readonly', 'const', 'new',
+    'string',
+    'number',
+    'boolean',
+    'object',
+    'any',
+    'unknown',
+    'never',
+    'void',
+    'null',
+    'undefined',
+    'symbol',
+    'bigint',
+    'true',
+    'false',
+    'Array',
+    'Object',
+    'String',
+    'Number',
+    'Boolean',
+    'Function',
+    'Symbol',
+    'Promise',
+    'Map',
+    'Set',
+    'WeakMap',
+    'WeakSet',
+    'Record',
+    'Partial',
+    'Required',
+    'Readonly',
+    'Pick',
+    'Omit',
+    'Exclude',
+    'Extract',
+    'NonNullable',
+    'Parameters',
+    'ReturnType',
+    'InstanceType',
+    'ConstructorParameters',
+    'ThisParameterType',
+    'OmitThisParameter',
+    'ThisType',
+    'Uppercase',
+    'Lowercase',
+    'Capitalize',
+    'Uncapitalize',
+    'Awaited',
+    'keyof',
+    'typeof',
+    'infer',
+    'extends',
+    'readonly',
+    'const',
+    'new',
   ])
 
   // Match type identifiers (PascalCase or camelCase followed by optional generics)
-  const typePattern = /\b([A-Z][a-zA-Z0-9_]*)\b/g
+  const typePattern = /\b([A-Z]\w*)\b/g
   let match
 
   while ((match = typePattern.exec(typeStr)) !== null) {
@@ -364,7 +409,7 @@ function matchesPatterns(name: string, patterns: (string | RegExp)[]): boolean {
       // Glob-like matching
       if (pattern.includes('*')) {
         const regex = new RegExp(
-          '^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+          `^${pattern.replace(/\*/g, '.*').replace(/\?/g, '.')}$`,
         )
         if (regex.test(name)) {
           return true
@@ -529,11 +574,11 @@ export function analyzeDependencies(
   declarationName: string,
   declarations: Declaration[],
 ): {
-  directDependencies: string[]
-  transitiveDependencies: string[]
-  dependents: string[]
-} {
-  const graph = buildDependencyGraph(declarations)
+    directDependencies: string[]
+    transitiveDependencies: string[]
+    dependents: string[]
+  } {
+  const graph = buildDeclarationDependencyGraph(declarations)
 
   // Direct dependencies
   const directDeps = graph.get(declarationName) || new Set<string>()
@@ -560,14 +605,21 @@ export function analyzeDependencies(
 /**
  * Create a tree shaker with preset configuration
  */
-export function createTreeShaker(config: TreeShakeConfig = {}) {
+export function createTreeShaker(config: TreeShakeConfig = {}): {
+  shake: (declarations: Declaration[]) => TreeShakeResult
+  shakeContent: (content: string) => { content: string, removed: string[] }
+  findUnused: (declarations: Declaration[]) => string[]
+  analyzeDependencies: (name: string, declarations: Declaration[]) => { directDependencies: string[], transitiveDependencies: string[], dependents: string[] }
+  buildGraph: typeof buildDeclarationDependencyGraph
+  extractRefs: typeof extractTypeReferences
+} {
   return {
-    shake: (declarations: Declaration[]) => treeShake(declarations, config),
-    shakeContent: (content: string) => treeShakeContent(content, config),
-    findUnused: (declarations: Declaration[]) => findUnusedDeclarations(declarations, config),
-    analyzeDependencies: (name: string, declarations: Declaration[]) =>
+    shake: (declarations: Declaration[]): TreeShakeResult => treeShake(declarations, config),
+    shakeContent: (content: string): { content: string, removed: string[] } => treeShakeContent(content, config),
+    findUnused: (declarations: Declaration[]): string[] => findUnusedDeclarations(declarations, config),
+    analyzeDependencies: (name: string, declarations: Declaration[]): { directDependencies: string[], transitiveDependencies: string[], dependents: string[] } =>
       analyzeDependencies(name, declarations),
-    buildGraph: buildDependencyGraph,
+    buildGraph: buildDeclarationDependencyGraph,
     extractRefs: extractTypeReferences,
   }
 }

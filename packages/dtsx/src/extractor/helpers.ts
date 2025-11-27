@@ -150,7 +150,8 @@ export function shouldIncludeNonExportedInterface(interfaceName: string, sourceC
     // Evict old entries if cache grows too large
     if (interfacePatternCache.size > 200) {
       const firstKey = interfacePatternCache.keys().next().value
-      if (firstKey) interfacePatternCache.delete(firstKey)
+      if (firstKey)
+        interfacePatternCache.delete(firstKey)
     }
   }
 

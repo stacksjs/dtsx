@@ -3,9 +3,9 @@
  * Provides streaming, chunking, and memory management strategies
  */
 
+import type { Declaration, DtsGenerationConfig } from './types'
 import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { createInterface } from 'node:readline'
-import type { Declaration, DtsGenerationConfig } from './types'
 
 /**
  * Memory configuration options
@@ -159,7 +159,8 @@ export class StreamingProcessor {
 
     try {
       return await fn()
-    } finally {
+    }
+    finally {
       const memoryAfter = this.getMemoryStats()
       const duration = Date.now() - startTime
 
@@ -190,7 +191,7 @@ export class StreamingProcessor {
   /**
    * Read file in streaming mode
    */
-  async *streamFile(filePath: string): AsyncGenerator<string, void, unknown> {
+  async* streamFile(filePath: string): AsyncGenerator<string, void, unknown> {
     const fileStream = createReadStream(filePath, {
       encoding: 'utf-8',
       highWaterMark: this.config.chunkSize,
@@ -252,13 +253,14 @@ export class StreamingProcessor {
             const canContinue = writeStream.write(chunk)
 
             if (!canContinue) {
-              await new Promise(r => writeStream.once('drain', r))
+              await new Promise<void>(r => writeStream.once('drain', () => r()))
             }
           }
 
           writeStream.end()
           writeStream.once('finish', resolve)
-        } catch (error) {
+        }
+        catch (error) {
           reject(error)
         }
       }
@@ -277,6 +279,7 @@ export class DeclarationPool {
   private registry = new FinalizationRegistry<string>((key) => {
     this.declarations.delete(key)
   })
+
   private maxSize: number
 
   constructor(maxSize: number = 10000) {

@@ -4,7 +4,6 @@
 
 import { describe, expect, test } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
-import { processDeclarations } from '../src/processor'
 
 function createContext(code: string) {
   const declarations = extractDeclarations(code, 'test.ts')

@@ -1,5 +1,5 @@
-import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import type { LogLevel } from '../src/logger'
+import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { CLI } from '@stacksjs/clapp'
@@ -257,7 +257,7 @@ cli
     try {
       const { optimizeFile } = await import('../src/optimizer')
       const { Glob } = await import('bun')
-      const { resolve, join, relative, dirname, basename } = await import('node:path')
+      const { resolve, join, relative, dirname, basename: _basename } = await import('node:path')
       const { mkdirSync, copyFileSync, existsSync } = await import('node:fs')
 
       const cwd = process.cwd()
@@ -669,7 +669,8 @@ cli
           d => d.kind === 'interface' || d.kind === 'type',
         )
 
-        if (typeDeclarations.length === 0) continue
+        if (typeDeclarations.length === 0)
+          continue
 
         const output = formats.convertToFormat(typeDeclarations, {
           format,
@@ -748,7 +749,7 @@ cli
       const { Glob } = await import('bun')
       const { resolve, relative } = await import('node:path')
 
-      const cwd = process.cwd()
+      const _cwd = process.cwd()
       const rootDir = resolve(options.root || '.')
       const patterns = options.files || ['**/*.ts']
 

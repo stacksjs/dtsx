@@ -3,7 +3,11 @@
  * Supports Prettier integration and built-in formatting
  */
 
-import { resolve, dirname } from 'node:path'
+// Prettier types (optional dependency)
+interface PrettierModule {
+  format: (source: string, options?: Record<string, unknown>) => Promise<string>
+  resolveConfig: (filePath: string) => Promise<Record<string, unknown> | null>
+}
 
 /**
  * Formatter configuration options
@@ -75,7 +79,7 @@ export interface FormatResult {
 
 // Cache for Prettier availability check
 let prettierAvailable: boolean | null = null
-let prettierModule: any = null
+let prettierModule: PrettierModule | null = null
 
 /**
  * Check if Prettier is available
@@ -86,7 +90,8 @@ async function checkPrettierAvailable(): Promise<boolean> {
   }
 
   try {
-    prettierModule = await import('prettier')
+    // @ts-expect-error - prettier is an optional dependency
+    prettierModule = await import('prettier') as PrettierModule
     prettierAvailable = true
     return true
   }
@@ -103,19 +108,22 @@ async function loadPrettierConfig(
   configPath?: string,
   filePath?: string,
 ): Promise<PrettierOptions | null> {
-  if (!prettierModule) return null
+  if (!prettierModule)
+    return null
 
   try {
     // Try to resolve config from file path
     if (filePath && prettierModule.resolveConfig) {
       const config = await prettierModule.resolveConfig(filePath)
-      if (config) return config
+      if (config)
+        return config
     }
 
     // Try explicit config path
     if (configPath && prettierModule.resolveConfig) {
       const config = await prettierModule.resolveConfig(configPath)
-      if (config) return config
+      if (config)
+        return config
     }
 
     return null
@@ -238,7 +246,7 @@ function formatImports(
   const imports: { line: string, source: string, isType: boolean }[] = []
   const otherLines: string[] = []
   let inImportBlock = false
-  let importBlockEnd = 0
+  let _importBlockEnd = 0
 
   // Extract imports
   for (let i = 0; i < lines.length; i++) {
@@ -247,7 +255,7 @@ function formatImports(
 
     if (importMatch) {
       inImportBlock = true
-      importBlockEnd = i
+      _importBlockEnd = i
       imports.push({
         line,
         source: importMatch[2],
@@ -288,15 +296,15 @@ function formatImports(
   if (options.group) {
     const nodeImports = imports.filter(i => i.source.startsWith('node:'))
     const builtinImports = imports.filter(i =>
-      !i.source.startsWith('.') &&
-      !i.source.startsWith('node:') &&
-      !i.source.includes('/'),
+      !i.source.startsWith('.')
+      && !i.source.startsWith('node:')
+      && !i.source.includes('/'),
     )
     const externalImports = imports.filter(i =>
-      !i.source.startsWith('.') &&
-      !i.source.startsWith('node:') &&
-      i.source.includes('/') &&
-      !i.source.startsWith('@'),
+      !i.source.startsWith('.')
+      && !i.source.startsWith('node:')
+      && i.source.includes('/')
+      && !i.source.startsWith('@'),
     )
     const scopedImports = imports.filter(i => i.source.startsWith('@'))
     const relativeImports = imports.filter(i => i.source.startsWith('.'))
@@ -328,12 +336,14 @@ function compareImportSources(a: string, b: string): number {
   // node: imports first
   const aNode = a.startsWith('node:')
   const bNode = b.startsWith('node:')
-  if (aNode !== bNode) return aNode ? -1 : 1
+  if (aNode !== bNode)
+    return aNode ? -1 : 1
 
   // Then external packages
   const aRelative = a.startsWith('.')
   const bRelative = b.startsWith('.')
-  if (aRelative !== bRelative) return aRelative ? 1 : -1
+  if (aRelative !== bRelative)
+    return aRelative ? 1 : -1
 
   // Alphabetical within groups
   return a.localeCompare(b)
@@ -394,14 +404,16 @@ function wrapObjectLiteral(
 ): string[] {
   // Simple heuristic: if it has multiple properties, split them
   const match = line.match(/^(\s*)(.*?)(\{)(.+)(\}.*)$/)
-  if (!match) return [line]
+  if (!match)
+    return [line]
 
   const [, , prefix, openBrace, content, suffix] = match
 
   // Split by semicolons or commas
   const parts = content.split(/;\s*|,\s*/).filter(p => p.trim())
 
-  if (parts.length <= 1) return [line]
+  if (parts.length <= 1)
+    return [line]
 
   const result = [
     `${currentIndent}${prefix}${openBrace}`,
@@ -422,14 +434,16 @@ function wrapUnionType(
   nextIndent: string,
 ): string[] {
   const match = line.match(/^(\s*)(.*?=\s*)(.+)$/)
-  if (!match) return [line]
+  if (!match)
+    return [line]
 
   const [, , prefix, typeContent] = match
 
   // Split by union operator
   const parts = typeContent.split(/\s*\|\s*/).filter(p => p.trim())
 
-  if (parts.length <= 2) return [line]
+  if (parts.length <= 2)
+    return [line]
 
   const result = [
     `${currentIndent}${prefix}`,

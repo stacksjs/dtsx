@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
-import { join, resolve } from 'node:path'
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { $ } from 'bun'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 // Test fixtures directory
 const TEST_DIR = resolve(import.meta.dir, '../.test-cli')

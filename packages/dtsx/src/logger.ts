@@ -53,7 +53,8 @@ function shouldLog(level: LogLevel): boolean {
  * Format timestamp
  */
 function formatTimestamp(): string {
-  if (!showTimestamps) return ''
+  if (!showTimestamps)
+    return ''
   const now = new Date()
   return `[${now.toISOString().slice(11, 23)}] `
 }
@@ -177,7 +178,7 @@ export function createLogger(options: LoggerOptions = {}): Logger {
 /**
  * Default logger instance
  */
-export const logger = createLoggerWithPrefix(currentPrefix)
+export const logger: Logger = createLoggerWithPrefix(currentPrefix)
 
 /**
  * Create a scoped logger for a specific module

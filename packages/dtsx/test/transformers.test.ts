@@ -1,29 +1,27 @@
+import type { Transformer, TransformerContext } from '../src/transformers'
+import type { Declaration } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import {
-  createDeclaration,
   cloneDeclaration,
-  walkDeclarations,
-  findDeclarations,
-  mapDeclarations,
   composeTransformers,
+  createDeclaration,
+  createJSDocTransformer,
+  createModifierTransformer,
+  createPrefixTransformer,
+  createRemoveTransformer,
+  createRenameTransformer,
+  createStripTagsTransformer,
+  createSuffixTransformer,
+  createTransformerPlugin,
+  createTypeTransformer,
   filterByKind,
   filterByPredicate,
-  createTransformerPlugin,
-  createRenameTransformer,
-  createPrefixTransformer,
-  createSuffixTransformer,
-  createRemoveTransformer,
-  createJSDocTransformer,
-  createTypeTransformer,
-  createModifierTransformer,
+  findDeclarations,
+  mapDeclarations,
   readonlyTransformer,
-  requiredTransformer,
-  optionalTransformer,
-  createStripTagsTransformer,
-  type Transformer,
-  type TransformerContext,
+
+  walkDeclarations,
 } from '../src/transformers'
-import type { Declaration } from '../src/types'
 
 // Helper to create basic transformer context
 function createContext(overrides: Partial<TransformerContext> = {}): TransformerContext {
@@ -118,9 +116,9 @@ describe('walkDeclarations', () => {
     const variables: string[] = []
 
     walkDeclarations(declarations, {
-      interface: (decl) => interfaces.push(decl.name),
-      function: (decl) => functions.push(decl.name),
-      variable: (decl) => variables.push(decl.name),
+      interface: decl => interfaces.push(decl.name),
+      function: decl => functions.push(decl.name),
+      variable: decl => variables.push(decl.name),
     })
 
     expect(interfaces).toEqual(['Parent'])
@@ -131,8 +129,8 @@ describe('walkDeclarations', () => {
   it('should call leave after visiting children', () => {
     const order: string[] = []
     walkDeclarations(declarations, {
-      enter: (decl) => order.push(`enter:${decl.name}`),
-      leave: (decl) => order.push(`leave:${decl.name}`),
+      enter: decl => order.push(`enter:${decl.name}`),
+      leave: decl => order.push(`leave:${decl.name}`),
     })
 
     expect(order).toEqual([
@@ -175,7 +173,7 @@ describe('mapDeclarations', () => {
   ]
 
   it('should transform declarations', async () => {
-    const transformer: Transformer = (decl) => ({
+    const transformer: Transformer = decl => ({
       ...decl,
       name: decl.name.toUpperCase(),
     })
@@ -186,7 +184,8 @@ describe('mapDeclarations', () => {
 
   it('should remove declarations returning null', async () => {
     const transformer: Transformer = (decl) => {
-      if (decl.name === 'foo') return null
+      if (decl.name === 'foo')
+        return null
       return undefined
     }
 
@@ -221,8 +220,8 @@ describe('mapDeclarations', () => {
 
 describe('composeTransformers', () => {
   it('should compose multiple transformers', async () => {
-    const upper: Transformer = (decl) => ({ ...decl, name: decl.name.toUpperCase() })
-    const prefix: Transformer = (decl) => ({ ...decl, name: `PREFIX_${decl.name}` })
+    const upper: Transformer = decl => ({ ...decl, name: decl.name.toUpperCase() })
+    const prefix: Transformer = decl => ({ ...decl, name: `PREFIX_${decl.name}` })
 
     const composed = composeTransformers(upper, prefix)
     const decl: Declaration = { kind: 'function', name: 'foo', text: '', isExported: true }
@@ -247,7 +246,7 @@ describe('composeTransformers', () => {
 
 describe('filterByKind', () => {
   it('should only apply to specified kinds', async () => {
-    const transformer = filterByKind('function', (decl) => ({
+    const transformer = filterByKind('function', decl => ({
       ...decl,
       name: decl.name.toUpperCase(),
     }))
@@ -264,7 +263,7 @@ describe('filterByKind', () => {
   })
 
   it('should accept array of kinds', async () => {
-    const transformer = filterByKind(['function', 'interface'], (decl) => ({
+    const transformer = filterByKind(['function', 'interface'], decl => ({
       ...decl,
       name: decl.name.toUpperCase(),
     }))
@@ -284,8 +283,8 @@ describe('filterByKind', () => {
 describe('filterByPredicate', () => {
   it('should only apply when predicate returns true', async () => {
     const transformer = filterByPredicate(
-      (decl) => decl.isExported,
-      (decl) => ({ ...decl, name: decl.name.toUpperCase() }),
+      decl => decl.isExported,
+      decl => ({ ...decl, name: decl.name.toUpperCase() }),
     )
 
     const exported: Declaration = { kind: 'function', name: 'foo', text: '', isExported: true }
@@ -357,7 +356,7 @@ describe('createPrefixTransformer', () => {
   })
 
   it('should respect filter function', async () => {
-    const transformer = createPrefixTransformer('Test', (d) => d.kind === 'function')
+    const transformer = createPrefixTransformer('Test', d => d.kind === 'function')
     const funcDecl: Declaration = { kind: 'function', name: 'foo', text: 'function foo()', isExported: true }
     const ifaceDecl: Declaration = { kind: 'interface', name: 'Bar', text: 'interface Bar {}', isExported: true }
     const ctx = createContext()
@@ -400,7 +399,7 @@ describe('createRemoveTransformer', () => {
   })
 
   it('should remove declarations by predicate', async () => {
-    const transformer = createRemoveTransformer((d) => !d.isExported)
+    const transformer = createRemoveTransformer(d => !d.isExported)
     const privateDecl: Declaration = { kind: 'function', name: 'foo', text: '', isExported: false }
     const publicDecl: Declaration = { kind: 'function', name: 'bar', text: '', isExported: true }
     const ctx = createContext()
@@ -415,7 +414,7 @@ describe('createRemoveTransformer', () => {
 
 describe('createJSDocTransformer', () => {
   it('should add JSDoc comments', async () => {
-    const transformer = createJSDocTransformer((decl) => `Description for ${decl.name}`)
+    const transformer = createJSDocTransformer(decl => `Description for ${decl.name}`)
     const decl: Declaration = { kind: 'function', name: 'foo', text: '', isExported: true }
 
     const result = await transformer(decl, createContext())
@@ -433,7 +432,7 @@ describe('createJSDocTransformer', () => {
 
 describe('createTypeTransformer', () => {
   it('should transform type annotations', async () => {
-    const transformer = createTypeTransformer((type) => type === 'any' ? 'unknown' : undefined)
+    const transformer = createTypeTransformer(type => type === 'any' ? 'unknown' : undefined)
     const anyDecl: Declaration = {
       kind: 'variable',
       name: 'x',
@@ -536,7 +535,7 @@ describe('createTransformerPlugin', () => {
     const plugin = createTransformerPlugin({
       name: 'test-transformer',
       version: '1.0.0',
-      transform: (decl) => ({ ...decl, name: decl.name.toUpperCase() }),
+      transform: decl => ({ ...decl, name: decl.name.toUpperCase() }),
     })
 
     expect(plugin.name).toBe('test-transformer')
@@ -547,7 +546,7 @@ describe('createTransformerPlugin', () => {
   it('should apply beforeParse transformer', async () => {
     const plugin = createTransformerPlugin({
       name: 'test',
-      beforeParse: (content) => content.replace('let', 'const'),
+      beforeParse: content => content.replace('let', 'const'),
     })
 
     expect(plugin.onBeforeFile).toBeDefined()
@@ -556,7 +555,7 @@ describe('createTransformerPlugin', () => {
   it('should apply afterGenerate transformer', async () => {
     const plugin = createTransformerPlugin({
       name: 'test',
-      afterGenerate: (content) => `// Header\n${content}`,
+      afterGenerate: content => `// Header\n${content}`,
     })
 
     expect(plugin.onAfterFile).toBeDefined()
