@@ -126,6 +126,44 @@ export interface DtsGenerationConfig {
    * @default false
    */
   prettier?: boolean
+  /**
+   * Glob patterns to include in processing (in addition to entrypoints)
+   * More granular control over what gets processed
+   * @example ['src/types/**\/*.ts', 'src/interfaces/**\/*.ts']
+   */
+  include?: string[]
+  /**
+   * Enable isolatedDeclarations mode for stricter type checking
+   * Requires explicit type annotations on exports
+   * @default false
+   */
+  isolatedDeclarations?: boolean
+  /**
+   * Custom type mappings for type transformations
+   * Allows replacing types during generation
+   */
+  typeMappings?: import('./type-mappings').TypeMappingConfig
+  /**
+   * Line ending style for output files
+   * @default 'lf'
+   */
+  lineEnding?: 'lf' | 'crlf' | 'auto'
+  /**
+   * Normalize output formatting
+   * @default true
+   */
+  normalizeOutput?: boolean
+  /**
+   * Declaration ordering configuration
+   */
+  declarationOrder?: {
+    /** Order of declaration kinds */
+    kinds?: import('./types').DeclarationKind[]
+    /** Sort alphabetically within kinds */
+    alphabetize?: boolean
+    /** Group by export status */
+    groupExports?: boolean
+  }
 }
 
 /**

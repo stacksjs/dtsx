@@ -12,6 +12,10 @@ import { getParameterName, hasExportModifier } from './helpers'
 export function buildFunctionSignature(node: FunctionDeclaration): string {
   const parts: string[] = []
 
+  // Check for async and generator
+  const isAsync = node.modifiers?.some(mod => mod.kind === SyntaxKind.AsyncKeyword)
+  const isGenerator = !!node.asteriskToken
+
   // Add modifiers
   if (hasExportModifier(node))
     parts.push('export ')
@@ -41,8 +45,22 @@ export function buildFunctionSignature(node: FunctionDeclaration): string {
   }).join(', ')
   parts.push('(', params, ')')
 
-  // Add return type (no space before colon)
-  const returnType = node.type?.getText() || 'void'
+  // Add return type with proper handling for async generators
+  let returnType = node.type?.getText()
+  if (!returnType) {
+    if (isAsync && isGenerator) {
+      returnType = 'AsyncGenerator<unknown, void, unknown>'
+    }
+    else if (isGenerator) {
+      returnType = 'Generator<unknown, void, unknown>'
+    }
+    else if (isAsync) {
+      returnType = 'Promise<void>'
+    }
+    else {
+      returnType = 'void'
+    }
+  }
   parts.push(': ', returnType, ';')
 
   return parts.join('')
@@ -381,10 +399,22 @@ export function buildClassBody(node: ClassDeclaration): string {
       }).join(', ')
       parts.push('(', params, ')')
 
-      // Add return type - for generators, ensure proper Generator/Iterator type
-      let returnType = member.type?.getText() || 'void'
-      if (isGenerator && returnType === 'void') {
-        returnType = 'Generator<unknown>'
+      // Add return type - for generators, ensure proper Generator/AsyncGenerator type
+      const isAsync = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AsyncKeyword)
+      let returnType = member.type?.getText()
+      if (!returnType) {
+        if (isAsync && isGenerator) {
+          returnType = 'AsyncGenerator<unknown, void, unknown>'
+        }
+        else if (isGenerator) {
+          returnType = 'Generator<unknown, void, unknown>'
+        }
+        else if (isAsync) {
+          returnType = 'Promise<void>'
+        }
+        else {
+          returnType = 'void'
+        }
       }
       parts.push(': ', returnType, ';')
 

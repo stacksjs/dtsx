@@ -114,8 +114,24 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
     defaultValue: param.initializer?.getText(),
   }))
 
-  // Extract return type
-  const returnType = node.type?.getText() || (isAsync ? 'Promise<void>' : 'void')
+  // Extract return type with proper handling for async generators and type predicates
+  let returnType = node.type?.getText()
+  if (!returnType) {
+    if (isAsync && isGenerator) {
+      // async function* returns AsyncGenerator
+      returnType = 'AsyncGenerator<unknown, void, unknown>'
+    }
+    else if (isGenerator) {
+      // function* returns Generator
+      returnType = 'Generator<unknown, void, unknown>'
+    }
+    else if (isAsync) {
+      returnType = 'Promise<void>'
+    }
+    else {
+      returnType = 'void'
+    }
+  }
 
   // Extract generics
   const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')

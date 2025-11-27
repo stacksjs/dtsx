@@ -28,11 +28,13 @@ export * from './errors'
 export * from './plugins'
 
 // Common utilities
+export * from './branded-types'
 export * from './bundler'
 export * from './cache'
 export * from './formatter'
 export * from './logger'
 export * from './parser'
+export * from './type-mappings'
 export * from './utils'
 
 // Advanced features - larger bundle impact
