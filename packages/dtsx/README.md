@@ -166,7 +166,11 @@ dtsx watch --root ./src --outdir ./dist --debounce 300
 Bundle multiple declaration files into a single file:
 
 ```bash
-dtsx bundle --outdir ./dist --output bundle.d.ts
+# Bundle declarations using the generate command with --bundle flag
+dtsx generate --bundle --bundle-output index.d.ts
+
+# Or with custom output directory
+dtsx generate --outdir ./dist --bundle --bundle-output types.d.ts
 ```
 
 #### Workspace/Monorepo Support
@@ -284,11 +288,10 @@ echo "export function foo(): string { return 'bar' }" | dtsx stdin
 
 - `--debounce <ms>`: Debounce delay in milliseconds _(default: 100)_
 
-#### Bundle Options
+#### Bundle Options (use with generate command)
 
-- `--output <file>`: Output filename _(default: 'index.d.ts')_
-- `--banner <text>`: Add banner comment to output
-- `--footer <text>`: Add footer comment to output
+- `--bundle`: Enable bundling of declarations into a single file
+- `--bundle-output <file>`: Output filename when bundling _(default: 'index.d.ts')_
 
 To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
 

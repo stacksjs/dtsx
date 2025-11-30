@@ -29,27 +29,27 @@
       "import": "./dist/src/index.js"
     },
     "./vite": {
-      "types": "./dist/src/plugins/vite.d.ts",
+      "types": "./dist/plugins/vite.d.ts",
       "import": "./dist/src/plugins/vite.js"
     },
     "./bun": {
-      "types": "./dist/src/plugins/bun.d.ts",
+      "types": "./dist/plugins/bun.d.ts",
       "import": "./dist/src/plugins/bun.js"
     },
     "./esbuild": {
-      "types": "./dist/src/plugins/esbuild.d.ts",
+      "types": "./dist/plugins/esbuild.d.ts",
       "import": "./dist/src/plugins/esbuild.js"
     },
     "./tsup": {
-      "types": "./dist/src/plugins/tsup.d.ts",
+      "types": "./dist/plugins/tsup.d.ts",
       "import": "./dist/src/plugins/tsup.js"
     },
     "./webpack": {
-      "types": "./dist/src/plugins/webpack.d.ts",
+      "types": "./dist/plugins/webpack.d.ts",
       "import": "./dist/src/plugins/webpack.js"
     },
     "./plugins": {
-      "types": "./dist/src/plugins/index.d.ts",
+      "types": "./dist/plugins/index.d.ts",
       "import": "./dist/src/plugins/index.js"
     },
     "./*": {
