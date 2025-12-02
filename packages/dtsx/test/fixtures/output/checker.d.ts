@@ -56,7 +56,6 @@ declare class SymbolTrackerImpl implements SymbolTracker {
   reportTruncationError(): void;
   reportNonlocalAugmentation(containingFile: SourceFile, parentSymbol: Symbol, augmentingSymbol: Symbol): void;
   reportNonSerializableProperty(propertyName: string): void;
-  private onDiagnosticReported(): void;
   reportInferenceFallback(node: Node): void;
 }
 declare const enum ReferenceHint {

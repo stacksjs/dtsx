@@ -72,7 +72,6 @@ export type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
  * ```
  */
 export declare class Logger {
-  private name: string;
   constructor(name: string);
   info(message: string, data?: any): void;
   error(message: string, error?: Error): void;

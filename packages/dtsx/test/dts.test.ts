@@ -39,6 +39,7 @@ describe('dts-generation', () => {
     'interface',
     'module',
     'namespace',
+    'private-members',
     'type',
     'type-interface-imports',
     'variable',

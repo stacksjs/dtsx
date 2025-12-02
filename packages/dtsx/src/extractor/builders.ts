@@ -277,6 +277,7 @@ export function buildClassDeclaration(node: ClassDeclaration, isExported: boolea
 
 /**
  * Helper to build member modifiers string efficiently
+ * TypeScript modifier order: private/protected/public, static, abstract, readonly
  */
 function buildMemberModifiers(
   isStatic: boolean,
@@ -286,16 +287,20 @@ function buildMemberModifiers(
   isProtected: boolean,
 ): string {
   const parts: string[] = ['  ']
-  if (isStatic)
-    parts.push('static ')
-  if (isAbstract)
-    parts.push('abstract ')
-  if (isReadonly)
-    parts.push('readonly ')
+  // Access modifiers come first
   if (isPrivate)
     parts.push('private ')
   else if (isProtected)
     parts.push('protected ')
+  // Then static
+  if (isStatic)
+    parts.push('static ')
+  // Then abstract
+  if (isAbstract)
+    parts.push('abstract ')
+  // Then readonly
+  if (isReadonly)
+    parts.push('readonly ')
   return parts.join('')
 }
 
@@ -346,6 +351,12 @@ export function buildClassBody(node: ClassDeclaration): string {
       // First, add property declarations for parameter properties
       for (const param of member.parameters) {
         if (param.modifiers && param.modifiers.length > 0) {
+          // Skip private parameter properties - they're not part of the public API
+          const isPrivateParam = param.modifiers.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+          if (isPrivateParam) {
+            continue
+          }
+
           // This is a parameter property, add it as a separate property declaration
           const name = getParameterName(param)
           const type = param.type?.getText() || 'any'
@@ -372,6 +383,12 @@ export function buildClassBody(node: ClassDeclaration): string {
         continue
       }
 
+      // Skip private keyword methods - they're not part of the public API
+      const isPrivateMethod = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      if (isPrivateMethod) {
+        continue
+      }
+
       // Method signature without implementation
       const name = getMemberNameText(member)
       const isGenerator = !!member.asteriskToken
@@ -379,7 +396,7 @@ export function buildClassBody(node: ClassDeclaration): string {
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
         false,
-        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        false, // Already filtered out private
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
@@ -434,13 +451,19 @@ export function buildClassBody(node: ClassDeclaration): string {
         continue
       }
 
+      // Skip private keyword properties - they're not part of the public API
+      const isPrivateProperty = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      if (isPrivateProperty) {
+        continue
+      }
+
       // Property declaration
       const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword),
-        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        false, // Already filtered out private
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
@@ -455,13 +478,19 @@ export function buildClassBody(node: ClassDeclaration): string {
         continue
       }
 
+      // Skip private keyword accessors - they're not part of the public API
+      const isPrivateAccessor = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      if (isPrivateAccessor) {
+        continue
+      }
+
       // Get accessor declaration
       const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
         false,
-        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        false, // Already filtered out private
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
@@ -474,13 +503,19 @@ export function buildClassBody(node: ClassDeclaration): string {
         continue
       }
 
+      // Skip private keyword accessors - they're not part of the public API
+      const isPrivateAccessor = member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword)
+      if (isPrivateAccessor) {
+        continue
+      }
+
       // Set accessor declaration
       const name = getMemberNameText(member)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
         false,
-        !!member.modifiers?.some(mod => mod.kind === SyntaxKind.PrivateKeyword),
+        false, // Already filtered out private
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
