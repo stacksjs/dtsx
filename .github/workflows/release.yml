@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.0
+      - uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2.0.2
+        uses: oven-sh/setup-bun@v2.1.1
         # env:
         #   BUN_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
         with:
