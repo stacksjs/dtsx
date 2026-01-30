@@ -74,7 +74,7 @@ jobs:
 
       - name: Download Base Benchmark (for PR comparison)
         if: github.event_name == 'pull_request'
-        uses: dawidd6/action-download-artifact@v12
+        uses: dawidd6/action-download-artifact@v13
         with:
           workflow: benchmark.yml
           branch: main
