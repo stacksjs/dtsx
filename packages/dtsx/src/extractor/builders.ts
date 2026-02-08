@@ -146,6 +146,13 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
     }
     else if (isMethodSignature(member)) {
       const name = getInterfaceMemberName(member)
+
+      // Extract generic type parameters on the method itself (e.g., find<S extends T>(...))
+      let generics = ''
+      if (member.typeParameters && member.typeParameters.length > 0) {
+        generics = `<${member.typeParameters.map(tp => tp.getText()).join(', ')}>`
+      }
+
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
         const paramType = param.type?.getText() || 'any'
@@ -159,7 +166,7 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
       }).join(', ')
       const returnType = member.type?.getText() || 'void'
       const optional = member.questionToken ? '?' : ''
-      members.push(`  ${name}${optional}(${params}): ${returnType}`)
+      members.push(`  ${name}${optional}${generics}(${params}): ${returnType}`)
     }
     else if (isCallSignatureDeclaration(member)) {
       // Call signature: (param: type) => returnType

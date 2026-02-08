@@ -22,7 +22,7 @@ export declare const promiseRejected: Promise<never>;
 export declare const promiseAll: Promise<[1, 'two']>;
 // Date and built-in types
 export declare const dateInstance: Date;
-export declare const mapInstance: Map<any, any>;
+export declare const mapInstance: Map<string, number>;
 export declare const setInstance: Set<any>;
 export declare const regexInstance: RegExp;
 export declare const errorInstance: Error;

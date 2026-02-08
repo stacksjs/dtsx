@@ -43,13 +43,15 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
 
   // Number literals
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    if (inUnion && !isConst) return 'number'
+    if (inUnion && !isConst)
+      return 'number'
     return trimmed
   }
 
   // Boolean literals
   if (trimmed === 'true' || trimmed === 'false') {
-    if (inUnion && !isConst) return 'boolean'
+    if (inUnion && !isConst)
+      return 'boolean'
     return trimmed
   }
 
@@ -67,6 +69,11 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
   // Object literals
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     return inferObjectType(trimmed, isConst)
+  }
+
+  // New expressions (check before function expressions since `new X(() => {})` contains `=>`)
+  if (trimmed.startsWith('new ')) {
+    return inferNewExpressionType(trimmed)
   }
 
   // Function expressions
@@ -91,11 +98,6 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
   // Template literal expressions
   if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
     return inferTemplateLiteralType(trimmed, isConst)
-  }
-
-  // New expressions
-  if (trimmed.startsWith('new ')) {
-    return inferNewExpressionType(trimmed)
   }
 
   // Promise expressions
@@ -158,10 +160,33 @@ function inferTemplateLiteralType(value: string, isConst: boolean): string {
  * Infer type from new expression
  */
 function inferNewExpressionType(value: string): string {
+  // Try to capture class name and optional generic params: new Map<string, number>()
   const match = value.match(/^new\s+([A-Z][a-zA-Z0-9]*)/)
   if (match) {
     const className = match[1]
-    // Common built-in types
+
+    // Check if the expression includes explicit generic type parameters
+    const afterClass = value.slice(match[0].length)
+    if (afterClass.startsWith('<')) {
+      // Extract the generic params by finding the matching '>'
+      let depth = 0
+      let end = -1
+      for (let i = 0; i < afterClass.length; i++) {
+        if (afterClass[i] === '<') {
+          depth++
+        }
+        else if (afterClass[i] === '>') {
+          depth--
+          if (depth === 0) { end = i; break }
+        }
+      }
+      if (end !== -1) {
+        const generics = afterClass.slice(0, end + 1)
+        return `${className}${generics}`
+      }
+    }
+
+    // Fallback: use default generic params for known built-in types
     switch (className) {
       case 'Date': return 'Date'
       case 'Map': return 'Map<any, any>'

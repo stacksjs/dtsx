@@ -6,7 +6,9 @@ import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclara
 import type { Declaration } from '../types'
 import type { AsyncParseConfig } from './cache'
 import { forEachChild, SyntaxKind } from 'typescript'
-import { getSourceFile, getSourceFileAsync } from './cache'
+import { getSourceFile, getSourceFileAsync, hashContent } from './cache'
+// Re-export all public APIs
+import { clearSourceFileCache as _clearSFCache } from './cache'
 import {
   extractClassDeclaration,
   extractEnumDeclaration,
@@ -34,10 +36,8 @@ export {
   buildVariableDeclaration,
   getInterfaceBody,
 } from './builders'
-// Re-export all public APIs
 export {
   batchParseSourceFiles,
-  clearSourceFileCache,
   getPendingParseCount,
   getSourceFileAsync,
   getSourceFileCacheSize,
@@ -72,12 +72,37 @@ export {
 } from './helpers'
 
 /**
+ * Cache for extracted declarations to avoid re-walking the AST when source hasn't changed.
+ * Key: `${filePath}:${keepComments}`, Value: { declarations, contentHash }
+ */
+const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint }>()
+
+/**
+ * Clear all extractor caches (source files and declarations)
+ */
+export function clearSourceFileCache(): void {
+  _clearSFCache()
+  declarationCache.clear()
+}
+
+/**
  * Extract only public API declarations from TypeScript source code
  * This focuses on what should be in .d.ts files, not implementation details
  */
 export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
+  const contentHash = hashContent(sourceCode)
+  const cacheKey = `${filePath}:${keepComments ? 1 : 0}`
+  const cached = declarationCache.get(cacheKey)
+
+  if (cached && cached.contentHash === contentHash) {
+    return cached.declarations
+  }
+
   const sourceFile = getSourceFile(filePath, sourceCode)
-  return extractDeclarationsFromSourceFile(sourceFile, sourceCode, keepComments)
+  const declarations = extractDeclarationsFromSourceFile(sourceFile, sourceCode, keepComments)
+
+  declarationCache.set(cacheKey, { declarations, contentHash })
+  return declarations
 }
 
 /**

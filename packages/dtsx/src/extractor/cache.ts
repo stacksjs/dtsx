@@ -10,7 +10,12 @@ import { createSourceFile, ScriptKind, ScriptTarget } from 'typescript'
  * Cache for parsed SourceFile objects to avoid re-parsing
  * Key: filePath, Value: { sourceFile, contentHash, lastAccess }
  */
-const sourceFileCache = new Map<string, { sourceFile: SourceFile, contentHash: number, lastAccess: number }>()
+const sourceFileCache = new Map<string, { sourceFile: SourceFile, contentHash: number | bigint, lastAccess: number }>()
+
+/**
+ * Whether Bun.hash is available (much faster than JS hash)
+ */
+const hasBunHash = typeof globalThis.Bun?.hash === 'function'
 
 /**
  * Pending async parse operations to prevent duplicate parsing
@@ -46,9 +51,13 @@ export interface AsyncParseConfig {
 const MAX_CACHE_SIZE = 100
 
 /**
- * Simple hash function for content comparison
+ * Fast hash function for content comparison.
+ * Uses Bun.hash (native wyhash) when available, falls back to JS implementation.
  */
-export function hashContent(content: string): number {
+export function hashContent(content: string): number | bigint {
+  if (hasBunHash) {
+    return Bun.hash(content)
+  }
   let hash = 0
   for (let i = 0; i < content.length; i++) {
     const char = content.charCodeAt(i)
