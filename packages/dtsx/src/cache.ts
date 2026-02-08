@@ -1,7 +1,7 @@
 import type { DtsGenerationConfig } from './types'
-import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { hashContent } from './extractor/cache'
 
 /**
  * Cache entry for a single file
@@ -62,14 +62,14 @@ export class BuildCache {
       importOrder: config.importOrder,
       outputStructure: config.outputStructure,
     }
-    return createHash('md5').update(JSON.stringify(relevantConfig)).digest('hex')
+    return String(hashContent(JSON.stringify(relevantConfig)))
   }
 
   /**
-   * Hash file content
+   * Hash file content using shared fast hash (Bun.hash when available)
    */
-  private hashContent(content: string): string {
-    return createHash('md5').update(content).digest('hex')
+  private hashString(content: string): string {
+    return String(hashContent(content))
   }
 
   /**
@@ -164,7 +164,7 @@ export class BuildCache {
       if (mtime > entry.sourceMtime) {
         // Mtime changed, verify with hash
         const content = readFileSync(filePath, 'utf-8')
-        const hash = this.hashContent(content)
+        const hash = this.hashString(content)
 
         if (hash !== entry.sourceHash) {
           return null
@@ -209,10 +209,10 @@ export class BuildCache {
 
     this.manifest.entries[relativePath] = {
       sourcePath: relativePath,
-      sourceHash: this.hashContent(sourceContent),
+      sourceHash: this.hashString(sourceContent),
       sourceMtime: mtime,
       dtsContent,
-      dtsHash: this.hashContent(dtsContent),
+      dtsHash: this.hashString(dtsContent),
       generatedAt: Date.now(),
       configHash: this.configHash,
     }

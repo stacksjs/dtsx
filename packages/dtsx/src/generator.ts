@@ -449,7 +449,9 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
 /**
  * Cache for compiled Glob patterns to avoid re-creation per file
+ * Bounded to prevent memory leaks from dynamic patterns
  */
+const MAX_GLOB_CACHE_SIZE = 50
 const compiledGlobCache = new Map<string, Glob>()
 
 function getCompiledGlob(pattern: string): Glob {
@@ -457,6 +459,14 @@ function getCompiledGlob(pattern: string): Glob {
   if (!glob) {
     glob = new Glob(pattern)
     compiledGlobCache.set(pattern, glob)
+
+    // Evict oldest entry if cache exceeds max size
+    if (compiledGlobCache.size > MAX_GLOB_CACHE_SIZE) {
+      const firstKey = compiledGlobCache.keys().next().value
+      if (firstKey !== undefined) {
+        compiledGlobCache.delete(firstKey)
+      }
+    }
   }
   return glob
 }

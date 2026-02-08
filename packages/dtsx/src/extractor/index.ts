@@ -73,9 +73,11 @@ export {
 
 /**
  * Cache for extracted declarations to avoid re-walking the AST when source hasn't changed.
- * Key: `${filePath}:${keepComments}`, Value: { declarations, contentHash }
+ * Key: `${filePath}:${keepComments}`, Value: { declarations, contentHash, lastAccess }
+ * Bounded to prevent memory leaks when processing many files
  */
-const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint }>()
+const MAX_DECLARATION_CACHE_SIZE = 100
+const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint, lastAccess: number }>()
 
 /**
  * Clear all extractor caches (source files and declarations)
@@ -93,15 +95,33 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
   const contentHash = hashContent(sourceCode)
   const cacheKey = `${filePath}:${keepComments ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)
+  const now = Date.now()
 
   if (cached && cached.contentHash === contentHash) {
+    cached.lastAccess = now
     return cached.declarations
   }
 
   const sourceFile = getSourceFile(filePath, sourceCode)
   const declarations = extractDeclarationsFromSourceFile(sourceFile, sourceCode, keepComments)
 
-  declarationCache.set(cacheKey, { declarations, contentHash })
+  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
+
+  // Evict oldest entry if cache exceeds max size
+  if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
+    let oldestKey: string | null = null
+    let oldestTime = Infinity
+    for (const [key, entry] of declarationCache) {
+      if (entry.lastAccess < oldestTime) {
+        oldestTime = entry.lastAccess
+        oldestKey = key
+      }
+    }
+    if (oldestKey) {
+      declarationCache.delete(oldestKey)
+    }
+  }
+
   return declarations
 }
 

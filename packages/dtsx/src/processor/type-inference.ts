@@ -4,11 +4,20 @@
  */
 
 /**
+ * Maximum recursion depth for type inference to prevent stack overflow on deeply nested types
+ */
+const MAX_INFERENCE_DEPTH = 20
+
+/**
  * Infer and narrow types from values
  * @param inUnion - When true, widens number/boolean literals to their base types (used in array union contexts)
+ * @param _depth - Internal recursion depth counter (do not set manually)
  */
-export function inferNarrowType(value: any, isConst: boolean = false, inUnion: boolean = false): string {
+export function inferNarrowType(value: unknown, isConst: boolean = false, inUnion: boolean = false, _depth: number = 0): string {
   if (!value || typeof value !== 'string')
+    return 'unknown'
+
+  if (_depth >= MAX_INFERENCE_DEPTH)
     return 'unknown'
 
   const trimmed = value.trim()
@@ -63,12 +72,12 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
 
   // Array literals
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return inferArrayType(trimmed, isConst)
+    return inferArrayType(trimmed, isConst, _depth + 1)
   }
 
   // Object literals
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return inferObjectType(trimmed, isConst)
+    return inferObjectType(trimmed, isConst, _depth + 1)
   }
 
   // New expressions (check before function expressions since `new X(() => {})` contains `=>`)
@@ -78,7 +87,7 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
 
   // Function expressions
   if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed, inUnion)
+    return inferFunctionType(trimmed, inUnion, _depth)
   }
 
   // As const assertions
@@ -89,10 +98,10 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
       if (!content)
         return 'readonly []'
       const elements = parseArrayElements(content)
-      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
+      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true, false, _depth + 1))
       return `readonly [${elementTypes.join(', ')}]`
     }
-    return inferNarrowType(withoutAsConst, true, inUnion)
+    return inferNarrowType(withoutAsConst, true, inUnion, _depth + 1)
   }
 
   // Template literal expressions
@@ -102,7 +111,7 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
 
   // Promise expressions
   if (trimmed.startsWith('Promise.')) {
-    return inferPromiseType(trimmed)
+    return inferPromiseType(trimmed, _depth)
   }
 
   // Await expressions
@@ -131,8 +140,8 @@ export function inferNarrowType(value: any, isConst: boolean = false, inUnion: b
  * Infer and narrow types from values in union context (for arrays)
  * Widens number/boolean literals to base types unless const
  */
-export function inferNarrowTypeInUnion(value: any, isConst: boolean = false): string {
-  return inferNarrowType(value, isConst, true)
+export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false, _depth: number = 0): string {
+  return inferNarrowType(value, isConst, true, _depth)
 }
 
 /**
@@ -208,13 +217,13 @@ function inferNewExpressionType(value: string): string {
 /**
  * Infer type from Promise expression
  */
-function inferPromiseType(value: string): string {
+function inferPromiseType(value: string, _depth: number = 0): string {
   if (value.startsWith('Promise.resolve(')) {
     // Try to extract the argument type
     const match = value.match(/Promise\.resolve\(([^)]+)\)/)
     if (match) {
       const arg = match[1].trim()
-      const argType = inferNarrowType(arg, false)
+      const argType = inferNarrowType(arg, false, false, _depth + 1)
       return `Promise<${argType}>`
     }
     return 'Promise<unknown>'
@@ -231,12 +240,12 @@ function inferPromiseType(value: string): string {
       const elementTypes = elements.map((el) => {
         const trimmed = el.trim()
         if (trimmed.startsWith('Promise.resolve(')) {
-          const promiseType = inferPromiseType(trimmed)
+          const promiseType = inferPromiseType(trimmed, _depth + 1)
           // Extract the inner type from Promise<T>
           const innerMatch = promiseType.match(/Promise<(.+)>/)
           return innerMatch ? innerMatch[1] : 'unknown'
         }
-        return inferNarrowType(trimmed, false)
+        return inferNarrowType(trimmed, false, false, _depth + 1)
       })
       return `Promise<[${elementTypes.join(', ')}]>`
     }
@@ -248,12 +257,15 @@ function inferPromiseType(value: string): string {
 /**
  * Infer array type from array literal
  */
-export function inferArrayType(value: string, isConst: boolean): string {
+export function inferArrayType(value: string, isConst: boolean, _depth: number = 0): string {
   // Remove brackets and parse elements
   const content = value.slice(1, -1).trim()
 
   if (!content)
     return 'Array<never>'
+
+  if (_depth >= MAX_INFERENCE_DEPTH)
+    return 'Array<unknown>'
 
   // Simple parsing - this would need to be more sophisticated for complex cases
   const elements = parseArrayElements(content)
@@ -271,15 +283,15 @@ export function inferArrayType(value: string, isConst: boolean): string {
         if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
           const innerContent = withoutAsConst.slice(1, -1).trim()
           const innerElements = parseArrayElements(innerContent)
-          const innerTypes = innerElements.map(innerEl => inferNarrowType(innerEl.trim(), true))
+          const innerTypes = innerElements.map(innerEl => inferNarrowType(innerEl.trim(), true, false, _depth + 1))
           return `readonly [${innerTypes.join(', ')}]`
         }
-        return inferNarrowType(withoutAsConst, true)
+        return inferNarrowType(withoutAsConst, true, false, _depth + 1)
       }
       if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-        return inferArrayType(trimmedEl, true)
+        return inferArrayType(trimmedEl, true, _depth + 1)
       }
-      return inferNarrowType(trimmedEl, true)
+      return inferNarrowType(trimmedEl, true, false, _depth + 1)
     })
     return `readonly [\n    ${elementTypes.join(' |\n    ')}\n  ]`
   }
@@ -289,9 +301,9 @@ export function inferArrayType(value: string, isConst: boolean): string {
     const trimmedEl = el.trim()
     // Check if element is an array itself
     if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-      return inferArrayType(trimmedEl, isConst)
+      return inferArrayType(trimmedEl, isConst, _depth + 1)
     }
-    return inferNarrowTypeInUnion(trimmedEl, isConst)
+    return inferNarrowTypeInUnion(trimmedEl, isConst, _depth + 1)
   })
 
   // For const arrays, ALWAYS create readonly tuples for better type safety
@@ -368,19 +380,22 @@ export function parseArrayElements(content: string): string[] {
 /**
  * Infer object type from object literal
  */
-export function inferObjectType(value: string, isConst: boolean): string {
+export function inferObjectType(value: string, isConst: boolean, _depth: number = 0): string {
   // Remove braces
   const content = value.slice(1, -1).trim()
 
   if (!content)
     return '{}'
 
+  if (_depth >= MAX_INFERENCE_DEPTH)
+    return 'Record<string, unknown>'
+
   // Parse object properties
   const properties = parseObjectProperties(content)
   const propTypes: string[] = []
 
   for (const [key, val] of properties) {
-    let valueType = inferNarrowType(val, isConst)
+    let valueType = inferNarrowType(val, isConst, false, _depth + 1)
 
     // Handle method signatures - clean up async and parameter defaults
     if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
@@ -661,7 +676,7 @@ function findMainArrowIndex(str: string): number {
 /**
  * Infer function type from function expression
  */
-export function inferFunctionType(value: string, inUnion: boolean = false): string {
+export function inferFunctionType(value: string, inUnion: boolean = false, _depth: number = 0): string {
   const trimmed = value.trim()
 
   // Handle very complex function types early (but not function expressions)
@@ -699,7 +714,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false): stri
     }
     else {
       // Expression body - try to infer
-      returnType = inferNarrowType(body, false)
+      returnType = inferNarrowType(body, false, false, _depth + 1)
     }
 
     const funcType = `${params} => Promise<${returnType}>`
@@ -788,7 +803,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false): stri
         returnType = 'unknown'
       }
       else {
-        returnType = inferNarrowType(body, false)
+        returnType = inferNarrowType(body, false, false, _depth + 1)
       }
     }
 

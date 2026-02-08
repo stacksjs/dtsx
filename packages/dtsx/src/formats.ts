@@ -40,8 +40,8 @@ interface JSONSchemaType {
   required?: string[]
   items?: JSONSchemaType | JSONSchemaType[]
   additionalProperties?: boolean | JSONSchemaType
-  enum?: any[]
-  const?: any
+  enum?: unknown[]
+  const?: unknown
   oneOf?: JSONSchemaType[]
   anyOf?: JSONSchemaType[]
   allOf?: JSONSchemaType[]
@@ -57,7 +57,7 @@ interface JSONSchemaType {
   maximum?: number
   minItems?: number
   maxItems?: number
-  default?: any
+  default?: unknown
 }
 
 /**

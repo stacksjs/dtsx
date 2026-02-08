@@ -11,15 +11,15 @@ export interface LSPMessage {
   jsonrpc: '2.0'
   id?: number | string
   method?: string
-  params?: any
-  result?: any
+  params?: unknown
+  result?: unknown
   error?: LSPError
 }
 
 export interface LSPError {
   code: number
   message: string
-  data?: any
+  data?: unknown
 }
 
 /**
@@ -268,7 +268,7 @@ export interface TextEdit {
 export interface Command {
   title: string
   command: string
-  arguments?: any[]
+  arguments?: unknown[]
 }
 
 /**

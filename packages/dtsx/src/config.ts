@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { loadConfig } from 'bunfig'
+import { logger } from './logger'
 
 export const defaultConfig: DtsGenerationConfig = {
   cwd: process.cwd(),
@@ -56,7 +57,7 @@ async function loadDtsxConfig(cwd: string = process.cwd()): Promise<DtsGeneratio
       }
       catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
-        console.warn(`Warning: Failed to load config from ${filename}: ${errorMessage}`)
+        logger.warn(`Failed to load config from ${filename}: ${errorMessage}`)
       }
     }
   }

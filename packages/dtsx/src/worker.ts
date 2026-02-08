@@ -7,6 +7,7 @@ import type { Declaration, DtsGenerationConfig } from './types'
 import { cpus } from 'node:os'
 import { resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { logger } from './logger'
 
 /**
  * Worker pool configuration
@@ -212,13 +213,13 @@ export class WorkerPool {
     })
 
     worker.on('error', (error) => {
-      console.error('Worker error:', error)
+      logger.error('Worker error:', error)
       this.handleWorkerError(instance, error)
     })
 
     worker.on('exit', (code) => {
       if (code !== 0 && !this.isShuttingDown) {
-        console.error(`Worker exited with code ${code}`)
+        logger.error(`Worker exited with code ${code}`)
         this.removeWorker(instance)
       }
     })

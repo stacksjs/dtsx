@@ -434,7 +434,7 @@ export interface Declaration {
   members?: Declaration[]
   parameters?: ParameterDeclaration[]
   returnType?: string
-  value?: any
+  value?: unknown
   source?: string // for imports
   specifiers?: ImportSpecifier[] // for imports
   isTypeOnly?: boolean // for imports/exports
