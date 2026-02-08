@@ -147,11 +147,12 @@ export function shouldIncludeNonExportedInterface(interfaceName: string, sourceC
     }
     interfacePatternCache.set(interfaceName, patterns)
 
-    // Evict old entries if cache grows too large
+    // Evict a batch of entries if cache grows too large
     if (interfacePatternCache.size > 200) {
-      const firstKey = interfacePatternCache.keys().next().value
-      if (firstKey)
-        interfacePatternCache.delete(firstKey)
+      const keysToDelete = Array.from(interfacePatternCache.keys()).slice(0, 50)
+      for (const key of keysToDelete) {
+        interfacePatternCache.delete(key)
+      }
     }
   }
 
@@ -163,72 +164,23 @@ export function shouldIncludeNonExportedInterface(interfaceName: string, sourceC
 }
 
 /**
+ * Built-in TypeScript types and common generic type parameters (hoisted to module level for performance)
+ */
+const BUILT_IN_TYPES = new Set([
+  'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
+  'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
+  'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
+  'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
+  'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet',
+  'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H',
+  'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z',
+])
+
+/**
  * Check if a type is a built-in TypeScript type
  */
 export function isBuiltInType(typeName: string): boolean {
-  const builtInTypes = new Set([
-    'string',
-    'number',
-    'boolean',
-    'object',
-    'any',
-    'unknown',
-    'never',
-    'void',
-    'undefined',
-    'null',
-    'Array',
-    'Promise',
-    'Record',
-    'Partial',
-    'Required',
-    'Pick',
-    'Omit',
-    'Exclude',
-    'Extract',
-    'NonNullable',
-    'ReturnType',
-    'Parameters',
-    'ConstructorParameters',
-    'InstanceType',
-    'ThisType',
-    'Function',
-    'Date',
-    'RegExp',
-    'Error',
-    'Map',
-    'Set',
-    'WeakMap',
-    'WeakSet',
-    // Common generic type parameters
-    'T',
-    'K',
-    'V',
-    'U',
-    'R',
-    'P',
-    'E',
-    'A',
-    'B',
-    'C',
-    'D',
-    'F',
-    'G',
-    'H',
-    'I',
-    'J',
-    'L',
-    'M',
-    'N',
-    'O',
-    'Q',
-    'S',
-    'W',
-    'X',
-    'Y',
-    'Z',
-  ])
-  return builtInTypes.has(typeName)
+  return BUILT_IN_TYPES.has(typeName)
 }
 
 /**
@@ -237,34 +189,38 @@ export function isBuiltInType(typeName: string): boolean {
  */
 export function extractTripleSlashDirectives(sourceCode: string): string[] {
   const directives: string[] = []
-  const lines = sourceCode.split('\n')
+  let lineStart = 0
 
-  for (const line of lines) {
-    const trimmed = line.trim()
+  // Scan line-by-line without splitting the entire source (stops early for large files)
+  for (let i = 0; i <= sourceCode.length; i++) {
+    if (i === sourceCode.length || sourceCode[i] === '\n') {
+      // Extract and trim the current line
+      let start = lineStart
+      let end = i
+      while (start < end && (sourceCode[start] === ' ' || sourceCode[start] === '\t' || sourceCode[start] === '\r')) start++
+      while (end > start && (sourceCode[end - 1] === ' ' || sourceCode[end - 1] === '\t' || sourceCode[end - 1] === '\r')) end--
+      const trimmed = sourceCode.slice(start, end)
+      lineStart = i + 1
 
-    // Triple-slash directives must be at the very beginning of the file
-    // (only whitespace and other triple-slash directives can precede them)
-    if (trimmed.startsWith('///')) {
-      // Match reference directives: /// <reference path="..." />, /// <reference types="..." />, /// <reference lib="..." />
-      if (trimmed.match(/^\/\/\/\s*<reference\s+(path|types|lib|no-default-lib)\s*=\s*["'][^"']+["']\s*\/>/)) {
-        directives.push(trimmed)
+      // Triple-slash directives must be at the very beginning of the file
+      // (only whitespace and other triple-slash directives can precede them)
+      if (trimmed.startsWith('///')) {
+        if (trimmed.match(/^\/\/\/\s*<reference\s+(path|types|lib|no-default-lib)\s*=\s*["'][^"']+["']\s*\/>/)) {
+          directives.push(trimmed)
+        }
+        else if (trimmed.match(/^\/\/\/\s*<amd-module\s+name\s*=\s*["'][^"']+["']\s*\/>/)) {
+          directives.push(trimmed)
+        }
+        else if (trimmed.match(/^\/\/\/\s*<amd-dependency\s+path\s*=\s*["'][^"']+["']/)) {
+          directives.push(trimmed)
+        }
       }
-      // Match amd-module directive: /// <amd-module name="..." />
-      else if (trimmed.match(/^\/\/\/\s*<amd-module\s+name\s*=\s*["'][^"']+["']\s*\/>/)) {
-        directives.push(trimmed)
+      else if (trimmed === '' || trimmed.startsWith('//')) {
+        continue
       }
-      // Match amd-dependency directive: /// <amd-dependency path="..." />
-      else if (trimmed.match(/^\/\/\/\s*<amd-dependency\s+path\s*=\s*["'][^"']+["']/)) {
-        directives.push(trimmed)
+      else {
+        break
       }
-    }
-    else if (trimmed === '' || trimmed.startsWith('//')) {
-      // Empty lines or regular comments can precede triple-slash directives
-      continue
-    }
-    else {
-      // Non-comment, non-empty line - stop looking for directives
-      break
     }
   }
 

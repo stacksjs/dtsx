@@ -76,84 +76,8 @@ export {
  * This focuses on what should be in .d.ts files, not implementation details
  */
 export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
-  const declarations: Declaration[] = []
-
-  // Get or create cached TypeScript source file
   const sourceFile = getSourceFile(filePath, sourceCode)
-
-  // Visit only top-level declarations
-  function visitTopLevel(node: Node) {
-    // Only process top-level declarations, skip function bodies and implementation details
-    if (node.parent && node.parent !== sourceFile) {
-      return // Skip nested declarations
-    }
-
-    switch (node.kind) {
-      case SyntaxKind.ImportDeclaration:
-        declarations.push(extractImportDeclaration(node as ImportDeclaration, sourceCode))
-        break
-
-      case SyntaxKind.ExportDeclaration:
-        declarations.push(extractExportDeclaration(node as ExportDeclaration, sourceCode))
-        break
-
-      case SyntaxKind.ExportAssignment:
-        declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode))
-        break
-
-      case SyntaxKind.FunctionDeclaration: {
-        const funcDecl = extractFunctionDeclaration(node as FunctionDeclaration, sourceCode, sourceFile, keepComments)
-        // Only include exported functions or functions that are referenced by exported items
-        if (funcDecl && (funcDecl.isExported || shouldIncludeNonExportedFunction(funcDecl.name, sourceCode))) {
-          declarations.push(funcDecl)
-        }
-        break
-      }
-
-      case SyntaxKind.VariableStatement: {
-        const varDecls = extractVariableStatement(node as VariableStatement, sourceCode, sourceFile, keepComments)
-        declarations.push(...varDecls)
-        break
-      }
-
-      case SyntaxKind.InterfaceDeclaration: {
-        const interfaceDecl = extractInterfaceDeclaration(node as InterfaceDeclaration, sourceCode, sourceFile, keepComments)
-        // Include interfaces that are exported or referenced by exported items
-        if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
-          declarations.push(interfaceDecl)
-        }
-        break
-      }
-
-      case SyntaxKind.TypeAliasDeclaration:
-        declarations.push(extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
-        break
-
-      case SyntaxKind.ClassDeclaration:
-        declarations.push(extractClassDeclaration(node as ClassDeclaration, sourceCode, sourceFile, keepComments))
-        break
-
-      case SyntaxKind.EnumDeclaration:
-        declarations.push(extractEnumDeclaration(node as EnumDeclaration, sourceCode, sourceFile, keepComments))
-        break
-
-      case SyntaxKind.ModuleDeclaration:
-        declarations.push(extractModuleDeclaration(node as ModuleDeclaration, sourceCode, sourceFile, keepComments))
-        break
-    }
-
-    // Continue visiting only top-level child nodes
-    forEachChild(node, visitTopLevel)
-  }
-
-  visitTopLevel(sourceFile)
-
-  // Second pass: Find referenced types that aren't imported or declared
-  const referencedTypes = findReferencedTypes(declarations, sourceCode)
-  const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode)
-  declarations.push(...additionalDeclarations)
-
-  return declarations
+  return extractDeclarationsFromSourceFile(sourceFile, sourceCode, keepComments)
 }
 
 /**
@@ -180,11 +104,11 @@ function extractDeclarationsFromSourceFile(
         break
 
       case SyntaxKind.ExportDeclaration:
-        declarations.push(extractExportDeclaration(node as ExportDeclaration, sourceCode))
+        declarations.push(extractExportDeclaration(node as ExportDeclaration, sourceCode, sourceFile, keepComments))
         break
 
       case SyntaxKind.ExportAssignment:
-        declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode))
+        declarations.push(extractExportAssignment(node as ExportAssignment, sourceCode, sourceFile, keepComments))
         break
 
       case SyntaxKind.FunctionDeclaration: {
@@ -236,7 +160,7 @@ function extractDeclarationsFromSourceFile(
 
   // Second pass: Find referenced types that aren't imported or declared
   const referencedTypes = findReferencedTypes(declarations, sourceCode)
-  const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode)
+  const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode, keepComments)
   declarations.push(...additionalDeclarations)
 
   return declarations

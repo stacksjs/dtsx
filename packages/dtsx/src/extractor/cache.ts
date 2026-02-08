@@ -59,20 +59,25 @@ export function hashContent(content: string): number {
 }
 
 /**
- * Evict oldest entries if cache exceeds max size
+ * Evict oldest entry if cache exceeds max size
+ * Uses O(n) scan instead of O(n log n) sort since we add one entry at a time
  */
 export function evictOldestEntries(): void {
   if (sourceFileCache.size <= MAX_CACHE_SIZE) {
     return
   }
 
-  // Sort by last access time and remove oldest entries
-  const entries = Array.from(sourceFileCache.entries())
-    .sort((a, b) => a[1].lastAccess - b[1].lastAccess)
-
-  const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE)
-  for (const [key] of toRemove) {
-    sourceFileCache.delete(key)
+  // Find the oldest entry by last access time
+  let oldestKey: string | null = null
+  let oldestTime = Infinity
+  for (const [key, entry] of sourceFileCache) {
+    if (entry.lastAccess < oldestTime) {
+      oldestTime = entry.lastAccess
+      oldestKey = key
+    }
+  }
+  if (oldestKey) {
+    sourceFileCache.delete(oldestKey)
   }
 }
 

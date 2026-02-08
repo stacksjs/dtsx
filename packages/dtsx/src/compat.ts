@@ -263,31 +263,3 @@ export function getRuntimeInfo(): RuntimeInfo {
   }
 }
 
-/**
- * Namespace export for drop-in Bun API replacement
- */
-export const compat: {
-  file: typeof file
-  write: typeof write
-  spawn: typeof spawnProcess
-  readTextFile: typeof readTextFile
-  writeTextFile: typeof writeTextFile
-  fileExists: typeof fileExists
-  getRuntimeInfo: typeof getRuntimeInfo
-  runtime: typeof runtime
-  isBun: typeof isBun
-  isNode: typeof isNode
-} = {
-  file,
-  write,
-  spawn: spawnProcess,
-  readTextFile,
-  writeTextFile,
-  fileExists,
-  getRuntimeInfo,
-  runtime,
-  isBun,
-  isNode,
-}
-
-export default compat

@@ -6,6 +6,7 @@ import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/helpers'
 import { assertNever } from '../utils'
 import { getCachedRegex } from './cache'
+import { formatComments } from './comments'
 import {
   processClassDeclaration,
   processEnumDeclaration,
@@ -44,65 +45,7 @@ export {
   parseArrayElements,
 } from './type-inference'
 
-// Pre-compiled regex patterns for type extraction (cached at module level)
-const INTERFACE_PATTERN = /(?:export\s+)?(?:declare\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g
-const TYPE_PATTERN = /(?:export\s+)?(?:declare\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g
-const CLASS_PATTERN = /(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g
-const ENUM_PATTERN = /(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g
 const EXPORT_ITEMS_PATTERN = /export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/
-
-/**
- * Replace unresolved types with 'any' in the DTS output
- */
-function replaceUnresolvedTypes(dtsContent: string, declarations: Declaration[], imports: Declaration[]): string {
-  // Get all imported type names
-  const importedTypes = new Set<string>()
-  for (const imp of imports) {
-    const allImportedItems = extractAllImportedItems(imp.text)
-    allImportedItems.forEach(item => importedTypes.add(item))
-  }
-
-  // Get all declared type names (interfaces, types, classes, enums)
-  const declaredTypes = new Set<string>()
-  for (const decl of declarations) {
-    if (['interface', 'type', 'class', 'enum'].includes(decl.kind)) {
-      declaredTypes.add(decl.name)
-    }
-  }
-
-  // Extract all types that are actually defined in the DTS content itself
-  // This catches types that weren't extracted but are still defined in the output
-  const definedInDts = new Set<string>()
-
-  // Look for interface definitions (reset lastIndex for global regex)
-  INTERFACE_PATTERN.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = INTERFACE_PATTERN.exec(dtsContent)) !== null) {
-    definedInDts.add(match[1])
-  }
-
-  // Look for type alias definitions
-  TYPE_PATTERN.lastIndex = 0
-  while ((match = TYPE_PATTERN.exec(dtsContent)) !== null) {
-    definedInDts.add(match[1])
-  }
-
-  // Look for class definitions
-  CLASS_PATTERN.lastIndex = 0
-  while ((match = CLASS_PATTERN.exec(dtsContent)) !== null) {
-    definedInDts.add(match[1])
-  }
-
-  // Look for enum definitions
-  ENUM_PATTERN.lastIndex = 0
-  while ((match = ENUM_PATTERN.exec(dtsContent)) !== null) {
-    definedInDts.add(match[1])
-  }
-
-  // For now, don't do any automatic type replacement
-  // The proper solution is to improve the extractor to find all referenced types
-  return dtsContent
-}
 
 /**
  * Process declarations and convert them to narrow DTS format
@@ -157,9 +100,12 @@ export function processDeclarations(
   const defaultExport: string[] = []
 
   for (const decl of exports) {
+    // Prepend comments if present
+    const comments = formatComments(decl.leadingComments, keepComments)
+
     if (decl.text.startsWith('export default')) {
       const statement = decl.text.endsWith(';') ? decl.text : `${decl.text};`
-      defaultExport.push(statement)
+      defaultExport.push(comments + statement)
     }
     else {
       // Handle multi-line export statements properly
@@ -179,8 +125,9 @@ export function processDeclarations(
         }
       }
 
-      if (!exportStatements.includes(exportText)) {
-        exportStatements.push(exportText)
+      const fullExportText = comments + exportText
+      if (!exportStatements.includes(fullExportText)) {
+        exportStatements.push(fullExportText)
       }
     }
   }
@@ -435,11 +382,5 @@ export function processDeclarations(
   // Process default export last
   output.push(...defaultExport)
 
-  let result = output.filter(line => line !== '').join('\n')
-
-  // Post-process to replace unresolved internal types with 'any'
-  // This handles cases where internal interfaces/types are referenced but not extracted
-  result = replaceUnresolvedTypes(result, declarations, imports)
-
-  return result
+  return output.filter(line => line !== '').join('\n')
 }

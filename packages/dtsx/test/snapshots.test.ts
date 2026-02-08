@@ -5,46 +5,11 @@
  * consistent, correct output for complex TypeScript patterns.
  */
 
-import type { ProcessingContext } from '../src/types'
 import { describe, expect, test } from 'bun:test'
-import { extractDeclarations } from '../src/extractor'
-import { processDeclarations } from '../src/processor'
+import { normalize, processCode } from './test-utils'
 
-const TEST_FILE = 'test.ts'
-
-/**
- * Create processing context for tests
- */
-function createContext(code: string): ProcessingContext {
-  const declarations = extractDeclarations(code, TEST_FILE)
-  return {
-    filePath: TEST_FILE,
-    sourceCode: code,
-    declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
-  }
-}
-
-/**
- * Helper to generate declarations from source code
- */
 function generateDeclarations(source: string, keepComments = false): string {
-  const declarations = extractDeclarations(source, TEST_FILE, keepComments)
-  const context = createContext(source)
-  return processDeclarations(declarations, context)
-}
-
-/**
- * Normalize whitespace for comparison
- */
-function normalize(str: string): string {
-  return str
-    .split('\n')
-    .map(line => line.trimEnd())
-    .join('\n')
-    .trim()
+  return processCode(source, 'test.ts', keepComments)
 }
 
 describe('Snapshot Tests', () => {

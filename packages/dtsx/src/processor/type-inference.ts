@@ -5,8 +5,9 @@
 
 /**
  * Infer and narrow types from values
+ * @param inUnion - When true, widens number/boolean literals to their base types (used in array union contexts)
  */
-export function inferNarrowType(value: any, isConst: boolean = false): string {
+export function inferNarrowType(value: any, isConst: boolean = false, inUnion: boolean = false): string {
   if (!value || typeof value !== 'string')
     return 'unknown'
 
@@ -31,25 +32,25 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
   if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
     || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
     || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
-    // For simple string literals without expressions, always return the literal
     if (!trimmed.includes('${')) {
       return trimmed
     }
-    // Template literals with expressions only get literal type if const
     if (isConst) {
       return trimmed
     }
     return 'string'
   }
 
-  // Number literals - ALWAYS use literal types for const declarations
+  // Number literals
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    return trimmed // Always return literal number
+    if (inUnion && !isConst) return 'number'
+    return trimmed
   }
 
-  // Boolean literals - ALWAYS use literal types for const declarations
+  // Boolean literals
   if (trimmed === 'true' || trimmed === 'false') {
-    return trimmed // Always return literal boolean
+    if (inUnion && !isConst) return 'boolean'
+    return trimmed
   }
 
   // Null and undefined
@@ -70,13 +71,12 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
 
   // Function expressions
   if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed, false)
+    return inferFunctionType(trimmed, inUnion)
   }
 
   // As const assertions
   if (trimmed.endsWith('as const')) {
     const withoutAsConst = trimmed.slice(0, -8).trim()
-    // For arrays with 'as const', create readonly tuple
     if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
       const content = withoutAsConst.slice(1, -1).trim()
       if (!content)
@@ -85,7 +85,7 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
       const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
       return `readonly [${elementTypes.join(', ')}]`
     }
-    return inferNarrowType(withoutAsConst, true)
+    return inferNarrowType(withoutAsConst, true, inUnion)
   }
 
   // Template literal expressions
@@ -105,7 +105,7 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
 
   // Await expressions
   if (trimmed.startsWith('await ')) {
-    return 'unknown' // Would need async context analysis
+    return 'unknown'
   }
 
   // BigInt literals
@@ -127,115 +127,10 @@ export function inferNarrowType(value: any, isConst: boolean = false): string {
 
 /**
  * Infer and narrow types from values in union context (for arrays)
+ * Widens number/boolean literals to base types unless const
  */
 export function inferNarrowTypeInUnion(value: any, isConst: boolean = false): string {
-  if (!value || typeof value !== 'string')
-    return 'unknown'
-
-  const trimmed = value.trim()
-
-  // String literals - always use literal type for simple string literals
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
-    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
-    || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
-    // For simple string literals without expressions, always return the literal
-    if (!trimmed.includes('${')) {
-      return trimmed
-    }
-    // Template literals with expressions only get literal type if const
-    if (isConst) {
-      return trimmed
-    }
-    return 'string'
-  }
-
-  // Number literals
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    if (isConst) {
-      return trimmed
-    }
-    return 'number'
-  }
-
-  // Boolean literals
-  if (trimmed === 'true' || trimmed === 'false') {
-    if (isConst) {
-      return trimmed
-    }
-    return 'boolean'
-  }
-
-  // Null and undefined
-  if (trimmed === 'null')
-    return 'null'
-  if (trimmed === 'undefined')
-    return 'undefined'
-
-  // Array literals
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return inferArrayType(trimmed, isConst)
-  }
-
-  // Object literals
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return inferObjectType(trimmed, isConst)
-  }
-
-  // Function expressions - use union context
-  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed, true)
-  }
-
-  // As const assertions
-  if (trimmed.endsWith('as const')) {
-    const withoutAsConst = trimmed.slice(0, -8).trim()
-    // For arrays with 'as const', create readonly tuple
-    if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
-      const content = withoutAsConst.slice(1, -1).trim()
-      if (!content)
-        return 'readonly []'
-      const elements = parseArrayElements(content)
-      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true))
-      return `readonly [${elementTypes.join(', ')}]`
-    }
-    return inferNarrowTypeInUnion(withoutAsConst, true)
-  }
-
-  // Template literal expressions
-  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
-    return inferTemplateLiteralType(trimmed, isConst)
-  }
-
-  // New expressions
-  if (trimmed.startsWith('new ')) {
-    return inferNewExpressionType(trimmed)
-  }
-
-  // Promise expressions
-  if (trimmed.startsWith('Promise.')) {
-    return inferPromiseType(trimmed)
-  }
-
-  // Await expressions
-  if (trimmed.startsWith('await ')) {
-    return 'unknown' // Would need async context analysis
-  }
-
-  // BigInt literals
-  if (/^\d+n$/.test(trimmed)) {
-    if (isConst) {
-      return trimmed
-    }
-    return 'bigint'
-  }
-
-  // Symbol
-  if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
-    return 'symbol'
-  }
-
-  // Other expressions (method calls, property access, etc.)
-  return 'unknown'
+  return inferNarrowType(value, isConst, true)
 }
 
 /**

@@ -292,9 +292,9 @@ export function processImportDeclaration(decl: Declaration): string {
 /**
  * Process export statement
  */
-export function processExportDeclaration(decl: Declaration): string {
-  // Type re-exports and other export statements should be returned as-is
-  return decl.text.trim()
+export function processExportDeclaration(decl: Declaration, keepComments: boolean = true): string {
+  const comments = formatComments(decl.leadingComments, keepComments)
+  return comments + decl.text.trim()
 }
 
 /**

@@ -130,15 +130,30 @@ export class BuildCache {
    * Check if a file needs to be regenerated
    */
   needsRegeneration(filePath: string, cwd: string): boolean {
+    return this.getCachedIfValid(filePath, cwd) === null
+  }
+
+  /**
+   * Get cached content for a file
+   */
+  getCached(filePath: string, cwd: string): string | null {
+    return this.getCachedIfValid(filePath, cwd)
+  }
+
+  /**
+   * Get cached DTS content if the cache entry is still valid, or null if regeneration is needed.
+   * Combines cache validation and retrieval in a single operation.
+   */
+  getCachedIfValid(filePath: string, cwd: string): string | null {
     if (!this.manifest) {
-      return true
+      return null
     }
 
     const relativePath = relative(cwd, filePath)
     const entry = this.manifest.entries[relativePath]
 
     if (!entry) {
-      return true
+      return null
     }
 
     try {
@@ -152,7 +167,7 @@ export class BuildCache {
         const hash = this.hashContent(content)
 
         if (hash !== entry.sourceHash) {
-          return true
+          return null
         }
 
         // Hash matches despite mtime change (e.g., touched file)
@@ -160,29 +175,11 @@ export class BuildCache {
         entry.sourceMtime = mtime
       }
 
-      return false
+      return entry.dtsContent
     }
     catch {
-      return true
-    }
-  }
-
-  /**
-   * Get cached content for a file
-   */
-  getCached(filePath: string, cwd: string): string | null {
-    if (!this.manifest) {
       return null
     }
-
-    const relativePath = relative(cwd, filePath)
-    const entry = this.manifest.entries[relativePath]
-
-    if (!entry) {
-      return null
-    }
-
-    return entry.dtsContent
   }
 
   /**

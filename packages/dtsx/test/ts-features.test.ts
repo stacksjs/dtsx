@@ -5,18 +5,6 @@
 import { describe, expect, test } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
 
-function createContext(code: string) {
-  const declarations = extractDeclarations(code, 'test.ts')
-  return {
-    filePath: 'test.ts',
-    sourceCode: code,
-    declarations,
-    imports: new Map(),
-    exports: new Set<string>(),
-    usedTypes: new Set<string>(),
-  }
-}
-
 describe('TypeScript Features', () => {
   describe('Private class fields (#field)', () => {
     test('excludes private fields from output', () => {

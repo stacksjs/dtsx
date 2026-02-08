@@ -312,17 +312,6 @@ function isPrivateMemberName(member: { name?: import('typescript').PropertyName 
 }
 
 /**
- * Check if a property name is a symbol expression (Symbol.iterator, etc.)
- */
-function _isSymbolPropertyName(member: { name?: import('typescript').PropertyName }): boolean {
-  if (!member.name)
-    return false
-  const text = member.name.getText()
-  // Check for [Symbol.xxx] pattern
-  return text.startsWith('[Symbol.') || text.startsWith('[customSymbol')
-}
-
-/**
  * Get the property name text, handling computed properties and symbols
  */
 function getMemberNameText(member: { name?: import('typescript').PropertyName }): string {

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { generate, processSource } from '../src/generator'
+import { extractDeclarations } from '../src/extractor'
+import { processCode } from './test-utils'
 
 describe('processSource (stdin support)', () => {
   it('should process simple variable declaration', () => {
@@ -39,7 +41,8 @@ describe('processSource (stdin support)', () => {
     }`
     const result = processSource(source)
     expect(result).toContain('export declare class MyClass')
-    expect(result).toContain('private name: string;')
+    // Private members are correctly omitted from .d.ts output
+    expect(result).not.toContain('private name: string;')
     expect(result).toContain('constructor(name: string);')
     expect(result).toContain('getName(): string;')
   })
@@ -331,5 +334,254 @@ describe('edge cases', () => {
     const source = `export const enum Direction { Up, Down, Left, Right }`
     const result = processSource(source)
     expect(result).toContain('export declare const enum Direction')
+  })
+})
+
+describe('Comment preservation', () => {
+  describe('JSDoc comments', () => {
+    it('should preserve JSDoc on exported functions', () => {
+      const source = `
+        /**
+         * Greet someone by name
+         * @param name - The name to greet
+         * @returns A greeting string
+         */
+        export function greet(name: string): string { return name; }
+      `
+      const result = processSource(source)
+      expect(result).toContain('/**')
+      expect(result).toContain('* Greet someone by name')
+      expect(result).toContain('@param name')
+      expect(result).toContain('@returns A greeting string')
+      expect(result).toContain('export declare function greet')
+    })
+
+    it('should preserve JSDoc on exported interfaces', () => {
+      const source = `
+        /**
+         * Represents a user in the system
+         */
+        export interface User {
+          name: string;
+          age: number;
+        }
+      `
+      const result = processSource(source)
+      expect(result).toContain('/**')
+      expect(result).toContain('* Represents a user in the system')
+      expect(result).toContain('export declare interface User')
+    })
+
+    it('should preserve JSDoc on exported types', () => {
+      const source = `
+        /** User ID can be string or number */
+        export type ID = string | number;
+      `
+      const result = processSource(source)
+      expect(result).toContain('/** User ID can be string or number */')
+      expect(result).toContain('export type ID = string | number')
+    })
+
+    it('should preserve JSDoc on exported classes', () => {
+      const source = `
+        /**
+         * Base service class
+         * @abstract
+         */
+        export abstract class BaseService {
+          abstract execute(): void;
+        }
+      `
+      const result = processSource(source)
+      expect(result).toContain('/**')
+      expect(result).toContain('* Base service class')
+      expect(result).toContain('@abstract')
+      expect(result).toContain('export declare abstract class BaseService')
+    })
+
+    it('should preserve JSDoc on exported enums', () => {
+      const source = `
+        /** Possible log levels */
+        export enum LogLevel {
+          Debug,
+          Info,
+          Warn,
+          Error,
+        }
+      `
+      const result = processSource(source)
+      expect(result).toContain('/** Possible log levels */')
+      expect(result).toContain('export declare enum LogLevel')
+    })
+
+    it('should preserve JSDoc on exported variables', () => {
+      const source = `
+        /** The default timeout in milliseconds */
+        export const DEFAULT_TIMEOUT: number = 5000;
+      `
+      const result = processSource(source)
+      expect(result).toContain('/** The default timeout in milliseconds */')
+      expect(result).toContain('export declare const DEFAULT_TIMEOUT: number')
+    })
+
+    it('should preserve multi-line JSDoc with @example', () => {
+      const source = `
+        /**
+         * Parse a configuration file
+         *
+         * @param path - Path to the config file
+         * @returns Parsed configuration object
+         * @example
+         * \`\`\`ts
+         * const config = parseConfig('./config.json');
+         * console.log(config.port);
+         * \`\`\`
+         */
+        export function parseConfig(path: string): Record<string, unknown> {
+          return {};
+        }
+      `
+      const result = processSource(source)
+      expect(result).toContain('* Parse a configuration file')
+      expect(result).toContain('@param path')
+      expect(result).toContain('@returns Parsed configuration object')
+      expect(result).toContain('@example')
+    })
+  })
+
+  describe('Block comments', () => {
+    it('should preserve block comments on declarations', () => {
+      const source = `
+        /* Configuration options for the app */
+        export interface AppConfig {
+          port: number;
+          host: string;
+        }
+      `
+      const result = processSource(source)
+      expect(result).toContain('/* Configuration options for the app */')
+      expect(result).toContain('export declare interface AppConfig')
+    })
+  })
+
+  describe('Single-line comments', () => {
+    it('should preserve consecutive single-line comments', () => {
+      const source = `
+        // Maximum number of retries
+        // before giving up
+        export const MAX_RETRIES: number = 3;
+      `
+      const result = processSource(source)
+      expect(result).toContain('// Maximum number of retries')
+      expect(result).toContain('// before giving up')
+      expect(result).toContain('export declare const MAX_RETRIES: number')
+    })
+  })
+
+  describe('Export statement comments', () => {
+    it('should preserve comments above export re-export statements', () => {
+      const source = `
+        /** Re-export utilities */
+        export { foo, bar } from './utils';
+      `
+      const result = processSource(source)
+      expect(result).toContain('/** Re-export utilities */')
+      expect(result).toContain('export { foo, bar }')
+    })
+
+    it('should preserve comments above export default statements', () => {
+      const source = `
+        const value = 42;
+        /** The default export value */
+        export default value;
+      `
+      const result = processSource(source)
+      expect(result).toContain('/** The default export value */')
+      expect(result).toContain('export default value')
+    })
+  })
+
+  describe('Referenced type comments', () => {
+    it('should preserve comments on non-exported types used by exports', () => {
+      const source = `
+        /** Internal config type used by exported function */
+        interface InternalConfig {
+          debug: boolean;
+        }
+
+        export function configure(config: InternalConfig): void {}
+      `
+      const decls = extractDeclarations(source, 'test.ts', true)
+      const configDecl = decls.find(d => d.name === 'InternalConfig')
+      expect(configDecl).toBeDefined()
+      expect(configDecl!.leadingComments).toBeDefined()
+      expect(configDecl!.leadingComments!.length).toBeGreaterThan(0)
+      expect(configDecl!.leadingComments![0]).toContain('Internal config type')
+    })
+  })
+
+  describe('keepComments flag', () => {
+    it('should strip all comments when keepComments is false', () => {
+      const source = `
+        /** This should be stripped */
+        export function foo(): void {}
+
+        /* Also stripped */
+        export interface Bar { x: number; }
+
+        // Stripped too
+        export const baz: number = 1;
+      `
+      const result = processSource(source, 'test.ts', false)
+      expect(result).not.toContain('This should be stripped')
+      expect(result).not.toContain('Also stripped')
+      expect(result).not.toContain('Stripped too')
+      expect(result).toContain('export declare function foo')
+      expect(result).toContain('Bar')
+      expect(result).toContain('baz')
+    })
+
+    it('should preserve all comments when keepComments is true', () => {
+      const source = `
+        /** JSDoc comment */
+        export function foo(): void {}
+
+        /* Block comment */
+        export interface Bar { x: number; }
+
+        // Line comment
+        export const baz: number = 1;
+      `
+      const result = processSource(source, 'test.ts', true)
+      expect(result).toContain('/** JSDoc comment */')
+      expect(result).toContain('/* Block comment */')
+      expect(result).toContain('// Line comment')
+    })
+  })
+
+  describe('Comments do not bleed between declarations', () => {
+    it('should attach comments to the correct declaration', () => {
+      const source = `
+        /** Comment for foo */
+        export function foo(): void {}
+
+        /** Comment for bar */
+        export function bar(): string { return ''; }
+      `
+      const decls = extractDeclarations(source, 'test.ts', true)
+      const fooDecl = decls.find(d => d.name === 'foo')
+      const barDecl = decls.find(d => d.name === 'bar')
+
+      expect(fooDecl).toBeDefined()
+      expect(barDecl).toBeDefined()
+
+      expect(fooDecl!.leadingComments).toBeDefined()
+      expect(fooDecl!.leadingComments![0]).toContain('Comment for foo')
+      expect(fooDecl!.leadingComments![0]).not.toContain('Comment for bar')
+
+      expect(barDecl!.leadingComments).toBeDefined()
+      expect(barDecl!.leadingComments![0]).toContain('Comment for bar')
+      expect(barDecl!.leadingComments![0]).not.toContain('Comment for foo')
+    })
   })
 })

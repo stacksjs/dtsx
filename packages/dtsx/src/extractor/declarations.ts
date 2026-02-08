@@ -34,9 +34,12 @@ export function extractImportDeclaration(node: ImportDeclaration, sourceCode: st
 /**
  * Extract export declaration
  */
-export function extractExportDeclaration(node: ExportDeclaration, sourceCode: string): Declaration {
+export function extractExportDeclaration(node: ExportDeclaration, sourceCode: string, sourceFile?: SourceFile, keepComments: boolean = false): Declaration {
   const text = getNodeText(node, sourceCode)
   const isTypeOnly = !!node.isTypeOnly
+
+  // Extract comments if enabled and sourceFile is available
+  const leadingComments = keepComments && sourceFile ? extractJSDocComments(node, sourceFile) : undefined
 
   return {
     kind: 'export',
@@ -44,6 +47,7 @@ export function extractExportDeclaration(node: ExportDeclaration, sourceCode: st
     text,
     isExported: true,
     isTypeOnly,
+    leadingComments,
     source: node.moduleSpecifier?.getText().slice(1, -1), // Remove quotes if present
     start: node.getStart(),
     end: node.getEnd(),
@@ -53,8 +57,11 @@ export function extractExportDeclaration(node: ExportDeclaration, sourceCode: st
 /**
  * Extract export assignment (export default)
  */
-export function extractExportAssignment(node: ExportAssignment, sourceCode: string): Declaration {
+export function extractExportAssignment(node: ExportAssignment, sourceCode: string, sourceFile?: SourceFile, keepComments: boolean = false): Declaration {
   const text = getNodeText(node, sourceCode)
+
+  // Extract comments if enabled and sourceFile is available
+  const leadingComments = keepComments && sourceFile ? extractJSDocComments(node, sourceFile) : undefined
 
   return {
     kind: 'export',
@@ -62,6 +69,7 @@ export function extractExportAssignment(node: ExportAssignment, sourceCode: stri
     text,
     isExported: true,
     isTypeOnly: false,
+    leadingComments,
     start: node.getStart(),
     end: node.getEnd(),
   }
@@ -168,16 +176,6 @@ function isAsConstAssertion(node: import('typescript').Expression): boolean {
     }
   }
   return false
-}
-
-/**
- * Get the underlying expression from an 'as const' assertion
- */
-function _getAsConstValue(node: import('typescript').Expression): import('typescript').Expression | null {
-  if (isAsExpression(node) && isAsConstAssertion(node)) {
-    return node.expression
-  }
-  return null
 }
 
 /**
@@ -491,7 +489,7 @@ export function findReferencedTypes(declarations: Declaration[], _sourceCode: st
 /**
  * Extract declarations for referenced types by searching the entire source file
  */
-export function extractReferencedTypeDeclarations(sourceFile: SourceFile, referencedTypes: Set<string>, sourceCode: string): Declaration[] {
+export function extractReferencedTypeDeclarations(sourceFile: SourceFile, referencedTypes: Set<string>, sourceCode: string, keepComments: boolean = true): Declaration[] {
   const additionalDeclarations: Declaration[] = []
 
   if (referencedTypes.size === 0) {
@@ -505,7 +503,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
         const interfaceNode = node as InterfaceDeclaration
         const interfaceName = interfaceNode.name.getText()
         if (referencedTypes.has(interfaceName)) {
-          const decl = extractInterfaceDeclaration(interfaceNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
+          const decl = extractInterfaceDeclaration(interfaceNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)
           referencedTypes.delete(interfaceName) // Remove to avoid duplicates
         }
@@ -516,7 +514,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
         const typeNode = node as TypeAliasDeclaration
         const typeName = typeNode.name.getText()
         if (referencedTypes.has(typeName)) {
-          const decl = extractTypeAliasDeclaration(typeNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
+          const decl = extractTypeAliasDeclaration(typeNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)
           referencedTypes.delete(typeName)
         }
@@ -528,7 +526,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
         if (classNode.name) {
           const className = classNode.name.getText()
           if (referencedTypes.has(className)) {
-            const decl = extractClassDeclaration(classNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
+            const decl = extractClassDeclaration(classNode, sourceCode, sourceFile, keepComments)
             additionalDeclarations.push(decl)
             referencedTypes.delete(className)
           }
@@ -540,7 +538,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
         const enumNode = node as EnumDeclaration
         const enumName = enumNode.name.getText()
         if (referencedTypes.has(enumName)) {
-          const decl = extractEnumDeclaration(enumNode, sourceCode, sourceFile, false) // Don't extract comments for referenced types
+          const decl = extractEnumDeclaration(enumNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)
           referencedTypes.delete(enumName)
         }

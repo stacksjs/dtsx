@@ -1,7 +1,6 @@
-import type { ProcessingContext } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
-import { processDeclarations } from '../src/processor'
+import { processCode } from './test-utils'
 
 const TEST_FILE = 'fuzz.ts'
 
@@ -155,17 +154,6 @@ function randomEnumDeclaration(): string {
   return `export ${constKeyword}enum ${name} {\n${members}\n}`
 }
 
-function createContext(code: string): ProcessingContext {
-  const declarations = extractDeclarations(code, TEST_FILE)
-  return {
-    filePath: TEST_FILE,
-    sourceCode: code,
-    declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
-  }
-}
 
 describe('Property-Based / Fuzzing Tests', () => {
   describe('Random valid declarations', () => {
@@ -429,10 +417,7 @@ describe('Property-Based / Fuzzing Tests', () => {
         })
 
         const code = declarations.join('\n\n')
-        const extracted = extractDeclarations(code, TEST_FILE)
-        const context = createContext(code)
-
-        const result = processDeclarations(extracted, context)
+        const result = processCode(code, TEST_FILE)
         expect(typeof result).toBe('string')
       }
     })

@@ -50,73 +50,48 @@ describe('dts-generation', () => {
     'checker',
   ]
 
+  /**
+   * Shared fixture test runner: generates DTS and compares to expected output
+   */
+  async function runFixtureTest(name: string, inputSubdir?: string, timeout?: number): Promise<void> {
+    const entrypoint = inputSubdir
+      ? join(inputDir, inputSubdir, `${name}.ts`)
+      : join(inputDir, `${name}.ts`)
+
+    const config: DtsGenerationOption = {
+      entrypoints: [entrypoint],
+      outdir: generatedDir,
+      clean: false,
+      tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      outputStructure: 'flat',
+    }
+
+    await generate(config)
+
+    const expectedPath = inputSubdir
+      ? join(outputDir, inputSubdir, `${name}.d.ts`)
+      : join(outputDir, `${name}.d.ts`)
+    const generatedPath = join(generatedDir, `${name}.d.ts`)
+
+    const expectedContent = await Bun.file(expectedPath).text()
+    const generatedContent = await Bun.file(generatedPath).text()
+
+    expect(generatedContent).toBe(expectedContent)
+  }
+
   // Generate a test for each example file
   examples.forEach((example) => {
-    it(`should properly generate types for example ${example}`, async () => {
-      const config: DtsGenerationOption = {
-        entrypoints: [join(inputDir, 'example', `${example}.ts`)],
-        outdir: generatedDir,
-        clean: false,
-        tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
-        outputStructure: 'flat',
-      }
-
-      await generate(config)
-
-      const outputPath = join(outputDir, 'example', `${example}.d.ts`)
-      const generatedPath = join(generatedDir, `${example}.d.ts`)
-
-      const expectedContent = await Bun.file(outputPath).text()
-      const generatedContent = await Bun.file(generatedPath).text()
-
-      expect(generatedContent).toBe(expectedContent)
-    })
+    it(`should properly generate types for example ${example}`, () => runFixtureTest(example, 'example'))
   })
 
   // Generate a test for each fixture file
   fixtures.forEach((fixture) => {
-    it(`should properly generate types for fixture ${fixture}`, async () => {
-      const config: DtsGenerationOption = {
-        entrypoints: [join(inputDir, `${fixture}.ts`)],
-        outdir: generatedDir,
-        clean: false,
-        tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
-        outputStructure: 'flat',
-      }
-
-      await generate(config)
-
-      const outputPath = join(outputDir, `${fixture}.d.ts`)
-      const generatedPath = join(generatedDir, `${fixture}.d.ts`)
-
-      const expectedContent = await Bun.file(outputPath).text()
-      const generatedContent = await Bun.file(generatedPath).text()
-
-      expect(generatedContent).toBe(expectedContent)
-    })
+    it(`should properly generate types for fixture ${fixture}`, () => runFixtureTest(fixture))
   })
 
   // Generate a test for each large fixture file (slower tests)
   largeFixtures.forEach((fixture) => {
-    it(`should properly generate types for large fixture ${fixture}`, async () => {
-      const config: DtsGenerationOption = {
-        entrypoints: [join(inputDir, `${fixture}.ts`)],
-        outdir: generatedDir,
-        clean: false,
-        tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
-        outputStructure: 'flat',
-      }
-
-      await generate(config)
-
-      const outputPath = join(outputDir, `${fixture}.d.ts`)
-      const generatedPath = join(generatedDir, `${fixture}.d.ts`)
-
-      const expectedContent = await Bun.file(outputPath).text()
-      const generatedContent = await Bun.file(generatedPath).text()
-
-      expect(generatedContent).toBe(expectedContent)
-    }, 30000) // 30 second timeout for large files
+    it(`should properly generate types for large fixture ${fixture}`, () => runFixtureTest(fixture), 30000)
   })
 
   afterEach(async () => {

@@ -1,40 +1,19 @@
-import type { ProcessingContext } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import { extractDeclarations } from '../src/extractor'
-import { processDeclarations } from '../src/processor'
+import { createContext, processCode } from './test-utils'
 
 const TEST_FILE = 'test.ts'
-
-function createContext(code: string): ProcessingContext {
-  const declarations = extractDeclarations(code, TEST_FILE)
-  return {
-    filePath: TEST_FILE,
-    sourceCode: code,
-    declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
-  }
-}
-
-function processCode(code: string): string {
-  const declarations = extractDeclarations(code, TEST_FILE)
-  const context = createContext(code)
-  return processDeclarations(declarations, context)
-}
 
 describe('Error Handling', () => {
   describe('Malformed TypeScript Input', () => {
     it('should handle empty input', () => {
       const result = extractDeclarations('', TEST_FILE)
-      expect(result).toBeDefined()
-      expect(Array.isArray(result)).toBe(true)
+      expect(result).toEqual([])
     })
 
     it('should handle whitespace-only input', () => {
       const result = extractDeclarations('   \n\n\t  \n  ', TEST_FILE)
-      expect(result).toBeDefined()
-      expect(Array.isArray(result)).toBe(true)
+      expect(result).toEqual([])
     })
 
     it('should handle unclosed braces', () => {
@@ -44,7 +23,8 @@ describe('Error Handling', () => {
           // missing closing brace
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('interface')
     })
 
     it('should handle unclosed parentheses in function', () => {
@@ -54,7 +34,7 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle invalid syntax in type definition', () => {
@@ -65,7 +45,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result.find(d => d.kind === 'type')).toBeDefined()
     })
 
     it('should handle duplicate keywords', () => {
@@ -73,7 +54,7 @@ describe('Error Handling', () => {
         export export function foo(): void {}
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle missing function body', () => {
@@ -81,7 +62,8 @@ describe('Error Handling', () => {
         export function noBody(): string
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('function')
     })
 
     it('should handle invalid generic syntax', () => {
@@ -89,7 +71,7 @@ describe('Error Handling', () => {
         export function broken<T extends>(): T {}
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle random characters', () => {
@@ -98,7 +80,7 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle unmatched quotes', () => {
@@ -107,7 +89,7 @@ describe('Error Handling', () => {
         export const num = 42
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle unmatched template literal', () => {
@@ -116,7 +98,7 @@ describe('Error Handling', () => {
         export const num = 42
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle invalid import syntax', () => {
@@ -125,7 +107,7 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle invalid export syntax', () => {
@@ -134,21 +116,24 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle extremely long lines', () => {
       const longType = `${'string | '.repeat(1000)}number`
       const code = `export type LongUnion = ${longType}`
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('type')
+      expect(result[0].name).toBe('LongUnion')
     })
 
     it('should handle deeply nested types', () => {
       const nested = `${'Array<'.repeat(50)}string${'>'.repeat(50)}`
       const code = `export type DeepNested = ${nested}`
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].name).toBe('DeepNested')
     })
 
     it('should handle circular-looking type references', () => {
@@ -157,8 +142,9 @@ describe('Error Handling', () => {
         export type B = A
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
       expect(result.length).toBe(2)
+      expect(result[0].name).toBe('A')
+      expect(result[1].name).toBe('B')
     })
 
     it('should handle reserved words as identifiers', () => {
@@ -167,7 +153,7 @@ describe('Error Handling', () => {
         export const function = 2
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle mixed valid and invalid code', () => {
@@ -179,15 +165,17 @@ describe('Error Handling', () => {
         export const alsoValid = 42
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      // Should at least extract the valid declarations
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      const names = result.map(d => d.name)
+      expect(names).toContain('valid')
     })
   })
 
   describe('Process Declarations Error Handling', () => {
     it('should handle empty declarations', () => {
       const result = processCode('')
-      expect(result).toBeDefined()
-      expect(typeof result).toBe('string')
+      expect(result).toBe('')
     })
 
     it('should handle declarations with syntax errors', () => {
@@ -198,7 +186,8 @@ describe('Error Handling', () => {
         }
       `
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('interface')
+      expect(result).toContain('name: string')
     })
 
     it('should handle code with only comments', () => {
@@ -210,7 +199,7 @@ describe('Error Handling', () => {
          */
       `
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toBe('')
     })
 
     it('should handle code with only imports', () => {
@@ -219,7 +208,8 @@ describe('Error Handling', () => {
         import type { Type } from 'types'
       `
       const result = processCode(code)
-      expect(result).toBeDefined()
+      // Unused imports should be filtered out
+      expect(result).toBe('')
     })
 
     it('should handle Unicode content', () => {
@@ -232,31 +222,34 @@ describe('Error Handling', () => {
         }
       `
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('emoji')
+      expect(result).toContain('chinese')
+      expect(result).toContain('greet')
     })
 
     it('should handle null bytes in input', () => {
       const code = `export const x = 1\0export const y = 2`
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(typeof result).toBe('string')
     })
 
     it('should handle CRLF line endings', () => {
       const code = 'export const x = 1\r\nexport const y = 2\r\n'
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('x')
+      expect(result).toContain('y')
     })
 
     it('should handle mixed line endings', () => {
       const code = 'export const x = 1\nexport const y = 2\r\nexport const z = 3\r'
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('x')
     })
 
     it('should handle BOM (byte order mark)', () => {
       const code = '\uFEFFexport const x = 1'
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('x')
     })
 
     it('should handle tabs and spaces mixed', () => {
@@ -267,7 +260,9 @@ describe('Error Handling', () => {
         }
       `
       const result = processCode(code)
-      expect(result).toBeDefined()
+      expect(result).toContain('interface User')
+      expect(result).toContain('name: string')
+      expect(result).toContain('age: number')
     })
   })
 
@@ -275,21 +270,27 @@ describe('Error Handling', () => {
     it('should handle interface with no members', () => {
       const code = `export interface Empty {}`
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
       expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('interface')
+      expect(result[0].name).toBe('Empty')
     })
 
     it('should handle type alias to primitive', () => {
       const code = `export type Str = string`
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
       expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('type')
+      expect(result[0].name).toBe('Str')
     })
 
     it('should handle multiple exports on same line', () => {
       const code = `export const a = 1; export const b = 2; export const c = 3;`
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(3)
+      const names = result.map(d => d.name)
+      expect(names).toContain('a')
+      expect(names).toContain('b')
+      expect(names).toContain('c')
     })
 
     it('should handle export with complex destructuring', () => {
@@ -297,7 +298,7 @@ describe('Error Handling', () => {
         export const { a, b: { c, d: [e, f] } } = obj
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle function with rest parameters', () => {
@@ -305,8 +306,9 @@ describe('Error Handling', () => {
         export function fn(...args: string[]): void {}
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
       expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('function')
+      expect(result[0].text).toContain('...args')
     })
 
     it('should handle function with default parameters', () => {
@@ -316,8 +318,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
       expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('function')
+      expect(result[0].name).toBe('greet')
     })
 
     it('should handle class with private fields', () => {
@@ -328,7 +331,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('class')
     })
 
     it('should handle abstract class', () => {
@@ -338,7 +342,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('class')
+      expect(result[0].text).toContain('abstract')
     })
 
     it('should handle class with static members', () => {
@@ -349,7 +355,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('class')
+      expect(result[0].text).toContain('static')
     })
 
     it('should handle enum with computed values', () => {
@@ -361,7 +369,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('enum')
+      expect(result[0].name).toBe('Computed')
     })
 
     it('should handle const enum', () => {
@@ -373,7 +383,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('enum')
     })
 
     it('should handle namespace', () => {
@@ -384,7 +395,10 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      const nsDecl = result.find(d => d.kind === 'namespace' || d.kind === 'module')
+      expect(nsDecl).toBeDefined()
+      expect(nsDecl!.name).toBe('MyNamespace')
     })
 
     it('should handle module declaration', () => {
@@ -394,7 +408,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result.find(d => d.kind === 'module')).toBeDefined()
     })
 
     it('should handle global augmentation', () => {
@@ -407,7 +422,7 @@ describe('Error Handling', () => {
         export {}
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
     })
 
     it('should handle triple-slash directives', () => {
@@ -417,7 +432,9 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      const varDecl = result.find(d => d.name === 'x')
+      expect(varDecl).toBeDefined()
     })
 
     it('should handle shebang', () => {
@@ -425,7 +442,7 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
     })
 
     it('should handle use strict directive', () => {
@@ -434,13 +451,14 @@ describe('Error Handling', () => {
         export const x = 1
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
     })
 
     it('should handle very large number of exports', () => {
       const exports = Array.from({ length: 100 }, (_, i) => `export const v${i} = ${i}`).join('\n')
       const result = extractDeclarations(exports, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBe(100)
+      expect(result.every(d => d.kind === 'variable')).toBe(true)
     })
 
     it('should handle overloaded functions', () => {
@@ -452,7 +470,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      const fnDecls = result.filter(d => d.name === 'fn')
+      expect(fnDecls.length).toBeGreaterThanOrEqual(1)
     })
 
     it('should handle getter and setter', () => {
@@ -464,7 +484,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('class')
     })
 
     it('should handle async generator', () => {
@@ -475,7 +496,9 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('function')
+      expect(result[0].name).toBe('asyncGen')
     })
 
     it('should handle symbol as property key', () => {
@@ -486,7 +509,7 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(Array.isArray(result)).toBe(true)
     })
 
     it('should handle satisfies operator', () => {
@@ -497,7 +520,8 @@ describe('Error Handling', () => {
         } satisfies { port: number; host: string }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result.find(d => d.name === 'config')).toBeDefined()
     })
 
     it('should handle using declaration (TS 5.2+)', () => {
@@ -508,7 +532,8 @@ describe('Error Handling', () => {
         }
       `
       const result = extractDeclarations(code, TEST_FILE)
-      expect(result).toBeDefined()
+      expect(result.length).toBeGreaterThanOrEqual(1)
+      expect(result[0].kind).toBe('function')
     })
   })
 })

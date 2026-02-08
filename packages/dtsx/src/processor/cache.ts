@@ -31,11 +31,11 @@ export function getCachedRegex(pattern: string): RegExp {
     cached = new RegExp(`\\b${escaped}\\b`)
     regexCache.set(pattern, cached)
 
-    // Evict oldest entries if cache is too large
+    // Evict a batch of entries if cache is too large
     if (regexCache.size > MAX_REGEX_CACHE_SIZE) {
-      const firstKey = regexCache.keys().next().value
-      if (firstKey) {
-        regexCache.delete(firstKey)
+      const keysToDelete = Array.from(regexCache.keys()).slice(0, 50)
+      for (const key of keysToDelete) {
+        regexCache.delete(key)
       }
     }
   }
@@ -55,11 +55,11 @@ export function getImportItemsFromCache(importText: string): string[] | null {
 export function setImportItemsCache(importText: string, items: string[]): void {
   importItemsCache.set(importText, items)
 
-  // Evict oldest entries if cache is too large
+  // Evict a batch of entries if cache is too large
   if (importItemsCache.size > MAX_IMPORT_CACHE_SIZE) {
-    const firstKey = importItemsCache.keys().next().value
-    if (firstKey) {
-      importItemsCache.delete(firstKey)
+    const keysToDelete = Array.from(importItemsCache.keys()).slice(0, 20)
+    for (const key of keysToDelete) {
+      importItemsCache.delete(key)
     }
   }
 }

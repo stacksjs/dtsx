@@ -80,7 +80,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Track cache hits for stats
   let cacheHits = 0
-  const _cacheSkipped = 0
 
   // Log start
   logger.debug('Starting DTS generation...')
@@ -121,10 +120,9 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       const outputPath = getOutputPath(file, config)
 
       // Check cache for incremental builds
-      if (buildCache && !buildCache.needsRegeneration(file, config.cwd)) {
-        const cachedContent = buildCache.getCached(file, config.cwd)
+      if (buildCache) {
+        const cachedContent = buildCache.getCachedIfValid(file, config.cwd)
         if (cachedContent) {
-          // Use cached content
           await mkdir(dirname(outputPath), { recursive: true })
           await writeToFile(outputPath, cachedContent)
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
@@ -450,6 +448,20 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 }
 
 /**
+ * Cache for compiled Glob patterns to avoid re-creation per file
+ */
+const compiledGlobCache = new Map<string, Glob>()
+
+function getCompiledGlob(pattern: string): Glob {
+  let glob = compiledGlobCache.get(pattern)
+  if (!glob) {
+    glob = new Glob(pattern)
+    compiledGlobCache.set(pattern, glob)
+  }
+  return glob
+}
+
+/**
  * Check if a file matches any of the exclude patterns
  */
 function isExcluded(filePath: string, excludePatterns: string[], rootPath: string): boolean {
@@ -460,7 +472,7 @@ function isExcluded(filePath: string, excludePatterns: string[], rootPath: strin
   const relativePath = relative(rootPath, filePath)
 
   for (const pattern of excludePatterns) {
-    const glob = new Glob(pattern)
+    const glob = getCompiledGlob(pattern)
     if (glob.match(relativePath) || glob.match(filePath)) {
       return true
     }
