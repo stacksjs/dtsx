@@ -20,6 +20,7 @@ import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
 import ts from 'typescript'
 import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
+import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 
@@ -218,6 +219,7 @@ for (const { name, filename, source } of inputs) {
   summary(() => {
     bench(`dtsx (no-cache) — ${name}`, () => {
       clearSourceFileCache()
+      clearDeclarationCache()
       clearProcessorCaches()
       processSource(source, filename)
     })

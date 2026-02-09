@@ -1,4 +1,12 @@
 /**
+ * Logger interface for dependency injection
+ */
+declare interface Logger {
+  info(message: string, ...args: any[]): void
+  warn(message: string, ...args: any[]): void
+  error(message: string, error?: Error): void
+}
+/**
  * Application events definition
  */
 declare interface AppEvents {
@@ -15,20 +23,12 @@ export declare interface Serializable {
   deserialize(data: string): void
 }
 /**
- * Logger interface for dependency injection
- */
-declare interface Logger {
-  info(message: string, ...args: any[]): void
-  warn(message: string, ...args: any[]): void
-  error(message: string, error?: Error): void
-}
-/**
  * Base event emitter class
  */
 export declare abstract class EventEmitter<Events extends Record<string, any[]>> {
   on<K extends keyof Events>(event: K, listener: (...args: Events[K]) => void): this;
   off<K extends keyof Events>(event: K, listener: (...args: Events[K]) => void): this;
-  protected emit<K extends keyof Events>(event: K, args: Events[K]): void;
+  protected emit<K extends keyof Events>(event: K, ...args: Events[K]): void;
   abstract dispose(): void;
 }
 /**
@@ -47,9 +47,8 @@ export declare class Application extends EventEmitter<AppEvents> {
  * Generic container with static factory methods
  */
 export declare class Container<T> {
-  constructor(items?: T[]);
   static empty<T>(): Container<T>;
-  static of<T>(items: T[]): Container<T>;
+  static of<T>(...items: T[]): Container<T>;
   static from<T>(iterable: Iterable<T>): Container<T>;
   add(item: T): this;
   map<U>(fn: (item: T) => U): Container<U>;
@@ -62,6 +61,7 @@ export declare class Container<T> {
  * Class implementing interface with index signature
  */
 export declare class DataStore implements Serializable {
+  [key: string]: unknown;
   serialize(): string;
   deserialize(data: string): void;
 }

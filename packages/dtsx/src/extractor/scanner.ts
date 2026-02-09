@@ -95,6 +95,47 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     }
   }
 
+  /** Strip trailing comments from a line, preserving leading whitespace */
+  function stripTrailingComment(line: string): string {
+    const lineLen = line.length
+    let inString = 0 // 0=none, quote char code when in string
+    let end = lineLen
+    for (let i = 0; i < lineLen; i++) {
+      const c = line.charCodeAt(i)
+      if (inString) {
+        if (c === CH_BACKSLASH) { i++; continue }
+        if (c === inString) inString = 0
+        continue
+      }
+      if (c === CH_SQUOTE || c === CH_DQUOTE || c === CH_BACKTICK) {
+        inString = c
+        continue
+      }
+      if (c === CH_SLASH && i + 1 < lineLen) {
+        const next = line.charCodeAt(i + 1)
+        if (next === CH_SLASH) {
+          // Trim trailing whitespace before //
+          end = i
+          while (end > 0 && (line.charCodeAt(end - 1) === CH_SPACE || line.charCodeAt(end - 1) === CH_TAB)) end--
+          return line.slice(0, end)
+        }
+        if (next === CH_STAR) {
+          // Inline /* ... */ — find closing and replace with space
+          const closeIdx = line.indexOf('*/', i + 2)
+          if (closeIdx !== -1) {
+            line = line.slice(0, i) + ' ' + line.slice(closeIdx + 2)
+            i-- // re-scan
+            continue
+          }
+        }
+      }
+    }
+    // Trim trailing whitespace
+    end = lineLen
+    while (end > 0 && (line.charCodeAt(end - 1) === CH_SPACE || line.charCodeAt(end - 1) === CH_TAB || line.charCodeAt(end - 1) === CH_CR)) end--
+    return end < lineLen ? line.slice(0, end) : line
+  }
+
   function skipString(quote: number): void {
     pos++ // skip opening quote
     while (pos < len) {
@@ -165,8 +206,70 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           pos += 2
         return true
       }
+      // Check for regex literal: / not followed by / or *, preceded by non-expression char
+      if (isRegexStart()) {
+        skipRegex()
+        return true
+      }
     }
     return false
+  }
+
+  /** Check if `/` at current pos is the start of a regex literal (not division) */
+  function isRegexStart(): boolean {
+    // Look backward for the previous non-whitespace character
+    let p = pos - 1
+    while (p >= 0 && (source.charCodeAt(p) === CH_SPACE || source.charCodeAt(p) === CH_TAB || source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
+    if (p < 0)
+      return true // start of file
+    const prev = source.charCodeAt(p)
+    // After these chars, `/` starts a regex (not division)
+    // = ( [ ! & | ? : , ; { } ^ ~ + - * % < > \n
+    if (prev === CH_EQUAL || prev === CH_LPAREN || prev === CH_LBRACKET
+      || prev === 33 /* ! */ || prev === 38 /* & */ || prev === 124 /* | */
+      || prev === CH_QUESTION || prev === CH_COLON || prev === CH_COMMA
+      || prev === CH_SEMI || prev === CH_LBRACE || prev === CH_RBRACE
+      || prev === 94 /* ^ */ || prev === 126 /* ~ */
+      || prev === 43 /* + */ || prev === 45 /* - */ || prev === CH_STAR
+      || prev === 37 /* % */ || prev === CH_LANGLE || prev === CH_RANGLE) {
+      return true
+    }
+    // After keywords like return, typeof, void, delete, throw, new, in, of, case
+    if (isIdentChar(prev)) {
+      let wp = p
+      while (wp >= 0 && isIdentChar(source.charCodeAt(wp))) wp--
+      const word = source.slice(wp + 1, p + 1)
+      if (word === 'return' || word === 'typeof' || word === 'void'
+        || word === 'delete' || word === 'throw' || word === 'new'
+        || word === 'in' || word === 'of' || word === 'case'
+        || word === 'instanceof' || word === 'yield' || word === 'await') {
+        return true
+      }
+    }
+    return false
+  }
+
+  /** Skip a regex literal /.../ including flags */
+  function skipRegex(): void {
+    pos++ // skip opening /
+    let inCharClass = false
+    while (pos < len) {
+      const ch = source.charCodeAt(pos)
+      if (ch === CH_BACKSLASH) { pos += 2; continue } // skip escaped char
+      if (inCharClass) {
+        if (ch === CH_RBRACKET)
+          inCharClass = false
+        pos++
+        continue
+      }
+      if (ch === CH_LBRACKET) { inCharClass = true; pos++; continue }
+      if (ch === CH_SLASH) { pos++; break } // closing /
+      if (ch === CH_LF || ch === CH_CR)
+        break // unterminated regex
+      pos++
+    }
+    // Skip flags (g, i, m, s, u, y, d, v)
+    while (pos < len && isIdentChar(source.charCodeAt(pos))) pos++
   }
 
   /** Read an identifier at current position */
@@ -192,12 +295,22 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
   /** Check if current position is at a top-level statement-starting keyword */
   function isTopLevelKeyword(): boolean {
-    return matchWord('export') || matchWord('import') || matchWord('function')
-      || matchWord('class') || matchWord('interface') || matchWord('type')
-      || matchWord('enum') || matchWord('const') || matchWord('let')
-      || matchWord('var') || matchWord('declare') || matchWord('module')
-      || matchWord('namespace') || matchWord('abstract') || matchWord('async')
-      || matchWord('default')
+    if (pos >= len) return false
+    const ch = source.charCodeAt(pos)
+    switch (ch) {
+      case 101: /* e */ return matchWord('export') || matchWord('enum')
+      case 105: /* i */ return matchWord('import') || matchWord('interface')
+      case 102: /* f */ return matchWord('function')
+      case 99: /* c */ return matchWord('class') || matchWord('const')
+      case 116: /* t */ return matchWord('type')
+      case 108: /* l */ return matchWord('let')
+      case 118: /* v */ return matchWord('var')
+      case 100: /* d */ return matchWord('declare') || matchWord('default')
+      case 109: /* m */ return matchWord('module')
+      case 110: /* n */ return matchWord('namespace')
+      case 97: /* a */ return matchWord('abstract') || matchWord('async')
+      default: return false
+    }
   }
 
   /**
@@ -215,12 +328,24 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     while (pos < len) {
       const c = source.charCodeAt(pos)
       if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { pos++; continue }
-      if (c === CH_SLASH && pos + 1 < len && source.charCodeAt(pos + 1) === CH_SLASH) {
-        pos += 2
-        while (pos < len && source.charCodeAt(pos) !== CH_LF) pos++
-        if (pos < len)
-          pos++
-        continue
+      if (c === CH_SLASH && pos + 1 < len) {
+        const next = source.charCodeAt(pos + 1)
+        if (next === CH_SLASH) {
+          // Skip line comment
+          pos += 2
+          while (pos < len && source.charCodeAt(pos) !== CH_LF) pos++
+          if (pos < len)
+            pos++
+          continue
+        }
+        if (next === CH_STAR) {
+          // Skip block/JSDoc comment
+          pos += 2
+          while (pos < len - 1 && !(source.charCodeAt(pos) === CH_STAR && source.charCodeAt(pos + 1) === CH_SLASH)) pos++
+          if (pos < len - 1)
+            pos += 2
+          continue
+        }
       }
       break
     }
@@ -331,10 +456,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
    */
   function skipExportBraces(): void {
     findMatchingClose(CH_LBRACE, CH_RBRACE)
-    skipWhitespaceAndComments()
+    // Only skip whitespace (not comments) to find 'from' — comments belong to next declaration
+    while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
     if (matchWord('from')) {
       pos += 4
-      skipWhitespaceAndComments()
+      while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
       if (pos < len) {
         const ch = source.charCodeAt(pos)
         if (ch === CH_SQUOTE || ch === CH_DQUOTE)
@@ -352,16 +478,16 @@ export function scanDeclarations(source: string, filename: string, keepComments:
    */
   function skipExportStar(): void {
     pos++ // skip *
-    skipWhitespaceAndComments()
+    while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
     if (matchWord('as')) {
       pos += 2
-      skipWhitespaceAndComments()
+      while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
       readIdent()
-      skipWhitespaceAndComments()
+      while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
     }
     if (matchWord('from')) {
       pos += 4
-      skipWhitespaceAndComments()
+      while (pos < len && isWhitespace(source.charCodeAt(pos))) pos++
       if (pos < len) {
         const ch = source.charCodeAt(pos)
         if (ch === CH_SQUOTE || ch === CH_DQUOTE)
@@ -387,8 +513,10 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       return undefined
 
     const comments: string[] = []
+    let hasBlockComment = false
 
     // Scan backwards for consecutive comment blocks
+    // Use push() + reverse at end (O(1) per append vs O(n) for unshift)
     while (p >= 0) {
       // Check for block comment ending with */
       if (p >= 1 && source.charCodeAt(p) === CH_SLASH && source.charCodeAt(p - 1) === CH_STAR) {
@@ -396,7 +524,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         let start = p - 2
         while (start >= 1 && !(source.charCodeAt(start) === CH_SLASH && source.charCodeAt(start + 1) === CH_STAR)) start--
         if (start >= 0 && source.charCodeAt(start) === CH_SLASH && source.charCodeAt(start + 1) === CH_STAR) {
-          comments.unshift(source.slice(start, p + 1))
+          comments.push(source.slice(start, p + 1))
+          hasBlockComment = true
           p = start - 1
           while (p >= 0 && isWhitespace(source.charCodeAt(p))) p--
           continue
@@ -411,7 +540,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       const lineText = source.slice(lineStart, p + 1).trim()
 
       if (lineText.startsWith('//')) {
-        // Collect consecutive single-line comments
+        // Don't include // comments above block comments (they're section headers, not doc comments)
+        if (hasBlockComment)
+          break
+
+        // Collect consecutive single-line comments (push + reverse)
         const singleLines: string[] = [lineText]
         p = lineStart - 1
         while (p >= 0 && (source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
@@ -421,7 +554,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           while (ls > 0 && source.charCodeAt(ls - 1) !== CH_LF) ls--
           const lt = source.slice(ls, p + 1).trim()
           if (lt.startsWith('//')) {
-            singleLines.unshift(lt)
+            singleLines.push(lt)
             p = ls - 1
             while (p >= 0 && (source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
           }
@@ -433,7 +566,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
             break
           }
         }
-        comments.unshift(singleLines.join('\n'))
+        singleLines.reverse()
+        comments.push(singleLines.join('\n'))
         continue
       }
 
@@ -441,7 +575,9 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       break
     }
 
-    return comments.length > 0 ? comments : undefined
+    if (comments.length === 0) return undefined
+    comments.reverse()
+    return comments
   }
 
   // --- High-level extraction ---
@@ -471,15 +607,50 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     }
 
     const text = source.slice(stmtStart, pos).trim()
-    const isTypeOnly = text.startsWith('import type ') || text.startsWith('import type{')
+    const isTypeOnly = text.charCodeAt(7) === 116 /* t */ && (text.startsWith('import type ') || text.startsWith('import type{'))
 
-    // Detect side-effect imports
-    const isSideEffect = !text.includes('{') && !text.includes(' as ') && !/import\s+\w/.test(text.replace(/import\s+type\s/, 'import ').replace(/import\s+['"]/, 'import_str '))
-    const isSideEffectImport = /^import\s+['"]/.test(text) || /^import\s+type\s+['"]/.test(text.replace('type ', ''))
+    // Detect side-effect imports: import 'foo' or import "foo" (no names imported)
+    // After 'import' + optional 'type', next non-ws must be a quote
+    let isSideEffectImport = false
+    {
+      let si = 6 // skip 'import'
+      while (si < text.length && (text.charCodeAt(si) === CH_SPACE || text.charCodeAt(si) === CH_TAB)) si++
+      if (si < text.length && text.charCodeAt(si) === 116 /* t */ && text.startsWith('type', si)) {
+        si += 4
+        while (si < text.length && (text.charCodeAt(si) === CH_SPACE || text.charCodeAt(si) === CH_TAB)) si++
+      }
+      if (si < text.length) {
+        const qc = text.charCodeAt(si)
+        isSideEffectImport = qc === CH_SQUOTE || qc === CH_DQUOTE
+      }
+    }
 
-    // Extract source module
-    const sourceMatch = text.match(/from\s+['"]([^'"]+)['"]/) || text.match(/import\s+['"]([^'"]+)['"]/)
-    const moduleSrc = sourceMatch ? sourceMatch[1] : ''
+    // Extract source module: find 'from' or direct quote after import
+    let moduleSrc = ''
+    {
+      const fromIdx = text.indexOf('from ')
+      if (fromIdx !== -1) {
+        let mi = fromIdx + 5
+        while (mi < text.length && (text.charCodeAt(mi) === CH_SPACE || text.charCodeAt(mi) === CH_TAB)) mi++
+        if (mi < text.length) {
+          const q = text.charCodeAt(mi)
+          if (q === CH_SQUOTE || q === CH_DQUOTE) {
+            const end = text.indexOf(String.fromCharCode(q), mi + 1)
+            if (end !== -1) moduleSrc = text.slice(mi + 1, end)
+          }
+        }
+      }
+      else if (isSideEffectImport) {
+        // import 'module' — find the quote
+        let mi = 6
+        while (mi < text.length && text.charCodeAt(mi) !== CH_SQUOTE && text.charCodeAt(mi) !== CH_DQUOTE) mi++
+        if (mi < text.length) {
+          const q = text.charCodeAt(mi)
+          const end = text.indexOf(String.fromCharCode(q), mi + 1)
+          if (end !== -1) moduleSrc = text.slice(mi + 1, end)
+        }
+      }
+    }
 
     const comments = extractLeadingComments(stmtStart)
 
@@ -509,34 +680,87 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
   /** Strip inline comments from a brace block and normalize indentation */
   function cleanBraceBlock(raw: string): string {
-    // Remove inline // and /** */ comments, normalize indentation
+    // Strip standalone comment lines and inline trailing comments, preserve relative indentation
+    // Pass 1: filter + compute min indent simultaneously
     const lines = raw.split('\n')
-    const cleaned: string[] = []
-    for (const line of lines) {
-      // Strip full-line comments
-      const trimmed = line.trim()
-      if (trimmed.startsWith('//') || trimmed.startsWith('/**') || trimmed.startsWith('/*') || trimmed.startsWith('*'))
-        continue
-      if (trimmed === '' || trimmed === '{' || trimmed === '}') {
-        cleaned.push(trimmed)
+    const filtered: string[] = []
+    const trimCache: string[] = [] // cache trimmed versions
+    const indentCache: number[] = [] // cache indent levels
+    let inBlockComment = false
+    let minIndent = Infinity
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (inBlockComment) {
+        if (line.includes('*/'))
+          inBlockComment = false
         continue
       }
-      // Remove trailing inline comments
-      const result = trimmed.replace(/\s*\/\/.*$/, '').replace(/\s*\/\*.*?\*\/\s*/g, ' ').trim()
-      if (result)
-        cleaned.push(result)
+
+      const trimmed = line.trim()
+
+      // Skip standalone comment lines
+      if (trimmed.length === 0) continue
+      const ch0 = trimmed.charCodeAt(0)
+      if (ch0 === CH_SLASH) {
+        const ch1 = trimmed.charCodeAt(1)
+        if (ch1 === CH_SLASH) continue // //
+        if (ch1 === CH_STAR) { // /* or /**
+          if (!trimmed.includes('*/'))
+            inBlockComment = true
+          continue
+        }
+      }
+      if (ch0 === CH_STAR) continue
+
+      // Remove trailing inline comments without regex
+      let cleaned = stripTrailingComment(line)
+      // Strip trailing semicolons from member lines (DTS convention for interfaces)
+      if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
+        cleaned = cleaned.slice(0, -1)
+      const ct = cleaned.trim()
+      if (!ct) continue
+
+      filtered.push(cleaned)
+      trimCache.push(ct)
+
+      // Compute indent simultaneously (pass 1 + 2 merged)
+      if (ct !== '{' && ct !== '}') {
+        const indent = cleaned.length - cleaned.trimStart().length
+        if (indent < minIndent) minIndent = indent
+      }
+      indentCache.push(cleaned.length - cleaned.trimStart().length)
     }
-    // Rebuild with consistent 2-space indent
-    const members: string[] = []
-    for (const line of cleaned) {
-      if (line === '{' || line === '}')
-        continue
-      if (line)
-        members.push(`  ${line}`)
-    }
-    if (members.length === 0)
+
+    if (filtered.length === 0)
       return '{}'
-    return `{\n${members.join('\n')}\n}`
+
+    if (minIndent === Infinity || minIndent <= 2)
+      return filtered.join('\n') // Already at correct indent
+
+    // Pass 2: re-indent using cached values
+    const offset = minIndent - 2
+    const rebased: string[] = new Array(filtered.length)
+    for (let i = 0; i < filtered.length; i++) {
+      const t = trimCache[i]
+      if (t === '{') {
+        rebased[i] = t
+        continue
+      }
+      const currentIndent = indentCache[i]
+      if (currentIndent > minIndent) {
+        rebased[i] = filtered[i]
+      }
+      else if (currentIndent === minIndent && (t.charCodeAt(0) === CH_RBRACE || t.charCodeAt(0) === CH_RBRACKET || t.charCodeAt(0) === CH_RPAREN)) {
+        rebased[i] = filtered[i]
+      }
+      else {
+        const newIndent = Math.max(0, currentIndent - offset)
+        rebased[i] = ' '.repeat(newIndent) + t
+      }
+    }
+
+    return rebased.join('\n')
   }
 
   /** Extract type parameters <...> (normalized to single line) */
@@ -546,9 +770,25 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const start = pos
     findMatchingClose(CH_LANGLE, CH_RANGLE)
     const raw = source.slice(start, pos)
-    // Normalize multi-line generics to single line
+    // Normalize multi-line generics to single line (avoid regex)
     if (raw.includes('\n')) {
-      return raw.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').replace(/^<\s+/, '<').replace(/\s+>$/, '>')
+      // Collapse whitespace/newlines to single spaces
+      let result = ''
+      let prevSpace = false
+      for (let i = 0; i < raw.length; i++) {
+        const c = raw.charCodeAt(i)
+        if (c === 32 || c === 9 || c === 10 || c === 13) {
+          if (!prevSpace && result.length > 0) { result += ' '; prevSpace = true }
+        }
+        else {
+          result += raw[i]
+          prevSpace = false
+        }
+      }
+      // Trim spaces around < and >
+      if (result.charCodeAt(1) === 32) result = '<' + result.slice(2)
+      if (result.charCodeAt(result.length - 2) === 32) result = result.slice(0, -2) + '>'
+      return result
     }
     return raw
   }
@@ -616,6 +856,86 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     }
 
     return `(${dtsParams.join(', ')})`
+  }
+
+  /** Clean a destructured parameter name: strip defaults and rest operators */
+  function cleanDestructuredName(name: string): string {
+    if (!name.startsWith('{') && !name.startsWith('['))
+      return name
+
+    let result = ''
+    let i = 0
+    let depth = 0
+    let inStr = false
+    let strCh = 0
+
+    while (i < name.length) {
+      const ch = name.charCodeAt(i)
+
+      if (inStr) {
+        if (ch === CH_BACKSLASH && i + 1 < name.length) { result += name[i] + name[i + 1]; i += 2; continue }
+        if (ch === strCh)
+          inStr = false
+        result += name[i]; i++; continue
+      }
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+        inStr = true; strCh = ch
+        result += name[i]; i++; continue
+      }
+
+      if (ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LPAREN)
+        depth++
+      else if (ch === CH_RBRACE || ch === CH_RBRACKET || ch === CH_RPAREN)
+        depth--
+
+      // At depth 1+, strip `= <default>` by skipping until , or closing bracket
+      if (depth >= 1 && ch === CH_EQUAL
+        && (i + 1 >= name.length || (name.charCodeAt(i + 1) !== CH_EQUAL && name.charCodeAt(i + 1) !== CH_RANGLE))) {
+        // Also strip preceding whitespace
+        while (result.length > 0 && (result[result.length - 1] === ' ' || result[result.length - 1] === '\t' || result[result.length - 1] === '\n'))
+          result = result.slice(0, -1)
+        // Skip the default value
+        i++
+        let skipDepth = 0
+        while (i < name.length) {
+          const sc = name.charCodeAt(i)
+          if (sc === CH_SQUOTE || sc === CH_DQUOTE || sc === CH_BACKTICK) {
+            const q = sc; i++
+            while (i < name.length) {
+              if (name.charCodeAt(i) === CH_BACKSLASH) { i += 2; continue }
+              if (name.charCodeAt(i) === q) { i++; break }
+              i++
+            }
+            continue
+          }
+          if (sc === CH_LBRACE || sc === CH_LBRACKET || sc === CH_LPAREN) {
+            skipDepth++
+          }
+          else if (sc === CH_RBRACE || sc === CH_RBRACKET || sc === CH_RPAREN) {
+            if (skipDepth === 0)
+              break
+            skipDepth--
+          }
+          else if (sc === CH_COMMA && skipDepth === 0) {
+            break
+          }
+          i++
+        }
+        continue
+      }
+
+      // At depth 1, strip `...` rest operator
+      if (depth === 1 && ch === CH_DOT && i + 2 < name.length
+        && name.charCodeAt(i + 1) === CH_DOT && name.charCodeAt(i + 2) === CH_DOT) {
+        i += 3
+        continue
+      }
+
+      result += name[i]
+      i++
+    }
+
+    return result
   }
 
   /** Build a single DTS parameter from raw source text */
@@ -720,6 +1040,28 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       type = 'unknown'
     }
 
+    // Clean destructured parameter names (strip defaults, rest operators)
+    name = cleanDestructuredName(name)
+    if ((name.startsWith('{') || name.startsWith('[')) && name.includes('\n')) {
+      // Collapse to single line only if short enough, otherwise normalize indent
+      const collapsed = name.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
+      if (collapsed.length <= 40) {
+        name = collapsed
+      }
+      else {
+        // Normalize to 2-space indent per line, keep braces unindented
+        const lines = name.split('\n')
+        name = lines.map((l) => {
+          const t = l.trim()
+          if (!t)
+            return ''
+          if (t === '{' || t === '}' || t === '[' || t === ']' || t.startsWith('}') || t.startsWith(']'))
+            return t
+          return `  ${t}`
+        }).join('\n')
+      }
+    }
+
     // Handle optional marker
     const isOptional = name.endsWith('?') || hasDefault
     if (name.endsWith('?'))
@@ -732,12 +1074,28 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     return `${name}${optionalMarker}: ${type}`
   }
 
+  /** Check if string is a numeric literal (integer or decimal, optionally negative) */
+  function isNumericLiteral(v: string): boolean {
+    let i = 0
+    if (i < v.length && v.charCodeAt(i) === 45 /* - */) i++
+    if (i >= v.length) return false
+    const c = v.charCodeAt(i)
+    if (c < 48 || c > 57) return false // not a digit
+    while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
+    if (i < v.length && v.charCodeAt(i) === 46 /* . */) {
+      i++
+      if (i >= v.length || v.charCodeAt(i) < 48 || v.charCodeAt(i) > 57) return false
+      while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
+    }
+    return i === v.length
+  }
+
   /** Infer type from a default value expression (simple cases) */
   function inferTypeFromDefault(value: string): string {
     const v = value.trim()
     if (v === 'true' || v === 'false')
       return 'boolean'
-    if (/^-?\d+(\.\d+)?$/.test(v))
+    if (isNumericLiteral(v))
       return 'number'
     if ((v.startsWith('\'') && v.endsWith('\'')) || (v.startsWith('"') && v.endsWith('"')))
       return 'string'
@@ -753,7 +1111,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const v = value.trim()
     if (v === 'true' || v === 'false')
       return v
-    if (/^-?\d+(\.\d+)?$/.test(v))
+    if (isNumericLiteral(v))
       return v
     if ((v.startsWith('\'') && v.endsWith('\'')) || (v.startsWith('"') && v.endsWith('"')))
       return v
@@ -764,8 +1122,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
   function extractAssertion(initText: string): string | null {
     if (initText.endsWith('as const'))
       return null
-    const m = initText.match(/\bas\s+(.+)$/)
-    return m ? m[1].trim() : null
+    // Find last ' as ' — the spaces already serve as word boundaries
+    const asIdx = initText.lastIndexOf(' as ')
+    if (asIdx === -1) return null
+    const afterAs = initText.slice(asIdx + 4).trim()
+    return afterAs || null
   }
 
   /** Extract return type annotation `: ReturnType` after params, before `{` or `;` */
@@ -877,16 +1238,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
     // Build DTS text
     const dtsParams = buildDtsParams(rawParams)
-    const parts: string[] = []
-    if (isExported)
-      parts.push('export ')
-    parts.push('declare function ')
-    parts.push(name || 'default')
-    parts.push(generics)
-    parts.push(dtsParams)
-    parts.push(': ', returnType, ';')
-
-    const text = parts.join('')
+    const text = (isExported ? 'export ' : '') + 'declare function ' + (name || 'default') + generics + dtsParams + ': ' + returnType + ';'
     const comments = extractLeadingComments(declStart)
 
     // Record index if this function had a body (implementation signature for overloads)
@@ -1077,16 +1429,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const body = cleanBraceBlock(rawBody)
 
     // Build DTS text
-    const parts: string[] = []
-    if (isExported)
-      parts.push('export ')
-    parts.push('declare interface ', name)
-    parts.push(generics)
-    if (extendsClause)
-      parts.push(' extends ', extendsClause)
-    parts.push(' ', body)
-
-    const text = parts.join('')
+    const text = (isExported ? 'export ' : '') + 'declare interface ' + name + generics + (extendsClause ? ' extends ' + extendsClause : '') + ' ' + body
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -1143,12 +1486,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       pos++
 
     // Build DTS text
-    const parts: string[] = []
-    if (isExported)
-      parts.push('export ')
-    parts.push('type ', name, generics, ' = ', typeBody)
-
-    const text = parts.join('')
+    const text = (isExported ? 'export ' : '') + 'type ' + name + generics + ' = ' + typeBody
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -1262,20 +1600,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const classBody = buildClassBodyDts()
 
     // Build DTS text
-    const parts: string[] = []
-    if (isExported)
-      parts.push('export ')
-    parts.push('declare ')
-    if (isAbstract)
-      parts.push('abstract ')
-    parts.push('class ', name, generics)
-    if (extendsClause)
-      parts.push(' extends ', extendsClause)
-    if (implementsList && implementsList.length > 0)
-      parts.push(' implements ', implementsList.join(', '))
-    parts.push(' ', classBody)
-
-    const text = parts.join('')
+    const text = (isExported ? 'export ' : '') + 'declare ' + (isAbstract ? 'abstract ' : '') + 'class ' + name + generics + (extendsClause ? ' extends ' + extendsClause : '') + (implementsList && implementsList.length > 0 ? ' implements ' + implementsList.join(', ') : '') + ' ' + classBody
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -1958,7 +2283,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         skipWhitespaceAndComments()
         const nname = readIdent()
         skipWhitespaceAndComments()
-        const body = buildNamespaceBodyDts(`${indent}  `)
+        const body = buildNamespaceBodyDts(indent)
         lines.push(`${indent}${prefix}${kw} ${nname} ${body}`)
       }
       else if (matchWord('abstract')) {
@@ -1995,7 +2320,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         skipToStatementEnd()
         const defText = source.slice(defStart, pos).trim().replace(/;$/, '')
         if (defText) {
-          lines.push(`${indent}export default ${defText}`)
+          lines.push(`${indent}export default ${defText};`)
         }
       }
       else if (!hasExport && (source.charCodeAt(pos) === CH_SQUOTE || source.charCodeAt(pos) === CH_DQUOTE || source.charCodeAt(pos) === CH_BACKTICK)) {
@@ -2055,13 +2380,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
 
     // Build DTS text
-    const parts: string[] = []
-    if (isExported)
-      parts.push('export ')
-    parts.push('declare ')
-    parts.push(keyword, ' ', name, ' ', body)
-
-    const text = parts.join('')
+    const text = (isExported ? 'export ' : '') + 'declare ' + keyword + ' ' + name + ' ' + body
     const comments = extractLeadingComments(declStart)
     const isAmbient = name.startsWith('\'') || name.startsWith('"')
 
@@ -2077,7 +2396,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     }
   }
 
-  // --- Main scan loop ---
+  // --- Main scan loop (first-char dispatch for speed) ---
 
   while (pos < len) {
     skipWhitespaceAndComments()
@@ -2085,25 +2404,28 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       break
 
     const stmtStart = pos
+    const ch0 = source.charCodeAt(pos)
 
-    // Detect keywords at top level
-    if (matchWord('import')) {
+    // Fast dispatch on first character of keyword
+    if (ch0 === 105 /* i */ && matchWord('import')) {
       declarations.push(extractImport(stmtStart))
     }
-    else if (matchWord('export')) {
+    else if (ch0 === 101 /* e */ && matchWord('export')) {
       pos += 6 // skip 'export'
       skipWhitespaceAndComments()
+      const ech = source.charCodeAt(pos)
 
-      if (matchWord('default')) {
+      if (ech === 100 /* d */ && matchWord('default')) {
         pos += 7
         skipWhitespaceAndComments()
+        const dch = source.charCodeAt(pos)
 
-        if (matchWord('function')) {
+        if (dch === 102 /* f */ && matchWord('function')) {
           const decl = extractFunction(stmtStart, true, false, true)
           if (decl)
             declarations.push(decl)
         }
-        else if (matchWord('async') && peekAfterWord('async') !== CH_SEMI) {
+        else if (dch === 97 /* a */ && matchWord('async') && peekAfterWord('async') !== CH_SEMI) {
           pos += 5
           skipWhitespaceAndComments()
           if (matchWord('function')) {
@@ -2113,7 +2435,6 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           }
           else {
             // export default async expression
-            const text = source.slice(stmtStart, pos).trim()
             skipToStatementEnd()
             const fullText = source.slice(stmtStart, pos).trim()
             declarations.push({
@@ -2127,11 +2448,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
             })
           }
         }
-        else if (matchWord('class')) {
+        else if (dch === 99 /* c */ && matchWord('class')) {
           const decl = extractClass(stmtStart, true, false)
           declarations.push(decl)
         }
-        else if (matchWord('abstract')) {
+        else if (dch === 97 /* a */ && matchWord('abstract')) {
           pos += 8
           skipWhitespaceAndComments()
           if (matchWord('class')) {
@@ -2156,7 +2477,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           })
         }
       }
-      else if (matchWord('type')) {
+      else if (ech === 116 /* t */ && matchWord('type')) {
         // Could be `export type Name = ...` or `export type { ... }`
         const savedPos = pos
         pos += 4
@@ -2199,16 +2520,16 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           declarations.push(decl)
         }
       }
-      else if (matchWord('interface')) {
+      else if (ech === 105 /* i */ && matchWord('interface')) {
         const decl = extractInterface(stmtStart, true)
         declarations.push(decl)
       }
-      else if (matchWord('function')) {
+      else if (ech === 102 /* f */ && matchWord('function')) {
         const decl = extractFunction(stmtStart, true, false, false)
         if (decl)
           declarations.push(decl)
       }
-      else if (matchWord('async')) {
+      else if (ech === 97 /* a */ && matchWord('async')) {
         pos += 5
         skipWhitespaceAndComments()
         if (matchWord('function')) {
@@ -2220,11 +2541,33 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           skipToStatementEnd()
         }
       }
-      else if (matchWord('class')) {
-        const decl = extractClass(stmtStart, true, false)
-        declarations.push(decl)
+      else if (ech === 99 /* c */) {
+        if (matchWord('class')) {
+          const decl = extractClass(stmtStart, true, false)
+          declarations.push(decl)
+        }
+        else if (matchWord('const')) {
+          // Could be 'export const enum' or 'export const ...'
+          const savedPos = pos
+          pos += 5
+          skipWhitespaceAndComments()
+          if (matchWord('enum')) {
+            pos = savedPos + 5
+            skipWhitespaceAndComments()
+            const decl = extractEnum(stmtStart, true, true)
+            declarations.push(decl)
+          }
+          else {
+            pos = savedPos
+            const decls = extractVariable(stmtStart, 'const', true)
+            declarations.push(...decls)
+          }
+        }
+        else {
+          skipToStatementEnd()
+        }
       }
-      else if (matchWord('abstract')) {
+      else if (ech === 97 /* a */ && matchWord('abstract')) {
         pos += 8
         skipWhitespaceAndComments()
         if (matchWord('class')) {
@@ -2232,50 +2575,33 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           declarations.push(decl)
         }
       }
-      else if (matchWord('const')) {
-        // Could be 'export const enum' or 'export const ...'
-        const savedPos = pos
-        pos += 5
-        skipWhitespaceAndComments()
-        if (matchWord('enum')) {
-          pos = savedPos + 5
-          skipWhitespaceAndComments()
-          const decl = extractEnum(stmtStart, true, true)
-          declarations.push(decl)
-        }
-        else {
-          pos = savedPos
-          const decls = extractVariable(stmtStart, 'const', true)
-          declarations.push(...decls)
-        }
-      }
-      else if (matchWord('let')) {
+      else if (ech === 108 /* l */ && matchWord('let')) {
         const decls = extractVariable(stmtStart, 'let', true)
         declarations.push(...decls)
       }
-      else if (matchWord('var')) {
+      else if (ech === 118 /* v */ && matchWord('var')) {
         const decls = extractVariable(stmtStart, 'var', true)
         declarations.push(...decls)
       }
-      else if (matchWord('enum')) {
+      else if (ech === 101 /* e */ && matchWord('enum')) {
         const decl = extractEnum(stmtStart, true, false)
         declarations.push(decl)
       }
-      else if (matchWord('declare')) {
+      else if (ech === 100 /* d */ && matchWord('declare')) {
         pos += 7
         skipWhitespaceAndComments()
         // export declare ...
         handleDeclare(stmtStart, true)
       }
-      else if (matchWord('namespace')) {
+      else if (ech === 110 /* n */ && matchWord('namespace')) {
         const decl = extractModule(stmtStart, true, 'namespace')
         declarations.push(decl)
       }
-      else if (matchWord('module')) {
+      else if (ech === 109 /* m */ && matchWord('module')) {
         const decl = extractModule(stmtStart, true, 'module')
         declarations.push(decl)
       }
-      else if (source.charCodeAt(pos) === CH_LBRACE) {
+      else if (ech === CH_LBRACE) {
         // export { ... } or export { ... } from '...'
         skipExportBraces()
         const text = source.slice(stmtStart, pos).trim()
@@ -2292,7 +2618,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           end: pos,
         })
       }
-      else if (source.charCodeAt(pos) === CH_STAR) {
+      else if (ech === CH_STAR) {
         // export * from '...'
         skipExportStar()
         const text = source.slice(stmtStart, pos).trim()
@@ -2326,56 +2652,96 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         }
       }
     }
-    else if (matchWord('declare')) {
+    else if (ch0 === 100 /* d */ && matchWord('declare')) {
       pos += 7
       skipWhitespaceAndComments()
       handleDeclare(stmtStart, false)
     }
-    else if (matchWord('interface')) {
+    else if (ch0 === 105 /* i */ && matchWord('interface')) {
       // Non-exported interface
       const decl = extractInterface(stmtStart, false)
       nonExportedTypes.set(decl.name, decl)
     }
-    else if (matchWord('type')) {
+    else if (ch0 === 116 /* t */ && matchWord('type')) {
       // Non-exported type alias
       const decl = extractTypeAlias(stmtStart, false)
       nonExportedTypes.set(decl.name, decl)
       declarations.push(decl)
     }
-    else if (matchWord('function') || matchWord('async')) {
+    else if (ch0 === 102 /* f */ && matchWord('function')) {
       // Non-exported function — skip for DTS
       skipToStatementEnd()
     }
-    else if (matchWord('class') || matchWord('abstract')) {
-      // Non-exported class
-      if (matchWord('abstract')) {
+    else if (ch0 === 97 /* a */) {
+      if (matchWord('async')) {
+        // Non-exported async function — skip for DTS
+        skipToStatementEnd()
+      }
+      else if (matchWord('abstract')) {
         pos += 8
         skipWhitespaceAndComments()
+        if (matchWord('class')) {
+          const decl = extractClass(stmtStart, false, false)
+          nonExportedTypes.set(decl.name, decl)
+          declarations.push(decl)
+        }
+        else {
+          skipToStatementEnd()
+        }
       }
+      else {
+        pos++
+        skipToStatementEnd()
+      }
+    }
+    else if (ch0 === 99 /* c */) {
       if (matchWord('class')) {
         const decl = extractClass(stmtStart, false, false)
         nonExportedTypes.set(decl.name, decl)
         declarations.push(decl)
       }
+      else if (matchWord('const')) {
+        // Check for 'const enum' before skipping as variable
+        const savedPos = pos
+        pos += 5
+        skipWhitespaceAndComments()
+        if (matchWord('enum')) {
+          pos = savedPos + 5
+          skipWhitespaceAndComments()
+          const decl = extractEnum(stmtStart, false, true)
+          nonExportedTypes.set(decl.name, decl)
+          declarations.push(decl)
+        }
+        else {
+          // Non-exported const variable — skip for DTS
+          pos = savedPos
+          skipToStatementEnd()
+        }
+      }
       else {
+        pos++
         skipToStatementEnd()
       }
     }
-    else if (matchWord('enum')) {
+    else if (ch0 === 101 /* e */ && matchWord('enum')) {
       // Non-exported enum
       const decl = extractEnum(stmtStart, false, false)
       nonExportedTypes.set(decl.name, decl)
       declarations.push(decl)
     }
-    else if (matchWord('const') || matchWord('let') || matchWord('var')) {
+    else if (ch0 === 108 /* l */ && matchWord('let')) {
       // Non-exported variable — skip for DTS
       skipToStatementEnd()
     }
-    else if (matchWord('module')) {
+    else if (ch0 === 118 /* v */ && matchWord('var')) {
+      // Non-exported variable — skip for DTS
+      skipToStatementEnd()
+    }
+    else if (ch0 === 109 /* m */ && matchWord('module')) {
       const decl = extractModule(stmtStart, false, 'module')
       declarations.push(decl)
     }
-    else if (matchWord('namespace')) {
+    else if (ch0 === 110 /* n */ && matchWord('namespace')) {
       const decl = extractModule(stmtStart, false, 'namespace')
       declarations.push(decl)
     }
@@ -2539,7 +2905,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       // declare global { ... }
       pos += 6
       skipWhitespaceAndComments()
-      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? extractBraceBlock() : '{}'
+      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
       const text = `declare global ${body}`
       const comments = extractLeadingComments(stmtStart)
       declarations.push({
@@ -2558,27 +2924,69 @@ export function scanDeclarations(source: string, filename: string, keepComments:
   }
 }
 
+/** Check if name appears as a whole word in text (fast includes + boundary check) */
+function isWordInText(name: string, text: string): boolean {
+  let searchFrom = 0
+  const nameLen = name.length
+  while (searchFrom < text.length) {
+    const idx = text.indexOf(name, searchFrom)
+    if (idx === -1) return false
+    // Check word boundaries
+    const before = idx > 0 ? text.charCodeAt(idx - 1) : 32
+    const after = idx + nameLen < text.length ? text.charCodeAt(idx + nameLen) : 32
+    const beforeOk = !((before >= 65 && before <= 90) || (before >= 97 && before <= 122) || (before >= 48 && before <= 57) || before === 95 || before === 36)
+    const afterOk = !((after >= 65 && after <= 90) || (after >= 97 && after <= 122) || (after >= 48 && after <= 57) || after === 95 || after === 36)
+    if (beforeOk && afterOk) return true
+    searchFrom = idx + 1
+  }
+  return false
+}
+
 /** Resolve non-exported types that are referenced by exported declarations */
 function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>): void {
-  // Build combined text of all exported declarations
-  const exportedTexts: string[] = []
-  for (const decl of declarations) {
-    if (decl.isExported && decl.kind !== 'import') {
-      exportedTexts.push(decl.text)
-    }
-  }
-  const combinedText = exportedTexts.join('\n')
+  // Iteratively resolve referenced non-exported types (transitive closure)
+  const resolved = new Set<string>()
+  const declNames = new Set<string>()
+  for (const d of declarations) declNames.add(d.name)
 
-  // Check each non-exported type
-  for (const [name, decl] of nonExportedTypes) {
-    // Simple word-boundary check
-    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-    if (re.test(combinedText)) {
-      // Check it's not already in declarations
-      const existing = declarations.find(d => d.name === name)
-      if (!existing) {
-        declarations.push(decl)
+  for (;;) {
+    // Build combined text of all current declarations (excluding imports)
+    let combinedText = ''
+    for (let i = 0; i < declarations.length; i++) {
+      if (declarations[i].kind !== 'import') {
+        combinedText += declarations[i].text
+        combinedText += '\n'
       }
+    }
+
+    // Collect referenced non-exported types not yet resolved
+    const toInsert: Declaration[] = []
+    for (const [name, decl] of nonExportedTypes) {
+      if (resolved.has(name))
+        continue
+      // Fast path: includes() check first (avoids RegExp entirely for non-matches)
+      if (combinedText.includes(name) && isWordInText(name, combinedText)) {
+        if (!declNames.has(name)) {
+          toInsert.push(decl)
+          declNames.add(name)
+        }
+        resolved.add(name)
+      }
+    }
+
+    if (toInsert.length === 0)
+      break
+
+    // Insert at correct source positions to preserve declaration order
+    for (const decl of toInsert) {
+      let insertIdx = declarations.length
+      for (let i = 0; i < declarations.length; i++) {
+        if (declarations[i].start > decl.start) {
+          insertIdx = i
+          break
+        }
+      }
+      declarations.splice(insertIdx, 0, decl)
     }
   }
 }

@@ -64,6 +64,12 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
 
+  // Fast path: if we have an explicit type annotation and no value needing special inference,
+  // use the scanner's pre-built text directly
+  if (decl.typeAnnotation && !decl.value) {
+    return comments + decl.text
+  }
+
   let result = ''
 
   // Add export if needed
@@ -197,11 +203,14 @@ export function processTypeDeclaration(decl: Declaration, keepComments: boolean 
     result += 'declare '
   }
 
-  // Extract the type definition from the original text
-  // Remove leading/trailing whitespace and comments
-  const typeMatch = decl.text.match(/type\s[^=]+=\s*([\s\S]+)/)
-  if (typeMatch) {
-    const typeDef = typeMatch[0].replace(/;?\s*$/, '')
+  // Extract the type definition from the original text using indexOf instead of regex
+  const typeIdx = decl.text.indexOf('type ')
+  if (typeIdx !== -1) {
+    let typeDef = decl.text.slice(typeIdx)
+    // Strip trailing semicolons and whitespace
+    let end = typeDef.length
+    while (end > 0 && (typeDef.charCodeAt(end - 1) === 59 /* ; */ || typeDef.charCodeAt(end - 1) === 32 || typeDef.charCodeAt(end - 1) === 10 || typeDef.charCodeAt(end - 1) === 13)) end--
+    if (end < typeDef.length) typeDef = typeDef.slice(0, end)
     result += typeDef
   }
   else {
@@ -260,10 +269,10 @@ export function processEnumDeclaration(decl: Declaration, keepComments: boolean 
   // Add enum name
   result += decl.name
 
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    result += ` ${bodyMatch[0]}`
+  // Extract the body from the original text using indexOf instead of regex
+  const enumBraceIdx = decl.text.indexOf('{')
+  if (enumBraceIdx !== -1) {
+    result += ' ' + decl.text.slice(enumBraceIdx)
   }
   else {
     result += ' {}'
@@ -280,8 +289,10 @@ export function processImportDeclaration(decl: Declaration): string {
   // Just ensure they end with semicolon
   let result = decl.text.trim()
 
-  // Remove any existing semicolon to avoid doubles
-  result = result.replace(/;+$/, '')
+  // Remove trailing semicolons without regex
+  let end = result.length
+  while (end > 0 && result.charCodeAt(end - 1) === 59 /* ; */) end--
+  if (end < result.length) result = result.slice(0, end)
 
   // Add single semicolon
   result += ';'
@@ -320,10 +331,10 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
     // Add module name
     result += decl.name
 
-    // Extract the body from the original text
-    const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-    if (bodyMatch) {
-      result += ` ${bodyMatch[0]}`
+    // Extract the body from the original text using indexOf
+    const modBraceIdx = decl.text.indexOf('{')
+    if (modBraceIdx !== -1) {
+      result += ' ' + decl.text.slice(modBraceIdx)
     }
     else {
       result += ' {}'
@@ -351,10 +362,10 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
   // Add namespace name
   result += decl.name
 
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    result += ` ${bodyMatch[0]}`
+  // Extract the body from the original text using indexOf
+  const nsBraceIdx = decl.text.indexOf('{')
+  if (nsBraceIdx !== -1) {
+    result += ' ' + decl.text.slice(nsBraceIdx)
   }
   else {
     result += ' {}'

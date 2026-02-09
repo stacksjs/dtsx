@@ -614,9 +614,6 @@ async function processFileWithStatsFromSource(
     filePath,
     sourceCode: processedSource,
     declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
   }
 
   // Process declarations to generate DTS

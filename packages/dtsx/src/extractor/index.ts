@@ -6,7 +6,8 @@ import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclara
 import type { Declaration } from '../types'
 import type { AsyncParseConfig } from './cache'
 import { forEachChild, SyntaxKind } from 'typescript'
-import { getSourceFileAsync, hashContent } from './cache'
+import { getSourceFileAsync } from './cache'
+import { hashContent } from './hash'
 // Re-export all public APIs
 import { clearSourceFileCache as _clearSFCache } from './cache'
 import {

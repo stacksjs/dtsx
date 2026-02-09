@@ -1055,9 +1055,6 @@ export class DtsxLanguageServer {
       filePath: this.uriToPath(uri),
       sourceCode: doc.content,
       declarations: doc.declarations,
-      imports: new Map<string, Set<string>>(),
-      exports: new Set<string>(),
-      usedTypes: new Set<string>(),
     }
 
     return processDeclarations(doc.declarations, context, true, this.config.importOrder)

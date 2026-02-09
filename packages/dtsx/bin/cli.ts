@@ -1,18 +1,12 @@
 // Fast path — skip CLI framework for maximum startup speed
 import type { LogLevel } from '../src/logger'
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
-import { resolve } from 'node:path'
 import process from 'node:process'
-import { CLI } from '@stacksjs/clapp'
-import { version } from '../../../package.json'
-import { getConfig } from '../src/config'
-import { generate, processSource, watch } from '../src/generator'
 
 const _cmd = process.argv[2]
-if (_cmd === 'stdin' || _cmd === 'emit') {
-  const { processSource } = await import('../src/process-source')
-
+if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project' || _cmd === '--project-worker') {
   if (_cmd === 'stdin') {
+    const { processSource } = await import('../src/process-source')
     const chunks: Buffer[] = []
     for await (const chunk of process.stdin) {
       chunks.push(chunk)
@@ -23,7 +17,105 @@ if (_cmd === 'stdin' || _cmd === 'emit') {
       process.stdout.write('\n')
     }
   }
+  else if (_cmd === '--project-worker') {
+    // Worker subprocess: receives file list on stdin, processes & writes output
+    const { processSourceDirect } = await import('../src/process-source')
+    const { join } = await import('node:path')
+    const { mkdirSync } = await import('node:fs')
+    const wArgs = process.argv.slice(3)
+    let wDir = ''
+    let wOut = ''
+    for (let i = 0; i < wArgs.length; i++) {
+      if (wArgs[i] === '--outdir' && wArgs[i + 1]) { wOut = wArgs[i + 1]; i++ }
+      else if (!wDir) { wDir = wArgs[i] }
+    }
+    mkdirSync(wOut, { recursive: true })
+
+    // Read file list from stdin
+    const wChunks: Buffer[] = []
+    for await (const chunk of process.stdin) { wChunks.push(chunk) }
+    const wFiles = Buffer.concat(wChunks).toString('utf-8').trim().split('\n').filter(Boolean)
+    if (wFiles.length === 0) { process.exit(0) }
+
+    // JIT warmup
+    processSourceDirect('export interface W{a:string}\nexport function f(x:W):void{}\nexport class C{m():void{}}\nexport type T=string\nexport const v:number=1\nexport enum E{A,B}', 'warmup.ts')
+
+    // Pipeline: read → process → write overlapped
+    const wReadPromises = wFiles.map(f => Bun.file(join(wDir, f)).text())
+    const wWritePromises: Promise<number>[] = new Array(wFiles.length)
+    for (let i = 0; i < wFiles.length; i++) {
+      const wSource = await wReadPromises[i]
+      wWritePromises[i] = Bun.write(
+        join(wOut, wFiles[i].replace(/\.ts$/, '.d.ts')),
+        processSourceDirect(wSource, wFiles[i]),
+      )
+    }
+    await Promise.all(wWritePromises)
+  }
+  else if (_cmd === '--project') {
+    // Usage: dtsx --project <dir> --outdir <outdir>
+    const { readdirSync, mkdirSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const args = process.argv.slice(3)
+    let dir = ''
+    let out = ''
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--outdir' && args[i + 1]) {
+        out = args[i + 1]
+        i++
+      }
+      else if (!dir) {
+        dir = args[i]
+      }
+    }
+    mkdirSync(out, { recursive: true })
+    const files = readdirSync(dir).filter((f: string) => f.endsWith('.ts') && !f.endsWith('.d.ts'))
+
+    // For large file counts, parallelize across CPU cores using worker subprocesses
+    // Use conservative worker count to balance spawn overhead vs parallelism
+    const PARALLEL_THRESHOLD = 200
+    if (files.length >= PARALLEL_THRESHOLD) {
+      const os = await import('node:os')
+      const numCPUs = os.availableParallelism?.() ?? os.cpus().length
+      const numWorkers = Math.min(Math.min(numCPUs, 6), Math.ceil(files.length / 50))
+      const batchSize = Math.ceil(files.length / numWorkers)
+      const procs: Array<ReturnType<typeof Bun.spawn>> = []
+      for (let w = 0; w < numWorkers; w++) {
+        const start = w * batchSize
+        const batch = files.slice(start, start + batchSize)
+        if (batch.length === 0) break
+        const proc = Bun.spawn([process.execPath, '--project-worker', dir, '--outdir', out], {
+          stdin: 'pipe',
+          stdout: 'ignore',
+          stderr: 'inherit',
+        })
+        proc.stdin!.write(batch.join('\n'))
+        proc.stdin!.end()
+        procs.push(proc)
+      }
+
+      const exitCodes = await Promise.all(procs.map(p => p.exited))
+      if (exitCodes.some(c => c !== 0)) { process.exit(1) }
+    }
+    else {
+      // Sequential batch mode for small file counts
+      const { processSourceDirect } = await import('../src/process-source')
+
+      // JIT warmup
+      processSourceDirect('export interface W{a:string}\nexport function f(x:W):void{}\nexport class C{m():void{}}\nexport type T=string\nexport const v:number=1\nexport enum E{A,B}', 'warmup.ts')
+
+      // Read all → Process all → Write all (batch approach avoids per-file await overhead)
+      const sources = await Promise.all(files.map(f => Bun.file(join(dir, f)).text()))
+      const results: string[] = new Array(files.length)
+      for (let i = 0; i < files.length; i++) {
+        results[i] = processSourceDirect(sources[i], files[i])
+      }
+      await Promise.all(files.map((f, i) => Bun.write(join(out, f.replace(/\.ts$/, '.d.ts')), results[i])))
+    }
+  }
   else {
+    // emit command
+    const { processSource } = await import('../src/process-source')
     const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
     const filePath = process.argv[3]!
     const source = readFileSync(filePath, 'utf-8')
@@ -40,6 +132,13 @@ if (_cmd === 'stdin' || _cmd === 'emit') {
   }
   process.exit(0)
 }
+
+// Heavy imports — only loaded when CLI framework is needed (not on fast path)
+const { resolve } = await import('node:path')
+const { CLI } = await import('@stacksjs/clapp')
+const { version } = await import('../../../package.json')
+const { getConfig } = await import('../src/config')
+const { generate, processSource, watch } = await import('../src/generator')
 
 const cli = new CLI('dtsx')
 
