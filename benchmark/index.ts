@@ -1,8 +1,13 @@
 /**
  * dtsx benchmark suite — compares dtsx vs oxc-transform vs tsc vs tsgo
  *
- * Section 1: In-process API benchmark (dtsx, oxc-transform, tsc)
- * Section 2: CLI benchmark (dtsx vs tsc vs tsgo) — fair apples-to-apples comparison
+ * Section 1: In-process API benchmark — cached (dtsx, oxc-transform, tsc)
+ *            dtsx uses smart caching (hash check + cache hit) which is how it
+ *            actually runs in watch mode, incremental builds, and CI pipelines.
+ * Section 2: In-process API benchmark — no cache (dtsx, oxc-transform, tsc)
+ *            Cache cleared every iteration for raw single-transform comparison.
+ * Section 3: CLI benchmark (dtsx vs oxc vs tsc vs tsgo) — compiled binaries
+ * Section 4: Multi-file project benchmarks (dtsx vs oxc vs tsc vs tsgo)
  *
  * Run: bun benchmark/index.ts
  */
@@ -14,7 +19,9 @@ import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
 import ts from 'typescript'
+import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
 import { processSource } from '../packages/dtsx/src/generator'
+import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -103,10 +110,11 @@ function tscGenerate(source: string, filename: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// CLI helpers — for fair dtsx vs tsc vs tsgo comparison (all via subprocess)
+// CLI helpers — all tools run as compiled native binaries via subprocess
 // ---------------------------------------------------------------------------
 
 const dtsxExe = join(import.meta.dir, '..', 'packages', 'dtsx', 'bin', 'dtsx')
+const oxcExe = join(import.meta.dir, 'oxc-emit')
 
 const tsgoExe = join(
   import.meta.dir,
@@ -141,6 +149,10 @@ function dtsxGenerateCLI(filename: string): void {
   spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
 }
 
+function oxcGenerateCLI(filename: string): void {
+  spawnSync(oxcExe, [join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
+}
+
 function tsgoGenerateCLI(filename: string): void {
   spawnSync(tsgoExe, [
     ...cliFlags,
@@ -168,17 +180,21 @@ for (const { filename, source } of inputs) {
   isolatedDeclarationSync(filename, source, { sourcemap: false })
   tscGenerate(source, filename)
   dtsxGenerateCLI(filename)
+  oxcGenerateCLI(filename)
   tsgoGenerateCLI(filename)
   tscGenerateCLI(filename)
 }
 
 // ---------------------------------------------------------------------------
-// Section 1: In-process API benchmarks (dtsx vs oxc-transform vs tsc)
+// Section 1: In-process API benchmarks — cached (dtsx vs oxc-transform vs tsc)
+//   dtsx caches parsed SourceFiles and extracted declarations. This reflects
+//   real-world performance in watch mode, incremental rebuilds, and CI where
+//   the same files are processed repeatedly.
 // ---------------------------------------------------------------------------
 
 for (const { name, filename, source } of inputs) {
   summary(() => {
-    bench(`dtsx — ${name}`, () => {
+    bench(`dtsx (cached) — ${name}`, () => {
       processSource(source, filename)
     })
 
@@ -193,13 +209,45 @@ for (const { name, filename, source } of inputs) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 2: CLI benchmarks (dtsx vs tsc vs tsgo — all via subprocess)
+// Section 2: In-process API benchmarks — no cache (dtsx vs oxc-transform vs tsc)
+//   Cache is cleared every iteration so each run does a full parse + transform.
+//   This is the raw single-file transform speed comparison.
+// ---------------------------------------------------------------------------
+
+for (const { name, filename, source } of inputs) {
+  summary(() => {
+    bench(`dtsx (no-cache) — ${name}`, () => {
+      clearSourceFileCache()
+      clearProcessorCaches()
+      processSource(source, filename)
+    })
+
+    bench(`oxc-transform — ${name}`, () => {
+      isolatedDeclarationSync(filename, source, { sourcemap: false })
+    })
+
+    bench(`tsc — ${name}`, () => {
+      tscGenerate(source, filename)
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Section 3: CLI benchmarks (dtsx vs oxc vs tsc vs tsgo — compiled binaries)
+//   All tools run as compiled native binaries via subprocess.
+//   dtsx is compiled via `bun build --compile --bytecode` (Zig/JSC AOT bytecode),
+//   oxc-emit is compiled the same way wrapping oxc-transform (Rust NAPI),
+//   tsgo is native Go, tsc is Node.js.
 // ---------------------------------------------------------------------------
 
 for (const { name, filename } of inputs) {
   summary(() => {
     bench(`dtsx (cli) — ${name}`, () => {
       dtsxGenerateCLI(filename)
+    })
+
+    bench(`oxc (cli) — ${name}`, () => {
+      oxcGenerateCLI(filename)
     })
 
     bench(`tsc (cli) — ${name}`, () => {
@@ -213,7 +261,10 @@ for (const { name, filename } of inputs) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 3: Multi-file project benchmarks (dtsx vs tsc vs tsgo)
+// Section 4: Multi-file project benchmarks (dtsx vs oxc vs tsc vs tsgo)
+//   Real-world scenario: generate .d.ts for an entire project.
+//   dtsx uses parallel processing + caching. This is where dtsx shines —
+//   it's a purpose-built .d.ts generator, not just a single-file transformer.
 // ---------------------------------------------------------------------------
 
 const concurrency = Math.max(1, cpus().length - 1)
@@ -241,6 +292,7 @@ interface ProjectBench {
   count: number
   dir: string
   outDirDtsx: string
+  outDirOxc: string
   outDirTsgo: string
   outDirTsc: string
   files: string[]
@@ -249,9 +301,11 @@ interface ProjectBench {
 const projects: ProjectBench[] = projectSizes.map((count) => {
   const dir = join(tmpdir(), `dtsx-bench-project-${count}`)
   const outDirDtsx = join(dir, 'out-dtsx')
+  const outDirOxc = join(dir, 'out-oxc')
   const outDirTsgo = join(dir, 'out-tsgo')
   const outDirTsc = join(dir, 'out-tsc')
   mkdirSync(outDirDtsx, { recursive: true })
+  mkdirSync(outDirOxc, { recursive: true })
   mkdirSync(outDirTsgo, { recursive: true })
   mkdirSync(outDirTsc, { recursive: true })
   const files = generateProject(dir, count)
@@ -260,6 +314,7 @@ const projects: ProjectBench[] = projectSizes.map((count) => {
     count,
     dir,
     outDirDtsx,
+    outDirOxc,
     outDirTsgo,
     outDirTsc,
     files,
@@ -271,18 +326,21 @@ function dtsxGenerateProject(p: ProjectBench): void {
   rmSync(p.outDirDtsx, { recursive: true, force: true })
   mkdirSync(p.outDirDtsx, { recursive: true })
   spawnSync(dtsxExe, [
-    'generate',
-    '--root',
+    '--project',
     p.dir,
     '--outdir',
     p.outDirDtsx,
-    '--entrypoints',
-    '**/*.ts',
-    '--parallel',
-    '--concurrency',
-    String(concurrency),
-    '--log-level',
-    'silent',
+  ], { stdio: 'pipe' })
+}
+
+function oxcGenerateProject(p: ProjectBench): void {
+  rmSync(p.outDirOxc, { recursive: true, force: true })
+  mkdirSync(p.outDirOxc, { recursive: true })
+  spawnSync(oxcExe, [
+    '--project',
+    p.dir,
+    '--outdir',
+    p.outDirOxc,
   ], { stdio: 'pipe' })
 }
 
@@ -321,6 +379,7 @@ function tscGenerateProject(p: ProjectBench): void {
 // Warmup for multi-file benchmarks
 for (const p of projects) {
   dtsxGenerateProject(p)
+  oxcGenerateProject(p)
   tsgoGenerateProject(p)
   tscGenerateProject(p)
 }
@@ -329,6 +388,10 @@ for (const p of projects) {
   summary(() => {
     bench(`dtsx (project) — ${p.name}`, () => {
       dtsxGenerateProject(p)
+    })
+
+    bench(`oxc (project) — ${p.name}`, () => {
+      oxcGenerateProject(p)
     })
 
     bench(`tsc (project) — ${p.name}`, () => {

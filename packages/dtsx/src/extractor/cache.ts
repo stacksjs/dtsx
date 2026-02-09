@@ -92,9 +92,10 @@ export function evictOldestEntries(): void {
 
 /**
  * Get or create a cached SourceFile
+ * Accepts an optional pre-computed contentHash to avoid re-hashing
  */
-export function getSourceFile(filePath: string, sourceCode: string): SourceFile {
-  const contentHash = hashContent(sourceCode)
+export function getSourceFile(filePath: string, sourceCode: string, precomputedHash?: number | bigint): SourceFile {
+  const contentHash = precomputedHash ?? hashContent(sourceCode)
   const cached = sourceFileCache.get(filePath)
   const now = Date.now()
 
@@ -109,7 +110,7 @@ export function getSourceFile(filePath: string, sourceCode: string): SourceFile 
     filePath,
     sourceCode,
     ScriptTarget.Latest,
-    true,
+    false,
     ScriptKind.TS,
   )
 
@@ -196,7 +197,7 @@ async function parseSourceFileAsync(
     filePath,
     sourceCode,
     ScriptTarget.Latest,
-    true,
+    false,
     ScriptKind.TS,
   )
 

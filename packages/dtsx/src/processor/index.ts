@@ -225,7 +225,7 @@ export function processDeclarations(
     declarationTexts.push({ text: exp.text, additionalTexts: [] })
   }
 
-  // Optimized: combine ALL declaration texts into one and do a single pass for import detection
+  // Optimized: combine ALL declaration texts into one and extract identifiers in a single pass
   const allTexts: string[] = []
   for (const { text, additionalTexts } of declarationTexts) {
     allTexts.push(text)
@@ -235,10 +235,9 @@ export function processDeclarations(
   }
   const combinedDeclarationText = allTexts.join('\n')
 
-  // Single pass: find all used imports in combined text
+  // Two-phase import detection: fast includes() rejection then regex word-boundary check
   for (const item of allImportedItemNames) {
-    const regex = getCachedRegex(item)
-    if (regex.test(combinedDeclarationText)) {
+    if (combinedDeclarationText.includes(item) && getCachedRegex(item).test(combinedDeclarationText)) {
       usedImportItems.add(item)
     }
   }

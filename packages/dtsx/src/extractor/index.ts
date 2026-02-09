@@ -6,7 +6,7 @@ import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclara
 import type { Declaration } from '../types'
 import type { AsyncParseConfig } from './cache'
 import { forEachChild, SyntaxKind } from 'typescript'
-import { getSourceFile, getSourceFileAsync, hashContent } from './cache'
+import { getSourceFileAsync, hashContent } from './cache'
 // Re-export all public APIs
 import { clearSourceFileCache as _clearSFCache } from './cache'
 import {
@@ -18,12 +18,12 @@ import {
   extractImportDeclaration,
   extractInterfaceDeclaration,
   extractModuleDeclaration,
-  extractReferencedTypeDeclarations,
   extractTypeAliasDeclaration,
   extractVariableStatement,
   findReferencedTypes,
 } from './declarations'
 import { shouldIncludeNonExportedFunction, shouldIncludeNonExportedInterface } from './helpers'
+import { scanDeclarations } from './scanner'
 
 export {
   buildClassBody,
@@ -89,7 +89,8 @@ export function clearSourceFileCache(): void {
 
 /**
  * Extract only public API declarations from TypeScript source code
- * This focuses on what should be in .d.ts files, not implementation details
+ * Uses fast string-based scanner (no TypeScript parser) for maximum performance.
+ * Falls back to TS parser-based extraction if scanner is not available.
  */
 export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
   const contentHash = hashContent(sourceCode)
@@ -102,8 +103,8 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
     return cached.declarations
   }
 
-  const sourceFile = getSourceFile(filePath, sourceCode)
-  const declarations = extractDeclarationsFromSourceFile(sourceFile, sourceCode, keepComments)
+  // Use fast string scanner (no TS parser needed)
+  const declarations = scanDeclarations(sourceCode, filePath, keepComments)
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
 
@@ -127,7 +128,8 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
 
 /**
  * Internal function to extract declarations from a pre-parsed SourceFile
- * Shared between sync and async versions
+ * Single-pass: collects all declarations and non-exported type candidates in one tree walk.
+ * Then resolves referenced types from the candidate map (no second tree walk).
  */
 function extractDeclarationsFromSourceFile(
   sourceFile: SourceFile,
@@ -135,17 +137,24 @@ function extractDeclarationsFromSourceFile(
   keepComments: boolean,
 ): Declaration[] {
   const declarations: Declaration[] = []
+  // Collect ALL non-exported type declarations during the single walk
+  // so we can resolve referenced types without a second tree traversal
+  const nonExportedTypeCandidates = new Map<string, Declaration>()
 
-  // Visit only top-level declarations
+  // Visit only top-level declarations using depth tracking (no parent nodes)
+  let depth = 0
   function visitTopLevel(node: Node) {
-    // Only process top-level declarations, skip function bodies and implementation details
-    if (node.parent && node.parent !== sourceFile) {
-      return // Skip nested declarations
+    // Only process direct children of the source file (depth 1)
+    if (depth !== 1) {
+      depth++
+      forEachChild(node, visitTopLevel)
+      depth--
+      return
     }
 
     switch (node.kind) {
       case SyntaxKind.ImportDeclaration:
-        declarations.push(extractImportDeclaration(node as ImportDeclaration, sourceCode))
+        declarations.push(extractImportDeclaration(node as ImportDeclaration, sourceCode, sourceFile))
         break
 
       case SyntaxKind.ExportDeclaration:
@@ -177,36 +186,59 @@ function extractDeclarationsFromSourceFile(
         if (interfaceDecl.isExported || shouldIncludeNonExportedInterface(interfaceDecl.name, sourceCode)) {
           declarations.push(interfaceDecl)
         }
+        else {
+          // Store for potential resolution in referenced-types pass
+          nonExportedTypeCandidates.set(interfaceDecl.name, interfaceDecl)
+        }
         break
       }
 
-      case SyntaxKind.TypeAliasDeclaration:
-        declarations.push(extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.TypeAliasDeclaration: {
+        const typeDecl = extractTypeAliasDeclaration(node as TypeAliasDeclaration, sourceCode, sourceFile, keepComments)
+        declarations.push(typeDecl)
+        if (!typeDecl.isExported) {
+          nonExportedTypeCandidates.set(typeDecl.name, typeDecl)
+        }
         break
+      }
 
-      case SyntaxKind.ClassDeclaration:
-        declarations.push(extractClassDeclaration(node as ClassDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.ClassDeclaration: {
+        const classDecl = extractClassDeclaration(node as ClassDeclaration, sourceCode, sourceFile, keepComments)
+        declarations.push(classDecl)
+        if (!classDecl.isExported && classDecl.name) {
+          nonExportedTypeCandidates.set(classDecl.name, classDecl)
+        }
         break
+      }
 
-      case SyntaxKind.EnumDeclaration:
-        declarations.push(extractEnumDeclaration(node as EnumDeclaration, sourceCode, sourceFile, keepComments))
+      case SyntaxKind.EnumDeclaration: {
+        const enumDecl = extractEnumDeclaration(node as EnumDeclaration, sourceCode, sourceFile, keepComments)
+        declarations.push(enumDecl)
+        if (!enumDecl.isExported) {
+          nonExportedTypeCandidates.set(enumDecl.name, enumDecl)
+        }
         break
+      }
 
       case SyntaxKind.ModuleDeclaration:
         declarations.push(extractModuleDeclaration(node as ModuleDeclaration, sourceCode, sourceFile, keepComments))
         break
     }
-
-    // Continue visiting only top-level child nodes
-    forEachChild(node, visitTopLevel)
   }
 
+  // Start walk from sourceFile (depth 0 → increments to 1 for direct children)
   visitTopLevel(sourceFile)
 
-  // Second pass: Find referenced types that aren't imported or declared
-  const referencedTypes = findReferencedTypes(declarations, sourceCode)
-  const additionalDeclarations = extractReferencedTypeDeclarations(sourceFile, referencedTypes, sourceCode, keepComments)
-  declarations.push(...additionalDeclarations)
+  // Resolve referenced types from the candidate map (no second tree walk)
+  if (nonExportedTypeCandidates.size > 0) {
+    const referencedTypes = findReferencedTypes(declarations, sourceCode)
+    for (const typeName of referencedTypes) {
+      const candidate = nonExportedTypeCandidates.get(typeName)
+      if (candidate) {
+        declarations.push(candidate)
+      }
+    }
+  }
 
   return declarations
 }

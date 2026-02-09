@@ -18,3 +18,5 @@ fixtures/generated
 test/debug
 /test/fixtures/generated
 /pantry
+benchmark/oxc-emit
+/packages/dtsx/test/.checker-test-fixtures

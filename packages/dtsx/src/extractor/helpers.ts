@@ -8,8 +8,8 @@ import { isArrayBindingPattern, isBindingElement, isIdentifier, isObjectBindingP
 /**
  * Get the text of a node from source code
  */
-export function getNodeText(node: Node, sourceCode: string): string {
-  return sourceCode.slice(node.getStart(), node.getEnd())
+export function getNodeText(node: Node, sourceCode: string, sf?: SourceFile): string {
+  return sourceCode.slice(sf ? node.getStart(sf) : node.getStart(), node.getEnd())
 }
 
 /**
@@ -68,14 +68,14 @@ export function extractJSDocComments(node: Node, sourceFile: SourceFile): string
 /**
  * Get parameter name without default values for DTS
  */
-export function getParameterName(param: ParameterDeclaration): string {
+export function getParameterName(param: ParameterDeclaration, sf?: SourceFile): string {
   if (isObjectBindingPattern(param.name)) {
     // For destructured parameters like { name, cwd, defaultConfig }
     // We need to reconstruct without default values
     const elements = param.name.elements.map((element) => {
       if (isBindingElement(element) && isIdentifier(element.name)) {
         // Don't include default values in DTS
-        return element.name.getText()
+        return element.name.getText(sf)
       }
       return ''
     }).filter(Boolean)
@@ -90,7 +90,7 @@ export function getParameterName(param: ParameterDeclaration): string {
     // For array destructuring parameters
     const elements = param.name.elements.map((element) => {
       if (element && isBindingElement(element) && isIdentifier(element.name)) {
-        return element.name.getText()
+        return element.name.getText(sf)
       }
       return ''
     }).filter(Boolean)
@@ -98,7 +98,7 @@ export function getParameterName(param: ParameterDeclaration): string {
   }
   else {
     // Simple parameter name
-    return param.name.getText()
+    return param.name.getText(sf)
   }
 }
 
@@ -167,13 +167,65 @@ export function shouldIncludeNonExportedInterface(interfaceName: string, sourceC
  * Built-in TypeScript types and common generic type parameters (hoisted to module level for performance)
  */
 const BUILT_IN_TYPES = new Set([
-  'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
-  'undefined', 'null', 'Array', 'Promise', 'Record', 'Partial', 'Required',
-  'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'ReturnType',
-  'Parameters', 'ConstructorParameters', 'InstanceType', 'ThisType',
-  'Function', 'Date', 'RegExp', 'Error', 'Map', 'Set', 'WeakMap', 'WeakSet',
-  'T', 'K', 'V', 'U', 'R', 'P', 'E', 'A', 'B', 'C', 'D', 'F', 'G', 'H',
-  'I', 'J', 'L', 'M', 'N', 'O', 'Q', 'S', 'W', 'X', 'Y', 'Z',
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'any',
+  'unknown',
+  'never',
+  'void',
+  'undefined',
+  'null',
+  'Array',
+  'Promise',
+  'Record',
+  'Partial',
+  'Required',
+  'Pick',
+  'Omit',
+  'Exclude',
+  'Extract',
+  'NonNullable',
+  'ReturnType',
+  'Parameters',
+  'ConstructorParameters',
+  'InstanceType',
+  'ThisType',
+  'Function',
+  'Date',
+  'RegExp',
+  'Error',
+  'Map',
+  'Set',
+  'WeakMap',
+  'WeakSet',
+  'T',
+  'K',
+  'V',
+  'U',
+  'R',
+  'P',
+  'E',
+  'A',
+  'B',
+  'C',
+  'D',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'L',
+  'M',
+  'N',
+  'O',
+  'Q',
+  'S',
+  'W',
+  'X',
+  'Y',
+  'Z',
 ])
 
 /**

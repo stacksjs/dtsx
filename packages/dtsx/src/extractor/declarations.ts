@@ -11,8 +11,8 @@ import { extractJSDocComments, extractTypesFromModuleText, getNodeText, hasAsync
 /**
  * Extract import declaration
  */
-export function extractImportDeclaration(node: ImportDeclaration, sourceCode: string): Declaration {
-  const text = getNodeText(node, sourceCode)
+export function extractImportDeclaration(node: ImportDeclaration, sourceCode: string, sourceFile: SourceFile): Declaration {
+  const text = getNodeText(node, sourceCode, sourceFile)
   const isTypeOnly = !!(node.importClause?.isTypeOnly)
 
   // Detect side-effect imports (no import clause, e.g., `import 'module'`)
@@ -25,8 +25,8 @@ export function extractImportDeclaration(node: ImportDeclaration, sourceCode: st
     isExported: false,
     isTypeOnly,
     isSideEffect: isSideEffectImport,
-    source: node.moduleSpecifier.getText().slice(1, -1), // Remove quotes
-    start: node.getStart(),
+    source: node.moduleSpecifier.getText(sourceFile).slice(1, -1), // Remove quotes
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -34,12 +34,12 @@ export function extractImportDeclaration(node: ImportDeclaration, sourceCode: st
 /**
  * Extract export declaration
  */
-export function extractExportDeclaration(node: ExportDeclaration, sourceCode: string, sourceFile?: SourceFile, keepComments: boolean = false): Declaration {
-  const text = getNodeText(node, sourceCode)
+export function extractExportDeclaration(node: ExportDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean = false): Declaration {
+  const text = getNodeText(node, sourceCode, sourceFile)
   const isTypeOnly = !!node.isTypeOnly
 
-  // Extract comments if enabled and sourceFile is available
-  const leadingComments = keepComments && sourceFile ? extractJSDocComments(node, sourceFile) : undefined
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
 
   return {
     kind: 'export',
@@ -48,8 +48,8 @@ export function extractExportDeclaration(node: ExportDeclaration, sourceCode: st
     isExported: true,
     isTypeOnly,
     leadingComments,
-    source: node.moduleSpecifier?.getText().slice(1, -1), // Remove quotes if present
-    start: node.getStart(),
+    source: node.moduleSpecifier?.getText(sourceFile).slice(1, -1), // Remove quotes if present
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -57,11 +57,11 @@ export function extractExportDeclaration(node: ExportDeclaration, sourceCode: st
 /**
  * Extract export assignment (export default)
  */
-export function extractExportAssignment(node: ExportAssignment, sourceCode: string, sourceFile?: SourceFile, keepComments: boolean = false): Declaration {
-  const text = getNodeText(node, sourceCode)
+export function extractExportAssignment(node: ExportAssignment, sourceCode: string, sourceFile: SourceFile, keepComments: boolean = false): Declaration {
+  const text = getNodeText(node, sourceCode, sourceFile)
 
-  // Extract comments if enabled and sourceFile is available
-  const leadingComments = keepComments && sourceFile ? extractJSDocComments(node, sourceFile) : undefined
+  // Extract comments if enabled
+  const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
 
   return {
     kind: 'export',
@@ -70,7 +70,7 @@ export function extractExportAssignment(node: ExportAssignment, sourceCode: stri
     isExported: true,
     isTypeOnly: false,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -88,14 +88,14 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
   // we should skip it (only emit the overload declarations)
   if (node.body) {
     // This is an implementation signature - check if there are overload declarations
-    const funcName = node.name.getText()
+    const funcName = node.name.getText(sourceFile)
     let hasOverloads = false
 
     // Look through sibling nodes for overload declarations
     forEachChild(sourceFile, (sibling) => {
       if (isFunctionDeclaration(sibling)
         && sibling !== node
-        && sibling.name?.getText() === funcName
+        && sibling.name?.getText(sourceFile) === funcName
         && !sibling.body) {
         hasOverloads = true
       }
@@ -106,24 +106,24 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
     }
   }
 
-  const name = node.name.getText()
+  const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
   const isAsync = hasAsyncModifier(node)
   const isGenerator = !!node.asteriskToken
 
   // Build clean function signature for DTS
-  const signature = buildFunctionSignature(node)
+  const signature = buildFunctionSignature(node, sourceFile)
 
   // Extract parameters with types
   const parameters = node.parameters.map(param => ({
-    name: param.name.getText(),
-    type: param.type?.getText() || 'any',
+    name: param.name.getText(sourceFile),
+    type: param.type?.getText(sourceFile) || 'any',
     optional: !!param.questionToken,
-    defaultValue: param.initializer?.getText(),
+    defaultValue: param.initializer?.getText(sourceFile),
   }))
 
   // Extract return type with proper handling for async generators and type predicates
-  let returnType = node.type?.getText()
+  let returnType = node.type?.getText(sourceFile)
   if (!returnType) {
     if (isAsync && isGenerator) {
       // async function* returns AsyncGenerator
@@ -142,7 +142,7 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
   }
 
   // Extract generics
-  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
+  const generics = node.typeParameters?.map(tp => tp.getText(sourceFile)).join(', ')
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -158,7 +158,7 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
     returnType,
     generics: generics ? `<${generics}>` : undefined,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -166,12 +166,12 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode
 /**
  * Check if an expression is an 'as const' assertion
  */
-function isAsConstAssertion(node: import('typescript').Expression): boolean {
+function isAsConstAssertion(node: import('typescript').Expression, sf: SourceFile): boolean {
   if (isAsExpression(node)) {
     const typeNode = node.type
     // Check if it's 'as const'
     if (typeNode.kind === SyntaxKind.TypeReference) {
-      const text = typeNode.getText()
+      const text = typeNode.getText(sf)
       return text === 'const'
     }
   }
@@ -182,8 +182,8 @@ function isAsConstAssertion(node: import('typescript').Expression): boolean {
  * Infer a literal type from a value for 'as const' declarations
  * This creates readonly types for objects and arrays
  */
-function inferAsConstType(expression: import('typescript').Expression): string {
-  const text = expression.getText()
+function inferAsConstType(expression: import('typescript').Expression, sf: SourceFile): string {
+  const text = expression.getText(sf)
 
   // For object literals, convert to readonly type
   if (expression.kind === SyntaxKind.ObjectLiteralExpression) {
@@ -226,10 +226,10 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
     if (!declaration.name || !isIdentifier(declaration.name))
       continue
 
-    const name = declaration.name.getText()
-    let typeAnnotation = declaration.type?.getText()
+    const name = declaration.name.getText(sourceFile)
+    let typeAnnotation = declaration.type?.getText(sourceFile)
     const initializer = declaration.initializer
-    const initializerText = initializer?.getText()
+    const initializerText = initializer?.getText(sourceFile)
     const kind = node.declarationList.flags & NodeFlags.Const
       ? 'const'
       : node.declarationList.flags & NodeFlags.Let ? 'let' : 'var'
@@ -237,13 +237,13 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
     // Check for 'as const' assertion
     let isAsConst = false
     if (initializer && isAsExpression(initializer)) {
-      const typeText = initializer.type.getText()
+      const typeText = initializer.type.getText(sourceFile)
       if (typeText === 'const') {
         isAsConst = true
         // For 'as const', we need to preserve the literal type
         const valueExpr = initializer.expression
         if (!typeAnnotation) {
-          typeAnnotation = inferAsConstType(valueExpr)
+          typeAnnotation = inferAsConstType(valueExpr, sourceFile)
         }
       }
     }
@@ -263,7 +263,7 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
       value: initializerText,
       modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
       leadingComments,
-      start: node.getStart(),
+      start: node.getStart(sourceFile),
       end: node.getEnd(),
     })
   }
@@ -275,19 +275,19 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
  * Extract interface declaration
  */
 export function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
-  const name = node.name.getText()
+  const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 
   // Build clean interface declaration
-  const text = buildInterfaceDeclaration(node, isExported)
+  const text = buildInterfaceDeclaration(node, isExported, sourceFile)
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
     clause.token === SyntaxKind.ExtendsKeyword,
-  )?.types.map(type => type.getText()).join(', ')
+  )?.types.map(type => type.getText(sourceFile)).join(', ')
 
   // Extract generics
-  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
+  const generics = node.typeParameters?.map(tp => tp.getText(sourceFile)).join(', ')
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -300,7 +300,7 @@ export function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCo
     extends: extendsClause,
     generics: generics ? `<${generics}>` : undefined,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -309,14 +309,14 @@ export function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCo
  * Extract type alias declaration
  */
 export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
-  const name = node.name.getText()
+  const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 
   // Build clean type declaration
-  const text = buildTypeDeclaration(node, isExported)
+  const text = buildTypeDeclaration(node, isExported, sourceFile)
 
   // Extract generics
-  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
+  const generics = node.typeParameters?.map(tp => tp.getText(sourceFile)).join(', ')
 
   // Extract comments if enabled
   const leadingComments = keepComments ? extractJSDocComments(node, sourceFile) : undefined
@@ -328,7 +328,7 @@ export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCo
     isExported,
     generics: generics ? `<${generics}>` : undefined,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -337,24 +337,24 @@ export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCo
  * Extract class declaration
  */
 export function extractClassDeclaration(node: ClassDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
-  const name = node.name?.getText() || 'AnonymousClass'
+  const name = node.name?.getText(sourceFile) || 'AnonymousClass'
   const isExported = hasExportModifier(node)
 
   // Build clean class declaration for DTS
-  const text = buildClassDeclaration(node, isExported)
+  const text = buildClassDeclaration(node, isExported, sourceFile)
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
     clause.token === SyntaxKind.ExtendsKeyword,
-  )?.types[0]?.getText()
+  )?.types[0]?.getText(sourceFile)
 
   // Extract implements clause
   const implementsClause = node.heritageClauses?.find(clause =>
     clause.token === SyntaxKind.ImplementsKeyword,
-  )?.types.map(type => type.getText())
+  )?.types.map(type => type.getText(sourceFile))
 
   // Extract generics
-  const generics = node.typeParameters?.map(tp => tp.getText()).join(', ')
+  const generics = node.typeParameters?.map(tp => tp.getText(sourceFile)).join(', ')
 
   // Check for abstract modifier
   const isAbstract = node.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
@@ -372,7 +372,7 @@ export function extractClassDeclaration(node: ClassDeclaration, sourceCode: stri
     generics: generics ? `<${generics}>` : undefined,
     modifiers: isAbstract ? ['abstract'] : undefined,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -381,9 +381,9 @@ export function extractClassDeclaration(node: ClassDeclaration, sourceCode: stri
  * Extract enum declaration
  */
 export function extractEnumDeclaration(node: EnumDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
-  const name = node.name.getText()
+  const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
-  const text = getNodeText(node, sourceCode)
+  const text = getNodeText(node, sourceCode, sourceFile)
 
   // Check for const modifier
   const isConst = node.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
@@ -398,7 +398,7 @@ export function extractEnumDeclaration(node: EnumDeclaration, sourceCode: string
     isExported,
     modifiers: isConst ? ['const'] : undefined,
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -407,11 +407,11 @@ export function extractEnumDeclaration(node: EnumDeclaration, sourceCode: string
  * Extract module/namespace declaration
  */
 export function extractModuleDeclaration(node: ModuleDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
-  const name = node.name.getText()
+  const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 
   // Build clean module declaration for DTS
-  const text = buildModuleDeclaration(node, isExported)
+  const text = buildModuleDeclaration(node, isExported, sourceFile)
 
   // Check if this is an ambient module (quoted name)
   const isAmbient = isStringLiteral(node.name)
@@ -426,7 +426,7 @@ export function extractModuleDeclaration(node: ModuleDeclaration, sourceCode: st
     isExported,
     source: isAmbient ? name.slice(1, -1) : undefined, // Remove quotes for ambient modules
     leadingComments,
-    start: node.getStart(),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }
 }
@@ -501,7 +501,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
     switch (node.kind) {
       case SyntaxKind.InterfaceDeclaration: {
         const interfaceNode = node as InterfaceDeclaration
-        const interfaceName = interfaceNode.name.getText()
+        const interfaceName = interfaceNode.name.getText(sourceFile)
         if (referencedTypes.has(interfaceName)) {
           const decl = extractInterfaceDeclaration(interfaceNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)
@@ -512,7 +512,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
 
       case SyntaxKind.TypeAliasDeclaration: {
         const typeNode = node as TypeAliasDeclaration
-        const typeName = typeNode.name.getText()
+        const typeName = typeNode.name.getText(sourceFile)
         if (referencedTypes.has(typeName)) {
           const decl = extractTypeAliasDeclaration(typeNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)
@@ -524,7 +524,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
       case SyntaxKind.ClassDeclaration: {
         const classNode = node as ClassDeclaration
         if (classNode.name) {
-          const className = classNode.name.getText()
+          const className = classNode.name.getText(sourceFile)
           if (referencedTypes.has(className)) {
             const decl = extractClassDeclaration(classNode, sourceCode, sourceFile, keepComments)
             additionalDeclarations.push(decl)
@@ -536,7 +536,7 @@ export function extractReferencedTypeDeclarations(sourceFile: SourceFile, refere
 
       case SyntaxKind.EnumDeclaration: {
         const enumNode = node as EnumDeclaration
-        const enumName = enumNode.name.getText()
+        const enumName = enumNode.name.getText(sourceFile)
         if (referencedTypes.has(enumName)) {
           const decl = extractEnumDeclaration(enumNode, sourceCode, sourceFile, keepComments)
           additionalDeclarations.push(decl)

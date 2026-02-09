@@ -2,7 +2,7 @@
  * Builder functions for DTS output
  */
 
-import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, TypeAliasDeclaration, VariableStatement } from 'typescript'
+import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import { isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
 import { inferNarrowType } from '../processor/type-inference'
 import { getParameterName, hasExportModifier } from './helpers'
@@ -46,7 +46,7 @@ function inferTypeFromInitializer(initText: string, isConst: boolean): string {
 /**
  * Build clean function signature for DTS output
  */
-export function buildFunctionSignature(node: FunctionDeclaration): string {
+export function buildFunctionSignature(node: FunctionDeclaration, sf: SourceFile): string {
   const parts: string[] = []
 
   // Check for async and generator
@@ -60,19 +60,19 @@ export function buildFunctionSignature(node: FunctionDeclaration): string {
 
   // Add name (no space before)
   if (node.name)
-    parts.push(node.name.getText())
+    parts.push(node.name.getText(sf))
 
   // Add generics (no space before)
   if (node.typeParameters) {
-    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    const generics = node.typeParameters.map(tp => tp.getText(sf)).join(', ')
     parts.push('<', generics, '>')
   }
 
   // Add parameters (no space before)
   const params = node.parameters.map((param) => {
-    const name = getParameterName(param)
-    const type = param.type?.getText()
-      || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
+    const name = getParameterName(param, sf)
+    const type = param.type?.getText(sf)
+      || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(sf), false) : 'unknown')
     const optional = param.questionToken || param.initializer ? '?' : ''
     const isRest = !!param.dotDotDotToken
 
@@ -84,7 +84,7 @@ export function buildFunctionSignature(node: FunctionDeclaration): string {
   parts.push('(', params, ')')
 
   // Add return type with proper handling for async generators
-  let returnType = node.type?.getText()
+  let returnType = node.type?.getText(sf)
   if (!returnType) {
     if (isAsync && isGenerator) {
       returnType = 'AsyncGenerator<unknown, void, unknown>'
@@ -125,16 +125,16 @@ export function buildVariableDeclaration(name: string, type: string | undefined,
 /**
  * Build clean interface declaration for DTS
  */
-export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported: boolean): string {
+export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported: boolean, sf: SourceFile): string {
   const parts: string[] = []
 
   if (isExported)
     parts.push('export ')
-  parts.push('declare interface ', node.name.getText())
+  parts.push('declare interface ', node.name.getText(sf))
 
   // Add generics (no space before)
   if (node.typeParameters) {
-    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    const generics = node.typeParameters.map(tp => tp.getText(sf)).join(', ')
     parts.push('<', generics, '>')
   }
 
@@ -144,13 +144,13 @@ export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported
       clause.token === SyntaxKind.ExtendsKeyword,
     )
     if (extendsClause) {
-      const types = extendsClause.types.map(type => type.getText()).join(', ')
+      const types = extendsClause.types.map(type => type.getText(sf)).join(', ')
       parts.push(' extends ', types)
     }
   }
 
   // Add body (simplified)
-  const body = getInterfaceBody(node)
+  const body = getInterfaceBody(node, sf)
   parts.push(' ', body)
 
   return parts.join('')
@@ -159,41 +159,41 @@ export function buildInterfaceDeclaration(node: InterfaceDeclaration, isExported
 /**
  * Get the interface member name, handling computed properties
  */
-function getInterfaceMemberName(member: { name?: import('typescript').PropertyName }): string {
+function getInterfaceMemberName(member: { name?: import('typescript').PropertyName }, sf: SourceFile): string {
   if (!member.name)
     return ''
 
   // For computed property names, the getText() already includes brackets
   // So we just return it directly
-  return member.name.getText()
+  return member.name.getText(sf)
 }
 
 /**
  * Get interface body with proper formatting
  */
-export function getInterfaceBody(node: InterfaceDeclaration): string {
+export function getInterfaceBody(node: InterfaceDeclaration, sf: SourceFile): string {
   const members: string[] = []
 
   for (const member of node.members) {
     if (isPropertySignature(member)) {
-      const name = getInterfaceMemberName(member)
-      const type = member.type?.getText() || 'unknown'
+      const name = getInterfaceMemberName(member, sf)
+      const type = member.type?.getText(sf) || 'unknown'
       const optional = member.questionToken ? '?' : ''
       const readonly = member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword) ? 'readonly ' : ''
       members.push(`  ${readonly}${name}${optional}: ${type}`)
     }
     else if (isMethodSignature(member)) {
-      const name = getInterfaceMemberName(member)
+      const name = getInterfaceMemberName(member, sf)
 
       // Extract generic type parameters on the method itself (e.g., find<S extends T>(...))
       let generics = ''
       if (member.typeParameters && member.typeParameters.length > 0) {
-        generics = `<${member.typeParameters.map(tp => tp.getText()).join(', ')}>`
+        generics = `<${member.typeParameters.map(tp => tp.getText(sf)).join(', ')}>`
       }
 
       const params = member.parameters.map((param) => {
-        const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'unknown'
+        const paramName = param.name.getText(sf)
+        const paramType = param.type?.getText(sf) || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -202,15 +202,15 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
         }
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'void'
+      const returnType = member.type?.getText(sf) || 'void'
       const optional = member.questionToken ? '?' : ''
       members.push(`  ${name}${optional}${generics}(${params}): ${returnType}`)
     }
     else if (isCallSignatureDeclaration(member)) {
       // Call signature: (param: type) => returnType
       const params = member.parameters.map((param) => {
-        const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'unknown'
+        const paramName = param.name.getText(sf)
+        const paramType = param.type?.getText(sf) || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -219,14 +219,14 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
         }
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'void'
+      const returnType = member.type?.getText(sf) || 'void'
       members.push(`  (${params}): ${returnType}`)
     }
     else if (isConstructSignatureDeclaration(member)) {
       // Constructor signature: new (param: type) => returnType
       const params = member.parameters.map((param) => {
-        const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'unknown'
+        const paramName = param.name.getText(sf)
+        const paramType = param.type?.getText(sf) || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -235,18 +235,18 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
         }
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'unknown'
+      const returnType = member.type?.getText(sf) || 'unknown'
       members.push(`  new (${params}): ${returnType}`)
     }
     else if (isIndexSignatureDeclaration(member)) {
       // Index signature: [key: string]: T or [index: number]: T
       // Keep 'any' for index sig params (conventional for string/number keys)
       const params = member.parameters.map((param) => {
-        const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'any'
+        const paramName = param.name.getText(sf)
+        const paramType = param.type?.getText(sf) || 'any'
         return `${paramName}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'unknown'
+      const returnType = member.type?.getText(sf) || 'unknown'
       members.push(`  [${params}]: ${returnType}`)
     }
   }
@@ -257,20 +257,20 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
 /**
  * Build clean type declaration for DTS
  */
-export function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boolean): string {
+export function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boolean, sf: SourceFile): string {
   const parts: string[] = []
 
   if (isExported)
     parts.push('export ')
-  parts.push('type ', node.name.getText())
+  parts.push('type ', node.name.getText(sf))
 
   // Add generics (no space before)
   if (node.typeParameters) {
-    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    const generics = node.typeParameters.map(tp => tp.getText(sf)).join(', ')
     parts.push('<', generics, '>')
   }
 
-  parts.push(' = ', node.type.getText())
+  parts.push(' = ', node.type.getText(sf))
 
   return parts.join('')
 }
@@ -278,7 +278,7 @@ export function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boo
 /**
  * Build clean class declaration for DTS
  */
-export function buildClassDeclaration(node: ClassDeclaration, isExported: boolean): string {
+export function buildClassDeclaration(node: ClassDeclaration, isExported: boolean, sf: SourceFile): string {
   const parts: string[] = []
 
   // Add export if needed
@@ -291,18 +291,18 @@ export function buildClassDeclaration(node: ClassDeclaration, isExported: boolea
   if (isAbstract)
     parts.push('abstract ')
 
-  parts.push('class ', node.name?.getText() || 'AnonymousClass')
+  parts.push('class ', node.name?.getText(sf) || 'AnonymousClass')
 
   // Add generics (no space before)
   if (node.typeParameters) {
-    const generics = node.typeParameters.map(tp => tp.getText()).join(', ')
+    const generics = node.typeParameters.map(tp => tp.getText(sf)).join(', ')
     parts.push('<', generics, '>')
   }
 
   // Add extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
     clause.token === SyntaxKind.ExtendsKeyword,
-  )?.types[0]?.getText()
+  )?.types[0]?.getText(sf)
   if (extendsClause) {
     parts.push(' extends ', extendsClause)
   }
@@ -310,13 +310,13 @@ export function buildClassDeclaration(node: ClassDeclaration, isExported: boolea
   // Add implements clause
   const implementsClause = node.heritageClauses?.find(clause =>
     clause.token === SyntaxKind.ImplementsKeyword,
-  )?.types.map(type => type.getText())
+  )?.types.map(type => type.getText(sf))
   if (implementsClause && implementsClause.length > 0) {
     parts.push(' implements ', implementsClause.join(', '))
   }
 
   // Build class body with only signatures
-  parts.push(' ', buildClassBody(node))
+  parts.push(' ', buildClassBody(node, sf))
 
   return parts.join('')
 }
@@ -360,20 +360,20 @@ function isPrivateMemberName(member: { name?: import('typescript').PropertyName 
 /**
  * Get the property name text, handling computed properties and symbols
  */
-function getMemberNameText(member: { name?: import('typescript').PropertyName }): string {
+function getMemberNameText(member: { name?: import('typescript').PropertyName }, sf: SourceFile): string {
   if (!member.name)
     return ''
 
   // For computed property names, the getText() already includes brackets
   // So we just return it directly
-  return member.name.getText()
+  return member.name.getText(sf)
 }
 
 /**
  * Build clean class body for DTS (signatures only, no implementations)
  * Excludes: private fields (#field), private methods (#method), static blocks
  */
-export function buildClassBody(node: ClassDeclaration): string {
+export function buildClassBody(node: ClassDeclaration, sf: SourceFile): string {
   const members: string[] = []
 
   for (const member of node.members) {
@@ -393,11 +393,11 @@ export function buildClassBody(node: ClassDeclaration): string {
           }
 
           // This is a parameter property, add it as a separate property declaration
-          const name = getParameterName(param)
-          const type = param.type?.getText()
-            || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
+          const name = getParameterName(param, sf)
+          const type = param.type?.getText(sf)
+            || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(sf), false) : 'unknown')
           const optional = param.questionToken || param.initializer ? '?' : ''
-          const modifierTexts = param.modifiers.map(mod => mod.getText()).join(' ')
+          const modifierTexts = param.modifiers.map(mod => mod.getText(sf)).join(' ')
           const modifiers = modifierTexts ? `${modifierTexts} ` : ''
           members.push(`  ${modifiers}${name}${optional}: ${type};`)
         }
@@ -405,9 +405,9 @@ export function buildClassBody(node: ClassDeclaration): string {
 
       // Then add constructor signature without parameter properties
       const params = member.parameters.map((param) => {
-        const name = getParameterName(param)
-        const type = param.type?.getText()
-          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
+        const name = getParameterName(param, sf)
+        const type = param.type?.getText(sf)
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(sf), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${name}${optional}: ${type}`
       }).join(', ')
@@ -427,7 +427,7 @@ export function buildClassBody(node: ClassDeclaration): string {
       }
 
       // Method signature without implementation
-      const name = getMemberNameText(member)
+      const name = getMemberNameText(member, sf)
       const isGenerator = !!member.asteriskToken
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
@@ -448,15 +448,15 @@ export function buildClassBody(node: ClassDeclaration): string {
 
       // Add generics
       if (member.typeParameters) {
-        const generics = member.typeParameters.map(tp => tp.getText()).join(', ')
+        const generics = member.typeParameters.map(tp => tp.getText(sf)).join(', ')
         parts.push('<', generics, '>')
       }
 
       // Add parameters
       const params = member.parameters.map((param) => {
-        const paramName = getParameterName(param)
-        const paramType = param.type?.getText()
-          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
+        const paramName = getParameterName(param, sf)
+        const paramType = param.type?.getText(sf)
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(sf), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
@@ -464,7 +464,7 @@ export function buildClassBody(node: ClassDeclaration): string {
 
       // Add return type - for generators, ensure proper Generator/AsyncGenerator type
       const isAsync = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AsyncKeyword)
-      let returnType = member.type?.getText()
+      let returnType = member.type?.getText(sf)
       if (!returnType) {
         if (isAsync && isGenerator) {
           returnType = 'AsyncGenerator<unknown, void, unknown>'
@@ -496,7 +496,7 @@ export function buildClassBody(node: ClassDeclaration): string {
       }
 
       // Property declaration
-      const name = getMemberNameText(member)
+      const name = getMemberNameText(member, sf)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -509,8 +509,8 @@ export function buildClassBody(node: ClassDeclaration): string {
       const isStaticMember = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
       const isReadonlyMember = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword)
       const isConstLike = isStaticMember && isReadonlyMember
-      const type = member.type?.getText()
-        || (member.initializer ? inferTypeFromInitializer(member.initializer.getText(), isConstLike) : 'unknown')
+      const type = member.type?.getText(sf)
+        || (member.initializer ? inferTypeFromInitializer(member.initializer.getText(sf), isConstLike) : 'unknown')
 
       members.push(`${mods}${name}${optional}: ${type};`)
     }
@@ -527,7 +527,7 @@ export function buildClassBody(node: ClassDeclaration): string {
       }
 
       // Get accessor declaration
-      const name = getMemberNameText(member)
+      const name = getMemberNameText(member, sf)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -536,7 +536,7 @@ export function buildClassBody(node: ClassDeclaration): string {
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
-      const returnType = member.type?.getText() || 'unknown'
+      const returnType = member.type?.getText(sf) || 'unknown'
       members.push(`${mods}get ${name}(): ${returnType};`)
     }
     else if (isSetAccessorDeclaration(member)) {
@@ -552,7 +552,7 @@ export function buildClassBody(node: ClassDeclaration): string {
       }
 
       // Set accessor declaration
-      const name = getMemberNameText(member)
+      const name = getMemberNameText(member, sf)
       const mods = buildMemberModifiers(
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword),
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword),
@@ -563,8 +563,8 @@ export function buildClassBody(node: ClassDeclaration): string {
 
       // Get parameter type from the setter's parameter
       const param = member.parameters[0]
-      const paramType = param?.type?.getText() || 'unknown'
-      const paramName = param?.name?.getText() || 'value'
+      const paramType = param?.type?.getText(sf) || 'unknown'
+      const paramName = param?.name?.getText(sf) || 'value'
 
       members.push(`${mods}set ${name}(${paramName}: ${paramType});`)
     }
@@ -576,7 +576,7 @@ export function buildClassBody(node: ClassDeclaration): string {
 /**
  * Build clean module declaration for DTS
  */
-export function buildModuleDeclaration(node: ModuleDeclaration, isExported: boolean): string {
+export function buildModuleDeclaration(node: ModuleDeclaration, isExported: boolean, sf: SourceFile): string {
   const parts: string[] = []
 
   // Check if this is a global augmentation (declare global { ... })
@@ -584,7 +584,7 @@ export function buildModuleDeclaration(node: ModuleDeclaration, isExported: bool
 
   if (isGlobalAugmentation) {
     // Global augmentation - output as "declare global"
-    return `declare global ${buildModuleBody(node)}`
+    return `declare global ${buildModuleBody(node, sf)}`
   }
 
   // Add export if needed
@@ -600,10 +600,10 @@ export function buildModuleDeclaration(node: ModuleDeclaration, isExported: bool
   parts.push(isNamespace ? 'namespace ' : 'module ')
 
   // Add module name
-  parts.push(node.name.getText())
+  parts.push(node.name.getText(sf))
 
   // Build module body with only signatures
-  parts.push(' ', buildModuleBody(node))
+  parts.push(' ', buildModuleBody(node, sf))
 
   return parts.join('')
 }
@@ -611,7 +611,7 @@ export function buildModuleDeclaration(node: ModuleDeclaration, isExported: bool
 /**
  * Build clean module body for DTS (signatures only, no implementations)
  */
-export function buildModuleBody(node: ModuleDeclaration): string {
+export function buildModuleBody(node: ModuleDeclaration, sf: SourceFile): string {
   if (!node.body)
     return '{}'
 
@@ -621,7 +621,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
     if (isFunctionDeclaration(element)) {
       // Function signature without implementation (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
-      const name = element.name?.getText() || ''
+      const name = element.name?.getText(sf) || ''
 
       const parts: string[] = ['  ']
       if (isExported)
@@ -630,22 +630,22 @@ export function buildModuleBody(node: ModuleDeclaration): string {
 
       // Add generics
       if (element.typeParameters) {
-        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        const generics = element.typeParameters.map(tp => tp.getText(sf)).join(', ')
         parts.push('<', generics, '>')
       }
 
       // Add parameters
       const params = element.parameters.map((param) => {
-        const paramName = getParameterName(param)
-        const paramType = param.type?.getText()
-          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
+        const paramName = getParameterName(param, sf)
+        const paramType = param.type?.getText(sf)
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(sf), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
       parts.push('(', params, ')')
 
       // Add return type
-      const returnType = element.type?.getText() || 'void'
+      const returnType = element.type?.getText(sf) || 'void'
       parts.push(': ', returnType, ';')
 
       members.push(parts.join(''))
@@ -655,9 +655,9 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const isExported = hasExportModifier(element)
       for (const declaration of (element as VariableStatement).declarationList.declarations) {
         if (declaration.name && isIdentifier(declaration.name)) {
-          const name = declaration.name.getText()
-          const typeAnnotation = declaration.type?.getText()
-          const initializer = declaration.initializer?.getText()
+          const name = declaration.name.getText(sf)
+          const typeAnnotation = declaration.type?.getText(sf)
+          const initializer = declaration.initializer?.getText(sf)
           const kind = (element as VariableStatement).declarationList.flags & NodeFlags.Const
             ? 'const'
             : (element as VariableStatement).declarationList.flags & NodeFlags.Let ? 'let' : 'var'
@@ -687,7 +687,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
     else if (isInterfaceDeclaration(element)) {
       // Interface declaration (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
-      const name = element.name.getText()
+      const name = element.name.getText(sf)
 
       const parts: string[] = ['  ']
       if (isExported)
@@ -696,7 +696,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
 
       // Add generics
       if (element.typeParameters) {
-        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        const generics = element.typeParameters.map(tp => tp.getText(sf)).join(', ')
         parts.push('<', generics, '>')
       }
 
@@ -706,13 +706,13 @@ export function buildModuleBody(node: ModuleDeclaration): string {
           clause.token === SyntaxKind.ExtendsKeyword,
         )
         if (extendsClause) {
-          const types = extendsClause.types.map(type => type.getText()).join(', ')
+          const types = extendsClause.types.map(type => type.getText(sf)).join(', ')
           parts.push(' extends ', types)
         }
       }
 
       // Add body
-      const body = getInterfaceBody(element)
+      const body = getInterfaceBody(element, sf)
       parts.push(' ', body)
 
       members.push(parts.join(''))
@@ -720,7 +720,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
     else if (isTypeAliasDeclaration(element)) {
       // Type alias declaration (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
-      const name = element.name.getText()
+      const name = element.name.getText(sf)
 
       const parts: string[] = ['  ']
       if (isExported)
@@ -729,18 +729,18 @@ export function buildModuleBody(node: ModuleDeclaration): string {
 
       // Add generics
       if (element.typeParameters) {
-        const generics = element.typeParameters.map(tp => tp.getText()).join(', ')
+        const generics = element.typeParameters.map(tp => tp.getText(sf)).join(', ')
         parts.push('<', generics, '>')
       }
 
-      parts.push(' = ', element.type.getText())
+      parts.push(' = ', element.type.getText(sf))
 
       members.push(parts.join(''))
     }
     else if (isEnumDeclaration(element)) {
       // Enum declaration
       const isExported = hasExportModifier(element)
-      const name = element.name.getText()
+      const name = element.name.getText(sf)
       const isConst = element.modifiers?.some(mod => mod.kind === SyntaxKind.ConstKeyword)
 
       const parts: string[] = ['  ']
@@ -754,9 +754,9 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       const enumMembers: string[] = []
       for (const member of element.members) {
         if (isEnumMember(member)) {
-          const memberName = member.name.getText()
+          const memberName = member.name.getText(sf)
           if (member.initializer) {
-            const value = member.initializer.getText()
+            const value = member.initializer.getText(sf)
             enumMembers.push(`    ${memberName} = ${value}`)
           }
           else {
@@ -771,7 +771,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
     else if (isModuleDeclaration(element)) {
       // Nested namespace/module (no declare keyword in ambient context)
       const isExported = hasExportModifier(element)
-      const name = element.name.getText()
+      const name = element.name.getText(sf)
 
       const parts: string[] = ['  ']
       if (isExported)
@@ -780,7 +780,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       // Check if this is a namespace or module
       const isNamespace = element.flags & NodeFlags.Namespace
       parts.push(isNamespace ? 'namespace ' : 'module ')
-      parts.push(name, ' ', buildModuleBody(element))
+      parts.push(name, ' ', buildModuleBody(element, sf))
 
       members.push(parts.join(''))
     }
@@ -788,7 +788,7 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       // Export default statement
       const parts: string[] = ['  export default ']
       if (element.expression) {
-        parts.push(element.expression.getText())
+        parts.push(element.expression.getText(sf))
       }
       parts.push(';')
       members.push(parts.join(''))
