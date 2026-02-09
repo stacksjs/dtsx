@@ -25,12 +25,22 @@ jobs:
       - name: Setup Pantry
         uses: home-lang/pantry-setup@v1
 
+      - name: Install Dependencies
+        run: bun install
+
       - name: Publish
         run: pantry npm:publish --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Create GitHub Release
-        uses: stacksjs/action-releaser@v1.2.6
+      - name: Attach Binaries
+        uses: stacksjs/action-releaser@v1.2.7
+        with:
+          files: |
+            packages/dtsx/bin/dtsx-linux-x64.zip
+            packages/dtsx/bin/dtsx-linux-arm64.zip
+            packages/dtsx/bin/dtsx-windows-x64.zip
+            packages/dtsx/bin/dtsx-darwin-x64.zip
+            packages/dtsx/bin/dtsx-darwin-arm64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
