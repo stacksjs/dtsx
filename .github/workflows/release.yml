@@ -15,32 +15,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.1.2
 
       - name: Setup Pantry
         uses: home-lang/pantry-setup@v1
-
-      - name: Install Dependencies
-        run: bun install
 
       - name: Publish
         run: pantry npm:publish --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Attach Binaries
-        uses: stacksjs/action-releaser@v1.2.7
-        with:
-          files: |
-            packages/dtsx/bin/dtsx-linux-x64.zip
-            packages/dtsx/bin/dtsx-linux-arm64.zip
-            packages/dtsx/bin/dtsx-windows-x64.zip
-            packages/dtsx/bin/dtsx-darwin-x64.zip
-            packages/dtsx/bin/dtsx-darwin-arm64.zip
+      - name: Create GitHub Release
+        uses: stacksjs/action-releaser@v1.2.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
