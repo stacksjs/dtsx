@@ -94,7 +94,7 @@
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "peerDependencies": {
-    "typescript": ">=5.0.0"
+    "typescript": ">=5.9.3"
   },
   "peerDependenciesMeta": {
     "typescript": {
@@ -107,7 +107,7 @@
   "devDependencies": {
     "bunfig": "^0.15.6",
     "tinyglobby": "^0.2.15",
-    "typescript": "^5.0.0"
+    "typescript": "^5.9.3"
   },
   "git-hooks": {
     "pre-commit": {
