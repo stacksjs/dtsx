@@ -5,7 +5,7 @@ export declare namespace Utils {
   locale: string
   timezone: string
 }
-  export const VERSION: string;
+  export const VERSION: '1.0.0';
   export namespace Validators {
   export function isEmail(value: string): boolean;
   export function isURL(value: string): boolean;

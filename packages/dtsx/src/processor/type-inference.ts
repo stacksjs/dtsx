@@ -9,6 +9,19 @@
 const MAX_INFERENCE_DEPTH = 20
 
 /**
+ * Count occurrences of a substring using indexOf (faster than regex match + array)
+ */
+function countOccurrences(str: string, sub: string): number {
+  let count = 0
+  let pos = 0
+  while ((pos = str.indexOf(sub, pos)) !== -1) {
+    count++
+    pos += sub.length
+  }
+  return count
+}
+
+/**
  * Infer and narrow types from values
  * @param inUnion - When true, widens number/boolean literals to their base types (used in array union contexts)
  * @param _depth - Internal recursion depth counter (do not set manually)
@@ -681,7 +694,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
 
   // Handle very complex function types early (but not function expressions)
   // Only simplify if it's truly complex AND looks like a problematic signature
-  if (trimmed.length > 200 && (trimmed.match(/=>/g) || []).length > 2 && (trimmed.match(/</g) || []).length > 5 && !trimmed.startsWith('function')) {
+  if (trimmed.length > 200 && countOccurrences(trimmed, '=>') > 2 && countOccurrences(trimmed, '<') > 5 && !trimmed.startsWith('function')) {
     // For extremely complex types, use a simple signature
     const funcType = '(...args: any[]) => any'
     return inUnion ? `(${funcType})` : funcType
@@ -857,7 +870,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
   // Higher-order functions (functions that return functions)
   if (trimmed.includes('=>') && trimmed.includes('(') && trimmed.includes(')')) {
     // For very complex function types, fall back to a simpler signature
-    if (trimmed.length > 100 || (trimmed.match(/=>/g) || []).length > 2) {
+    if (trimmed.length > 100 || countOccurrences(trimmed, '=>') > 2) {
       // Extract just the basic signature pattern
       const genericMatch = trimmed.match(/^<[^>]+>/)
       const generics = genericMatch ? genericMatch[0] : ''

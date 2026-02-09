@@ -1,3 +1,4 @@
+// Fast path — skip CLI framework for maximum startup speed
 import type { LogLevel } from '../src/logger'
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import { resolve } from 'node:path'
@@ -6,6 +7,39 @@ import { CLI } from '@stacksjs/clapp'
 import { version } from '../../../package.json'
 import { getConfig } from '../src/config'
 import { generate, processSource, watch } from '../src/generator'
+
+const _cmd = process.argv[2]
+if (_cmd === 'stdin' || _cmd === 'emit') {
+  const { processSource } = await import('../src/process-source')
+
+  if (_cmd === 'stdin') {
+    const chunks: Buffer[] = []
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk)
+    }
+    const source = Buffer.concat(chunks).toString('utf-8')
+    if (source.trim()) {
+      process.stdout.write(processSource(source, 'stdin.ts'))
+      process.stdout.write('\n')
+    }
+  }
+  else {
+    const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const filePath = process.argv[3]!
+    const source = readFileSync(filePath, 'utf-8')
+    const outPath = process.argv[4]
+    if (outPath) {
+      const { dirname } = await import('node:path')
+      mkdirSync(dirname(outPath), { recursive: true })
+      writeFileSync(outPath, `${processSource(source, filePath)}\n`)
+    }
+    else {
+      process.stdout.write(processSource(source, filePath))
+      process.stdout.write('\n')
+    }
+  }
+  process.exit(0)
+}
 
 const cli = new CLI('dtsx')
 
@@ -461,7 +495,7 @@ cli
   .option('--skip-lib-check', 'Skip checking library definitions', { default: true })
   .option('--warnings-as-errors', 'Treat warnings as errors', { default: false })
   .option('--max-errors <number>', 'Maximum errors before stopping', { default: 0 })
-  .option('--isolated-declarations', 'Check for isolated declarations compatibility', { default: false })
+  .option('--isolated-declarations', 'Check if code follows isolated declarations best practices (recommended)', { default: false })
   .option('--format <format>', 'Output format: text or json', { default: 'text' })
   .example('dtsx check')
   .example('dtsx check --files "src/**/*.ts" --strict')
@@ -515,7 +549,7 @@ cli
 
       // Handle isolated declarations mode
       if (options.isolatedDeclarations) {
-        console.log(`Checking ${files.length} files for isolated declarations compatibility...`)
+        console.log(`Checking ${files.length} files for isolated declarations best practices...`)
 
         const results = await checkIsolatedDeclarations(
           files,
@@ -561,7 +595,13 @@ cli
           console.log(JSON.stringify(output, null, 2))
         }
         else {
-          console.log(`\n${files.length} files checked, ${totalIssues} issues found`)
+          if (totalIssues > 0) {
+            console.log(`\n${files.length} files checked, ${totalIssues} recommendations found`)
+            console.log('Tip: Adding explicit type annotations improves .d.ts accuracy')
+          }
+          else {
+            console.log(`\n${files.length} files checked, all follow isolated declarations best practices`)
+          }
         }
 
         process.exit(totalIssues > 0 ? 1 : 0)

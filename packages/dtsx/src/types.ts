@@ -133,8 +133,9 @@ export interface DtsGenerationConfig {
    */
   include?: string[]
   /**
-   * Enable isolatedDeclarations mode for stricter type checking
-   * Requires explicit type annotations on exports
+   * Recommend isolatedDeclarations mode for best results
+   * When enabled, dtsx will check that exports have explicit type annotations
+   * dtsx works without it, but explicit annotations produce the most accurate .d.ts files
    * @default false
    */
   isolatedDeclarations?: boolean

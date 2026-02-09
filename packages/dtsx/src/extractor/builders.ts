@@ -4,7 +4,44 @@
 
 import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import { isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
+import { inferNarrowType } from '../processor/type-inference'
 import { getParameterName, hasExportModifier } from './helpers'
+
+const AS_TYPE_RE = /\s+as\s+(\S+)\s*$/
+
+/**
+ * Infer type from an AST initializer text when no explicit type annotation exists
+ * For non-const contexts, widens primitive literals to base types (boolean, number, string)
+ */
+function inferTypeFromInitializer(initText: string, isConst: boolean): string {
+  const trimmed = initText.trim()
+
+  // Handle 'value as Type' assertions (but not 'as const' which inferNarrowType handles)
+  if (!trimmed.endsWith('as const')) {
+    const asMatch = trimmed.match(AS_TYPE_RE)
+    if (asMatch) {
+      return asMatch[1]
+    }
+  }
+
+  const inferred = inferNarrowType(trimmed, isConst)
+  if (inferred === 'unknown')
+    return 'unknown'
+
+  // For mutable contexts (non-const), widen primitive literal types to base types
+  if (!isConst) {
+    if (inferred === 'true' || inferred === 'false')
+      return 'boolean'
+    if (/^-?\d+(\.\d+)?$/.test(inferred))
+      return 'number'
+    if ((inferred.startsWith('"') && inferred.endsWith('"'))
+      || (inferred.startsWith('\'') && inferred.endsWith('\''))) {
+      return 'string'
+    }
+  }
+
+  return inferred
+}
 
 /**
  * Build clean function signature for DTS output
@@ -34,7 +71,8 @@ export function buildFunctionSignature(node: FunctionDeclaration): string {
   // Add parameters (no space before)
   const params = node.parameters.map((param) => {
     const name = getParameterName(param)
-    const type = param.type?.getText() || 'any'
+    const type = param.type?.getText()
+      || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
     const optional = param.questionToken || param.initializer ? '?' : ''
     const isRest = !!param.dotDotDotToken
 
@@ -139,7 +177,7 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
   for (const member of node.members) {
     if (isPropertySignature(member)) {
       const name = getInterfaceMemberName(member)
-      const type = member.type?.getText() || 'any'
+      const type = member.type?.getText() || 'unknown'
       const optional = member.questionToken ? '?' : ''
       const readonly = member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword) ? 'readonly ' : ''
       members.push(`  ${readonly}${name}${optional}: ${type}`)
@@ -155,7 +193,7 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
 
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'any'
+        const paramType = param.type?.getText() || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -172,7 +210,7 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
       // Call signature: (param: type) => returnType
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'any'
+        const paramType = param.type?.getText() || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -188,7 +226,7 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
       // Constructor signature: new (param: type) => returnType
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
-        const paramType = param.type?.getText() || 'any'
+        const paramType = param.type?.getText() || 'unknown'
         const optional = param.questionToken ? '?' : ''
         const isRest = !!param.dotDotDotToken
 
@@ -197,17 +235,18 @@ export function getInterfaceBody(node: InterfaceDeclaration): string {
         }
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'any'
+      const returnType = member.type?.getText() || 'unknown'
       members.push(`  new (${params}): ${returnType}`)
     }
     else if (isIndexSignatureDeclaration(member)) {
       // Index signature: [key: string]: T or [index: number]: T
+      // Keep 'any' for index sig params (conventional for string/number keys)
       const params = member.parameters.map((param) => {
         const paramName = param.name.getText()
         const paramType = param.type?.getText() || 'any'
         return `${paramName}: ${paramType}`
       }).join(', ')
-      const returnType = member.type?.getText() || 'any'
+      const returnType = member.type?.getText() || 'unknown'
       members.push(`  [${params}]: ${returnType}`)
     }
   }
@@ -355,7 +394,8 @@ export function buildClassBody(node: ClassDeclaration): string {
 
           // This is a parameter property, add it as a separate property declaration
           const name = getParameterName(param)
-          const type = param.type?.getText() || 'any'
+          const type = param.type?.getText()
+            || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
           const optional = param.questionToken || param.initializer ? '?' : ''
           const modifierTexts = param.modifiers.map(mod => mod.getText()).join(' ')
           const modifiers = modifierTexts ? `${modifierTexts} ` : ''
@@ -366,7 +406,8 @@ export function buildClassBody(node: ClassDeclaration): string {
       // Then add constructor signature without parameter properties
       const params = member.parameters.map((param) => {
         const name = getParameterName(param)
-        const type = param.type?.getText() || 'any'
+        const type = param.type?.getText()
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${name}${optional}: ${type}`
       }).join(', ')
@@ -414,7 +455,8 @@ export function buildClassBody(node: ClassDeclaration): string {
       // Add parameters
       const params = member.parameters.map((param) => {
         const paramName = getParameterName(param)
-        const paramType = param.type?.getText() || 'any'
+        const paramType = param.type?.getText()
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
@@ -464,7 +506,11 @@ export function buildClassBody(node: ClassDeclaration): string {
       )
 
       const optional = member.questionToken ? '?' : ''
-      const type = member.type?.getText() || 'any'
+      const isStaticMember = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.StaticKeyword)
+      const isReadonlyMember = !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ReadonlyKeyword)
+      const isConstLike = isStaticMember && isReadonlyMember
+      const type = member.type?.getText()
+        || (member.initializer ? inferTypeFromInitializer(member.initializer.getText(), isConstLike) : 'unknown')
 
       members.push(`${mods}${name}${optional}: ${type};`)
     }
@@ -490,7 +536,7 @@ export function buildClassBody(node: ClassDeclaration): string {
         !!member.modifiers?.some(mod => mod.kind === SyntaxKind.ProtectedKeyword),
       )
 
-      const returnType = member.type?.getText() || 'any'
+      const returnType = member.type?.getText() || 'unknown'
       members.push(`${mods}get ${name}(): ${returnType};`)
     }
     else if (isSetAccessorDeclaration(member)) {
@@ -517,7 +563,7 @@ export function buildClassBody(node: ClassDeclaration): string {
 
       // Get parameter type from the setter's parameter
       const param = member.parameters[0]
-      const paramType = param?.type?.getText() || 'any'
+      const paramType = param?.type?.getText() || 'unknown'
       const paramName = param?.name?.getText() || 'value'
 
       members.push(`${mods}set ${name}(${paramName}: ${paramType});`)
@@ -591,7 +637,8 @@ export function buildModuleBody(node: ModuleDeclaration): string {
       // Add parameters
       const params = element.parameters.map((param) => {
         const paramName = getParameterName(param)
-        const paramType = param.type?.getText() || 'any'
+        const paramType = param.type?.getText()
+          || (param.initializer ? inferTypeFromInitializer(param.initializer.getText(), false) : 'unknown')
         const optional = param.questionToken || param.initializer ? '?' : ''
         return `${paramName}${optional}: ${paramType}`
       }).join(', ')
@@ -625,22 +672,11 @@ export function buildModuleBody(node: ModuleDeclaration): string {
             parts.push(': ', typeAnnotation)
           }
           else if (initializer) {
-            // Simple type inference for common cases
-            if (initializer.startsWith('\'') || initializer.startsWith('"') || initializer.startsWith('`')) {
-              parts.push(': string')
-            }
-            else if (/^\d+$/.test(initializer)) {
-              parts.push(': number')
-            }
-            else if (initializer === 'true' || initializer === 'false') {
-              parts.push(': boolean')
-            }
-            else {
-              parts.push(': any')
-            }
+            const inferred = inferTypeFromInitializer(initializer, kind === 'const')
+            parts.push(': ', inferred)
           }
           else {
-            parts.push(': any')
+            parts.push(': unknown')
           }
 
           parts.push(';')

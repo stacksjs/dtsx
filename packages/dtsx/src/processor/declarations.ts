@@ -111,9 +111,9 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     typeAnnotation = inferNarrowType(decl.value, kind === 'const')
   }
 
-  // Default to any if we couldn't determine type
+  // Default to unknown if we couldn't determine type
   if (!typeAnnotation) {
-    typeAnnotation = 'any'
+    typeAnnotation = 'unknown'
   }
 
   result += `: ${typeAnnotation};`

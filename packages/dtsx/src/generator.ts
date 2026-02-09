@@ -565,29 +565,9 @@ export async function processFile(
 
 /**
  * Process TypeScript source code from a string (for stdin support)
+ * Re-exported from process-source.ts for backward compatibility
  */
-export function processSource(
-  sourceCode: string,
-  filename: string = 'stdin.ts',
-  keepComments: boolean = true,
-  importOrder: string[] = ['bun'],
-): string {
-  // Extract declarations
-  const declarations = extractDeclarations(sourceCode, filename, keepComments)
-
-  // Create processing context
-  const context: ProcessingContext = {
-    filePath: filename,
-    sourceCode,
-    declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
-  }
-
-  // Process declarations to generate DTS
-  return processDeclarations(declarations, context, keepComments, importOrder)
-}
+export { processSource } from './process-source'
 
 /**
  * Process a single TypeScript file and return DTS with statistics

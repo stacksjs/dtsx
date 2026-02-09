@@ -1,4 +1,4 @@
-import { and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter } from './_namespaces/ts.js';
+import { __String, and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter } from './_namespaces/ts.js';
 /** @internal */
 export declare function getNodeId(node: Node): number;
 /** @internal */
@@ -45,7 +45,7 @@ declare class SymbolTrackerImpl implements SymbolTracker {
   context: NodeBuilderContext;
   readonly inner: SymbolTracker | undefined;
   readonly canTrackSymbol: boolean;
-  disableTrackSymbol: any;
+  disableTrackSymbol: boolean;
   constructor(context: NodeBuilderContext, tracker: SymbolTracker | undefined, moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined);
   trackSymbol(symbol: Symbol, enclosingDeclaration: Node | undefined, meaning: SymbolFlags): boolean;
   reportInaccessibleThisError(): void;
@@ -285,14 +285,14 @@ declare const enum IntrinsicTypeKind {
     NoInfer,
 }
 declare namespace JsxNames {
-  export const JSX: string;
-  export const IntrinsicElements: string;
-  export const ElementClass: string;
-  export const ElementAttributesPropertyNameContainer: string;
-  export const ElementChildrenAttributeNameContainer: string;
-  export const Element: string;
-  export const ElementType: string;
-  export const IntrinsicAttributes: string;
-  export const IntrinsicClassAttributes: string;
-  export const LibraryManagedAttributes: string;
+  export const JSX: __String;
+  export const IntrinsicElements: __String;
+  export const ElementClass: __String;
+  export const ElementAttributesPropertyNameContainer: __String;
+  export const ElementChildrenAttributeNameContainer: __String;
+  export const Element: __String;
+  export const ElementType: __String;
+  export const IntrinsicAttributes: __String;
+  export const IntrinsicClassAttributes: __String;
+  export const LibraryManagedAttributes: __String;
 }

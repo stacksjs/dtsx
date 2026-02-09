@@ -4,7 +4,6 @@
 
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/helpers'
-import { assertNever } from '../utils'
 import { getCachedRegex } from './cache'
 import { formatComments } from './comments'
 import {
@@ -17,6 +16,10 @@ import {
   processVariableDeclaration,
 } from './declarations'
 import { extractAllImportedItems, parseImportStatement } from './imports'
+
+function assertNever(value: never, message?: string): never {
+  throw new Error(message || `Unexpected value: ${value}`)
+}
 
 // Re-export all public APIs
 export { clearProcessorCaches } from './cache'
@@ -235,7 +238,6 @@ export function processDeclarations(
   // Single pass: find all used imports in combined text
   for (const item of allImportedItemNames) {
     const regex = getCachedRegex(item)
-    regex.lastIndex = 0
     if (regex.test(combinedDeclarationText)) {
       usedImportItems.add(item)
     }

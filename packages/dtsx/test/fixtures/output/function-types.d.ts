@@ -1,5 +1,5 @@
 // Function with optional and default parameters
-export declare function withOptionalParams(required: string, optional?: number, defaultParam?: any): void;
+export declare function withOptionalParams(required: string, optional?: number, defaultParam?: string): void;
 // Function with rest parameters
 export declare function withRestParams(first: string, ...rest: number[]): number;
 // Function with destructured parameters

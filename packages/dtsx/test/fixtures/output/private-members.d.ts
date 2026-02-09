@@ -5,7 +5,7 @@
  */
 // Class with private static members - should be excluded from d.ts
 export declare class CacheManager {
-  static readonly MAX_SIZE: any;
+  static readonly MAX_SIZE: 1000;
   static get(key: string): unknown;
   static set(key: string, value: unknown): void;
   static clear(): void;

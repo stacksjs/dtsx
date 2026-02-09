@@ -1,10 +1,15 @@
 /**
- * dtsx benchmark suite — compares dtsx vs oxc-transform vs tsc
+ * dtsx benchmark suite — compares dtsx vs oxc-transform vs tsc vs tsgo
+ *
+ * Section 1: In-process API benchmark (dtsx, oxc-transform, tsc)
+ * Section 2: CLI benchmark (dtsx vs tsc vs tsgo) — fair apples-to-apples comparison
  *
  * Run: bun benchmark/index.ts
  */
 
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { arch, cpus, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
@@ -98,6 +103,63 @@ function tscGenerate(source: string, filename: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// CLI helpers — for fair dtsx vs tsc vs tsgo comparison (all via subprocess)
+// ---------------------------------------------------------------------------
+
+const dtsxExe = join(import.meta.dir, '..', 'packages', 'dtsx', 'bin', 'dtsx')
+
+const tsgoExe = join(
+  import.meta.dir,
+  '..',
+  'node_modules',
+  `@typescript/native-preview-${platform()}-${arch()}`,
+  'lib',
+  platform() === 'win32' ? 'tsgo.exe' : 'tsgo',
+)
+
+const tscExe = join(import.meta.dir, '..', 'node_modules', '.bin', 'tsc')
+
+const cliBenchDir = join(tmpdir(), 'dtsx-bench-cli')
+const cliOutDir = join(cliBenchDir, 'out')
+mkdirSync(cliOutDir, { recursive: true })
+
+// Pre-write input files to disk for CLI benchmarks
+for (const { filename, source } of inputs) {
+  writeFileSync(join(cliBenchDir, filename), source)
+}
+
+const cliFlags = [
+  '--declaration',
+  '--emitDeclarationOnly',
+  '--isolatedDeclarations',
+  '--skipLibCheck',
+  '--outDir',
+  cliOutDir,
+]
+
+function dtsxGenerateCLI(filename: string): void {
+  spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
+}
+
+function tsgoGenerateCLI(filename: string): void {
+  spawnSync(tsgoExe, [
+    ...cliFlags,
+    '--ignoreConfig',
+    '--quiet',
+    join(cliBenchDir, filename),
+  ], { stdio: 'pipe' })
+}
+
+function tscGenerateCLI(filename: string): void {
+  spawnSync(tscExe, [
+    ...cliFlags,
+    '--noEmit',
+    'false',
+    join(cliBenchDir, filename),
+  ], { stdio: 'pipe' })
+}
+
+// ---------------------------------------------------------------------------
 // Warmup — ensure JIT / caches are warm before measuring
 // ---------------------------------------------------------------------------
 
@@ -105,10 +167,13 @@ for (const { filename, source } of inputs) {
   processSource(source, filename)
   isolatedDeclarationSync(filename, source, { sourcemap: false })
   tscGenerate(source, filename)
+  dtsxGenerateCLI(filename)
+  tsgoGenerateCLI(filename)
+  tscGenerateCLI(filename)
 }
 
 // ---------------------------------------------------------------------------
-// Benchmarks
+// Section 1: In-process API benchmarks (dtsx vs oxc-transform vs tsc)
 // ---------------------------------------------------------------------------
 
 for (const { name, filename, source } of inputs) {
@@ -123,6 +188,155 @@ for (const { name, filename, source } of inputs) {
 
     bench(`tsc — ${name}`, () => {
       tscGenerate(source, filename)
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Section 2: CLI benchmarks (dtsx vs tsc vs tsgo — all via subprocess)
+// ---------------------------------------------------------------------------
+
+for (const { name, filename } of inputs) {
+  summary(() => {
+    bench(`dtsx (cli) — ${name}`, () => {
+      dtsxGenerateCLI(filename)
+    })
+
+    bench(`tsc (cli) — ${name}`, () => {
+      tscGenerateCLI(filename)
+    })
+
+    bench(`tsgo (cli) — ${name}`, () => {
+      tsgoGenerateCLI(filename)
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Section 3: Multi-file project benchmarks (dtsx vs tsc vs tsgo)
+// ---------------------------------------------------------------------------
+
+const concurrency = Math.max(1, cpus().length - 1)
+const projectSizes = [50, 100, 500]
+const templates = inputs.map(i => i.source)
+
+// Generate multi-file projects — each file gets unique export names
+function generateProject(dir: string, count: number): string[] {
+  mkdirSync(dir, { recursive: true })
+  const files: string[] = []
+  for (let i = 0; i < count; i++) {
+    const template = templates[i % templates.length]
+    const filename = `mod_${String(i).padStart(4, '0')}.ts`
+    const filepath = join(dir, filename)
+    // Make exports unique per file by adding a prefix comment + unique const
+    const uniqueSource = `// Module ${i}\nexport const __mod${i}_id: number = ${i}\n\n${template}`
+    writeFileSync(filepath, uniqueSource)
+    files.push(filepath)
+  }
+  return files
+}
+
+interface ProjectBench {
+  name: string
+  count: number
+  dir: string
+  outDirDtsx: string
+  outDirTsgo: string
+  outDirTsc: string
+  files: string[]
+}
+
+const projects: ProjectBench[] = projectSizes.map((count) => {
+  const dir = join(tmpdir(), `dtsx-bench-project-${count}`)
+  const outDirDtsx = join(dir, 'out-dtsx')
+  const outDirTsgo = join(dir, 'out-tsgo')
+  const outDirTsc = join(dir, 'out-tsc')
+  mkdirSync(outDirDtsx, { recursive: true })
+  mkdirSync(outDirTsgo, { recursive: true })
+  mkdirSync(outDirTsc, { recursive: true })
+  const files = generateProject(dir, count)
+  return {
+    name: `${count} files`,
+    count,
+    dir,
+    outDirDtsx,
+    outDirTsgo,
+    outDirTsc,
+    files,
+  }
+})
+
+function dtsxGenerateProject(p: ProjectBench): void {
+  // Clean output dir between runs for fair comparison
+  rmSync(p.outDirDtsx, { recursive: true, force: true })
+  mkdirSync(p.outDirDtsx, { recursive: true })
+  spawnSync(dtsxExe, [
+    'generate',
+    '--root',
+    p.dir,
+    '--outdir',
+    p.outDirDtsx,
+    '--entrypoints',
+    '**/*.ts',
+    '--parallel',
+    '--concurrency',
+    String(concurrency),
+    '--log-level',
+    'silent',
+  ], { stdio: 'pipe' })
+}
+
+function tsgoGenerateProject(p: ProjectBench): void {
+  rmSync(p.outDirTsgo, { recursive: true, force: true })
+  mkdirSync(p.outDirTsgo, { recursive: true })
+  spawnSync(tsgoExe, [
+    '--declaration',
+    '--emitDeclarationOnly',
+    '--isolatedDeclarations',
+    '--skipLibCheck',
+    '--ignoreConfig',
+    '--quiet',
+    '--outDir',
+    p.outDirTsgo,
+    ...p.files,
+  ], { stdio: 'pipe' })
+}
+
+function tscGenerateProject(p: ProjectBench): void {
+  rmSync(p.outDirTsc, { recursive: true, force: true })
+  mkdirSync(p.outDirTsc, { recursive: true })
+  spawnSync(tscExe, [
+    '--declaration',
+    '--emitDeclarationOnly',
+    '--isolatedDeclarations',
+    '--skipLibCheck',
+    '--noEmit',
+    'false',
+    '--outDir',
+    p.outDirTsc,
+    ...p.files,
+  ], { stdio: 'pipe' })
+}
+
+// Warmup for multi-file benchmarks
+for (const p of projects) {
+  dtsxGenerateProject(p)
+  tsgoGenerateProject(p)
+  tscGenerateProject(p)
+}
+
+for (const p of projects) {
+  summary(() => {
+    bench(`dtsx (project) — ${p.name}`, () => {
+      dtsxGenerateProject(p)
+    })
+
+    bench(`tsc (project) — ${p.name}`, () => {
+      tscGenerateProject(p)
+    })
+
+    bench(`tsgo (project) — ${p.name}`, () => {
+      tsgoGenerateProject(p)
     })
   })
 }
