@@ -52,6 +52,6 @@
     "@stacksjs/dtsx": "workspace:*"
   },
   "peerDependencies": {
-    "esbuild": ">=0.17.0"
+    "esbuild": ">=0.27.3"
   }
 }
