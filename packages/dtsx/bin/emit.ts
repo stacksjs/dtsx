@@ -11,11 +11,21 @@ if (cmd === '--project') {
   const outdir = args[3]
   const files = readdirSync(dir).filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts'))
 
-  for (const file of files) {
-    const source = readFileSync(join(dir, file), 'utf-8')
-    const dts = processSource(source, file)
-    writeFileSync(join(outdir, file.replace(/\.ts$/, '.d.ts')), dts)
+  // Read all files in parallel using Bun.file()
+  const sources = await Promise.all(
+    files.map(f => Bun.file(join(dir, f)).text()),
+  )
+
+  // Process all files (CPU-bound, sequential)
+  const results: string[] = new Array(files.length)
+  for (let i = 0; i < files.length; i++) {
+    results[i] = processSource(sources[i], files[i])
   }
+
+  // Write all files in parallel using Bun.write()
+  await Promise.all(
+    files.map((f, i) => Bun.write(join(outdir, f.replace(/\.ts$/, '.d.ts')), results[i])),
+  )
 }
 else if (cmd === 'emit' && args[1]) {
   const filePath = args[1]

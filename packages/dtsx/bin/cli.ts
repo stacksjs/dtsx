@@ -1,18 +1,12 @@
 // Fast path — skip CLI framework for maximum startup speed
 import type { LogLevel } from '../src/logger'
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
-import { resolve } from 'node:path'
 import process from 'node:process'
-import { CLI } from '@stacksjs/clapp'
-import { version } from '../../../package.json'
-import { getConfig } from '../src/config'
-import { generate, processSource, watch } from '../src/generator'
 
 const _cmd = process.argv[2]
-if (_cmd === 'stdin' || _cmd === 'emit') {
-  const { processSource } = await import('../src/process-source')
-
+if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
   if (_cmd === 'stdin') {
+    const { processSource } = await import('../src/process-source')
     const chunks: Buffer[] = []
     for await (const chunk of process.stdin) {
       chunks.push(chunk)
@@ -23,7 +17,63 @@ if (_cmd === 'stdin' || _cmd === 'emit') {
       process.stdout.write('\n')
     }
   }
+  else if (_cmd === '--project') {
+    // Usage: dtsx --project <dir> --outdir <outdir>
+    const { readdirSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const args = process.argv.slice(3)
+    let dir = ''
+    let out = ''
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--outdir' && args[i + 1]) {
+        out = args[i + 1]
+        i++
+      }
+      else if (!dir) {
+        dir = args[i]
+      }
+    }
+    mkdirSync(out, { recursive: true })
+    const files = readdirSync(dir).filter((f: string) => f.endsWith('.ts') && !f.endsWith('.d.ts'))
+
+    // Direct imports — skip processSourceDirect wrapper for less call overhead
+    const { scanDeclarations } = await import('../src/extractor/scanner')
+    const { processDeclarations } = await import('../src/processor')
+
+    // Pre-compute all read + output paths once
+    const n = files.length
+    const inPaths: string[] = new Array(n)
+    const outPaths: string[] = new Array(n)
+    for (let i = 0; i < n; i++) {
+      inPaths[i] = `${dir}/${files[i]}`
+      outPaths[i] = `${out}/${files[i].slice(0, -3)}.d.ts`
+    }
+
+    // Phase 1: Read all sources into memory
+    const sources: string[] = new Array(n)
+    for (let i = 0; i < n; i++) {
+      sources[i] = readFileSync(inPaths[i], 'utf-8')
+    }
+
+    // Phase 2: Process all — scan + process per file in tight loop
+    const results: string[] = new Array(n)
+    const importOrder = ['bun']
+    const ctx = { filePath: '', sourceCode: '', declarations: [] as any[] }
+    for (let i = 0; i < n; i++) {
+      const decls = scanDeclarations(sources[i], files[i], true)
+      ctx.filePath = files[i]
+      ctx.sourceCode = sources[i]
+      ctx.declarations = decls
+      results[i] = processDeclarations(decls, ctx, true, importOrder)
+    }
+
+    // Phase 3: Write all results
+    for (let i = 0; i < n; i++) {
+      writeFileSync(outPaths[i], results[i])
+    }
+  }
   else {
+    // emit command
+    const { processSource } = await import('../src/process-source')
     const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
     const filePath = process.argv[3]!
     const source = readFileSync(filePath, 'utf-8')
@@ -40,6 +90,13 @@ if (_cmd === 'stdin' || _cmd === 'emit') {
   }
   process.exit(0)
 }
+
+// Heavy imports — only loaded when CLI framework is needed (not on fast path)
+const { resolve } = await import('node:path')
+const { CLI } = await import('@stacksjs/clapp')
+const { version } = await import('../../../package.json')
+const { getConfig } = await import('../src/config')
+const { generate, processSource, watch } = await import('../src/generator')
 
 const cli = new CLI('dtsx')
 

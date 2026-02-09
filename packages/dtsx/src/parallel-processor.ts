@@ -234,9 +234,6 @@ async function processFile(
     filePath,
     sourceCode: content,
     declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
   }
 
   return processDeclarations(declarations, context)

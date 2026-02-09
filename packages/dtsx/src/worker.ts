@@ -166,9 +166,6 @@ export class WorkerPool {
               filePath: task.filePath,
               sourceCode: task.sourceCode,
               declarations,
-              imports: new Map(),
-              exports: new Set(),
-              usedTypes: new Set(),
             }, true, task.config?.importOrder);
 
             return {

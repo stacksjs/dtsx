@@ -476,7 +476,7 @@ export interface ProcessingContext {
   filePath: string
   sourceCode: string
   declarations: Declaration[]
-  imports: Map<string, Set<string>>
-  exports: Set<string>
-  usedTypes: Set<string>
+  imports?: Map<string, Set<string>>
+  exports?: Set<string>
+  usedTypes?: Set<string>
 }

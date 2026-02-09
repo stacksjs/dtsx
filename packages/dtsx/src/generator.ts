@@ -1,6 +1,7 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
 import { mkdir, readFile } from 'node:fs/promises'
+import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
@@ -105,7 +106,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
 
   // Helper function to process a single file
-  const processSingleFile = async (file: string): Promise<{
+  // Accepts optional pre-read source to avoid redundant I/O when files are batch-read
+  const processSingleFile = async (file: string, preReadSource?: string): Promise<{
     success: boolean
     file: string
     declarationCount: number
@@ -130,8 +132,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         }
       }
 
-      // Read source first for better error context
-      sourceCode = await readFile(file, 'utf-8')
+      // Use pre-read source if available, otherwise read from disk
+      sourceCode = preReadSource ?? await readFile(file, 'utf-8')
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
 
       let validationErrorCount = 0
@@ -251,51 +253,75 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
 
-  // Process files either in parallel or sequentially
-  if (config.parallel) {
-    // Parallel processing with concurrency limit
-    const concurrency = config.concurrency || 4
-    const results: Array<Awaited<ReturnType<typeof processSingleFile>>> = []
+  // Auto-enable parallel processing for multiple files (unless explicitly set to false)
+  const useParallel = config.parallel || (config.parallel !== false && files.length >= 10)
+  const concurrency = config.concurrency || (availableParallelism?.() ?? 8)
 
-    for (let i = 0; i < files.length; i += concurrency) {
-      const batch = files.slice(i, i + concurrency)
-      const batchResults = await Promise.all(batch.map(processSingleFile))
-      results.push(...batchResults)
+  // Pre-read all file sources in parallel for faster I/O
+  // This allows overlapping disk reads instead of sequential read-process-write
+  const preReadSources = new Map<string, string>()
+  if (useParallel && files.length > 1) {
+    const readPromises = files.map(async (f) => {
+      try {
+        const src = await readFile(f, 'utf-8')
+        return { file: f, source: src }
+      }
+      catch {
+        return { file: f, source: null }
+      }
+    })
+    for (const result of await Promise.all(readPromises)) {
+      if (result.source !== null) preReadSources.set(result.file, result.source)
+    }
+  }
 
-      // Update stats and show progress after each batch
-      for (const result of batchResults) {
-        stats.filesProcessed++
-        if (result.success) {
-          if (result.cached) {
-            cacheHits++
-          }
-          else {
-            stats.filesGenerated++
-            stats.declarationsFound += result.declarationCount
-            stats.importsProcessed += result.importCount
-            stats.exportsProcessed += result.exportCount
-          }
-          if (config.validate) {
-            stats.filesValidated++
-            if (result.validationErrorCount) {
-              stats.validationErrors += result.validationErrorCount
-            }
-          }
+  // Helper to update stats from a result
+  const updateStats = (result: Awaited<ReturnType<typeof processSingleFile>>) => {
+    stats.filesProcessed++
+    if (result.success) {
+      if (result.cached) {
+        cacheHits++
+      }
+      else {
+        stats.filesGenerated++
+        stats.declarationsFound += result.declarationCount
+        stats.importsProcessed += result.importCount
+        stats.exportsProcessed += result.exportCount
+      }
+      if (config.validate) {
+        stats.filesValidated++
+        if (result.validationErrorCount) {
+          stats.validationErrors += result.validationErrorCount
+        }
+      }
+    }
+    else {
+      stats.filesFailed++
+      if (result.dtsError) {
+        stats.errors.push(result.dtsError)
+        const errorMsg = formatDtsError(result.dtsError)
+        if (config.continueOnError) {
+          logger.warn(errorMsg)
         }
         else {
-          stats.filesFailed++
-          if (result.dtsError) {
-            stats.errors.push(result.dtsError)
-            const errorMsg = formatDtsError(result.dtsError)
-            if (config.continueOnError) {
-              logger.warn(errorMsg)
-            }
-            else {
-              logger.error(errorMsg)
-              throw new Error(result.dtsError.message)
-            }
-          }
+          logger.error(errorMsg)
+          throw new Error(result.dtsError.message)
         }
+      }
+    }
+  }
+
+  // Process files either in parallel or sequentially
+  if (useParallel) {
+    // Parallel processing with concurrency limit
+    for (let i = 0; i < files.length; i += concurrency) {
+      const batch = files.slice(i, i + concurrency)
+      const batchResults = await Promise.all(
+        batch.map(f => processSingleFile(f, preReadSources.get(f))),
+      )
+
+      for (const result of batchResults) {
+        updateStats(result)
       }
 
       if (config.progress) {
@@ -305,48 +331,16 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
   else {
-    // Sequential processing (original behavior)
+    // Sequential processing (single file or explicitly disabled)
     for (const file of files) {
       const result = await processSingleFile(file)
+      updateStats(result)
 
-      stats.filesProcessed++
-      if (result.success) {
-        if (result.cached) {
-          cacheHits++
-        }
-        else {
-          stats.filesGenerated++
-          stats.declarationsFound += result.declarationCount
-          stats.importsProcessed += result.importCount
-          stats.exportsProcessed += result.exportCount
-        }
-        if (config.validate) {
-          stats.filesValidated++
-          if (result.validationErrorCount) {
-            stats.validationErrors += result.validationErrorCount
-          }
-        }
-
-        // Show progress
-        if (config.progress) {
-          const percent = Math.round((stats.filesProcessed / files.length) * 100)
-          const status = result.cached ? '[cached]' : ''
-          logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)} ${status}`)
-        }
-      }
-      else {
-        stats.filesFailed++
-        if (result.dtsError) {
-          stats.errors.push(result.dtsError)
-          const errorMsg = formatDtsError(result.dtsError)
-          if (config.continueOnError) {
-            logger.warn(errorMsg)
-          }
-          else {
-            logger.error(errorMsg)
-            throw new Error(result.dtsError.message)
-          }
-        }
+      // Show progress
+      if (config.progress) {
+        const percent = Math.round((stats.filesProcessed / files.length) * 100)
+        const status = result.cached ? '[cached]' : ''
+        logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)} ${status}`)
       }
     }
   }
@@ -614,9 +608,6 @@ async function processFileWithStatsFromSource(
     filePath,
     sourceCode: processedSource,
     declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
   }
 
   // Process declarations to generate DTS

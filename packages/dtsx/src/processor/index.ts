@@ -3,7 +3,7 @@
  */
 
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
-import { extractTripleSlashDirectives } from '../extractor/helpers'
+import { extractTripleSlashDirectives } from '../extractor/directives'
 import { getCachedRegex } from './cache'
 import { formatComments } from './comments'
 import {
@@ -62,10 +62,16 @@ export function processDeclarations(
   const output: string[] = []
 
   // Extract and add triple-slash directives at the top of the file
-  const tripleSlashDirectives = extractTripleSlashDirectives(context.sourceCode)
-  if (tripleSlashDirectives.length > 0) {
-    output.push(...tripleSlashDirectives)
-    output.push('') // Blank line after directives
+  // Fast check: skip whitespace with charCodeAt to avoid trimStart() allocation
+  const src = context.sourceCode
+  let _si = 0
+  while (_si < src.length && (src.charCodeAt(_si) === 32 || src.charCodeAt(_si) === 9 || src.charCodeAt(_si) === 10 || src.charCodeAt(_si) === 13)) _si++
+  if (_si < src.length - 2 && src.charCodeAt(_si) === 47 && src.charCodeAt(_si + 1) === 47 && src.charCodeAt(_si + 2) === 47) {
+    const tripleSlashDirectives = extractTripleSlashDirectives(src)
+    if (tripleSlashDirectives.length > 0) {
+      output.push(...tripleSlashDirectives)
+      output.push('') // Blank line after directives
+    }
   }
 
   // Group declarations by type for better organization (single pass)
@@ -99,8 +105,10 @@ export function processDeclarations(
 
   // Parse all exports to understand what's being exported
   const exportedItems = new Set<string>()
-  const exportStatements: string[] = []
+  const typeExportStatements: string[] = []
+  const valueExportStatements: string[] = []
   const defaultExport: string[] = []
+  const seenExports = new Set<string>()
 
   for (const decl of exports) {
     // Prepend comments if present
@@ -129,8 +137,15 @@ export function processDeclarations(
       }
 
       const fullExportText = comments + exportText
-      if (!exportStatements.includes(fullExportText)) {
-        exportStatements.push(fullExportText)
+      if (!seenExports.has(fullExportText)) {
+        seenExports.add(fullExportText)
+        // Categorize into type vs value exports in one pass
+        if (fullExportText.includes('export type')) {
+          typeExportStatements.push(fullExportText)
+        }
+        else {
+          valueExportStatements.push(fullExportText)
+        }
       }
     }
   }
@@ -145,55 +160,47 @@ export function processDeclarations(
     }
   }
 
-  // Get all unique imported item names for regex matching
-  const allImportedItemNames = Array.from(allImportedItemsMap.keys())
-
   // Filter imports to only include those that are used in exports or declarations
   const usedImportItems = new Set<string>()
 
-  // Collect all declaration texts that need to be checked for imports (single pass)
-  const declarationTexts: Array<{ text: string, additionalTexts: string[] }> = []
+  // Build combined text for import usage detection (single allocation)
+  const allTexts: string[] = []
 
   // Add exported functions
   for (const func of functions) {
     if (func.isExported) {
-      declarationTexts.push({ text: func.text, additionalTexts: [] })
+      allTexts.push(func.text)
     }
   }
 
   // Add exported variables
   for (const variable of variables) {
     if (variable.isExported) {
-      const additionalTexts: string[] = []
+      allTexts.push(variable.text)
       if (variable.typeAnnotation) {
-        additionalTexts.push(variable.typeAnnotation)
+        allTexts.push(variable.typeAnnotation)
       }
-      declarationTexts.push({ text: variable.text, additionalTexts })
     }
   }
 
   // Build reference check sets for interfaces (optimized: single pass over text sources)
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
-    // Collect all texts to search in one array
-    const textsToSearch: string[] = []
+    // Build combined text from functions/classes/types for interface reference check
+    let refCheckText = ''
     for (const func of functions) {
       if (func.isExported)
-        textsToSearch.push(func.text)
+        refCheckText += func.text + '\n'
     }
     for (const cls of classes) {
-      textsToSearch.push(cls.text)
+      refCheckText += cls.text + '\n'
     }
     for (const type of types) {
-      textsToSearch.push(type.text)
+      refCheckText += type.text + '\n'
     }
 
-    // Join all texts for a single search per interface (faster than N*M individual searches)
-    const combinedText = textsToSearch.join('\n')
-
-    // Single pass: check each interface name against combined text
     for (const iface of interfaces) {
-      if (combinedText.includes(iface.name)) {
+      if (refCheckText.includes(iface.name)) {
         interfaceReferences.add(iface.name)
       }
     }
@@ -202,43 +209,36 @@ export function processDeclarations(
   // Add interfaces (exported or referenced)
   for (const iface of interfaces) {
     if (iface.isExported || interfaceReferences.has(iface.name)) {
-      declarationTexts.push({ text: iface.text, additionalTexts: [] })
+      allTexts.push(iface.text)
     }
   }
 
-  // Add all types, classes, enums, modules (they may be included in DTS)
+  // Add all types, classes, enums, modules
   for (const type of types) {
-    declarationTexts.push({ text: type.text, additionalTexts: [] })
+    allTexts.push(type.text)
   }
   for (const cls of classes) {
-    declarationTexts.push({ text: cls.text, additionalTexts: [] })
+    allTexts.push(cls.text)
   }
   for (const enumDecl of enums) {
-    declarationTexts.push({ text: enumDecl.text, additionalTexts: [] })
+    allTexts.push(enumDecl.text)
   }
   for (const mod of modules) {
-    declarationTexts.push({ text: mod.text, additionalTexts: [] })
+    allTexts.push(mod.text)
   }
 
   // Add export statements
   for (const exp of exports) {
-    declarationTexts.push({ text: exp.text, additionalTexts: [] })
+    allTexts.push(exp.text)
   }
-
-  // Optimized: combine ALL declaration texts into one and extract identifiers in a single pass
-  const allTexts: string[] = []
-  for (const { text, additionalTexts } of declarationTexts) {
-    allTexts.push(text)
-    if (additionalTexts.length > 0) {
-      allTexts.push(...additionalTexts)
-    }
-  }
-  const combinedDeclarationText = allTexts.join('\n')
 
   // Two-phase import detection: fast includes() rejection then regex word-boundary check
-  for (const item of allImportedItemNames) {
-    if (combinedDeclarationText.includes(item) && getCachedRegex(item).test(combinedDeclarationText)) {
-      usedImportItems.add(item)
+  for (const item of allImportedItemsMap.keys()) {
+    for (let t = 0; t < allTexts.length; t++) {
+      if (allTexts[t].includes(item) && getCachedRegex(item).test(allTexts[t])) {
+        usedImportItems.add(item)
+        break
+      }
     }
   }
 
@@ -298,25 +298,19 @@ export function processDeclarations(
   }
 
   // Sort imports based on importOrder priority, then alphabetically
+  // Pre-compute priority strings to avoid template literal allocations in comparator
+  const prioritySingle = importOrder.map(p => `from '${p}`)
+  const priorityDouble = importOrder.map(p => `from "${p}`)
+  const defaultPriority = importOrder.length
   processedImports.sort((a, b) => {
-    // Find the priority index for each import (-1 if not in priority list)
-    const getPriority = (imp: string): number => {
-      for (let i = 0; i < importOrder.length; i++) {
-        if (imp.includes(`from '${importOrder[i]}`) || imp.includes(`from "${importOrder[i]}`)) {
-          return i
-        }
-      }
-      return importOrder.length // Non-priority imports come last
+    let aPriority = defaultPriority
+    let bPriority = defaultPriority
+    for (let i = 0; i < importOrder.length; i++) {
+      if (aPriority === defaultPriority && (a.includes(prioritySingle[i]) || a.includes(priorityDouble[i]))) aPriority = i
+      if (bPriority === defaultPriority && (b.includes(prioritySingle[i]) || b.includes(priorityDouble[i]))) bPriority = i
+      if (aPriority !== defaultPriority && bPriority !== defaultPriority) break
     }
-
-    const aPriority = getPriority(a)
-    const bPriority = getPriority(b)
-
-    if (aPriority !== bPriority) {
-      return aPriority - bPriority
-    }
-
-    return a.localeCompare(b)
+    return aPriority !== bPriority ? aPriority - bPriority : a.localeCompare(b)
   })
 
   output.push(...processedImports)
@@ -326,62 +320,63 @@ export function processDeclarations(
     output.push('')
 
   // Process type exports first
-  const typeExports = exportStatements.filter(exp => exp.includes('export type'))
-  output.push(...typeExports)
+  for (let i = 0; i < typeExportStatements.length; i++) output.push(typeExportStatements[i])
 
-  // Process other declarations (functions, interfaces, etc.)
-  const otherDecls = [...functions, ...variables, ...interfaces, ...types, ...classes, ...enums, ...modules]
-
-  for (const decl of otherDecls) {
-    let processed = ''
-    const kind: DeclarationKind = decl.kind
-    switch (kind) {
-      case 'function':
-        processed = processFunctionDeclaration(decl, keepComments)
-        break
-      case 'variable':
-        processed = processVariableDeclaration(decl, keepComments)
-        break
-      case 'interface':
-        processed = processInterfaceDeclaration(decl, keepComments)
-        break
-      case 'type':
-        processed = processTypeDeclaration(decl, keepComments)
-        break
-      case 'class':
-        processed = processClassDeclaration(decl, keepComments)
-        break
-      case 'enum':
-        processed = processEnumDeclaration(decl, keepComments)
-        break
-      case 'module':
-        processed = processModuleDeclaration(decl, keepComments)
-        break
-      // import and export are handled separately above
-      case 'import':
-      case 'export':
-        break
-      case 'namespace':
-        processed = processModuleDeclaration(decl, keepComments)
-        break
-      case 'unknown':
-        // Skip unknown declarations
-        break
-      default:
-        assertNever(kind, `Unhandled declaration kind in processor: ${kind}`)
-    }
-
-    if (processed) {
-      output.push(processed)
+  // Process other declarations — iterate each group directly (no spread allocation)
+  const declGroups = [functions, variables, interfaces, types, classes, enums, modules]
+  for (let g = 0; g < declGroups.length; g++) {
+    const group = declGroups[g]
+    for (let d = 0; d < group.length; d++) {
+      const decl = group[d]
+      let processed = ''
+      const kind: DeclarationKind = decl.kind
+      switch (kind) {
+        case 'function':
+          processed = processFunctionDeclaration(decl, keepComments)
+          break
+        case 'variable':
+          processed = processVariableDeclaration(decl, keepComments)
+          break
+        case 'interface':
+          processed = processInterfaceDeclaration(decl, keepComments)
+          break
+        case 'type':
+          processed = processTypeDeclaration(decl, keepComments)
+          break
+        case 'class':
+          processed = processClassDeclaration(decl, keepComments)
+          break
+        case 'enum':
+          processed = processEnumDeclaration(decl, keepComments)
+          break
+        case 'module':
+        case 'namespace':
+          processed = processModuleDeclaration(decl, keepComments)
+          break
+        case 'import':
+        case 'export':
+        case 'unknown':
+          break
+        default:
+          assertNever(kind, `Unhandled declaration kind in processor: ${kind}`)
+      }
+      if (processed) output.push(processed)
     }
   }
 
   // Process value exports
-  const valueExports = exportStatements.filter(exp => !exp.includes('export type'))
-  output.push(...valueExports)
+  for (let i = 0; i < valueExportStatements.length; i++) output.push(valueExportStatements[i])
 
   // Process default export last
-  output.push(...defaultExport)
+  for (let i = 0; i < defaultExport.length; i++) output.push(defaultExport[i])
 
-  return output.filter(line => line !== '').join('\n')
+  // Build final output — skip empty strings inline instead of filter()
+  let result = ''
+  for (let i = 0; i < output.length; i++) {
+    if (output[i] !== '') {
+      if (result) result += '\n'
+      result += output[i]
+    }
+  }
+  return result
 }
