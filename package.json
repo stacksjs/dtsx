@@ -57,9 +57,9 @@
   },
   "devDependencies": {
     "@stacksjs/bumpx": "^0.2.4",
-    "@stacksjs/cli": "^0.70.23",
+    "@stacksjs/bunpress": "^0.1.0",
+    "@stacksjs/clapp": "^0.2.0",
     "@stacksjs/development": "^0.70.23",
-    "@stacksjs/docs": "^0.70.23",
     "@stacksjs/gitlint": "^0.1.5",
     "@stacksjs/logsmith": "^0.2.1",
     "@types/bun": "^1.3.8",
