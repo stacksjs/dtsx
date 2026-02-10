@@ -888,6 +888,43 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     if (!inner)
       return '()'
 
+    // Fast path: if params are already in DTS-safe form, return as-is
+    // Requirements: no newlines in raw string, all params typed (have ':'), no destructuring/defaults/decorators/rest/modifiers
+    if (rawParams.indexOf('\n') === -1 && inner.indexOf(':') !== -1
+      && inner.indexOf('{') === -1 && inner.indexOf('[') === -1 && inner.indexOf('=') === -1
+      && inner.indexOf('@') === -1 && inner.indexOf('...') === -1) {
+      // Verify every param has a type annotation: count colons at depth 0 vs commas at depth 0
+      let colons = 0
+      let commas = 0
+      let depth = 0
+      for (let fi = 0; fi < inner.length; fi++) {
+        const fc = inner.charCodeAt(fi)
+        if (fc === CH_LPAREN || fc === CH_LANGLE || fc === CH_LBRACE) depth++
+        else if (fc === CH_RPAREN || fc === CH_RANGLE || fc === CH_RBRACE) depth--
+        else if (depth === 0) {
+          if (fc === CH_COLON) colons++
+          else if (fc === CH_COMMA) commas++
+        }
+      }
+      // Every param needs at least one colon (commas + 1 params)
+      if (colons >= commas + 1) {
+        let hasModifier = false
+        for (let m = 0; m < PARAM_MODIFIERS.length; m++) {
+          const mod = PARAM_MODIFIERS[m]
+          const modIdx = inner.indexOf(mod)
+          if (modIdx !== -1) {
+            const afterIdx = modIdx + mod.length
+            if ((modIdx === 0 || !isIdentChar(inner.charCodeAt(modIdx - 1)))
+              && (afterIdx >= inner.length || !isIdentChar(inner.charCodeAt(afterIdx)))) {
+              hasModifier = true
+              break
+            }
+          }
+        }
+        if (!hasModifier) return rawParams
+      }
+    }
+
     // Split parameters by comma at depth 0
     const params: string[] = []
     let paramStart = 0
@@ -1313,7 +1350,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
     // Build DTS text
     const dtsParams = buildDtsParams(rawParams)
-    const text = (isExported ? 'export ' : '') + 'declare function ' + (name || 'default') + generics + dtsParams + ': ' + returnType + ';'
+    const text = `${isExported ? 'export ' : ''}declare function ${name || 'default'}${generics}${dtsParams}: ${returnType};`
     const comments = extractLeadingComments(declStart)
 
     // Record index if this function had a body (implementation signature for overloads)
@@ -1510,7 +1547,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const body = cleanBraceBlock(rawBody)
 
     // Build DTS text
-    const text = (isExported ? 'export ' : '') + 'declare interface ' + name + generics + (extendsClause ? ' extends ' + extendsClause : '') + ' ' + body
+    const text = `${isExported ? 'export ' : ''}declare interface ${name}${generics}${extendsClause ? ` extends ${extendsClause}` : ''} ${body}`
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -1567,7 +1604,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       pos++
 
     // Build DTS text
-    const text = (isExported ? 'export ' : '') + 'type ' + name + generics + ' = ' + typeBody
+    const text = `${isExported ? 'export ' : ''}type ${name}${generics} = ${typeBody}`
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -1681,7 +1718,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const classBody = buildClassBodyDts()
 
     // Build DTS text
-    const text = (isExported ? 'export ' : '') + 'declare ' + (isAbstract ? 'abstract ' : '') + 'class ' + name + generics + (extendsClause ? ' extends ' + extendsClause : '') + (implementsList && implementsList.length > 0 ? ' implements ' + implementsList.join(', ') : '') + ' ' + classBody
+    const text = `${isExported ? 'export ' : ''}declare ${isAbstract ? 'abstract ' : ''}class ${name}${generics}${extendsClause ? ` extends ${extendsClause}` : ''}${implementsList && implementsList.length > 0 ? ` implements ${implementsList.join(', ')}` : ''} ${classBody}`
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -2484,7 +2521,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
 
     // Build DTS text
-    const text = (isExported ? 'export ' : '') + 'declare ' + keyword + ' ' + name + ' ' + body
+    const text = `${isExported ? 'export ' : ''}declare ${keyword} ${name} ${body}`
     const comments = extractLeadingComments(declStart)
     const isAmbient = name.startsWith('\'') || name.startsWith('"')
 
@@ -3066,16 +3103,13 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   const declNames = new Set<string>()
   for (const d of declarations) declNames.add(d.name)
 
-  // Build initial combined text once (excluding imports)
-  const combinedParts: string[] = []
+  // Keep declaration texts as an array — search each part individually (avoids giant join allocation)
+  const textParts: string[] = []
   for (let i = 0; i < declarations.length; i++) {
     if (declarations[i].kind !== 'import') {
-      combinedParts.push(declarations[i].text)
+      textParts.push(declarations[i].text)
     }
   }
-  let combinedText = combinedParts.length > 1
-    ? combinedParts.join('\n')
-    : (combinedParts[0] || '')
 
   for (;;) {
     // Collect referenced non-exported types not yet resolved
@@ -3083,7 +3117,15 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
     for (const [name, decl] of nonExportedTypes) {
       if (resolved.has(name))
         continue
-      if (combinedText && isWordInText(name, combinedText)) {
+      // Search each text part individually with early break
+      let found = false
+      for (let p = 0; p < textParts.length; p++) {
+        if (isWordInText(name, textParts[p])) {
+          found = true
+          break
+        }
+      }
+      if (found) {
         if (!declNames.has(name)) {
           toInsert.push(decl)
           declNames.add(name)
@@ -3095,31 +3137,25 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
     if (toInsert.length === 0)
       break
 
-    // Insert at correct source positions to preserve declaration order
-    for (const decl of toInsert) {
-      const declStart = decl.start ?? Number.POSITIVE_INFINITY
-      let insertIdx = declarations.length
-      for (let i = 0; i < declarations.length; i++) {
-        const candidateStart = declarations[i].start ?? Number.POSITIVE_INFINITY
-        if (candidateStart > declStart) {
-          insertIdx = i
-          break
-        }
+    // Merge at correct source positions in a single O(n+k) pass (avoids O(k*n) splice)
+    toInsert.sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
+    const merged: Declaration[] = []
+    let ti = 0
+    for (let i = 0; i < declarations.length; i++) {
+      const candidateStart = declarations[i].start ?? Infinity
+      while (ti < toInsert.length && (toInsert[ti].start ?? Infinity) <= candidateStart) {
+        merged.push(toInsert[ti++])
       }
-      declarations.splice(insertIdx, 0, decl)
+      merged.push(declarations[i])
     }
+    while (ti < toInsert.length) merged.push(toInsert[ti++])
+    declarations.length = 0
+    for (let i = 0; i < merged.length; i++) declarations.push(merged[i])
 
-    // Append newly inserted declaration text for next iteration checks
-    if (toInsert.length > 0) {
-      const appendedParts: string[] = []
-      for (const decl of toInsert) {
-        if (decl.kind !== 'import') {
-          appendedParts.push(decl.text)
-        }
-      }
-      if (appendedParts.length > 0) {
-        const appendedText = appendedParts.length > 1 ? appendedParts.join('\n') : appendedParts[0]
-        combinedText = combinedText ? `${combinedText}\n${appendedText}` : appendedText
+    // Append new texts to parts array for next iteration
+    for (const decl of toInsert) {
+      if (decl.kind !== 'import') {
+        textParts.push(decl.text)
       }
     }
   }

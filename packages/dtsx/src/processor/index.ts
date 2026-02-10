@@ -80,7 +80,8 @@ export function processDeclarations(
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
 ): string {
-  const output: string[] = []
+  // Build result string directly instead of output array (avoids array + join allocation)
+  let result = ''
 
   // Extract and add triple-slash directives at the top of the file
   // Fast check: skip whitespace with charCodeAt to avoid trimStart() allocation
@@ -90,8 +91,10 @@ export function processDeclarations(
   if (_si < src.length - 2 && src.charCodeAt(_si) === 47 && src.charCodeAt(_si + 1) === 47 && src.charCodeAt(_si + 2) === 47) {
     const tripleSlashDirectives = extractTripleSlashDirectives(src)
     if (tripleSlashDirectives.length > 0) {
-      output.push(...tripleSlashDirectives)
-      output.push('') // Blank line after directives
+      for (let i = 0; i < tripleSlashDirectives.length; i++) {
+        if (result) result += '\n'
+        result += tripleSlashDirectives[i]
+      }
     }
   }
 
@@ -183,29 +186,27 @@ export function processDeclarations(
     }
   }
 
-  // Build reference check sets for interfaces (optimized: single pass over text sources)
+  // Build reference check sets for interfaces (search each declaration directly, no join)
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
-    // Build combined text from functions/classes/types for interface reference check
-    const refCheckParts: string[] = []
-    for (const func of functions) {
-      if (func.isExported)
-        refCheckParts.push(func.text)
-    }
-    for (const cls of classes) {
-      refCheckParts.push(cls.text)
-    }
-    for (const type of types) {
-      refCheckParts.push(type.text)
-    }
-    const refCheckText = refCheckParts.length > 0 ? refCheckParts.join('\n') : ''
-
-    if (refCheckText) {
-      for (const iface of interfaces) {
-        if (refCheckText.includes(iface.name)) {
-          interfaceReferences.add(iface.name)
+    for (const iface of interfaces) {
+      let found = false
+      if (!found) {
+        for (const func of functions) {
+          if (func.isExported && func.text.includes(iface.name)) { found = true; break }
         }
       }
+      if (!found) {
+        for (const cls of classes) {
+          if (cls.text.includes(iface.name)) { found = true; break }
+        }
+      }
+      if (!found) {
+        for (const type of types) {
+          if (type.text.includes(iface.name)) { found = true; break }
+        }
+      }
+      if (found) interfaceReferences.add(iface.name)
     }
   }
 
@@ -261,14 +262,14 @@ export function processDeclarations(
       combinedTextParts.push(exp.text)
     }
 
-    // Import detection: scan combined declaration text once per import item
-    const combinedText = combinedTextParts.length > 0
-      ? (combinedTextParts.length > 1 ? combinedTextParts.join('\n') : combinedTextParts[0])
-      : ''
-    if (combinedText) {
+    // Import detection: scan each declaration text individually (avoids giant join allocation)
+    if (combinedTextParts.length > 0) {
       for (const item of allImportedItemsMap.keys()) {
-        if (isWordInText(item, combinedText)) {
-          usedImportItems.add(item)
+        for (let p = 0; p < combinedTextParts.length; p++) {
+          if (isWordInText(item, combinedTextParts[p])) {
+            usedImportItems.add(item)
+            break
+          }
         }
       }
     }
@@ -344,14 +345,17 @@ export function processDeclarations(
     })
   }
 
-  output.push(...processedImports)
-
-  // Always add blank line after imports if there are any imports
-  if (processedImports.length > 0)
-    output.push('')
+  // Append imports to result
+  for (let i = 0; i < processedImports.length; i++) {
+    if (result) result += '\n'
+    result += processedImports[i]
+  }
 
   // Process type exports first
-  for (let i = 0; i < typeExportStatements.length; i++) output.push(typeExportStatements[i])
+  for (let i = 0; i < typeExportStatements.length; i++) {
+    if (result) result += '\n'
+    result += typeExportStatements[i]
+  }
 
   // Process other declarations — iterate each group directly (no spread allocation)
   const declGroups = [functions, variables, interfaces, types, classes, enums, modules]
@@ -391,23 +395,24 @@ export function processDeclarations(
         default:
           assertNever(kind, `Unhandled declaration kind in processor: ${kind}`)
       }
-      if (processed) output.push(processed)
+      if (processed) {
+        if (result) result += '\n'
+        result += processed
+      }
     }
   }
 
   // Process value exports
-  for (let i = 0; i < valueExportStatements.length; i++) output.push(valueExportStatements[i])
+  for (let i = 0; i < valueExportStatements.length; i++) {
+    if (result) result += '\n'
+    result += valueExportStatements[i]
+  }
 
   // Process default export last
-  for (let i = 0; i < defaultExport.length; i++) output.push(defaultExport[i])
-
-  // Build final output — skip empty strings inline instead of filter()
-  let result = ''
-  for (let i = 0; i < output.length; i++) {
-    if (output[i] !== '') {
-      if (result) result += '\n'
-      result += output[i]
-    }
+  for (let i = 0; i < defaultExport.length; i++) {
+    if (result) result += '\n'
+    result += defaultExport[i]
   }
+
   return result
 }

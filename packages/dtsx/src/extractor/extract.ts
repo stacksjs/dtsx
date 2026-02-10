@@ -24,16 +24,15 @@ export function extractDeclarations(
   const contentHash = hashContent(sourceCode)
   const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)
-  const now = Date.now()
 
   if (cached && cached.contentHash === contentHash) {
-    cached.lastAccess = now
+    cached.lastAccess = Date.now()
     return cached.declarations
   }
 
   const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
 
-  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
+  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: Date.now() })
 
   if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
     let oldestKey: string | null = null

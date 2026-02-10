@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@stacksjs/dtsx",
@@ -40,7 +39,6 @@
       "devDependencies": {
         "bunfig": "^0.15.6",
         "oxc-parser": "^0.112.0",
-        "tinyglobby": "^0.2.15",
         "typescript": "^5.0.0",
       },
       "peerDependencies": {
