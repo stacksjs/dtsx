@@ -115,22 +115,6 @@ export function extractAllImportedItems(importText: string): string[] {
 
   const items: string[] = []
 
-  // Helper to clean import item names and extract alias if present
-  // For 'SomeType as AliasedType', returns 'AliasedType' (the local name used in code)
-  const cleanImportItem = (item: string): string => {
-    let trimmed = item.trim()
-    // Remove 'type ' prefix
-    if (trimmed.startsWith('type ')) {
-      trimmed = trimmed.slice(5).trim()
-    }
-    // Handle aliases: 'OriginalName as AliasName' -> 'AliasName'
-    const asIndex = trimmed.indexOf(' as ')
-    if (asIndex !== -1) {
-      return trimmed.slice(asIndex + 4).trim()
-    }
-    return trimmed
-  }
-
   // Find 'from' keyword position
   const fromIndex = importText.indexOf(' from ')
   if (fromIndex === -1) {
@@ -168,10 +152,21 @@ export function extractAllImportedItems(importText: string): string[] {
       items.push(beforeBrace)
     }
 
-    // Extract named imports from braces
+    // Extract named imports from braces (inline clean to avoid closure allocation)
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const namedItems = namedPart.split(',').map(cleanImportItem).filter(Boolean)
-    items.push(...namedItems)
+    const rawItems = namedPart.split(',')
+    for (let ri = 0; ri < rawItems.length; ri++) {
+      let trimmed = rawItems[ri].trim()
+      if (!trimmed) continue
+      if (trimmed.startsWith('type ')) {
+        trimmed = trimmed.slice(5).trim()
+      }
+      const asIndex = trimmed.indexOf(' as ')
+      if (asIndex !== -1) {
+        trimmed = trimmed.slice(asIndex + 4).trim()
+      }
+      if (trimmed) items.push(trimmed)
+    }
   }
   else {
     // Default import only: import defaultName from 'module'

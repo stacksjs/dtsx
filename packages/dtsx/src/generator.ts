@@ -603,9 +603,14 @@ async function processFileWithStatsFromSource(
     declarations = await pluginManager.runOnDeclarations(filePath, processedSource, declarations)
   }
 
-  // Count imports and exports
-  const importCount = declarations.filter(d => d.kind === 'import').length
-  const exportCount = declarations.filter(d => d.kind === 'export' || d.isExported).length
+  // Count imports and exports (single pass, no temporary arrays)
+  let importCount = 0
+  let exportCount = 0
+  for (let i = 0; i < declarations.length; i++) {
+    const d = declarations[i]
+    if (d.kind === 'import') importCount++
+    if (d.kind === 'export' || d.isExported) exportCount++
+  }
 
   // Create processing context
   const context: ProcessingContext = {

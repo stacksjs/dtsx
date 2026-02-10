@@ -41,10 +41,6 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     mkdirSync(out, { recursive: true })
     const files = readdirSync(dir).filter((f: string) => f.endsWith('.ts') && !f.endsWith('.d.ts'))
 
-    // Direct imports — skip processSourceDirect wrapper for less call overhead
-    const { scanDeclarations } = await import('../src/extractor/scanner')
-    const { processDeclarations } = await import('../src/processor')
-
     // Pre-compute all read + output paths once
     const n = files.length
     const inPaths: string[] = new Array(n)
@@ -57,44 +53,148 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     const importOrder = ['bun']
     const shouldUseWorkers = isBunRuntime && n >= 64
     let usedWorkers = false
+    let sourcePromises: Promise<string>[] | null = null
 
     if (shouldUseWorkers) {
       let pool: Awaited<ReturnType<(typeof import('../src/worker'))['createWorkerPool']>> | null = null
       try {
-        const { createWorkerPool } = await import('../src/worker')
+        const { createWorkerPool, calculateOptimalBatchSize } = await import('../src/worker')
         const { cpus } = await import('node:os')
         const maxWorkers = Math.max(1, cpus().length - 1)
-        const maxInFlight = Math.max(2, maxWorkers * 2)
+        const batchSize = Math.min(64, Math.max(8, calculateOptimalBatchSize(n, maxWorkers) * 2))
+        const useWorkerRead = n >= 256
+        const useWorkerWrite = true
+        const useArrayPayload = n >= 256
+        const shouldPrefetchSources = !useWorkerRead && n >= 256
+        if (shouldPrefetchSources) {
+          sourcePromises = new Array(n)
+          for (let i = 0; i < n; i++) {
+            sourcePromises[i] = bun.file(inPaths[i]).text()
+          }
+        }
 
-        pool = createWorkerPool({ maxWorkers, initialWorkers: maxWorkers })
+        const batchCount = Math.ceil(n / batchSize)
+        const maxInFlight = Math.min(batchCount, Math.max(2, maxWorkers * 2))
+
+        pool = createWorkerPool({
+          maxWorkers,
+          initialWorkers: maxWorkers,
+          recycleAfter: Math.max(100, batchCount + 1),
+        })
         await pool.init()
         const poolInstance = pool
 
-        let nextIndex = 0
+        let nextBatch = 0
+        const batchRunId = Date.now()
         const runNext = async () => {
           for (;;) {
-            const idx = nextIndex++
-            if (idx >= n)
+            const batchIndex = nextBatch++
+            if (batchIndex >= batchCount)
               return
 
-            const source = await bun.file(inPaths[idx]).text()
-            const result = await poolInstance.submit({
-              id: `task-${idx}-${Date.now()}`,
-              type: 'process',
-              filePath: inPaths[idx],
-              sourceCode: source,
-              config: {
-                keepComments: true,
-                importOrder,
-                isolatedDeclarations: isoDecl,
-              },
-            })
+            const batchStart = batchIndex * batchSize
+            if (batchStart >= n)
+              return
+            const batchEnd = Math.min(n, batchStart + batchSize)
+            const batchLen = batchEnd - batchStart
+            let result: Awaited<ReturnType<typeof poolInstance.submit>>
+            if (useArrayPayload) {
+              const batchFilePaths: string[] = new Array(batchLen)
+              const batchOutPaths: string[] = new Array(batchLen)
+              let batchSources: string[] | undefined
+              if (useWorkerRead) {
+                for (let i = 0; i < batchLen; i++) {
+                  const idx = batchStart + i
+                  batchFilePaths[i] = inPaths[idx]
+                  batchOutPaths[i] = outPaths[idx]
+                }
+              }
+              else {
+                const readPromises: Promise<string>[] = new Array(batchLen)
+                for (let i = 0; i < batchLen; i++) {
+                  const idx = batchStart + i
+                  batchFilePaths[i] = inPaths[idx]
+                  batchOutPaths[i] = outPaths[idx]
+                  readPromises[i] = sourcePromises ? sourcePromises[idx] : bun.file(inPaths[idx]).text()
+                }
+                batchSources = await Promise.all(readPromises)
+              }
 
-            if (!result.success || !result.content) {
-              throw new Error(result.error || `Worker failed for ${inPaths[idx]}`)
+              result = await poolInstance.submit({
+                id: `batch-${batchRunId}-${batchIndex}`,
+                type: 'process-batch',
+                filePath: batchFilePaths[0] || '',
+                filePaths: batchFilePaths,
+                sources: batchSources,
+                outPaths: batchOutPaths,
+                writeOutput: useWorkerWrite,
+                config: {
+                  keepComments: true,
+                  importOrder,
+                  isolatedDeclarations: isoDecl,
+                },
+              })
+            }
+            else {
+              const batchFilesToProcess: Array<{ filePath: string, sourceCode?: string, outPath?: string }> = new Array(batchLen)
+              if (useWorkerRead) {
+                for (let i = 0; i < batchLen; i++) {
+                  const idx = batchStart + i
+                  batchFilesToProcess[i] = { filePath: inPaths[idx], outPath: outPaths[idx] }
+                }
+              }
+              else {
+                const readPromises: Promise<string>[] = new Array(batchLen)
+                for (let i = 0; i < batchLen; i++) {
+                  const idx = batchStart + i
+                  readPromises[i] = sourcePromises ? sourcePromises[idx] : bun.file(inPaths[idx]).text()
+                }
+                const sources = await Promise.all(readPromises)
+                for (let i = 0; i < batchLen; i++) {
+                  const idx = batchStart + i
+                  batchFilesToProcess[i] = { filePath: inPaths[idx], sourceCode: sources[i], outPath: outPaths[idx] }
+                }
+              }
+
+              result = await poolInstance.submit({
+                id: `batch-${batchRunId}-${batchIndex}`,
+                type: 'process-batch',
+                filePath: inPaths[batchStart] || '',
+                files: batchFilesToProcess,
+                writeOutput: useWorkerWrite,
+                config: {
+                  keepComments: true,
+                  importOrder,
+                  isolatedDeclarations: isoDecl,
+                },
+              })
             }
 
-            await bun.write(outPaths[idx], result.content)
+            if (!result.success) {
+              throw new Error(result.error || `Worker batch failed for ${inPaths[batchStart]}`)
+            }
+
+            if (useWorkerWrite) {
+              if (result.batchResults?.length) {
+                const firstError = result.batchResults[0]
+                throw new Error(firstError?.error || result.error || `Worker failed for ${inPaths[batchStart]}`)
+              }
+            }
+            else {
+              if (!result.batchResults || result.batchResults.length !== batchLen) {
+                throw new Error(result.error || `Worker batch failed for ${inPaths[batchStart]}`)
+              }
+              const writePromises: Promise<unknown>[] = new Array(batchLen)
+              for (let i = 0; i < batchLen; i++) {
+                const output = result.batchResults[i]
+                if (!output?.success || output.content == null) {
+                  throw new Error(output?.error || `Worker failed for ${inPaths[batchStart + i]}`)
+                }
+                writePromises[i] = bun.write(outPaths[batchStart + i], output.content)
+              }
+
+              await Promise.all(writePromises)
+            }
           }
         }
 
@@ -116,14 +216,16 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     }
 
     if (!usedWorkers) {
+      // Direct imports — skip processSourceDirect wrapper for less call overhead
+      const { scanDeclarations } = await import('../src/extractor/scanner')
+      const { processDeclarations } = await import('../src/processor')
+
       // Phase 1: Read all sources into memory
       const sources: string[] = new Array(n)
       if (isBunRuntime) {
-        const readPromises: Promise<string>[] = new Array(n)
-        for (let i = 0; i < n; i++) {
-          readPromises[i] = bun.file(inPaths[i]).text()
-        }
-        const readResults = await Promise.all(readPromises)
+        const readResults = sourcePromises
+          ? await Promise.all(sourcePromises)
+          : await Promise.all(inPaths.map(path => bun.file(path).text()))
         for (let i = 0; i < n; i++) {
           sources[i] = readResults[i]
         }

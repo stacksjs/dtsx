@@ -114,16 +114,9 @@ export function extractDeclarations(
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
 
-  // Evict oldest entry if cache exceeds max size
+  // Evict oldest entry if cache exceeds max size (FIFO via Map insertion order)
   if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
-    let oldestKey: string | null = null
-    let oldestTime = Infinity
-    for (const [key, entry] of declarationCache) {
-      if (entry.lastAccess < oldestTime) {
-        oldestTime = entry.lastAccess
-        oldestKey = key
-      }
-    }
+    const oldestKey = declarationCache.keys().next().value
     if (oldestKey) {
       declarationCache.delete(oldestKey)
     }
