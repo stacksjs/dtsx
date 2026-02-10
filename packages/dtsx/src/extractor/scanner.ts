@@ -3066,23 +3066,24 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   const declNames = new Set<string>()
   for (const d of declarations) declNames.add(d.name)
 
-  for (;;) {
-    // Build combined text of all current declarations (excluding imports)
-    let combinedText = ''
-    for (let i = 0; i < declarations.length; i++) {
-      if (declarations[i].kind !== 'import') {
-        combinedText += declarations[i].text
-        combinedText += '\n'
-      }
+  // Build initial combined text once (excluding imports)
+  const combinedParts: string[] = []
+  for (let i = 0; i < declarations.length; i++) {
+    if (declarations[i].kind !== 'import') {
+      combinedParts.push(declarations[i].text)
     }
+  }
+  let combinedText = combinedParts.length > 1
+    ? combinedParts.join('\n')
+    : (combinedParts[0] || '')
 
+  for (;;) {
     // Collect referenced non-exported types not yet resolved
     const toInsert: Declaration[] = []
     for (const [name, decl] of nonExportedTypes) {
       if (resolved.has(name))
         continue
-      // Fast path: includes() check first (avoids RegExp entirely for non-matches)
-      if (combinedText.includes(name) && isWordInText(name, combinedText)) {
+      if (combinedText && isWordInText(name, combinedText)) {
         if (!declNames.has(name)) {
           toInsert.push(decl)
           declNames.add(name)
@@ -3096,14 +3097,30 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
 
     // Insert at correct source positions to preserve declaration order
     for (const decl of toInsert) {
+      const declStart = decl.start ?? Number.POSITIVE_INFINITY
       let insertIdx = declarations.length
       for (let i = 0; i < declarations.length; i++) {
-        if (declarations[i].start > decl.start) {
+        const candidateStart = declarations[i].start ?? Number.POSITIVE_INFINITY
+        if (candidateStart > declStart) {
           insertIdx = i
           break
         }
       }
       declarations.splice(insertIdx, 0, decl)
+    }
+
+    // Append newly inserted declaration text for next iteration checks
+    if (toInsert.length > 0) {
+      const appendedParts: string[] = []
+      for (const decl of toInsert) {
+        if (decl.kind !== 'import') {
+          appendedParts.push(decl.text)
+        }
+      }
+      if (appendedParts.length > 0) {
+        const appendedText = appendedParts.length > 1 ? appendedParts.join('\n') : appendedParts[0]
+        combinedText = combinedText ? `${combinedText}\n${appendedText}` : appendedText
+      }
     }
   }
 }

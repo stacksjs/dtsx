@@ -4,7 +4,6 @@
 
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/directives'
-import { getCachedRegex } from './cache'
 import { formatComments } from './comments'
 import {
   processClassDeclaration,
@@ -19,6 +18,28 @@ import { extractAllImportedItems, parseImportStatement } from './imports'
 
 function assertNever(value: never, message?: string): never {
   throw new Error(message || `Unexpected value: ${value}`)
+}
+
+function isIdentChar(ch: number): boolean {
+  return (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57)
+    || ch === 95 || ch === 36 || ch > 127
+}
+
+/** Check if name appears as a whole word in text (fast indexOf + boundary check). */
+function isWordInText(name: string, text: string): boolean {
+  let searchFrom = 0
+  const nameLen = name.length
+  while (searchFrom < text.length) {
+    const idx = text.indexOf(name, searchFrom)
+    if (idx === -1) return false
+    const before = idx > 0 ? text.charCodeAt(idx - 1) : 32
+    const after = idx + nameLen < text.length ? text.charCodeAt(idx + nameLen) : 32
+    const beforeOk = !isIdentChar(before)
+    const afterOk = !isIdentChar(after)
+    if (beforeOk && afterOk) return true
+    searchFrom = idx + 1
+  }
+  return false
 }
 
 // Re-export all public APIs
@@ -164,21 +185,21 @@ export function processDeclarations(
   const usedImportItems = new Set<string>()
 
   // Build combined text for import usage detection (single allocation)
-  const allTexts: string[] = []
+  const combinedTextParts: string[] = []
 
   // Add exported functions
   for (const func of functions) {
     if (func.isExported) {
-      allTexts.push(func.text)
+      combinedTextParts.push(func.text)
     }
   }
 
   // Add exported variables
   for (const variable of variables) {
     if (variable.isExported) {
-      allTexts.push(variable.text)
+      combinedTextParts.push(variable.text)
       if (variable.typeAnnotation) {
-        allTexts.push(variable.typeAnnotation)
+        combinedTextParts.push(variable.typeAnnotation)
       }
     }
   }
@@ -187,21 +208,24 @@ export function processDeclarations(
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
     // Build combined text from functions/classes/types for interface reference check
-    let refCheckText = ''
+    const refCheckParts: string[] = []
     for (const func of functions) {
       if (func.isExported)
-        refCheckText += func.text + '\n'
+        refCheckParts.push(func.text)
     }
     for (const cls of classes) {
-      refCheckText += cls.text + '\n'
+      refCheckParts.push(cls.text)
     }
     for (const type of types) {
-      refCheckText += type.text + '\n'
+      refCheckParts.push(type.text)
     }
+    const refCheckText = refCheckParts.length > 0 ? refCheckParts.join('\n') : ''
 
-    for (const iface of interfaces) {
-      if (refCheckText.includes(iface.name)) {
-        interfaceReferences.add(iface.name)
+    if (refCheckText) {
+      for (const iface of interfaces) {
+        if (refCheckText.includes(iface.name)) {
+          interfaceReferences.add(iface.name)
+        }
       }
     }
   }
@@ -209,35 +233,37 @@ export function processDeclarations(
   // Add interfaces (exported or referenced)
   for (const iface of interfaces) {
     if (iface.isExported || interfaceReferences.has(iface.name)) {
-      allTexts.push(iface.text)
+      combinedTextParts.push(iface.text)
     }
   }
 
   // Add all types, classes, enums, modules
   for (const type of types) {
-    allTexts.push(type.text)
+    combinedTextParts.push(type.text)
   }
   for (const cls of classes) {
-    allTexts.push(cls.text)
+    combinedTextParts.push(cls.text)
   }
   for (const enumDecl of enums) {
-    allTexts.push(enumDecl.text)
+    combinedTextParts.push(enumDecl.text)
   }
   for (const mod of modules) {
-    allTexts.push(mod.text)
+    combinedTextParts.push(mod.text)
   }
 
   // Add export statements
   for (const exp of exports) {
-    allTexts.push(exp.text)
+    combinedTextParts.push(exp.text)
   }
 
-  // Two-phase import detection: fast includes() rejection then regex word-boundary check
-  for (const item of allImportedItemsMap.keys()) {
-    for (let t = 0; t < allTexts.length; t++) {
-      if (allTexts[t].includes(item) && getCachedRegex(item).test(allTexts[t])) {
+  // Import detection: scan combined declaration text once per import item
+  const combinedText = combinedTextParts.length > 0
+    ? (combinedTextParts.length > 1 ? combinedTextParts.join('\n') : combinedTextParts[0])
+    : ''
+  if (combinedText) {
+    for (const item of allImportedItemsMap.keys()) {
+      if (isWordInText(item, combinedText)) {
         usedImportItems.add(item)
-        break
       }
     }
   }
