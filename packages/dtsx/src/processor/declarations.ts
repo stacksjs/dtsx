@@ -11,6 +11,14 @@ import { extractSatisfiesType, inferNarrowType, isGenericType } from './type-inf
  * Returns the index of the opening brace of the body, or -1 if not found
  */
 function findInterfaceBodyStart(text: string): number {
+  const braceIdx = text.indexOf('{')
+  if (braceIdx === -1) return -1
+
+  // Fast path: if no '<' before the first '{', no generics to worry about
+  const angleIdx = text.indexOf('<')
+  if (angleIdx === -1 || angleIdx > braceIdx) return braceIdx
+
+  // Slow path: has generics, need to track angle bracket depth
   let angleDepth = 0
   let inString = false
   let stringChar = ''

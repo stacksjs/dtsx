@@ -70,15 +70,29 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
   /** Slice source[start..end) with leading/trailing whitespace trimmed — single allocation */
   function sliceTrimmed(start: number, end: number): string {
+    // Fast path: if endpoints are already non-whitespace, skip trim loops
+    if (start < end) {
+      const f = source.charCodeAt(start)
+      const l = source.charCodeAt(end - 1)
+      if (f !== CH_SPACE && f !== CH_TAB && f !== CH_LF && f !== CH_CR
+        && l !== CH_SPACE && l !== CH_TAB && l !== CH_LF && l !== CH_CR) {
+        return source.slice(start, end)
+      }
+    }
     while (start < end && isWhitespace(source.charCodeAt(start))) start++
     while (end > start && isWhitespace(source.charCodeAt(end - 1))) end--
     return source.slice(start, end)
   }
 
   function skipWhitespaceAndComments(): void {
+    // Fast exit: if current char is not whitespace and not '/', nothing to skip
+    if (pos >= len) return
+    const first = source.charCodeAt(pos)
+    if (first !== CH_SPACE && first !== CH_TAB && first !== CH_LF && first !== CH_CR && first !== CH_SLASH) return
+
     while (pos < len) {
       const ch = source.charCodeAt(pos)
-      if (isWhitespace(ch)) {
+      if (ch === CH_SPACE || ch === CH_TAB || ch === CH_LF || ch === CH_CR) {
         pos++
         continue
       }
@@ -754,6 +768,9 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
   /** Strip inline comments from a brace block and normalize indentation */
   function cleanBraceBlock(raw: string): string {
+    // Fast path: if no comment markers (// or /*), skip comment detection logic
+    const hasComments = raw.indexOf('//') !== -1 || raw.indexOf('/*') !== -1
+
     // Strip standalone comment lines and inline trailing comments, preserve relative indentation
     // Pass 1: filter + compute min indent simultaneously
     const lines = raw.split('\n')
@@ -765,47 +782,72 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      if (inBlockComment) {
-        if (line.includes('*/'))
-          inBlockComment = false
-        continue
-      }
 
-      const trimmed = line.trim()
-
-      // Skip standalone comment lines
-      if (trimmed.length === 0) continue
-      const ch0 = trimmed.charCodeAt(0)
-      if (ch0 === CH_SLASH) {
-        const ch1 = trimmed.charCodeAt(1)
-        if (ch1 === CH_SLASH) continue // //
-        if (ch1 === CH_STAR) { // /* or /**
-          if (!trimmed.includes('*/'))
-            inBlockComment = true
+      if (hasComments) {
+        if (inBlockComment) {
+          if (line.includes('*/'))
+            inBlockComment = false
           continue
         }
+
+        const trimmed = line.trim()
+
+        // Skip standalone comment lines
+        if (trimmed.length === 0) continue
+        const ch0 = trimmed.charCodeAt(0)
+        if (ch0 === CH_SLASH) {
+          const ch1 = trimmed.charCodeAt(1)
+          if (ch1 === CH_SLASH) continue // //
+          if (ch1 === CH_STAR) { // /* or /**
+            if (!trimmed.includes('*/'))
+              inBlockComment = true
+            continue
+          }
+        }
+        if (ch0 === CH_STAR) continue
+
+        // Remove trailing inline comments without regex
+        let cleaned = stripTrailingComment(line)
+        // Strip trailing semicolons from member lines (DTS convention for interfaces)
+        if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
+          cleaned = cleaned.slice(0, -1)
+        const ct = cleaned.trim()
+        if (!ct) continue
+
+        filtered.push(cleaned)
+        trimCache.push(ct)
+
+        // Compute indent simultaneously
+        let iw = 0
+        while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
+        if (ct !== '{' && ct !== '}') {
+          if (iw < minIndent) minIndent = iw
+        }
+        indentCache.push(iw)
       }
-      if (ch0 === CH_STAR) continue
+      else {
+        // No comments — skip comment detection and stripTrailingComment
+        // Just trim trailing whitespace (what stripTrailingComment does when no comments)
+        let end = line.length
+        while (end > 0 && (line.charCodeAt(end - 1) === CH_SPACE || line.charCodeAt(end - 1) === CH_TAB || line.charCodeAt(end - 1) === CH_CR)) end--
+        if (end === 0) continue // empty line
+        let cleaned = end < line.length ? line.slice(0, end) : line
+        // Strip trailing semicolons
+        if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
+          cleaned = cleaned.slice(0, -1)
+        const ct = cleaned.trim()
+        if (!ct) continue
 
-      // Remove trailing inline comments without regex
-      let cleaned = stripTrailingComment(line)
-      // Strip trailing semicolons from member lines (DTS convention for interfaces)
-      if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
-        cleaned = cleaned.slice(0, -1)
-      const ct = cleaned.trim()
-      if (!ct) continue
+        filtered.push(cleaned)
+        trimCache.push(ct)
 
-      filtered.push(cleaned)
-      trimCache.push(ct)
-
-      // Compute indent simultaneously (pass 1 + 2 merged)
-      // Use charCodeAt loop instead of trimStart() to avoid string allocation
-      let iw = 0
-      while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
-      if (ct !== '{' && ct !== '}') {
-        if (iw < minIndent) minIndent = iw
+        let iw = 0
+        while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
+        if (ct !== '{' && ct !== '}') {
+          if (iw < minIndent) minIndent = iw
+        }
+        indentCache.push(iw)
       }
-      indentCache.push(iw)
     }
 
     if (filtered.length === 0)

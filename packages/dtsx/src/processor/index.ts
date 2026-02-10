@@ -297,52 +297,57 @@ export function processDeclarations(
 
       const { defaultName, namedItems, source, isTypeOnly } = parsed
 
-      // Filter to only used items
+      // Filter to only used items (manual loop avoids closure allocation)
       const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
-      const usedNamed = namedItems.filter((item) => {
-        let cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
-        // For aliases 'OriginalName as AliasName', check if AliasName is used
+      let usedNamedStr = ''
+      let usedNamedCount = 0
+      for (let ni = 0; ni < namedItems.length; ni++) {
+        const item = namedItems[ni]
+        let cleanItem = item.charCodeAt(0) === 116 && item.startsWith('type ') ? item.slice(5).trim() : item.trim()
         const asIndex = cleanItem.indexOf(' as ')
         if (asIndex !== -1) {
           cleanItem = cleanItem.slice(asIndex + 4).trim()
         }
-        return usedImportItems.has(cleanItem)
-      })
-
-      if (usedDefault || usedNamed.length > 0) {
-        let importStatement = 'import '
-        if (isTypeOnly) {
-          importStatement += 'type '
+        if (usedImportItems.has(cleanItem)) {
+          if (usedNamedCount > 0) usedNamedStr += ', '
+          usedNamedStr += item
+          usedNamedCount++
         }
+      }
 
-        const parts: string[] = []
+      if (usedDefault || usedNamedCount > 0) {
+        let importStatement = isTypeOnly ? 'import type ' : 'import '
         if (usedDefault && defaultName) {
-          parts.push(defaultName)
+          importStatement += usedNamedCount > 0 ? `${defaultName}, { ${usedNamedStr} }` : defaultName
         }
-        if (usedNamed.length > 0) {
-          parts.push(`{ ${usedNamed.join(', ')} }`)
+        else if (usedNamedCount > 0) {
+          importStatement += `{ ${usedNamedStr} }`
         }
-
-        importStatement += `${parts.join(', ')} from '${source}';`
+        importStatement += ` from '${source}';`
         processedImports.push(importStatement)
       }
     }
 
     // Sort imports based on importOrder priority, then alphabetically
-    // Pre-compute priority strings to avoid template literal allocations in comparator
-    const prioritySingle = importOrder.map(p => `from '${p}`)
-    const priorityDouble = importOrder.map(p => `from "${p}`)
+    // Pre-compute priority for each import into a Map (avoids re-scanning in O(n log n) comparator)
     const defaultPriority = importOrder.length
-    processedImports.sort((a, b) => {
-      let aPriority = defaultPriority
-      let bPriority = defaultPriority
-      for (let i = 0; i < importOrder.length; i++) {
-        if (aPriority === defaultPriority && (a.includes(prioritySingle[i]) || a.includes(priorityDouble[i]))) aPriority = i
-        if (bPriority === defaultPriority && (b.includes(prioritySingle[i]) || b.includes(priorityDouble[i]))) bPriority = i
-        if (aPriority !== defaultPriority && bPriority !== defaultPriority) break
+    if (processedImports.length > 1) {
+      const prioritySingle = importOrder.map(p => `from '${p}`)
+      const priorityDouble = importOrder.map(p => `from "${p}`)
+      const priorityMap = new Map<string, number>()
+      for (const imp of processedImports) {
+        let p = defaultPriority
+        for (let i = 0; i < importOrder.length; i++) {
+          if (imp.includes(prioritySingle[i]) || imp.includes(priorityDouble[i])) { p = i; break }
+        }
+        priorityMap.set(imp, p)
       }
-      return aPriority !== bPriority ? aPriority - bPriority : a.localeCompare(b)
-    })
+      processedImports.sort((a, b) => {
+        const ap = priorityMap.get(a)!
+        const bp = priorityMap.get(b)!
+        return ap !== bp ? ap - bp : a.localeCompare(b)
+      })
+    }
   }
 
   // Append imports to result
