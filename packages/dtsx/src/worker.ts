@@ -36,6 +36,12 @@ export interface WorkerPoolConfig {
    * @default 10000
    */
   idleTimeout?: number
+
+  /**
+   * Initial number of workers to pre-spawn
+   * @default min(2, maxWorkers)
+   */
+  initialWorkers?: number
 }
 
 /**
@@ -109,11 +115,13 @@ export class WorkerPool {
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(config: WorkerPoolConfig = {}) {
+    const maxWorkers = config.maxWorkers ?? Math.max(1, cpus().length - 1)
     this.config = {
-      maxWorkers: config.maxWorkers ?? Math.max(1, cpus().length - 1),
+      maxWorkers,
       taskTimeout: config.taskTimeout ?? 30000,
       recycleAfter: config.recycleAfter ?? 100,
       idleTimeout: config.idleTimeout ?? 10000,
+      initialWorkers: config.initialWorkers ?? Math.min(2, maxWorkers),
     }
   }
 
@@ -122,7 +130,7 @@ export class WorkerPool {
    */
   async init(): Promise<void> {
     // Create initial workers
-    const initialWorkers = Math.min(2, this.config.maxWorkers)
+    const initialWorkers = Math.min(this.config.initialWorkers, this.config.maxWorkers)
     for (let i = 0; i < initialWorkers; i++) {
       this.createWorker()
     }
@@ -140,17 +148,21 @@ export class WorkerPool {
     const workerCode = `
       const { parentPort } = require('worker_threads');
 
+      const libsPromise = (async () => {
+        const { extractDeclarations } = await import('${resolve(__dirname, 'extractor.js')}');
+        const { processDeclarations } = await import('${resolve(__dirname, 'processor.js')}');
+        return { extractDeclarations, processDeclarations };
+      })();
+
       // Dynamic import for ESM compatibility
       async function processTask(task) {
         const startTime = Date.now();
 
         try {
-          // Import the processing functions
-          const { extractDeclarations } = await import('${resolve(__dirname, 'extractor.js')}');
-          const { processDeclarations } = await import('${resolve(__dirname, 'processor.js')}');
+          const { extractDeclarations, processDeclarations } = await libsPromise;
 
           if (task.type === 'extract') {
-            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments);
+            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments, task.config?.isolatedDeclarations);
             return {
               id: task.id,
               success: true,
@@ -161,7 +173,7 @@ export class WorkerPool {
           }
 
           if (task.type === 'process') {
-            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments);
+            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments, task.config?.isolatedDeclarations);
             const content = processDeclarations(declarations, {
               filePath: task.filePath,
               sourceCode: task.sourceCode,
@@ -316,49 +328,48 @@ export class WorkerPool {
    * Process the task queue
    */
   private processQueue(): void {
-    if (this.taskQueue.length === 0)
-      return
+    while (this.taskQueue.length > 0) {
+      // Find an available worker
+      let worker = this.workers.find(w => !w.busy)
 
-    // Find an available worker
-    let worker = this.workers.find(w => !w.busy)
-
-    // Create new worker if needed and under limit
-    if (!worker && this.workers.length < this.config.maxWorkers) {
-      worker = this.createWorker()
-    }
-
-    if (!worker)
-      return
-
-    const { task, resolve, reject } = this.taskQueue.shift()!
-
-    worker.busy = true
-    worker.lastActive = Date.now()
-
-    // Set timeout
-    const timeout = setTimeout(() => {
-      reject(new Error(`Task ${task.id} timed out`))
-      this.recycleWorker(worker!)
-    }, this.config.taskTimeout)
-
-    // Store resolve/reject for later
-    const originalResolve = resolve
-    const wrappedResolve = (result: WorkerResult) => {
-      clearTimeout(timeout)
-      originalResolve(result)
-    }
-
-    // Listen for this specific task result
-    const handler = (result: WorkerResult) => {
-      if (result.id === task.id) {
-        wrappedResolve(result)
+      // Create new worker if needed and under limit
+      if (!worker && this.workers.length < this.config.maxWorkers) {
+        worker = this.createWorker()
       }
+
+      if (!worker)
+        return
+
+      const { task, resolve, reject } = this.taskQueue.shift()!
+
+      worker.busy = true
+      worker.lastActive = Date.now()
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        reject(new Error(`Task ${task.id} timed out`))
+        this.recycleWorker(worker!)
+      }, this.config.taskTimeout)
+
+      // Store resolve/reject for later
+      const originalResolve = resolve
+      const wrappedResolve = (result: WorkerResult) => {
+        clearTimeout(timeout)
+        originalResolve(result)
+      }
+
+      // Listen for this specific task result
+      const handler = (result: WorkerResult) => {
+        if (result.id === task.id) {
+          wrappedResolve(result)
+        }
+      }
+
+      worker.worker.once('message', handler)
+      worker.worker.postMessage(task)
+
+      this.updateStats()
     }
-
-    worker.worker.once('message', handler)
-    worker.worker.postMessage(task)
-
-    this.updateStats()
   }
 
   /**

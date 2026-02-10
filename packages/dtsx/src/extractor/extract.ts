@@ -15,9 +15,14 @@ const declarationCache = new Map<string, { declarations: Declaration[], contentH
  * Extract declarations using the fast string scanner (no TS parser).
  * Results are cached by file path + keepComments flag.
  */
-export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
+export function extractDeclarations(
+  sourceCode: string,
+  filePath: string,
+  keepComments: boolean = true,
+  isolatedDeclarations: boolean = false,
+): Declaration[] {
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filePath}:${keepComments ? 1 : 0}`
+  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)
   const now = Date.now()
 
@@ -26,7 +31,7 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
     return cached.declarations
   }
 
-  const declarations = scanDeclarations(sourceCode, filePath, keepComments)
+  const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
 

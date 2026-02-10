@@ -93,9 +93,14 @@ export function clearSourceFileCache(): void {
  * Uses fast string-based scanner (no TypeScript parser) for maximum performance.
  * Falls back to TS parser-based extraction if scanner is not available.
  */
-export function extractDeclarations(sourceCode: string, filePath: string, keepComments: boolean = true): Declaration[] {
+export function extractDeclarations(
+  sourceCode: string,
+  filePath: string,
+  keepComments: boolean = true,
+  isolatedDeclarations: boolean = false,
+): Declaration[] {
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filePath}:${keepComments ? 1 : 0}`
+  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)
   const now = Date.now()
 
@@ -105,7 +110,7 @@ export function extractDeclarations(sourceCode: string, filePath: string, keepCo
   }
 
   // Use fast string scanner (no TS parser needed)
-  const declarations = scanDeclarations(sourceCode, filePath, keepComments)
+  const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
 

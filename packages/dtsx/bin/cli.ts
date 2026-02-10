@@ -20,6 +20,8 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
   else if (_cmd === '--project') {
     // Usage: dtsx --project <dir> --outdir <outdir>
     const { readdirSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const isBunRuntime = typeof globalThis.Bun !== 'undefined'
+    const bun = isBunRuntime ? (globalThis as any).Bun : null
     const args = process.argv.slice(3)
     let dir = ''
     let out = ''
@@ -52,40 +54,133 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
       outPaths[i] = `${out}/${files[i].slice(0, -3)}.d.ts`
     }
 
-    // Phase 1: Read all sources into memory
-    const sources: string[] = new Array(n)
-    for (let i = 0; i < n; i++) {
-      sources[i] = readFileSync(inPaths[i], 'utf-8')
-    }
-
-    // Phase 2: Process all — scan + process per file in tight loop
-    const results: string[] = new Array(n)
     const importOrder = ['bun']
-    const ctx = { filePath: '', sourceCode: '', declarations: [] as any[] }
-    for (let i = 0; i < n; i++) {
-      const decls = scanDeclarations(sources[i], files[i], true, isoDecl)
-      ctx.filePath = files[i]
-      ctx.sourceCode = sources[i]
-      ctx.declarations = decls
-      results[i] = processDeclarations(decls, ctx, true, importOrder)
+    const shouldUseWorkers = isBunRuntime && n >= 64
+    let usedWorkers = false
+
+    if (shouldUseWorkers) {
+      let pool: Awaited<ReturnType<(typeof import('../src/worker'))['createWorkerPool']>> | null = null
+      try {
+        const { createWorkerPool } = await import('../src/worker')
+        const { cpus } = await import('node:os')
+        const maxWorkers = Math.max(1, cpus().length - 1)
+        const maxInFlight = Math.max(2, maxWorkers * 2)
+
+        pool = createWorkerPool({ maxWorkers, initialWorkers: maxWorkers })
+        await pool.init()
+        const poolInstance = pool
+
+        let nextIndex = 0
+        const runNext = async () => {
+          for (;;) {
+            const idx = nextIndex++
+            if (idx >= n)
+              return
+
+            const source = await bun.file(inPaths[idx]).text()
+            const result = await poolInstance.submit({
+              id: `task-${idx}-${Date.now()}`,
+              type: 'process',
+              filePath: inPaths[idx],
+              sourceCode: source,
+              config: {
+                keepComments: true,
+                importOrder,
+                isolatedDeclarations: isoDecl,
+              },
+            })
+
+            if (!result.success || !result.content) {
+              throw new Error(result.error || `Worker failed for ${inPaths[idx]}`)
+            }
+
+            await bun.write(outPaths[idx], result.content)
+          }
+        }
+
+        const runners: Promise<void>[] = []
+        for (let i = 0; i < maxInFlight; i++) {
+          runners.push(runNext())
+        }
+        await Promise.all(runners)
+        usedWorkers = true
+      }
+      catch {
+        usedWorkers = false
+      }
+      finally {
+        if (pool) {
+          await pool.shutdown()
+        }
+      }
     }
 
-    // Phase 3: Write all results
-    for (let i = 0; i < n; i++) {
-      writeFileSync(outPaths[i], results[i])
+    if (!usedWorkers) {
+      // Phase 1: Read all sources into memory
+      const sources: string[] = new Array(n)
+      if (isBunRuntime) {
+        const readPromises: Promise<string>[] = new Array(n)
+        for (let i = 0; i < n; i++) {
+          readPromises[i] = bun.file(inPaths[i]).text()
+        }
+        const readResults = await Promise.all(readPromises)
+        for (let i = 0; i < n; i++) {
+          sources[i] = readResults[i]
+        }
+      }
+      else {
+        for (let i = 0; i < n; i++) {
+          sources[i] = readFileSync(inPaths[i], 'utf-8')
+        }
+      }
+
+      // Phase 2: Process all — scan + process per file
+      const results: string[] = new Array(n)
+      const ctx = { filePath: '', sourceCode: '', declarations: [] as any[] }
+      for (let i = 0; i < n; i++) {
+        const decls = scanDeclarations(sources[i], files[i], true, isoDecl)
+        ctx.filePath = files[i]
+        ctx.sourceCode = sources[i]
+        ctx.declarations = decls
+        results[i] = processDeclarations(decls, ctx, true, importOrder)
+      }
+
+      // Phase 3: Write all results
+      if (isBunRuntime) {
+        const writePromises: Promise<unknown>[] = new Array(n)
+        for (let i = 0; i < n; i++) {
+          writePromises[i] = bun.write(outPaths[i], results[i])
+        }
+        await Promise.all(writePromises)
+      }
+      else {
+        for (let i = 0; i < n; i++) {
+          writeFileSync(outPaths[i], results[i])
+        }
+      }
     }
   }
   else {
     // emit command
     const { processSource } = await import('../src/process-source')
     const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const isBunRuntime = typeof globalThis.Bun !== 'undefined'
+    const bun = isBunRuntime ? (globalThis as any).Bun : null
     const filePath = process.argv[3]!
-    const source = readFileSync(filePath, 'utf-8')
+    const source = isBunRuntime
+      ? await bun.file(filePath).text()
+      : readFileSync(filePath, 'utf-8')
     const outPath = process.argv[4]
     if (outPath) {
       const { dirname } = await import('node:path')
       mkdirSync(dirname(outPath), { recursive: true })
-      writeFileSync(outPath, `${processSource(source, filePath)}\n`)
+      const content = `${processSource(source, filePath)}\n`
+      if (isBunRuntime) {
+        await bun.write(outPath, content)
+      }
+      else {
+        writeFileSync(outPath, content)
+      }
     }
     else {
       process.stdout.write(processSource(source, filePath))

@@ -174,32 +174,11 @@ export function processDeclarations(
   // Build a map of all imported items to their import declarations (single pass)
   // This eliminates the O(n²) iteration over imports for each declaration
   const allImportedItemsMap = new Map<string, Declaration>()
-  for (const imp of imports) {
-    const items = extractAllImportedItems(imp.text)
-    for (const item of items) {
-      allImportedItemsMap.set(item, imp)
-    }
-  }
-
-  // Filter imports to only include those that are used in exports or declarations
-  const usedImportItems = new Set<string>()
-
-  // Build combined text for import usage detection (single allocation)
-  const combinedTextParts: string[] = []
-
-  // Add exported functions
-  for (const func of functions) {
-    if (func.isExported) {
-      combinedTextParts.push(func.text)
-    }
-  }
-
-  // Add exported variables
-  for (const variable of variables) {
-    if (variable.isExported) {
-      combinedTextParts.push(variable.text)
-      if (variable.typeAnnotation) {
-        combinedTextParts.push(variable.typeAnnotation)
+  if (imports.length > 0) {
+    for (const imp of imports) {
+      const items = extractAllImportedItems(imp.text)
+      for (const item of items) {
+        allImportedItemsMap.set(item, imp)
       }
     }
   }
@@ -230,115 +209,140 @@ export function processDeclarations(
     }
   }
 
-  // Add interfaces (exported or referenced)
-  for (const iface of interfaces) {
-    if (iface.isExported || interfaceReferences.has(iface.name)) {
-      combinedTextParts.push(iface.text)
+  // Create filtered imports based on actually used items
+  const processedImports: string[] = []
+  if (imports.length > 0) {
+    // Filter imports to only include those that are used in exports or declarations
+    const usedImportItems = new Set<string>()
+
+    // Build combined text for import usage detection (single allocation)
+    const combinedTextParts: string[] = []
+
+    // Add exported functions
+    for (const func of functions) {
+      if (func.isExported) {
+        combinedTextParts.push(func.text)
+      }
     }
-  }
 
-  // Add all types, classes, enums, modules
-  for (const type of types) {
-    combinedTextParts.push(type.text)
-  }
-  for (const cls of classes) {
-    combinedTextParts.push(cls.text)
-  }
-  for (const enumDecl of enums) {
-    combinedTextParts.push(enumDecl.text)
-  }
-  for (const mod of modules) {
-    combinedTextParts.push(mod.text)
-  }
+    // Add exported variables
+    for (const variable of variables) {
+      if (variable.isExported) {
+        combinedTextParts.push(variable.text)
+        if (variable.typeAnnotation) {
+          combinedTextParts.push(variable.typeAnnotation)
+        }
+      }
+    }
 
-  // Add export statements
-  for (const exp of exports) {
-    combinedTextParts.push(exp.text)
-  }
+    // Add interfaces (exported or referenced)
+    for (const iface of interfaces) {
+      if (iface.isExported || interfaceReferences.has(iface.name)) {
+        combinedTextParts.push(iface.text)
+      }
+    }
 
-  // Import detection: scan combined declaration text once per import item
-  const combinedText = combinedTextParts.length > 0
-    ? (combinedTextParts.length > 1 ? combinedTextParts.join('\n') : combinedTextParts[0])
-    : ''
-  if (combinedText) {
-    for (const item of allImportedItemsMap.keys()) {
-      if (isWordInText(item, combinedText)) {
+    // Add all types, classes, enums, modules
+    for (const type of types) {
+      combinedTextParts.push(type.text)
+    }
+    for (const cls of classes) {
+      combinedTextParts.push(cls.text)
+    }
+    for (const enumDecl of enums) {
+      combinedTextParts.push(enumDecl.text)
+    }
+    for (const mod of modules) {
+      combinedTextParts.push(mod.text)
+    }
+
+    // Add export statements
+    for (const exp of exports) {
+      combinedTextParts.push(exp.text)
+    }
+
+    // Import detection: scan combined declaration text once per import item
+    const combinedText = combinedTextParts.length > 0
+      ? (combinedTextParts.length > 1 ? combinedTextParts.join('\n') : combinedTextParts[0])
+      : ''
+    if (combinedText) {
+      for (const item of allImportedItemsMap.keys()) {
+        if (isWordInText(item, combinedText)) {
+          usedImportItems.add(item)
+        }
+      }
+    }
+
+    // Check which imports are needed for re-exports (direct matches)
+    for (const item of exportedItems) {
+      if (allImportedItemsMap.has(item)) {
         usedImportItems.add(item)
       }
     }
-  }
 
-  // Check which imports are needed for re-exports (direct matches)
-  for (const item of exportedItems) {
-    if (allImportedItemsMap.has(item)) {
-      usedImportItems.add(item)
-    }
-  }
-
-  // Create filtered imports based on actually used items
-  const processedImports: string[] = []
-  for (const imp of imports) {
-    // Preserve side-effect imports unconditionally (they may have type effects like reflect-metadata)
-    if (imp.isSideEffect) {
-      const _trimmedImp = imp.text.trim()
-      const sideEffectImport = _trimmedImp.endsWith(';') ? _trimmedImp : `${_trimmedImp};`
-      processedImports.push(sideEffectImport)
-      continue
-    }
-
-    // Parse import using string operations to avoid regex backtracking
-    const parsed = parseImportStatement(imp.text)
-    if (!parsed)
-      continue
-
-    const { defaultName, namedItems, source, isTypeOnly } = parsed
-
-    // Filter to only used items
-    const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
-    const usedNamed = namedItems.filter((item) => {
-      let cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
-      // For aliases 'OriginalName as AliasName', check if AliasName is used
-      const asIndex = cleanItem.indexOf(' as ')
-      if (asIndex !== -1) {
-        cleanItem = cleanItem.slice(asIndex + 4).trim()
+    for (const imp of imports) {
+      // Preserve side-effect imports unconditionally (they may have type effects like reflect-metadata)
+      if (imp.isSideEffect) {
+        const _trimmedImp = imp.text.trim()
+        const sideEffectImport = _trimmedImp.endsWith(';') ? _trimmedImp : `${_trimmedImp};`
+        processedImports.push(sideEffectImport)
+        continue
       }
-      return usedImportItems.has(cleanItem)
+
+      // Parse import using string operations to avoid regex backtracking
+      const parsed = parseImportStatement(imp.text)
+      if (!parsed)
+        continue
+
+      const { defaultName, namedItems, source, isTypeOnly } = parsed
+
+      // Filter to only used items
+      const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
+      const usedNamed = namedItems.filter((item) => {
+        let cleanItem = item.startsWith('type ') ? item.slice(5).trim() : item.trim()
+        // For aliases 'OriginalName as AliasName', check if AliasName is used
+        const asIndex = cleanItem.indexOf(' as ')
+        if (asIndex !== -1) {
+          cleanItem = cleanItem.slice(asIndex + 4).trim()
+        }
+        return usedImportItems.has(cleanItem)
+      })
+
+      if (usedDefault || usedNamed.length > 0) {
+        let importStatement = 'import '
+        if (isTypeOnly) {
+          importStatement += 'type '
+        }
+
+        const parts: string[] = []
+        if (usedDefault && defaultName) {
+          parts.push(defaultName)
+        }
+        if (usedNamed.length > 0) {
+          parts.push(`{ ${usedNamed.join(', ')} }`)
+        }
+
+        importStatement += `${parts.join(', ')} from '${source}';`
+        processedImports.push(importStatement)
+      }
+    }
+
+    // Sort imports based on importOrder priority, then alphabetically
+    // Pre-compute priority strings to avoid template literal allocations in comparator
+    const prioritySingle = importOrder.map(p => `from '${p}`)
+    const priorityDouble = importOrder.map(p => `from "${p}`)
+    const defaultPriority = importOrder.length
+    processedImports.sort((a, b) => {
+      let aPriority = defaultPriority
+      let bPriority = defaultPriority
+      for (let i = 0; i < importOrder.length; i++) {
+        if (aPriority === defaultPriority && (a.includes(prioritySingle[i]) || a.includes(priorityDouble[i]))) aPriority = i
+        if (bPriority === defaultPriority && (b.includes(prioritySingle[i]) || b.includes(priorityDouble[i]))) bPriority = i
+        if (aPriority !== defaultPriority && bPriority !== defaultPriority) break
+      }
+      return aPriority !== bPriority ? aPriority - bPriority : a.localeCompare(b)
     })
-
-    if (usedDefault || usedNamed.length > 0) {
-      let importStatement = 'import '
-      if (isTypeOnly) {
-        importStatement += 'type '
-      }
-
-      const parts: string[] = []
-      if (usedDefault && defaultName) {
-        parts.push(defaultName)
-      }
-      if (usedNamed.length > 0) {
-        parts.push(`{ ${usedNamed.join(', ')} }`)
-      }
-
-      importStatement += `${parts.join(', ')} from '${source}';`
-      processedImports.push(importStatement)
-    }
   }
-
-  // Sort imports based on importOrder priority, then alphabetically
-  // Pre-compute priority strings to avoid template literal allocations in comparator
-  const prioritySingle = importOrder.map(p => `from '${p}`)
-  const priorityDouble = importOrder.map(p => `from "${p}`)
-  const defaultPriority = importOrder.length
-  processedImports.sort((a, b) => {
-    let aPriority = defaultPriority
-    let bPriority = defaultPriority
-    for (let i = 0; i < importOrder.length; i++) {
-      if (aPriority === defaultPriority && (a.includes(prioritySingle[i]) || a.includes(priorityDouble[i]))) aPriority = i
-      if (bPriority === defaultPriority && (b.includes(prioritySingle[i]) || b.includes(priorityDouble[i]))) bPriority = i
-      if (aPriority !== defaultPriority && bPriority !== defaultPriority) break
-    }
-    return aPriority !== bPriority ? aPriority - bPriority : a.localeCompare(b)
-  })
 
   output.push(...processedImports)
 

@@ -13,9 +13,10 @@ export function processSource(
   filename: string = 'stdin.ts',
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
+  isolatedDeclarations: boolean = false,
 ): string {
   // Extract declarations
-  const declarations = extractDeclarations(sourceCode, filename, keepComments)
+  const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
 
   // Create processing context
   const context: ProcessingContext = {

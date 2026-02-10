@@ -1,11 +1,11 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
-import { file, isBun, spawnProcess } from './compat'
+import { file, isBun, readTextFile, spawnProcess } from './compat'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
@@ -13,7 +13,7 @@ import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
-import { addSourceMapComment, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
+import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -39,6 +39,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
     // Run onStart hooks (may modify config)
     config = await pluginManager.runOnStart(config)
+  }
+
+  if (config.isolatedDeclarations === undefined) {
+    config.isolatedDeclarations = await checkIsolatedDeclarationsConfig(config)
   }
 
   // Initialize incremental build cache if enabled
@@ -133,7 +137,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       }
 
       // Use pre-read source if available, otherwise read from disk
-      sourceCode = preReadSource ?? await readFile(file, 'utf-8')
+      sourceCode = preReadSource ?? await readTextFile(file)
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
 
       let validationErrorCount = 0
@@ -149,7 +153,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Show diff if enabled
         if (config.diff) {
           try {
-            const existingContent = await readFile(outputPath, 'utf-8')
+            const existingContent = await readTextFile(outputPath)
             const diffOutput = createDiff(existingContent, dtsContent, relative(config.cwd, outputPath))
             if (diffOutput) {
               logger.info(`\n${diffOutput}`)
@@ -263,7 +267,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   if (useParallel && files.length > 1) {
     const readPromises = files.map(async (f) => {
       try {
-        const src = await readFile(f, 'utf-8')
+        const src = await readTextFile(f)
         return { file: f, source: src }
       }
       catch {
@@ -359,7 +363,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       // Read all source files
       const sourceContents = new Map<string, string>()
       for (const file of files) {
-        const content = await readFile(file, 'utf-8')
+        const content = await readTextFile(file)
         sourceContents.set(file, content)
       }
 
@@ -572,7 +576,7 @@ async function processFileWithStats(
   pluginManager?: PluginManager,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
-  const sourceCode = await readFile(filePath, 'utf-8')
+  const sourceCode = await readTextFile(filePath)
   return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager)
 }
 
@@ -592,7 +596,7 @@ async function processFileWithStatsFromSource(
   }
 
   // Extract declarations
-  let declarations = extractDeclarations(processedSource, filePath, config.keepComments)
+  let declarations = extractDeclarations(processedSource, filePath, config.keepComments, config.isolatedDeclarations ?? false)
 
   // Run onDeclarations hooks (may modify declarations)
   if (pluginManager) {
