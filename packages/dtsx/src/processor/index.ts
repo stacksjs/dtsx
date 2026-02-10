@@ -232,11 +232,13 @@ export function processDeclarations(
     allTexts.push(exp.text)
   }
 
-  // Two-phase import detection: fast includes() on combined text, then regex word-boundary check
-  const combinedText = allTexts.join('\n')
+  // Two-phase import detection: fast includes() rejection then regex word-boundary check
   for (const item of allImportedItemsMap.keys()) {
-    if (combinedText.includes(item) && getCachedRegex(item).test(combinedText)) {
-      usedImportItems.add(item)
+    for (let t = 0; t < allTexts.length; t++) {
+      if (allTexts[t].includes(item) && getCachedRegex(item).test(allTexts[t])) {
+        usedImportItems.add(item)
+        break
+      }
     }
   }
 
