@@ -55,7 +55,7 @@ const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override
  * Scan TypeScript source code and extract declarations without using the TypeScript parser.
  * This is the fast path that replaces createSourceFile() + AST walk.
  */
-export function scanDeclarations(source: string, filename: string, keepComments: boolean = true): Declaration[] {
+export function scanDeclarations(source: string, filename: string, keepComments: boolean = true, isolatedDeclarations: boolean = false): Declaration[] {
   const len = source.length
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
@@ -1397,6 +1397,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
       // Initializer
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
+        // Fast path: with isolatedDeclarations + explicit type, skip initializer entirely
+        if (isolatedDeclarations && typeAnnotation) {
+          skipToStatementEnd()
+        }
+        else {
         pos++ // skip =
         skipWhitespaceAndComments()
         const initStart = pos
@@ -1430,6 +1435,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           if (asType)
             typeAnnotation = asType
         }
+        } // end else (non-isolatedDeclarations path)
       }
 
       // Skip comma or semicolon
@@ -2020,6 +2026,27 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       // Capture initializer
       let initText = ''
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
+        // Fast path: with isolatedDeclarations + explicit type, skip initializer entirely
+        if (isolatedDeclarations && type) {
+          // Skip past = and find ; or end of member
+          pos++ // skip =
+          let depth = 0
+          while (pos < len) {
+            if (skipNonCode())
+              continue
+            const ic = source.charCodeAt(pos)
+            if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
+              depth++
+            else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET) {
+              if (depth === 0 && ic === CH_RBRACE) break
+              depth--
+            }
+            else if (depth === 0 && ic === CH_SEMI) break
+            if (depth === 0 && checkASIMember()) break
+            pos++
+          }
+        }
+        else {
         pos++ // skip =
         skipWhitespaceAndComments()
         const initStart = pos
@@ -2044,6 +2071,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           pos++
         }
         initText = sliceTrimmed(initStart, pos)
+        } // end else (non-isolatedDeclarations path)
       }
 
       if (pos < len && source.charCodeAt(pos) === CH_SEMI)
@@ -2636,7 +2664,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           else {
             pos = savedPos
             const decls = extractVariable(stmtStart, 'const', true)
-            declarations.push(...decls)
+            for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
           }
         }
         else {
@@ -2653,11 +2681,11 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       }
       else if (ech === 108 /* l */ && matchWord('let')) {
         const decls = extractVariable(stmtStart, 'let', true)
-        declarations.push(...decls)
+        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
       }
       else if (ech === 118 /* v */ && matchWord('var')) {
         const decls = extractVariable(stmtStart, 'var', true)
-        declarations.push(...decls)
+        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
       }
       else if (ech === 101 /* e */ && matchWord('enum')) {
         const decl = extractEnum(stmtStart, true, false)
@@ -2699,14 +2727,27 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         skipExportStar()
         const text = sliceTrimmed(stmtStart, pos)
         const comments = extractLeadingComments(stmtStart)
-        const sourceMatch = text.match(/from\s+['"]([^'"]+)['"]/)
+        // Extract source from 'from "..."' or "from '...'" without regex
+        let _exportSource: string | undefined
+        const _fromIdx = text.indexOf('from ')
+        if (_fromIdx !== -1) {
+          let _qi = _fromIdx + 5
+          while (_qi < text.length && (text.charCodeAt(_qi) === 32 || text.charCodeAt(_qi) === 9)) _qi++
+          if (_qi < text.length) {
+            const _qch = text.charCodeAt(_qi)
+            if (_qch === 39 || _qch === 34) { // ' or "
+              const _qend = text.indexOf(text[_qi], _qi + 1)
+              if (_qend !== -1) _exportSource = text.slice(_qi + 1, _qend)
+            }
+          }
+        }
         declarations.push({
           kind: 'export',
           name: '',
           text,
           isExported: true,
           isTypeOnly: false,
-          source: sourceMatch ? sourceMatch[1] : undefined,
+          source: _exportSource,
           leadingComments: comments,
           start: stmtStart,
           end: pos,
@@ -2953,7 +2994,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       else if (isExported) {
         pos = savedPos
         const decls = extractVariable(stmtStart, 'const', true)
-        declarations.push(...decls)
+        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
       }
       else {
         skipToStatementEnd()
@@ -2963,7 +3004,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       if (isExported) {
         const kind = matchWord('let') ? 'let' : 'var'
         const decls = extractVariable(stmtStart, kind, true)
-        declarations.push(...decls)
+        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
       }
       else {
         skipToStatementEnd()

@@ -232,13 +232,11 @@ export function processDeclarations(
     allTexts.push(exp.text)
   }
 
-  // Two-phase import detection: fast includes() rejection then regex word-boundary check
+  // Two-phase import detection: fast includes() on combined text, then regex word-boundary check
+  const combinedText = allTexts.join('\n')
   for (const item of allImportedItemsMap.keys()) {
-    for (let t = 0; t < allTexts.length; t++) {
-      if (allTexts[t].includes(item) && getCachedRegex(item).test(allTexts[t])) {
-        usedImportItems.add(item)
-        break
-      }
+    if (combinedText.includes(item) && getCachedRegex(item).test(combinedText)) {
+      usedImportItems.add(item)
     }
   }
 
@@ -254,7 +252,8 @@ export function processDeclarations(
   for (const imp of imports) {
     // Preserve side-effect imports unconditionally (they may have type effects like reflect-metadata)
     if (imp.isSideEffect) {
-      const sideEffectImport = imp.text.trim().endsWith(';') ? imp.text.trim() : `${imp.text.trim()};`
+      const _trimmedImp = imp.text.trim()
+      const sideEffectImport = _trimmedImp.endsWith(';') ? _trimmedImp : `${_trimmedImp};`
       processedImports.push(sideEffectImport)
       continue
     }

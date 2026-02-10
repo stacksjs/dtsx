@@ -23,10 +23,14 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     const args = process.argv.slice(3)
     let dir = ''
     let out = ''
+    let isoDecl = false
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--outdir' && args[i + 1]) {
         out = args[i + 1]
         i++
+      }
+      else if (args[i] === '--isolated-declarations') {
+        isoDecl = true
       }
       else if (!dir) {
         dir = args[i]
@@ -59,7 +63,7 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     const importOrder = ['bun']
     const ctx = { filePath: '', sourceCode: '', declarations: [] as any[] }
     for (let i = 0; i < n; i++) {
-      const decls = scanDeclarations(sources[i], files[i], true)
+      const decls = scanDeclarations(sources[i], files[i], true, isoDecl)
       ctx.filePath = files[i]
       ctx.sourceCode = sources[i]
       ctx.declarations = decls

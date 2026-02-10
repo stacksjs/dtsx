@@ -37,8 +37,9 @@ export function processSourceDirect(
   filename: string = 'stdin.ts',
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
+  isolatedDeclarations: boolean = false,
 ): string {
-  const declarations = scanDeclarations(sourceCode, filename, keepComments)
+  const declarations = scanDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
   const context: ProcessingContext = {
     filePath: filename,
     sourceCode,

@@ -8,6 +8,34 @@
  */
 const MAX_INFERENCE_DEPTH = 20
 
+/** Check if a string matches /^-?\d+(\.\d+)?$/ without regex */
+function isNumericLiteral(s: string): boolean {
+  const len = s.length
+  if (len === 0) return false
+  let i = 0
+  if (s.charCodeAt(i) === 45 /* - */) i++
+  if (i >= len) return false
+  const digitStart = i
+  while (i < len && s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) i++
+  if (i === digitStart) return false // no digits
+  if (i < len && s.charCodeAt(i) === 46 /* . */) {
+    i++
+    const fracStart = i
+    while (i < len && s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) i++
+    if (i === fracStart) return false // no digits after dot
+  }
+  return i === len
+}
+
+/** Check if s (excluding last char 'n') is all digits — matches /^\d+n$/ */
+function isBigIntDigits(s: string): boolean {
+  for (let i = 0, end = s.length - 1; i < end; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 48 || c > 57) return false
+  }
+  return true
+}
+
 /**
  * Count occurrences of a substring using indexOf (faster than regex match + array)
  */
@@ -64,7 +92,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   }
 
   // Number literals
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+  if (isNumericLiteral(trimmed)) {
     if (inUnion && !isConst)
       return 'number'
     return trimmed
@@ -132,8 +160,8 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'unknown'
   }
 
-  // BigInt literals
-  if (/^\d+n$/.test(trimmed)) {
+  // BigInt literals (digits followed by 'n')
+  if (trimmed.charCodeAt(trimmed.length - 1) === 110 /* n */ && trimmed.length > 1 && isBigIntDigits(trimmed)) {
     if (isConst) {
       return trimmed
     }
@@ -327,7 +355,7 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
   // For simple arrays with all same literal types, also create tuples
   const uniqueTypes = [...new Set(elementTypes)]
   const allLiterals = elementTypes.every(type =>
-    /^-?\d+(\.\d+)?$/.test(type) // numbers
+    isNumericLiteral(type) // numbers
     || type === 'true' || type === 'false' // booleans
     || (type.startsWith('"') && type.endsWith('"')) // strings
     || (type.startsWith('\'') && type.endsWith('\'')),
