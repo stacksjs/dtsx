@@ -78,6 +78,7 @@ export {
  * Bounded to prevent memory leaks when processing many files
  */
 const MAX_DECLARATION_CACHE_SIZE = 100
+let _accessCounter = 0
 const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint, lastAccess: number }>()
 
 /**
@@ -102,17 +103,16 @@ export function extractDeclarations(
   const contentHash = hashContent(sourceCode)
   const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)
-  const now = Date.now()
 
   if (cached && cached.contentHash === contentHash) {
-    cached.lastAccess = now
+    cached.lastAccess = ++_accessCounter
     return cached.declarations
   }
 
   // Use fast string scanner (no TS parser needed)
   const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
 
-  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: now })
+  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
 
   // Evict oldest entry if cache exceeds max size (FIFO via Map insertion order)
   if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {

@@ -9,6 +9,7 @@ import { hashContent } from './hash'
 import { scanDeclarations } from './scanner'
 
 const MAX_DECLARATION_CACHE_SIZE = 100
+let _accessCounter = 0
 const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint, lastAccess: number }>()
 
 /**
@@ -26,13 +27,13 @@ export function extractDeclarations(
   const cached = declarationCache.get(cacheKey)
 
   if (cached && cached.contentHash === contentHash) {
-    cached.lastAccess = Date.now()
+    cached.lastAccess = ++_accessCounter
     return cached.declarations
   }
 
   const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
 
-  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: Date.now() })
+  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
 
   if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
     let oldestKey: string | null = null

@@ -186,27 +186,24 @@ export function processDeclarations(
     }
   }
 
-  // Build reference check sets for interfaces (search each declaration directly, no join)
+  // Build reference check sets for interfaces
+  // Join all referencing texts into ONE string, then search each interface name once.
+  // This replaces the O(interfaces * (functions + classes + types)) nested loop
+  // with O(total_text_length + interfaces * total_text_length) which is more cache-friendly.
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
-    for (const iface of interfaces) {
-      let found = false
-      if (!found) {
-        for (const func of functions) {
-          if (func.isExported && func.text.includes(iface.name)) { found = true; break }
+    let refText = ''
+    for (const func of functions) {
+      if (func.isExported) refText += func.text + '\n'
+    }
+    for (const cls of classes) refText += cls.text + '\n'
+    for (const type of types) refText += type.text + '\n'
+    if (refText) {
+      for (const iface of interfaces) {
+        if (isWordInText(iface.name, refText)) {
+          interfaceReferences.add(iface.name)
         }
       }
-      if (!found) {
-        for (const cls of classes) {
-          if (cls.text.includes(iface.name)) { found = true; break }
-        }
-      }
-      if (!found) {
-        for (const type of types) {
-          if (type.text.includes(iface.name)) { found = true; break }
-        }
-      }
-      if (found) interfaceReferences.add(iface.name)
     }
   }
 
@@ -216,60 +213,34 @@ export function processDeclarations(
     // Filter imports to only include those that are used in exports or declarations
     const usedImportItems = new Set<string>()
 
-    // Build combined text for import usage detection (single allocation)
-    const combinedTextParts: string[] = []
-
-    // Add exported functions
+    // Build combined text for import usage detection as a single string directly
+    // (avoids intermediate array allocation + join)
+    let combinedText = ''
     for (const func of functions) {
-      if (func.isExported) {
-        combinedTextParts.push(func.text)
-      }
+      if (func.isExported) combinedText += func.text + '\n'
     }
-
-    // Add exported variables
     for (const variable of variables) {
       if (variable.isExported) {
-        combinedTextParts.push(variable.text)
-        if (variable.typeAnnotation) {
-          combinedTextParts.push(variable.typeAnnotation)
-        }
+        combinedText += variable.text + '\n'
+        if (variable.typeAnnotation) combinedText += variable.typeAnnotation + '\n'
       }
     }
-
-    // Add interfaces (exported or referenced)
     for (const iface of interfaces) {
-      if (iface.isExported || interfaceReferences.has(iface.name)) {
-        combinedTextParts.push(iface.text)
-      }
+      if (iface.isExported || interfaceReferences.has(iface.name)) combinedText += iface.text + '\n'
     }
+    for (const type of types) combinedText += type.text + '\n'
+    for (const cls of classes) combinedText += cls.text + '\n'
+    for (const enumDecl of enums) combinedText += enumDecl.text + '\n'
+    for (const mod of modules) combinedText += mod.text + '\n'
+    for (const exp of exports) combinedText += exp.text + '\n'
 
-    // Add all types, classes, enums, modules
-    for (const type of types) {
-      combinedTextParts.push(type.text)
-    }
-    for (const cls of classes) {
-      combinedTextParts.push(cls.text)
-    }
-    for (const enumDecl of enums) {
-      combinedTextParts.push(enumDecl.text)
-    }
-    for (const mod of modules) {
-      combinedTextParts.push(mod.text)
-    }
-
-    // Add export statements
-    for (const exp of exports) {
-      combinedTextParts.push(exp.text)
-    }
-
-    // Import detection: scan each declaration text individually (avoids giant join allocation)
-    if (combinedTextParts.length > 0) {
+    // Import detection: search each import item once in the combined text.
+    // This replaces the O(imports * text_parts) nested loop with O(imports) searches
+    // on a single string, leveraging native indexOf for cache-friendly scanning.
+    if (combinedText && allImportedItemsMap.size > 0) {
       for (const item of allImportedItemsMap.keys()) {
-        for (let p = 0; p < combinedTextParts.length; p++) {
-          if (isWordInText(item, combinedTextParts[p])) {
-            usedImportItems.add(item)
-            break
-          }
+        if (isWordInText(item, combinedText)) {
+          usedImportItems.add(item)
         }
       }
     }

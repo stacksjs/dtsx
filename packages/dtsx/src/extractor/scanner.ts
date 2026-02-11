@@ -2230,12 +2230,30 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       if (hasPrivate)
         continue // Skip private parameter properties
 
-      // Extract the modifiers text and parameter info
+      // Extract the modifiers text and parameter info (no regex — use indexOf)
       let p = param
       const mods: string[] = []
-      if (hasPublic) { p = p.replace(/^public\s+/, ''); mods.push('public') }
-      if (hasProtected) { p = p.replace(/^protected\s+/, ''); mods.push('protected') }
-      if (hasReadonly) { p = p.replace(/readonly\s+/, ''); mods.push('readonly') }
+      if (hasPublic) {
+        let si = 6 // 'public'.length
+        while (si < p.length && isWhitespace(p.charCodeAt(si))) si++
+        p = p.slice(si)
+        mods.push('public')
+      }
+      if (hasProtected) {
+        let si = 9 // 'protected'.length
+        while (si < p.length && isWhitespace(p.charCodeAt(si))) si++
+        p = p.slice(si)
+        mods.push('protected')
+      }
+      if (hasReadonly) {
+        const ri = p.indexOf('readonly ')
+        if (ri !== -1) {
+          let si = ri + 8 // 'readonly'.length
+          while (si < p.length && isWhitespace(p.charCodeAt(si))) si++
+          p = p.slice(0, ri) + p.slice(si)
+        }
+        mods.push('readonly')
+      }
 
       const modText = mods.length > 0 ? `${mods.join(' ')} ` : ''
 
