@@ -48,6 +48,23 @@ function isIdentChar(ch: number): boolean {
   return isIdentStart(ch) || (ch >= 48 && ch <= 57)
 }
 
+/** Check if a type annotation is generic enough that value inference produces better results. */
+function isGenericAnnotation(type: string): boolean {
+  // Record<K, V>
+  if (type.charCodeAt(0) === 82 /* R */ && type.startsWith('Record<'))
+    return true
+  // Array<T>
+  if (type.charCodeAt(0) === 65 /* A */ && type.startsWith('Array<'))
+    return true
+  // { [key: ...]: ... } index signatures
+  if (type.charCodeAt(0) === CH_LBRACE && type.includes('[') && type.includes(']:'))
+    return true
+  // any, object, unknown
+  if (type === 'any' || type === 'object' || type === 'unknown')
+    return true
+  return false
+}
+
 // Constructor parameter modifiers (hoisted to avoid per-call allocation)
 const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override'] as const
 
@@ -1477,7 +1494,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       // Initializer
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
         // Fast path: with isolatedDeclarations + explicit type, skip initializer entirely
-        if (isolatedDeclarations && typeAnnotation) {
+        // Exception: generic annotations (Record<>, index signatures) benefit from value inference
+        if (isolatedDeclarations && typeAnnotation && !isGenericAnnotation(typeAnnotation)) {
           skipToStatementEnd()
         }
         else {

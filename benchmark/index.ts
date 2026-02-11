@@ -177,7 +177,7 @@ function tscGenerateCLI(filename: string): void {
 // ---------------------------------------------------------------------------
 
 for (const { filename, source } of inputs) {
-  processSource(source, filename)
+  processSource(source, filename, true, ['bun'], true)
   isolatedDeclarationSync(filename, source, { sourcemap: false })
   tscGenerate(source, filename)
   dtsxGenerateCLI(filename)
@@ -196,7 +196,7 @@ for (const { filename, source } of inputs) {
 for (const { name, filename, source } of inputs) {
   summary(() => {
     bench(`dtsx (cached) — ${name}`, () => {
-      processSource(source, filename)
+      processSource(source, filename, true, ['bun'], true)
     })
 
     bench(`oxc-transform — ${name}`, () => {
@@ -221,7 +221,7 @@ for (const { name, filename, source } of inputs) {
       clearSourceFileCache()
       clearDeclarationCache()
       clearProcessorCaches()
-      processSource(source, filename)
+      processSource(source, filename, true, ['bun'], true)
     })
 
     bench(`oxc-transform — ${name}`, () => {
