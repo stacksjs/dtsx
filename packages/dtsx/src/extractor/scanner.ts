@@ -1493,8 +1493,9 @@ export function scanDeclarations(source: string, filename: string, keepComments:
 
       // Initializer
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-        // Fast path: with isolatedDeclarations + explicit type, skip initializer entirely
-        // Exception: generic annotations (Record<>, index signatures) benefit from value inference
+        // Fast path: with isolatedDeclarations + explicit non-generic type, skip initializer.
+        // For generic types (Record<>, Array<>, index sigs), we still parse the initializer
+        // to produce narrower inferred types from the value.
         if (isolatedDeclarations && typeAnnotation && !isGenericAnnotation(typeAnnotation)) {
           skipToStatementEnd()
         }

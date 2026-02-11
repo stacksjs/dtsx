@@ -5,12 +5,12 @@ description: Learn how to install and use dtsx for TypeScript declaration file g
 
 # Getting Started
 
-dtsx is an extremely fast TypeScript declaration file (`.d.ts`) generator that leverages isolated declarations for optimal performance.
+dtsx is an extremely fast TypeScript declaration file (`.d.ts`) generator that infers the narrowest possible types from your source values.
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.0.0 or higher
-- TypeScript with `isolatedDeclarations` enabled in your `tsconfig.json`
+- TypeScript 5.0 or higher
 
 ## Installation
 
@@ -25,14 +25,14 @@ npm install -D @stacksjs/dtsx
 pnpm add -D @stacksjs/dtsx
 ```
 
-## Enable Isolated Declarations
+## Isolated Declarations (Optional)
 
-Before using dtsx, ensure your `tsconfig.json` has isolated declarations enabled:
+dtsx works out of the box without `isolatedDeclarations`. If you enable it, dtsx uses it as a fast path to skip initializer parsing when explicit type annotations are present:
 
 ```json
 {
   "compilerOptions": {
-    "isolatedDeclarations": true
+    "isolatedDeclarations": true // optional — dtsx works great without it
   }
 }
 ```

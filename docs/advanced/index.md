@@ -84,7 +84,7 @@ export default {
 ### Type Design
 - Use explicit type annotations for public APIs
 - Leverage JSDoc comments for comprehensive documentation
-- Design types with isolated declarations in mind
+- dtsx infers narrow types automatically — explicit annotations are optional
 - Avoid complex type computations in public interfaces
 
 ### Project Structure

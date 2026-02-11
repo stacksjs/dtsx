@@ -402,15 +402,39 @@ export declare const colors: readonly ["red", "green", "blue"]
 export declare const point: [number, number]
 ```
 
-## Limitations and Considerations
+## Narrow Type Inference
 
-### Isolated Declarations Requirement
+Unlike other tools that require `isolatedDeclarations` and explicit type annotations, dtsx infers the narrowest possible types directly from your source values:
 
-dtsx requires TypeScript's `isolatedDeclarations` to be enabled, which means:
+```ts
+// Source — no type annotations needed
+export const port = 3000
+export const name = 'Stacks'
+export const items = [1, 2, 3]
+export const config = {
+  apiUrl: 'https://api.stacksjs.org',
+  timeout: 5000,
+}
+```
 
-- All exported declarations must have explicit type annotations
-- Type inference is limited to what TypeScript can determine in isolation
-- Complex type computations may need explicit annotations
+```ts
+// Generated .d.ts — exact literal types
+export declare const port: 3000
+export declare const name: 'Stacks'
+export declare const items: readonly [1, 2, 3]
+export declare const config: {
+  apiUrl: 'https://api.stacksjs.org';
+  timeout: 5000
+}
+```
+
+See the [Type Inference](./type-inference.md) page for the full comparison with oxc and tsc.
+
+## isolatedDeclarations (Optional)
+
+dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx skips parsing initializer values for declarations that already have explicit, non-generic type annotations — a performance optimization without sacrificing correctness.
+
+When disabled (the default), dtsx reads every initializer and infers the narrowest possible type. This is the recommended mode for most projects.
 
 ### Implementation Details
 
@@ -420,13 +444,14 @@ dtsx focuses on generating clean declaration files by:
 - Removing implementation details
 - Preserving type information and comments
 - Optimizing import statements
+- Inferring the narrowest types from values
 
 ### Best Practices
 
 For optimal results with dtsx:
 
-1. **Use explicit type annotations** for all exported declarations
+1. **Write normal TypeScript** — dtsx infers types from your values automatically
 2. **Add comprehensive JSDoc comments** for documentation
-3. **Leverage const assertions** for literal types
+3. **Use `as const`** when you want deeply readonly literal types
 4. **Organize types logically** in your source files
 5. **Use type-only imports** when importing only for types

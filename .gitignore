@@ -20,3 +20,6 @@ test/debug
 /pantry
 benchmark/oxc-emit
 /packages/dtsx/test/.checker-test-fixtures
+/packages/zig-dtsx/.zig-cache
+/packages/zig-dtsx/zig-out
+*.node

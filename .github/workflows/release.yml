@@ -22,11 +22,43 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+
       - name: Setup Pantry
         uses: home-lang/pantry-setup@v1
 
       - name: Install Dependencies
         run: bun install
+
+      - name: Build Zig CLI Binaries
+        working-directory: packages/zig-dtsx
+        run: |
+          mkdir -p ../dtsx/bin
+
+          # Linux x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+          zip -j ../dtsx/bin/dtsx-linux-x64.zip zig-out/bin/zig-dtsx
+
+          # Linux arm64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-linux
+          zip -j ../dtsx/bin/dtsx-linux-arm64.zip zig-out/bin/zig-dtsx
+
+          # macOS x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+          zip -j ../dtsx/bin/dtsx-darwin-x64.zip zig-out/bin/zig-dtsx
+
+          # macOS arm64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+          zip -j ../dtsx/bin/dtsx-darwin-arm64.zip zig-out/bin/zig-dtsx
+
+          # Windows x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+          zip -j ../dtsx/bin/dtsx-windows-x64.zip zig-out/bin/zig-dtsx.exe
+
+          # FreeBSD x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-freebsd
+          zip -j ../dtsx/bin/dtsx-freebsd-x64.zip zig-out/bin/zig-dtsx
 
       - name: Publish
         run: pantry npm:publish --access public
@@ -39,8 +71,9 @@ jobs:
           files: |
             packages/dtsx/bin/dtsx-linux-x64.zip
             packages/dtsx/bin/dtsx-linux-arm64.zip
-            packages/dtsx/bin/dtsx-windows-x64.zip
             packages/dtsx/bin/dtsx-darwin-x64.zip
             packages/dtsx/bin/dtsx-darwin-arm64.zip
+            packages/dtsx/bin/dtsx-windows-x64.zip
+            packages/dtsx/bin/dtsx-freebsd-x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

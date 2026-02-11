@@ -258,16 +258,14 @@ DTSX_ROOT=./lib
 
 ## TypeScript Configuration
 
-Ensure your `tsconfig.json` has `isolatedDeclarations` enabled:
+You can optionally enable `isolatedDeclarations` in your `tsconfig.json` for a performance fast path. dtsx works great without it — it infers narrow types directly from values:
 
 ```json
 {
   "compilerOptions": {
-    "isolatedDeclarations": true,
+    "isolatedDeclarations": true, // optional fast path
     "declaration": true,
     "emitDeclarationOnly": false
   }
 }
 ```
-
-This is required for dtsx to work properly with TypeScript's isolated declarations feature.

@@ -1,0 +1,11 @@
+.{
+    .name = .zig_dtsx,
+    .version = "0.1.0",
+    .fingerprint = 0x545e4f1c4c6ae840,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{},
+}

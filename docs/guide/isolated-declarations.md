@@ -1,25 +1,67 @@
 ---
 title: Isolated Declarations
-description: Understanding TypeScript's isolated declarations and how dtsx leverages them.
+description: Understanding TypeScript's isolated declarations and how dtsx optionally leverages them.
 ---
 
 # Isolated Declarations
 
-dtsx leverages TypeScript's **isolated declarations** feature for extremely fast declaration file generation.
+dtsx works **without** `isolatedDeclarations` — it infers the narrowest possible types directly from your source values. When `isolatedDeclarations` is enabled, dtsx uses it as an **optional fast path** to skip initializer parsing when explicit type annotations are present.
+
+## dtsx Without isolatedDeclarations (Default)
+
+By default, dtsx reads every initializer value and infers exact literal types:
+
+```ts
+// Source — no type annotations needed
+export const port = 3000
+export const name = 'Stacks'
+export const items = [1, 2, 3]
+export const config = {
+  apiUrl: 'https://api.stacksjs.org',
+  timeout: 5000,
+}
+```
+
+```ts
+// Generated .d.ts — exact literal types
+export declare const port: 3000
+export declare const name: 'Stacks'
+export declare const items: readonly [1, 2, 3]
+export declare const config: {
+  apiUrl: 'https://api.stacksjs.org';
+  timeout: 5000
+}
+```
+
+This produces narrower types than tsc or oxc — see the [full comparison](../features/type-inference.md).
 
 ## What are Isolated Declarations?
 
 Isolated declarations is a TypeScript compiler option that enables declaration files to be generated from a single source file without needing to analyze the entire project.
 
-### Benefits
+### Benefits When Enabled
 
-- **Speed** - No need to type-check the entire project
-- **Parallelization** - Files can be processed independently
-- **Simpler** - Each file is self-contained
+- **Performance fast path** — dtsx skips parsing initializers when explicit non-generic type annotations exist
+- **Parallelization** — files can be processed independently
+- **Compatibility** — matches the behavior expected by tsc and oxc
 
-### Requirements
+### Trade-offs
 
-When `isolatedDeclarations` is enabled, TypeScript requires explicit type annotations on all exported declarations. This enables tools like dtsx to generate `.d.ts` files without running the full TypeScript compiler.
+When `isolatedDeclarations` is enabled and a declaration has an explicit type annotation, dtsx trusts that annotation and skips value analysis. This means you may get broader types if your annotations are broad:
+
+```ts
+// With isolatedDeclarations ON + explicit annotation:
+export const port: number = 3000
+// → export declare const port: number    (uses annotation as-is)
+
+// Without isolatedDeclarations (or no annotation):
+export const port = 3000
+// → export declare const port: 3000      (infers narrow literal)
+```
+
+**Important:** Even with `isolatedDeclarations` enabled, dtsx still infers narrow types when:
+- There is no type annotation
+- The annotation is a generic type (`any`, `object`, `unknown`, `Record<>`, `Array<>`, `{ [key]: V }`)
 
 ## Enabling Isolated Declarations
 
@@ -28,85 +70,66 @@ Add to your `tsconfig.json`:
 ```json
 {
   "compilerOptions": {
-    "isolatedDeclarations": true
+    "isolatedDeclarations": true // optional — dtsx works great without it
   }
 }
 ```
 
-## Code Requirements
+## Code Requirements (When Enabled)
+
+When `isolatedDeclarations` is enabled in TypeScript, tsc requires explicit type annotations on exported declarations. dtsx is more lenient — it handles unannotated exports by inferring types from values.
 
 ### Explicit Return Types
 
-Functions must have explicit return types:
+Functions should have explicit return types:
 
 ```ts
-// Good - explicit return type
+// Recommended
 export function greet(name: string): string {
   return `Hello, ${name}!`
 }
 
-// Bad - implicit return type (will error)
+// Also works with dtsx (but tsc would error with isolatedDeclarations)
 export function greet(name: string) {
   return `Hello, ${name}!`
 }
 ```
 
-### Explicit Variable Types
+### Variable Types
 
-Exported variables need explicit types for complex values:
+dtsx infers types from values automatically — explicit annotations are optional:
 
 ```ts
-// Good - explicit type
-export const config: Config = {
-  port: 3000,
-  host: 'localhost',
-}
-
-// Good - primitive types are inferred
-export const version: string = '1.0.0'
-export const count = 42 // number is inferred
-
-// Bad - complex object without type (may error)
+// dtsx infers narrow types from all of these:
+export const port = 3000            // → 3000
+export const name = 'Stacks'        // → 'Stacks'
+export const items = [1, 2, 3]      // → readonly [1, 2, 3]
 export const config = {
-  port: 3000,
-  host: 'localhost',
-}
-```
-
-### Class Properties
-
-Class properties need explicit types:
-
-```ts
-// Good
-export class User {
-  name: string
-  age: number
-
-  constructor(name: string, age: number) {
-    this.name = name
-    this.age = age
-  }
-
-  greet(): string {
-    return `Hello, ${this.name}!`
-  }
+  timeout: 5000,                    // → 5000
+  debug: true,                      // → true
 }
 
-// Bad - missing return type
-export class User {
-  greet() {
-    return `Hello!`
-  }
-}
+// Explicit annotations also work:
+export const port: number = 3000    // → number (uses annotation)
 ```
 
 ## Common Patterns
 
+### Const Assertions
+
+`as const` gives you deeply readonly literal types:
+
+```ts
+export const STATUSES = ['pending', 'active', 'completed'] as const
+// → readonly ['pending', 'active', 'completed']
+
+export type Status = typeof STATUSES[number]
+// Resolves to: 'pending' | 'active' | 'completed'
+```
+
 ### Type Exports
 
 ```ts
-// types.ts
 export interface User {
   id: number
   name: string
@@ -114,20 +137,13 @@ export interface User {
 }
 
 export type UserRole = 'admin' | 'user' | 'guest'
-
-export type CreateUserInput = Omit<User, 'id'>
 ```
 
 ### Function Exports
 
 ```ts
-// utils.ts
 export function formatDate(date: Date): string {
   return date.toISOString()
-}
-
-export function parseJSON<T>(json: string): T {
-  return JSON.parse(json)
 }
 
 export async function fetchData(url: string): Promise<Response> {
@@ -135,175 +151,8 @@ export async function fetchData(url: string): Promise<Response> {
 }
 ```
 
-### Class Exports
-
-```ts
-// service.ts
-export class ApiService {
-  private baseUrl: string
-
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl
-  }
-
-  async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`)
-    return response.json()
-  }
-}
-```
-
-### Constant Exports
-
-```ts
-// constants.ts
-export const API_URL: string = 'https://api.example.com'
-export const MAX_RETRIES: number = 3
-export const DEFAULT_TIMEOUT: number = 5000
-
-export const STATUS_CODES: Record<string, number> = {
-  OK: 200,
-  CREATED: 201,
-  NOT_FOUND: 404,
-}
-```
-
-## Migration Guide
-
-### Step 1: Enable the Option
-
-```json
-{
-  "compilerOptions": {
-    "isolatedDeclarations": true
-  }
-}
-```
-
-### Step 2: Fix Errors
-
-Run TypeScript to find issues:
-
-```bash
-tsc --noEmit
-```
-
-### Step 3: Add Missing Annotations
-
-Common fixes:
-
-```ts
-// Before
-export function calculate(a, b) {
-  return a + b
-}
-
-// After
-export function calculate(a: number, b: number): number {
-  return a + b
-}
-```
-
-### Step 4: Use dtsx
-
-Once all exports have explicit types:
-
-```bash
-bunx dtsx generate
-```
-
-## Error Messages
-
-### "Exported function must have explicit return type"
-
-```ts
-// Error
-export function foo() {
-  return 'bar'
-}
-
-// Fix
-export function foo(): string {
-  return 'bar'
-}
-```
-
-### "Exported variable must have explicit type"
-
-```ts
-// Error
-export const data = getData()
-
-// Fix
-export const data: Data = getData()
-```
-
-### "Property must have explicit type"
-
-```ts
-// Error
-export class Foo {
-  bar = 'baz'
-}
-
-// Fix
-export class Foo {
-  bar: string = 'baz'
-}
-```
-
-## Best Practices
-
-### 1. Use Type Inference Where Safe
-
-Primitive literals are safe to infer:
-
-```ts
-export const name = 'John' // string inferred
-export const count = 42    // number inferred
-export const active = true // boolean inferred
-```
-
-### 2. Be Explicit with Complex Types
-
-```ts
-// Use explicit types for objects
-export const config: AppConfig = { ... }
-
-// Use explicit types for arrays
-export const items: string[] = ['a', 'b', 'c']
-
-// Use explicit types for functions
-export const handler: RequestHandler = (req, res) => { ... }
-```
-
-### 3. Export Types Separately
-
-```ts
-// Export interface for reuse
-export interface Options {
-  debug: boolean
-  verbose: boolean
-}
-
-// Use exported interface
-export function configure(options: Options): void {
-  // ...
-}
-```
-
-## Performance Comparison
-
-With isolated declarations enabled, dtsx can process files much faster:
-
-| Project Size | TypeScript | dtsx |
-|--------------|------------|------|
-| Small (10 files) | 2.5s | 0.1s |
-| Medium (100 files) | 15s | 0.5s |
-| Large (1000 files) | 120s | 4s |
-
 ## Related
 
+- [Type Inference](../features/type-inference.md) - Full comparison with oxc and tsc
 - [Getting Started](./getting-started.md) - Installation and setup
 - [Configuration](./configuration.md) - Configuration options
-- [CLI Commands](./cli.md) - Command-line interface

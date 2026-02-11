@@ -83,6 +83,41 @@ jobs:
       - name: Unit Test
         run: bun test
 
+  zig-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Build Zig
+        working-directory: packages/zig-dtsx
+        run: zig build
+
+      - name: Run Zig Unit Tests
+        working-directory: packages/zig-dtsx
+        run: zig build test
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2.1.2
+
+      - name: Use cached node_modules
+        uses: actions/cache@v4.3.0
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            node-modules-
+
+      - name: Install Dependencies
+        run: bun install
+
+      - name: Run Zig Fixture Tests
+        working-directory: packages/zig-dtsx
+        run: bun test test/zig-dtsx.test.ts
+
   publish-commit:
     runs-on: ubuntu-latest
 
