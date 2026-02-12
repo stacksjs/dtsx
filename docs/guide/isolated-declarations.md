@@ -5,11 +5,11 @@ description: Understanding TypeScript's isolated declarations and how dtsx optio
 
 # Isolated Declarations
 
-dtsx works **without** `isolatedDeclarations` — it infers the narrowest possible types directly from your source values. When `isolatedDeclarations` is enabled, dtsx uses it as an **optional fast path** to skip initializer parsing when explicit type annotations are present.
+dtsx works **without** `isolatedDeclarations` — it infers sound types directly from your source values, preserving original values via `@defaultValue` JSDoc. When `isolatedDeclarations` is enabled, dtsx uses it as an **optional fast path** to skip initializer parsing when explicit type annotations are present.
 
 ## dtsx Without isolatedDeclarations (Default)
 
-By default, dtsx reads every initializer value and infers exact literal types:
+By default, dtsx reads every initializer value and infers sound types, preserving original values via `@defaultValue` JSDoc:
 
 ```ts
 // Source — no type annotations needed
@@ -23,17 +23,21 @@ export const config = {
 ```
 
 ```ts
-// Generated .d.ts — exact literal types
+// Generated .d.ts — sound types with @defaultValue
 export declare const port: 3000
 export declare const name: 'Stacks'
-export declare const items: readonly [1, 2, 3]
+/** @defaultValue `[1, 2, 3]` */
+export declare const items: number[]
+/** @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: 5000 }` */
 export declare const config: {
-  apiUrl: 'https://api.stacksjs.org';
-  timeout: 5000
+  /** @defaultValue 'https://api.stacksjs.org' */
+  apiUrl: string;
+  /** @defaultValue 5000 */
+  timeout: number
 }
 ```
 
-This produces narrower types than tsc or oxc — see the [full comparison](../features/type-inference.md).
+Scalar `const` keeps literal types (truly immutable). Mutable container properties are widened with original values preserved — see the [full comparison](../features/type-inference.md).
 
 ## What are Isolated Declarations?
 
@@ -100,13 +104,13 @@ export function greet(name: string) {
 dtsx infers types from values automatically — explicit annotations are optional:
 
 ```ts
-// dtsx infers narrow types from all of these:
-export const port = 3000            // → 3000
-export const name = 'Stacks'        // → 'Stacks'
-export const items = [1, 2, 3]      // → readonly [1, 2, 3]
+// dtsx infers sound types from all of these:
+export const port = 3000            // → 3000 (scalar const — immutable)
+export const name = 'Stacks'        // → 'Stacks' (scalar const — immutable)
+export const items = [1, 2, 3]      // → number[] + @defaultValue
 export const config = {
-  timeout: 5000,                    // → 5000
-  debug: true,                      // → true
+  timeout: 5000,                    // → number + @defaultValue 5000
+  debug: true,                      // → boolean + @defaultValue true
 }
 
 // Explicit annotations also work:

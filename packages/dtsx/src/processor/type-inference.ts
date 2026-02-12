@@ -78,11 +78,12 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'string'
   }
 
-  // String literals - always use literal type for simple string literals
+  // String literals
   if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
     || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
     || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
     if (!trimmed.includes('${')) {
+      if (!isConst) return 'string'
       return trimmed
     }
     if (isConst) {
@@ -93,14 +94,14 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
 
   // Number literals
   if (isNumericLiteral(trimmed)) {
-    if (inUnion && !isConst)
+    if (!isConst)
       return 'number'
     return trimmed
   }
 
   // Boolean literals
   if (trimmed === 'true' || trimmed === 'false') {
-    if (inUnion && !isConst)
+    if (!isConst)
       return 'boolean'
     return trimmed
   }
@@ -128,7 +129,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
 
   // Function expressions
   if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed, inUnion, _depth)
+    return inferFunctionType(trimmed, inUnion, _depth, isConst)
   }
 
   // As const assertions
@@ -152,7 +153,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
 
   // Promise expressions
   if (trimmed.startsWith('Promise.')) {
-    return inferPromiseType(trimmed, _depth)
+    return inferPromiseType(trimmed, isConst, _depth)
   }
 
   // Await expressions
@@ -258,13 +259,14 @@ function inferNewExpressionType(value: string): string {
 /**
  * Infer type from Promise expression
  */
-function inferPromiseType(value: string, _depth: number = 0): string {
+function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): string {
   if (value.startsWith('Promise.resolve(')) {
     // Try to extract the argument type
     const match = value.match(/Promise\.resolve\(([^)]+)\)/)
     if (match) {
       const arg = match[1].trim()
-      const argType = inferNarrowType(arg, false, false, _depth + 1)
+      // Promise resolved values are immutable, so preserve isConst from context
+      const argType = inferNarrowType(arg, isConst, false, _depth + 1)
       return `Promise<${argType}>`
     }
     return 'Promise<unknown>'
@@ -281,12 +283,12 @@ function inferPromiseType(value: string, _depth: number = 0): string {
       const elementTypes = elements.map((el) => {
         const trimmed = el.trim()
         if (trimmed.startsWith('Promise.resolve(')) {
-          const promiseType = inferPromiseType(trimmed, _depth + 1)
+          const promiseType = inferPromiseType(trimmed, isConst, _depth + 1)
           // Extract the inner type from Promise<T>
           const innerMatch = promiseType.match(/Promise<(.+)>/)
           return innerMatch ? innerMatch[1] : 'unknown'
         }
-        return inferNarrowType(trimmed, false, false, _depth + 1)
+        return inferNarrowType(trimmed, isConst, false, _depth + 1)
       })
       return `Promise<[${elementTypes.join(', ')}]>`
     }
@@ -303,10 +305,10 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
   const content = value.slice(1, -1).trim()
 
   if (!content)
-    return 'Array<never>'
+    return 'never[]'
 
   if (_depth >= MAX_INFERENCE_DEPTH)
-    return 'Array<unknown>'
+    return 'unknown[]'
 
   // Simple parsing - this would need to be more sophisticated for complex cases
   const elements = parseArrayElements(content)
@@ -367,10 +369,10 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
   }
 
   if (uniqueTypes.length === 1) {
-    return `Array<${uniqueTypes[0]}>`
+    return `${uniqueTypes[0]}[]`
   }
 
-  return `Array<${uniqueTypes.join(' | ')}>`
+  return `(${uniqueTypes.join(' | ')})[]`
 }
 
 /**
@@ -418,6 +420,132 @@ export function parseArrayElements(content: string): string[] {
   return elements
 }
 
+/** Check if a value string is a primitive literal (number, string, boolean) */
+function isPrimitiveLiteral(val: string): boolean {
+  if (isNumericLiteral(val)) return true
+  if (val === 'true' || val === 'false') return true
+  if ((val.startsWith('"') && val.endsWith('"'))
+    || (val.startsWith('\'') && val.endsWith('\''))) return true
+  return false
+}
+
+/** Check if a type is a base/widened type */
+function isBaseType(type: string): boolean {
+  return type === 'number' || type === 'string' || type === 'boolean'
+}
+
+/** Check if an array literal only contains primitives/nested arrays/objects (no runtime expressions) */
+function isSimpleArrayDefault(val: string): boolean {
+  // Strip brackets, quotes, and nested structure chars, then check what's left
+  // Reject if it contains function calls, `new`, arrow functions, variable refs
+  const stripped = val.replace(/(['"`])(?:(?!\1).)*\1/g, '') // remove string literals
+  if (/\b(new|console|process|async|await|function|yield)\b/.test(stripped)) return false
+  if (/=>/.test(stripped)) return false
+  // Reject bare identifiers that aren't keywords or known literals
+  // Allow: numbers, booleans, strings, brackets, braces, commas, colons, whitespace
+  if (/[a-zA-Z_$][a-zA-Z0-9_$]*\s*\(/.test(stripped)) return false // function calls
+  return true
+}
+
+/**
+ * Build a clean @default annotation value from a container literal.
+ * Only includes properties with primitive or simple array values.
+ * Returns null if no clean representation is possible.
+ */
+export function buildCleanDefault(value: string, indent: number = 0): string | null {
+  const trimmed = value.trim()
+
+  // Arrays: build a clean representation
+  if (trimmed.startsWith('[')) {
+    // Fast path: fully simple arrays — collapse whitespace and return
+    if (isSimpleArrayDefault(trimmed)) {
+      return trimmed.replace(/\s+/g, ' ')
+    }
+    // Slow path: parse elements, keep simple ones, replace complex with inferred types
+    if (trimmed.endsWith(']')) {
+      const content = trimmed.slice(1, -1).trim()
+      if (!content) return '[]'
+      const elements = parseArrayElements(content)
+      const cleanElements: string[] = []
+      for (const el of elements) {
+        const te = el.trim()
+        if (te.endsWith('as const')) {
+          continue // skip — type already narrow
+        }
+        if (isPrimitiveLiteral(te) || te === 'null' || te === 'undefined') {
+          cleanElements.push(te)
+        }
+        else if (te.startsWith('[') && isSimpleArrayDefault(te)) {
+          cleanElements.push(te.replace(/\s+/g, ' '))
+        }
+        else if (te.startsWith('{')) {
+          const nested = buildCleanDefault(te, indent)
+          if (nested) cleanElements.push(nested)
+        }
+        else {
+          // Complex element: show inferred type instead
+          const inferred = inferNarrowType(te, false, false, 0)
+          if (inferred !== 'unknown') {
+            cleanElements.push(inferred)
+          }
+        }
+      }
+      if (cleanElements.length === 0) return null
+      return `[${cleanElements.join(', ')}]`
+    }
+    return null
+  }
+
+  // Objects: include only properties with primitive/simple values
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    const content = trimmed.slice(1, -1).trim()
+    if (!content) return '{}'
+
+    const properties = parseObjectProperties(content)
+    const cleanProps: string[] = []
+
+    for (const [key, val] of properties) {
+      const tv = val.trim()
+      // Skip 'as const' properties — their types are already narrow literals,
+      // so @defaultValue would be redundant (the type IS the value)
+      if (tv.endsWith('as const')) {
+        continue
+      }
+      if (isPrimitiveLiteral(tv)) {
+        cleanProps.push(`${key}: ${tv}`)
+      }
+      else if (tv.startsWith('[') && isSimpleArrayDefault(tv)) {
+        cleanProps.push(`${key}: ${tv.replace(/\s+/g, ' ')}`)
+      }
+      else if (tv.startsWith('{')) {
+        // Recurse for nested objects
+        const nested = buildCleanDefault(tv, indent + 1)
+        if (nested) {
+          cleanProps.push(`${key}: ${nested}`)
+        }
+      }
+      else if (!tv.startsWith('[') && (tv.includes('=>') || tv.startsWith('function') || tv.startsWith('async'))) {
+        // Functions: include with their inferred type signature
+        const fnType = inferFunctionType(tv, false, 0, true)
+        cleanProps.push(`${key}: ${fnType}`)
+      }
+    }
+
+    if (cleanProps.length === 0) return null
+
+    // Single property or short enough for one line
+    const oneLine = `{ ${cleanProps.join(', ')} }`
+    if (oneLine.length <= 80) return oneLine
+
+    // Multi-line with proper indentation
+    const pad = ' '.repeat((indent + 1) * 2)
+    const closePad = ' '.repeat(indent * 2)
+    return `{\n${pad}${cleanProps.join(`,\n${pad}`)}\n${closePad}}`
+  }
+
+  return null
+}
+
 /**
  * Infer object type from object literal
  */
@@ -443,7 +571,14 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       valueType = cleanMethodSignature(valueType)
     }
 
-    propTypes.push(`${key}: ${valueType}`)
+    // Add inline @defaultValue for widened primitive properties
+    const rawVal = val.trim()
+    if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
+      propTypes.push(`/** @defaultValue ${rawVal} */\n  ${key}: ${valueType}`)
+    }
+    else {
+      propTypes.push(`${key}: ${valueType}`)
+    }
   }
 
   return `{\n  ${propTypes.join(';\n  ')}\n}`
@@ -496,6 +631,14 @@ function parseObjectProperties(content: string): Array<[string, string]> {
     const prevChar = i > 0 ? content[i - 1] : ''
     const nextChar = i < content.length - 1 ? content[i + 1] : ''
 
+    // Track single-line comments — skip to end of line
+    if (!inString && !inComment && char === '/' && nextChar === '/') {
+      // Skip the entire single-line comment (don't include in key/value parsing)
+      i += 2 // Skip '//'
+      while (i < content.length && content[i] !== '\n') i++
+      continue
+    }
+
     // Track JSDoc/block comments to avoid parsing colons inside them
     if (!inString && !inComment && char === '/' && nextChar === '*') {
       // Enter block/JSDoc comment, preserve opening delimiter
@@ -533,7 +676,19 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       current += char
     }
     else if (!inString && !inComment) {
-      if (char === '{' || char === '[' || char === '(') {
+      if (char === '(' && depth === 0 && inKey) {
+        // Method definition like: methodName(params) or async methodName<T>(params)
+        // Must be checked BEFORE general bracket tracking so ( isn't swallowed
+        currentKey = current.trim()
+        // Remove 'async' from the key if present
+        if (currentKey.startsWith('async ')) {
+          currentKey = currentKey.slice(6).trim()
+        }
+        current = char // Start with the opening parenthesis
+        inKey = false
+        depth = 1 // We're now inside the method definition
+      }
+      else if (char === '{' || char === '[' || char === '(') {
         depth++
         current += char
       }
@@ -545,17 +700,6 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         currentKey = current.trim()
         current = ''
         inKey = false
-      }
-      else if (char === '(' && depth === 0 && inKey) {
-        // This might be a method definition like: methodName(params) or async methodName<T>(params)
-        currentKey = current.trim()
-        // Remove 'async' from the key if present
-        if (currentKey.startsWith('async ')) {
-          currentKey = currentKey.slice(6).trim()
-        }
-        current = char // Start with the opening parenthesis
-        inKey = false
-        depth = 1 // We're now inside the method definition
       }
       else if (char === ',' && depth === 0) {
         if (currentKey && current.trim()) {
@@ -717,7 +861,7 @@ function findMainArrowIndex(str: string): number {
 /**
  * Infer function type from function expression
  */
-export function inferFunctionType(value: string, inUnion: boolean = false, _depth: number = 0): string {
+export function inferFunctionType(value: string, inUnion: boolean = false, _depth: number = 0, isConst: boolean = true): string {
   const trimmed = value.trim()
 
   // Handle very complex function types early (but not function expressions)
@@ -755,7 +899,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     }
     else {
       // Expression body - try to infer
-      returnType = inferNarrowType(body, false, false, _depth + 1)
+      returnType = inferNarrowType(body, isConst, false, _depth + 1)
     }
 
     const funcType = `${params} => Promise<${returnType}>`
@@ -844,7 +988,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         returnType = 'unknown'
       }
       else {
-        returnType = inferNarrowType(body, false, false, _depth + 1)
+        returnType = inferNarrowType(body, isConst, false, _depth + 1)
       }
     }
 

@@ -1293,10 +1293,19 @@ export function scanDeclarations(source: string, filename: string, keepComments:
   function extractAssertion(initText: string): string | null {
     if (initText.endsWith('as const'))
       return null
-    // Find last ' as ' — the spaces already serve as word boundaries
-    const asIdx = initText.lastIndexOf(' as ')
-    if (asIdx === -1) return null
-    const afterAs = initText.slice(asIdx + 4).trim()
+    // Find last ' as ' at depth 0 (not nested inside brackets/braces/parens)
+    let depth = 0
+    let lastAsIdx = -1
+    for (let i = 0; i < initText.length; i++) {
+      const ch = initText.charCodeAt(i)
+      if (ch === 123 /* { */ || ch === 91 /* [ */ || ch === 40 /* ( */) depth++
+      else if (ch === 125 /* } */ || ch === 93 /* ] */ || ch === 41 /* ) */) depth--
+      else if (depth === 0 && ch === 32 /* space */ && i + 4 <= initText.length && initText.substring(i, i + 4) === ' as ') {
+        lastAsIdx = i
+      }
+    }
+    if (lastAsIdx === -1) return null
+    const afterAs = initText.slice(lastAsIdx + 4).trim()
     return afterAs || null
   }
 

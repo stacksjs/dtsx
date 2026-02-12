@@ -402,9 +402,9 @@ export declare const colors: readonly ["red", "green", "blue"]
 export declare const point: [number, number]
 ```
 
-## Narrow Type Inference
+## Sound Type Inference with `@defaultValue`
 
-Unlike other tools that require `isolatedDeclarations` and explicit type annotations, dtsx infers the narrowest possible types directly from your source values:
+Unlike other tools that require `isolatedDeclarations` and explicit type annotations, dtsx infers sound types directly from your source values — and preserves original values via `@defaultValue` JSDoc:
 
 ```ts
 // Source — no type annotations needed
@@ -418,23 +418,27 @@ export const config = {
 ```
 
 ```ts
-// Generated .d.ts — exact literal types
+// Generated .d.ts — sound types with @defaultValue
 export declare const port: 3000
 export declare const name: 'Stacks'
-export declare const items: readonly [1, 2, 3]
+/** @defaultValue `[1, 2, 3]` */
+export declare const items: number[]
+/** @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: 5000 }` */
 export declare const config: {
-  apiUrl: 'https://api.stacksjs.org';
-  timeout: 5000
+  /** @defaultValue 'https://api.stacksjs.org' */
+  apiUrl: string;
+  /** @defaultValue 5000 */
+  timeout: number
 }
 ```
 
-See the [Type Inference](./type-inference.md) page for the full comparison with oxc and tsc.
+Scalar `const` keeps literal types (truly immutable). Mutable container properties are widened with original values preserved via `@defaultValue`. See the [Type Inference](./type-inference.md) page for the full comparison with tsc and oxc.
 
 ## isolatedDeclarations (Optional)
 
 dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx skips parsing initializer values for declarations that already have explicit, non-generic type annotations — a performance optimization without sacrificing correctness.
 
-When disabled (the default), dtsx reads every initializer and infers the narrowest possible type. This is the recommended mode for most projects.
+When disabled (the default), dtsx reads every initializer and infers the correct type. This is the recommended mode for most projects.
 
 ### Implementation Details
 
@@ -444,7 +448,7 @@ dtsx focuses on generating clean declaration files by:
 - Removing implementation details
 - Preserving type information and comments
 - Optimizing import statements
-- Inferring the narrowest types from values
+- Inferring sound types from values with `@defaultValue` preservation
 
 ### Best Practices
 

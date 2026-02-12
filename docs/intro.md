@@ -2,7 +2,7 @@
 
 ## Features
 
-- Narrowest possible type inference — no `isolatedDeclarations` needed
+- Sound type inference with `@defaultValue` preservation — no `isolatedDeclarations` needed
 - Fast .d.ts generation
 - Highly configurable
 - Lightweight library

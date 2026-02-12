@@ -4,7 +4,17 @@
 
 import type { Declaration } from '../types'
 import { formatComments } from './comments'
-import { extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+import { buildCleanDefault, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+
+/**
+ * Format a @defaultValue tag as a standalone JSDoc block
+ */
+function formatDefaultJsdoc(tag: string): string {
+  if (tag.includes('\n')) {
+    return `/**\n * ${tag}\n */\n`
+  }
+  return `/** ${tag} */\n`
+}
 
 /**
  * Find the start of interface body, accounting for nested braces in generics
@@ -105,13 +115,21 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
       typeAnnotation = satisfiesType
     }
   }
-  // If we have a value, check if it has 'as const' - if so, infer from value instead of type annotation
-  else if (decl.value && decl.value.includes('as const')) {
+  // If we have a value that ends with 'as const' at the top level, infer narrow from value
+  else if (decl.value && decl.value.trim().endsWith('as const')) {
     typeAnnotation = inferNarrowType(decl.value, true)
   }
   else if (!typeAnnotation && decl.value && kind === 'const') {
-    // For const declarations WITHOUT explicit type annotation, infer narrow types from the value
-    typeAnnotation = inferNarrowType(decl.value, true)
+    // For const declarations WITHOUT explicit type annotation, infer types from the value
+    // Containers (objects/arrays) get widened types (sound: properties/elements are mutable)
+    // Scalars keep narrow literal types (sound: const binding is immutable)
+    const trimmedVal = decl.value.trim()
+    if (trimmedVal.startsWith('{') || trimmedVal.startsWith('[')) {
+      typeAnnotation = inferNarrowType(decl.value, false)
+    }
+    else {
+      typeAnnotation = inferNarrowType(decl.value, true)
+    }
   }
   else if (typeAnnotation && decl.value && kind === 'const' && isGenericType(typeAnnotation)) {
     // For const declarations with generic type annotations (Record, any, object), prefer narrow inference
@@ -130,8 +148,61 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     typeAnnotation = 'unknown'
   }
 
+  // Build @defaultValue content for widened declarations (TSDoc standard)
+  // Skip when value uses 'as const' — types are already narrow/self-documenting
+  let defaultTag = ''
+  if (decl.value && !decl.typeAnnotation && !decl.value.trim().endsWith('as const')) {
+    const trimVal = decl.value.trim()
+    if (kind !== 'const') {
+      // let/var with widened primitives
+      const isWidenedPrimitive = (typeAnnotation === 'string' || typeAnnotation === 'number' || typeAnnotation === 'boolean')
+      if (isWidenedPrimitive && trimVal.length > 0) {
+        defaultTag = `@defaultValue ${trimVal}`
+      }
+    }
+    else if (trimVal.startsWith('{') || trimVal.startsWith('[')) {
+      // const containers — clean @defaultValue with only primitive/simple values
+      const cleanDefault = buildCleanDefault(trimVal)
+      if (cleanDefault) {
+        if (cleanDefault.includes('\n')) {
+          const lines = cleanDefault.split('\n')
+          defaultTag = `@defaultValue\n * \`\`\`ts\n${lines.map(l => ` * ${l}`).join('\n')}\n * \`\`\``
+        }
+        else {
+          defaultTag = `@defaultValue \`${cleanDefault}\``
+        }
+      }
+    }
+  }
+
   result += `: ${typeAnnotation};`
 
+  // Skip generated @defaultValue if user already has one
+  if (defaultTag && comments && comments.includes('@defaultValue')) {
+    defaultTag = ''
+  }
+
+  // Merge @defaultValue into existing JSDoc comment, or create standalone
+  if (defaultTag && comments) {
+    // Inject @defaultValue before closing */ of existing JSDoc block
+    const trimmedComments = comments.trimEnd()
+    const closingIdx = trimmedComments.lastIndexOf('*/')
+    if (closingIdx !== -1) {
+      let before = trimmedComments.slice(0, closingIdx).trimEnd()
+      // Convert single-line `/** text` to multi-line `/**\n * text`
+      if (before.startsWith('/** ') && !before.includes('\n')) {
+        before = `/**\n * ${before.slice(4)}`
+      }
+      const merged = `${before}\n * ${defaultTag}\n */\n`
+      return merged + result
+    }
+    // Line comment (// ...) — convert to JSDoc block and merge
+    const commentText = trimmedComments.replace(/^\/\/\s*/, '')
+    return `/**\n * ${commentText}\n * ${defaultTag}\n */\n` + result
+  }
+  if (defaultTag) {
+    return formatDefaultJsdoc(defaultTag) + result
+  }
   return comments + result
 }
 

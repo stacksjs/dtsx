@@ -361,6 +361,18 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         const prev = if (i > 0) content[i - 1] else @as(u8, 0);
         const next = if (i + 1 < content.len) content[i + 1] else @as(u8, 0);
 
+        // Track single-line comments — skip to end of line
+        if (!in_string and !in_comment and c == '/' and next == '/') {
+            i += 2; // Skip '//'
+            while (i < content.len and content[i] != '\n') : (i += 1) {}
+            // Update current_start if in key mode so the key slice doesn't include comment text
+            if (in_key and i < content.len) {
+                current_start = i + 1;
+                while (current_start < content.len and ch.isWhitespace(content[current_start])) current_start += 1;
+            }
+            continue;
+        }
+
         // Track block comments
         if (!in_string and !in_comment and c == '/' and next == '*') {
             in_comment = true;
@@ -382,7 +394,15 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         }
 
         if (!in_string) {
-            if (c == '{' or c == '[' or c == '(') {
+            if (c == '(' and depth == 0 and in_key) {
+                // Method definition — must check BEFORE general bracket tracking
+                key_start = current_start;
+                key_end = i;
+                current_start = i;
+                in_key = false;
+                is_method = true;
+                depth = 1;
+            } else if (c == '{' or c == '[' or c == '(') {
                 depth += 1;
             } else if (c == '}' or c == ']' or c == ')') {
                 depth -= 1;
@@ -392,14 +412,6 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                 current_start = i + 1;
                 in_key = false;
                 is_method = false;
-            } else if (c == '(' and depth == 0 and in_key) {
-                // Method definition
-                key_start = current_start;
-                key_end = i;
-                current_start = i;
-                in_key = false;
-                is_method = true;
-                depth = 1;
             } else if (c == ',' and depth == 0) {
                 if (!in_key) {
                     var key = trim(content[key_start..key_end]);
@@ -539,20 +551,23 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         (trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') or
         (trimmed[0] == '`' and trimmed[trimmed.len - 1] == '`'))
     {
-        if (!ch.contains(trimmed, "${")) return trimmed;
+        if (!ch.contains(trimmed, "${")) {
+            if (!is_const) return "string";
+            return trimmed;
+        }
         if (is_const) return trimmed;
         return "string";
     }
 
     // Number literals
     if (isNumericLiteral(trimmed)) {
-        if (in_union and !is_const) return "number";
+        if (!is_const) return "number";
         return trimmed;
     }
 
     // Boolean literals
     if (std.mem.eql(u8, trimmed, "true") or std.mem.eql(u8, trimmed, "false")) {
-        if (in_union and !is_const) return "boolean";
+        if (!is_const) return "boolean";
         return trimmed;
     }
 
@@ -577,7 +592,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Function expressions
     if (ch.contains(trimmed, "=>") or ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
-        return inferFunctionType(alloc, trimmed, in_union, depth);
+        return inferFunctionType(alloc, trimmed, in_union, depth, is_const);
     }
 
     // As const assertions
@@ -609,7 +624,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Promise expressions
     if (ch.startsWith(trimmed, "Promise.")) {
-        return inferPromiseType(alloc, trimmed, depth);
+        return inferPromiseType(alloc, trimmed, is_const, depth);
     }
 
     // Await expressions
@@ -635,8 +650,8 @@ pub fn inferNarrowTypeInUnion(alloc: std.mem.Allocator, value: []const u8, is_co
 /// Infer array type from array literal
 pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
     const content = trim(value[1 .. value.len - 1]);
-    if (content.len == 0) return "Array<never>";
-    if (depth >= MAX_INFERENCE_DEPTH) return "Array<unknown>";
+    if (content.len == 0) return "never[]";
+    if (depth >= MAX_INFERENCE_DEPTH) return "unknown[]";
 
     const elements = try parseArrayElements(alloc, content);
 
@@ -749,20 +764,264 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
 
     if (unique.items.len == 1) {
         var parts = std.array_list.Managed(u8).init(alloc);
-        try parts.appendSlice("Array<");
         try parts.appendSlice(unique.items[0]);
-        try parts.append('>');
+        try parts.appendSlice("[]");
         return parts.toOwnedSlice();
     }
 
     var parts = std.array_list.Managed(u8).init(alloc);
-    try parts.appendSlice("Array<");
+    try parts.append('(');
     for (unique.items, 0..) |t, idx| {
         if (idx > 0) try parts.appendSlice(" | ");
         try parts.appendSlice(t);
     }
-    try parts.append('>');
+    try parts.appendSlice(")[]");
     return parts.toOwnedSlice();
+}
+
+/// Check if a value string is a primitive literal (number, string, boolean)
+fn isPrimitiveLiteral(val: []const u8) bool {
+    if (isNumericLiteral(val)) return true;
+    if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "false")) return true;
+    if (val.len >= 2 and ((val[0] == '"' and val[val.len - 1] == '"') or
+        (val[0] == '\'' and val[val.len - 1] == '\''))) return true;
+    return false;
+}
+
+/// Check if a type is a base/widened type
+fn isBaseType(t: []const u8) bool {
+    return std.mem.eql(u8, t, "number") or std.mem.eql(u8, t, "string") or std.mem.eql(u8, t, "boolean");
+}
+
+/// Check if an array literal only contains primitives/nested arrays/objects (no runtime expressions)
+fn isSimpleArrayDefault(val: []const u8) bool {
+    // Quick scan: reject if it contains runtime keywords or arrow functions
+    var i: usize = 0;
+    var in_string: bool = false;
+    var quote_char: u8 = 0;
+    while (i < val.len) : (i += 1) {
+        const c = val[i];
+        if (in_string) {
+            if (c == '\\') {
+                i += 1; // skip escaped char
+                continue;
+            }
+            if (c == quote_char) in_string = false;
+            continue;
+        }
+        if (c == '\'' or c == '"' or c == '`') {
+            in_string = true;
+            quote_char = c;
+            continue;
+        }
+        // Check for arrow =>
+        if (c == '=' and i + 1 < val.len and val[i + 1] == '>') return false;
+        // Check for keywords: new, console, process, async, await, function, yield
+        if (ch.isIdentStart(c)) {
+            const start = i;
+            while (i < val.len and ch.isIdentChar(val[i])) : (i += 1) {}
+            const word = val[start..i];
+            // Check what follows the identifier
+            var j = i;
+            while (j < val.len and ch.isWhitespace(val[j])) : (j += 1) {}
+            // If followed by ':', it's an object property key — skip it
+            if (j < val.len and val[j] == ':') {
+                if (i > 0) i -= 1;
+                continue;
+            }
+            if (j < val.len and val[j] == '(') return false; // function call
+            if (std.mem.eql(u8, word, "new") or
+                std.mem.eql(u8, word, "console") or
+                std.mem.eql(u8, word, "process") or
+                std.mem.eql(u8, word, "async") or
+                std.mem.eql(u8, word, "await") or
+                std.mem.eql(u8, word, "function") or
+                std.mem.eql(u8, word, "yield")) return false;
+            // Bare identifiers that aren't true/false are also runtime refs
+            if (!std.mem.eql(u8, word, "true") and
+                !std.mem.eql(u8, word, "false") and
+                !std.mem.eql(u8, word, "null") and
+                !std.mem.eql(u8, word, "undefined") and
+                !std.mem.eql(u8, word, "const") and
+                !std.mem.eql(u8, word, "as")) return false;
+            if (i > 0) i -= 1; // back up since outer loop will increment
+        }
+    }
+    return true;
+}
+
+/// Collapse whitespace in a string to single spaces
+pub fn collapseWhitespace(alloc: std.mem.Allocator, val: []const u8) ![]const u8 {
+    var result = std.array_list.Managed(u8).init(alloc);
+    var in_ws = false;
+    var in_string = false;
+    var quote_char: u8 = 0;
+    for (val) |c| {
+        if (in_string) {
+            try result.append(c);
+            if (c == '\\') {
+                // next char is escaped, handled on next iteration
+            } else if (c == quote_char) {
+                in_string = false;
+            }
+            continue;
+        }
+        if (c == '\'' or c == '"' or c == '`') {
+            in_string = true;
+            quote_char = c;
+            in_ws = false;
+            try result.append(c);
+            continue;
+        }
+        if (ch.isWhitespace(c)) {
+            if (!in_ws) {
+                try result.append(' ');
+                in_ws = true;
+            }
+        } else {
+            in_ws = false;
+            try result.append(c);
+        }
+    }
+    return result.toOwnedSlice();
+}
+
+/// Build a clean @default annotation value from a container literal.
+/// Only includes properties with primitive or simple array values.
+/// Returns null if no clean representation is possible.
+pub fn buildCleanDefault(alloc: std.mem.Allocator, value: []const u8) !?[]const u8 {
+    return buildCleanDefaultIndented(alloc, value, 0);
+}
+
+fn buildCleanDefaultIndented(alloc: std.mem.Allocator, value: []const u8, indent: usize) !?[]const u8 {
+    const trimmed = trim(value);
+
+    // Arrays: build a clean representation
+    if (trimmed.len > 0 and trimmed[0] == '[') {
+        // Fast path: fully simple arrays — collapse whitespace and return
+        if (isSimpleArrayDefault(trimmed)) {
+            return try collapseWhitespace(alloc, trimmed);
+        }
+        // Slow path: parse elements, keep simple ones, replace complex with inferred types
+        if (trimmed.len > 1 and trimmed[trimmed.len - 1] == ']') {
+            const content = trim(trimmed[1 .. trimmed.len - 1]);
+            if (content.len == 0) return "[]";
+            const elements = try parseArrayElements(alloc, content);
+            var clean_elems = std.array_list.Managed([]const u8).init(alloc);
+            for (elements) |el| {
+                const te = trim(el);
+                // Skip 'as const' elements — type already narrow
+                if (ch.endsWith(te, " as const") or ch.endsWith(te, "as const")) continue;
+                if (isPrimitiveLiteral(te) or std.mem.eql(u8, te, "null") or std.mem.eql(u8, te, "undefined")) {
+                    try clean_elems.append(te);
+                } else if (te.len > 0 and te[0] == '[' and isSimpleArrayDefault(te)) {
+                    try clean_elems.append(try collapseWhitespace(alloc, te));
+                } else if (te.len > 0 and te[0] == '{') {
+                    if (try buildCleanDefaultIndented(alloc, te, indent)) |nested| {
+                        try clean_elems.append(nested);
+                    }
+                } else {
+                    // Complex element: show inferred type instead
+                    const inferred = try inferNarrowType(alloc, te, false, false, 0);
+                    if (!std.mem.eql(u8, inferred, "unknown")) {
+                        try clean_elems.append(inferred);
+                    }
+                }
+            }
+            const items = clean_elems.items;
+            if (items.len == 0) return null;
+            var result = std.array_list.Managed(u8).init(alloc);
+            try result.append('[');
+            for (items, 0..) |item, idx| {
+                if (idx > 0) try result.appendSlice(", ");
+                try result.appendSlice(item);
+            }
+            try result.append(']');
+            const slice = try result.toOwnedSlice();
+            return @as(?[]const u8, slice);
+        }
+        return null;
+    }
+
+    // Objects: include only properties with primitive/simple values
+    if (trimmed.len > 1 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
+        const content = trim(trimmed[1 .. trimmed.len - 1]);
+        if (content.len == 0) return "{}";
+
+        const properties = try parseObjectProperties(alloc, content);
+
+        // Collect clean props
+        var prop_strs = std.array_list.Managed([]const u8).init(alloc);
+        for (properties) |prop| {
+            const tv = trim(prop[1]);
+            // Skip 'as const' properties — their types are already narrow literals,
+            // so @defaultValue would be redundant (the type IS the value)
+            if (ch.endsWith(tv, " as const") or ch.endsWith(tv, "as const")) continue;
+            var prop_str = std.array_list.Managed(u8).init(alloc);
+            if (isPrimitiveLiteral(tv)) {
+                try prop_str.appendSlice(prop[0]);
+                try prop_str.appendSlice(": ");
+                try prop_str.appendSlice(tv);
+                try prop_strs.append(try prop_str.toOwnedSlice());
+            } else if (tv.len > 0 and tv[0] == '[' and isSimpleArrayDefault(tv)) {
+                try prop_str.appendSlice(prop[0]);
+                try prop_str.appendSlice(": ");
+                const collapsed = try collapseWhitespace(alloc, tv);
+                try prop_str.appendSlice(collapsed);
+                try prop_strs.append(try prop_str.toOwnedSlice());
+            } else if (tv.len > 0 and tv[0] == '{') {
+                if (try buildCleanDefaultIndented(alloc, tv, indent + 1)) |nested| {
+                    try prop_str.appendSlice(prop[0]);
+                    try prop_str.appendSlice(": ");
+                    try prop_str.appendSlice(nested);
+                    try prop_strs.append(try prop_str.toOwnedSlice());
+                }
+            } else if (tv.len > 0 and tv[0] != '[' and (ch.contains(tv, "=>") or ch.startsWith(tv, "function") or ch.startsWith(tv, "async"))) {
+                // Functions: include with their inferred type signature
+                const fn_type = try inferFunctionType(alloc, tv, false, 0, true);
+                try prop_str.appendSlice(prop[0]);
+                try prop_str.appendSlice(": ");
+                try prop_str.appendSlice(fn_type);
+                try prop_strs.append(try prop_str.toOwnedSlice());
+            }
+        }
+
+        const items = prop_strs.items;
+        if (items.len == 0) return null;
+
+        // Try one-line first
+        var one_line = std.array_list.Managed(u8).init(alloc);
+        try one_line.appendSlice("{ ");
+        for (items, 0..) |item, idx| {
+            if (idx > 0) try one_line.appendSlice(", ");
+            try one_line.appendSlice(item);
+        }
+        try one_line.appendSlice(" }");
+        const one_line_str = try one_line.toOwnedSlice();
+
+        if (one_line_str.len <= 80) return one_line_str;
+
+        // Multi-line with proper indentation
+        const pad_size = (indent + 1) * 2;
+        const close_pad_size = indent * 2;
+        var result = std.array_list.Managed(u8).init(alloc);
+        try result.appendSlice("{\n");
+        for (items, 0..) |item, idx| {
+            var p: usize = 0;
+            while (p < pad_size) : (p += 1) try result.append(' ');
+            try result.appendSlice(item);
+            if (idx < items.len - 1) try result.append(',');
+            try result.append('\n');
+        }
+        {
+            var p: usize = 0;
+            while (p < close_pad_size) : (p += 1) try result.append(' ');
+        }
+        try result.append('}');
+        return try result.toOwnedSlice();
+    }
+
+    return null;
 }
 
 /// Infer object type from object literal
@@ -778,8 +1037,6 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     try parts.appendSlice("{\n  ");
     for (properties, 0..) |prop, idx| {
         if (idx > 0) try parts.appendSlice(";\n  ");
-        try parts.appendSlice(prop[0]); // key
-        try parts.appendSlice(": ");
         var val_type = try inferNarrowType(alloc, prop[1], is_const, false, depth + 1);
         // Clean method signatures in inferred types
         if (ch.contains(val_type, "=>")) {
@@ -789,6 +1046,16 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             // Only strip async keyword without collapsing whitespace
             val_type = try stripAsyncKeyword(alloc, val_type);
         }
+
+        // Add inline @defaultValue for widened primitive properties
+        const raw_val = trim(prop[1]);
+        if (!is_const and isBaseType(val_type) and isPrimitiveLiteral(raw_val)) {
+            try parts.appendSlice("/** @defaultValue ");
+            try parts.appendSlice(raw_val);
+            try parts.appendSlice(" */\n  ");
+        }
+        try parts.appendSlice(prop[0]); // key
+        try parts.appendSlice(": ");
         try parts.appendSlice(val_type);
     }
     try parts.appendSlice("\n}");
@@ -834,14 +1101,15 @@ fn inferNewExpressionType(alloc: std.mem.Allocator, value: []const u8) InferErro
 }
 
 /// Infer type from Promise expression
-fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, depth: usize) InferError![]const u8 {
+fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
     if (ch.startsWith(value, "Promise.resolve(")) {
         // Extract argument
         const paren_start = std.mem.indexOf(u8, value, "(") orelse return "Promise<unknown>";
         const paren_end = std.mem.lastIndexOf(u8, value, ")") orelse return "Promise<unknown>";
         if (paren_end > paren_start + 1) {
             const arg = trim(value[paren_start + 1 .. paren_end]);
-            const arg_type = try inferNarrowType(alloc, arg, false, false, depth + 1);
+            // Promise resolved values are immutable, so preserve is_const from context
+            const arg_type = try inferNarrowType(alloc, arg, is_const, false, depth + 1);
             var result = std.array_list.Managed(u8).init(alloc);
             try result.appendSlice("Promise<");
             try result.appendSlice(arg_type);
@@ -877,13 +1145,13 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, depth: usize) I
                             };
                             if (pe > ps + 1) {
                                 const inner_arg = trim(elem[ps + 1 .. pe]);
-                                const inner_type = try inferNarrowType(alloc, inner_arg, true, false, depth + 1);
+                                const inner_type = try inferNarrowType(alloc, inner_arg, is_const, false, depth + 1);
                                 try result.appendSlice(inner_type);
                             } else {
                                 try result.appendSlice("unknown");
                             }
                         } else {
-                            const elem_type = try inferNarrowType(alloc, elem, true, false, depth + 1);
+                            const elem_type = try inferNarrowType(alloc, elem, is_const, false, depth + 1);
                             try result.appendSlice(elem_type);
                         }
                     }
@@ -899,7 +1167,7 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, depth: usize) I
 }
 
 /// Infer function type from function expression
-pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: bool, depth: usize) InferError![]const u8 {
+pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: bool, depth: usize, is_const: bool) InferError![]const u8 {
     const trimmed = trim(value);
 
     // Handle very complex function types early
@@ -935,7 +1203,7 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
 
             var return_type: []const u8 = "unknown";
             if (body.len > 0 and body[0] != '{') {
-                return_type = try inferNarrowType(alloc, body, false, false, depth + 1);
+                return_type = try inferNarrowType(alloc, body, is_const, false, depth + 1);
             }
 
             var result = std.array_list.Managed(u8).init(alloc);
@@ -1001,7 +1269,7 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
                 const inner = try extractInnerFunctionSignature(alloc, body, generics);
                 return_type = inner;
             } else if (!in_union) {
-                return_type = try inferNarrowType(alloc, body, false, false, depth + 1);
+                return_type = try inferNarrowType(alloc, body, is_const, false, depth + 1);
             }
 
             var result = std.array_list.Managed(u8).init(alloc);

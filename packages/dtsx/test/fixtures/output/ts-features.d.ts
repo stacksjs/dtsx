@@ -40,10 +40,15 @@ export declare const DEEP_CONFIG: {
 }
 }
 };
-/** Object with computed properties */
+/**
+ * Object with computed properties
+ * @defaultValue `{ [COMPUTED_KEY]: 'value', [`prefix_${COMPUTED_KEY}`]: 'prefixed' }`
+ */
 export declare const computedObject: {
-  [COMPUTED_KEY]: 'value';
-  [`prefix_${COMPUTED_KEY}`]: 'prefixed'
+  /** @defaultValue 'value' */
+  [COMPUTED_KEY]: string;
+  /** @defaultValue 'prefixed' */
+  [`prefix_${COMPUTED_KEY}`]: string
 };
 /** Custom symbol */
 export declare const customSymbol: symbol;

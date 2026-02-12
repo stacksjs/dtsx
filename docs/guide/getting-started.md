@@ -5,7 +5,7 @@ description: Learn how to install and use dtsx for TypeScript declaration file g
 
 # Getting Started
 
-dtsx is an extremely fast TypeScript declaration file (`.d.ts`) generator that infers the narrowest possible types from your source values.
+dtsx is an extremely fast TypeScript declaration file (`.d.ts`) generator that infers sound types from your source values, preserving original values via `@defaultValue` JSDoc.
 
 ## Prerequisites
 

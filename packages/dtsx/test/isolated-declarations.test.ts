@@ -151,8 +151,8 @@ describe('Const variable narrowing without annotations', () => {
     const source = `export const items = [1, 2, 3];`
     const result = processSource(source)
     expect(result).toContain('items:')
-    // Const array → readonly tuple with literal types
-    expect(result).toContain('readonly')
+    // Const array → widened number[] (sound: array elements are mutable)
+    expect(result).toContain('number[]')
   })
 
   it('should infer object type from const object', () => {
@@ -193,25 +193,23 @@ describe('Const variable narrowing without annotations', () => {
 // LET/VAR VARIABLE WIDENING (no type annotations)
 // ============================================================
 describe('Let/var variable narrowing without annotations', () => {
-  it('should narrow let string to literal type', () => {
-    // dtsx infers narrow types even for let — this is intentional
-    // for maximum type information in declarations
+  it('should widen let string to base type', () => {
+    // let/var are reassignable, so types must be widened for soundness
     const source = `export let name = 'hello';`
     const result = processSource(source)
-    expect(result).toContain('export declare let name:')
-    expect(result).toContain('hello')
+    expect(result).toContain('export declare let name: string;')
   })
 
-  it('should narrow let number to literal type', () => {
+  it('should widen let number to base type', () => {
     const source = `export let count = 42;`
     const result = processSource(source)
-    expect(result).toContain('export declare let count: 42;')
+    expect(result).toContain('export declare let count: number;')
   })
 
-  it('should narrow let boolean to literal type', () => {
+  it('should widen let boolean to base type', () => {
     const source = `export let flag = true;`
     const result = processSource(source)
-    expect(result).toContain('export declare let flag: true;')
+    expect(result).toContain('export declare let flag: boolean;')
   })
 })
 

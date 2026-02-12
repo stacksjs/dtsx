@@ -33,7 +33,7 @@ features:
     details: "Maintains JSDoc and documentation comments in generated declarations by default."
   - title: "🧠 Smart Type Inference"
     icon: "🧠"
-    details: "Intelligent type inference for complex structures including narrow types for constants."
+    details: "Sound type inference with @defaultValue preservation — values visible in IDE tooltips."
 ---
 
 <Home />

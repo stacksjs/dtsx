@@ -267,10 +267,14 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         if (type_inf.extractSatisfiesType(decl.value)) |sat_type| {
             type_annotation = sat_type;
         }
-    } else if (decl.value.len > 0 and ch.endsWith(decl.value, "as const")) {
+    } else if (decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
     } else if (type_annotation.len == 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const")) {
-        type_annotation = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
+        // Containers (objects/arrays) get widened types (sound: properties/elements are mutable)
+        // Scalars keep narrow literal types (sound: const binding is immutable)
+        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
+        const is_container = trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[');
+        type_annotation = try type_inf.inferNarrowType(alloc, decl.value, !is_container, false, 0);
     } else if (type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
         const inferred = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
         if (!std.mem.eql(u8, inferred, "unknown")) {
@@ -281,6 +285,118 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     }
 
     if (type_annotation.len == 0) type_annotation = "unknown";
+
+    // Add @defaultValue JSDoc for widened declarations
+    // Skip when value uses 'as const' — types are already narrow/self-documenting
+    const val_trimmed_for_check = std.mem.trim(u8, decl.value, " \t\n\r");
+    const has_as_const = ch.endsWith(val_trimmed_for_check, "as const");
+    if (decl.value.len > 0 and decl.type_annotation.len == 0 and !has_as_const) {
+        var default_val: ?[]const u8 = null;
+        var is_container = false;
+        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
+
+        if (!std.mem.eql(u8, kind, "const")) {
+            // let/var with widened primitives
+            const is_widened = std.mem.eql(u8, type_annotation, "string") or
+                std.mem.eql(u8, type_annotation, "number") or
+                std.mem.eql(u8, type_annotation, "boolean");
+            if (is_widened and trimmed_val.len > 0) {
+                default_val = trimmed_val;
+            }
+        } else if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
+            // const containers — clean @defaultValue with only primitive/simple values
+            default_val = try type_inf.buildCleanDefault(alloc, trimmed_val);
+            is_container = true;
+        }
+
+        // Skip generated @defaultValue if user already has one
+        if (std.mem.indexOf(u8, comments, "@defaultValue") != null) {
+            default_val = null;
+        }
+
+        if (default_val) |dv| {
+            // Build the @defaultValue tag content
+            var tag_buf = std.array_list.Managed(u8).init(alloc);
+            if (std.mem.indexOf(u8, dv, "\n")) |_| {
+                // Multi-line: use code fence (TSDoc standard)
+                try tag_buf.appendSlice("@defaultValue\n * ```ts\n");
+                var line_iter = std.mem.splitScalar(u8, dv, '\n');
+                while (line_iter.next()) |line| {
+                    try tag_buf.appendSlice(" * ");
+                    try tag_buf.appendSlice(line);
+                    try tag_buf.append('\n');
+                }
+                try tag_buf.appendSlice(" * ```");
+            } else if (is_container) {
+                try tag_buf.appendSlice("@defaultValue `");
+                try tag_buf.appendSlice(dv);
+                try tag_buf.append('`');
+            } else {
+                try tag_buf.appendSlice("@defaultValue ");
+                try tag_buf.appendSlice(dv);
+            }
+            const default_tag = try tag_buf.toOwnedSlice();
+
+            var rebuilt = std.array_list.Managed(u8).init(alloc);
+
+            // Try to merge into existing JSDoc comment block
+            const closing_idx = std.mem.lastIndexOf(u8, comments, "*/");
+            if (closing_idx != null and comments.len > 0) {
+                // Inject @defaultValue before closing */
+                const before_raw = comments[0..closing_idx.?];
+                // Trim trailing whitespace from before
+                var end = before_raw.len;
+                while (end > 0 and (before_raw[end - 1] == ' ' or before_raw[end - 1] == '\t' or before_raw[end - 1] == '\n' or before_raw[end - 1] == '\r')) : (end -= 1) {}
+                const before = before_raw[0..end];
+                // Convert single-line `/** text` to multi-line `/**\n * text`
+                if (before.len > 4 and ch.startsWith(before, "/** ") and std.mem.indexOf(u8, before, "\n") == null) {
+                    try rebuilt.appendSlice("/**\n * ");
+                    try rebuilt.appendSlice(before[4..]);
+                } else {
+                    try rebuilt.appendSlice(before);
+                }
+                try rebuilt.appendSlice("\n * ");
+                try rebuilt.appendSlice(default_tag);
+                try rebuilt.appendSlice("\n */\n");
+            } else if (comments.len > 0) {
+                // Line comment (// ...) — convert to JSDoc block and merge
+                const trimmed_cmt = std.mem.trim(u8, comments, " \t\n\r");
+                // Strip leading "// " prefix
+                const cmt_text = if (ch.startsWith(trimmed_cmt, "// "))
+                    trimmed_cmt[3..]
+                else if (ch.startsWith(trimmed_cmt, "//"))
+                    trimmed_cmt[2..]
+                else
+                    trimmed_cmt;
+                try rebuilt.appendSlice("/**\n * ");
+                try rebuilt.appendSlice(cmt_text);
+                try rebuilt.appendSlice("\n * ");
+                try rebuilt.appendSlice(default_tag);
+                try rebuilt.appendSlice("\n */\n");
+            } else {
+                // No existing comments — create standalone JSDoc
+                if (std.mem.indexOf(u8, default_tag, "\n") != null) {
+                    try rebuilt.appendSlice("/**\n * ");
+                    try rebuilt.appendSlice(default_tag);
+                    try rebuilt.appendSlice("\n */\n");
+                } else {
+                    try rebuilt.appendSlice("/** ");
+                    try rebuilt.appendSlice(default_tag);
+                    try rebuilt.appendSlice(" */\n");
+                }
+            }
+
+            if (decl.is_exported) try rebuilt.appendSlice("export ");
+            try rebuilt.appendSlice("declare ");
+            try rebuilt.appendSlice(kind);
+            try rebuilt.append(' ');
+            try rebuilt.appendSlice(decl.name);
+            try rebuilt.appendSlice(": ");
+            try rebuilt.appendSlice(type_annotation);
+            try rebuilt.append(';');
+            return rebuilt.toOwnedSlice();
+        }
+    }
 
     try result.appendSlice(": ");
     try result.appendSlice(type_annotation);

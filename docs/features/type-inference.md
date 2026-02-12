@@ -1,19 +1,24 @@
 # Type Inference
 
-dtsx generates the **narrowest possible types** from your source values — no `isolatedDeclarations` flag required, no explicit type annotations needed. Where other tools emit broad types like `string`, `number`, or `number[]`, dtsx preserves the exact literal types from your code.
+dtsx generates **sound, narrow types** with `@defaultValue` preservation — no `isolatedDeclarations` flag required, no explicit type annotations needed. Where tsc and oxc silently discard original values when widening types, dtsx preserves them as standard `@defaultValue` JSDoc so they surface in IDE hover tooltips.
 
 ## How It Works
 
-dtsx reads every initializer value and infers the precise type:
+In TypeScript, `const` only makes the _binding_ immutable — object properties and array elements remain mutable. This means `const config = { timeout: 5000 }` allows `config.timeout = 9999`, so the declared type must be `number`, not `5000`.
 
-- **`const` declarations** → literal types (`42`, `'hello'`, `true`)
-- **Objects** → exact property shapes with literal value types
-- **Arrays** → readonly tuples with per-element types
-- **`as const`** → deeply readonly literal types at every level
+dtsx generates **sound** types (correctly widened for mutable containers) while preserving original values via `@defaultValue` JSDoc:
+
+- **Scalar `const`** → literal types (`3000`, `'hello'`, `true`) — truly immutable
+- **`const` objects** → widened property types + `@defaultValue` per property
+- **`const` arrays** → `T[]` + `@defaultValue` with original elements
+- **`as const`** → deeply readonly literal types at every level (no `@defaultValue` needed)
+- **`let`/`var`** → widened types + `@defaultValue`
 - **Generic annotations** → replaced with narrow types inferred from the value
-- **`let`/`var`** → narrow inference (`'hello'` not `string`)
+- **Promise types** → narrow resolved types (immutable)
 
-## Literal Types
+## Scalar Constants
+
+Scalar `const` bindings are truly immutable — the value can never change:
 
 ```ts
 // Source
@@ -22,26 +27,38 @@ export const name = 'Stacks'
 export const debug = true
 export const bigInt = 123n
 export const greeting = `Hello World`
-export let test = 'test'
-export var hello = 'Hello World'
 ```
 
 ```ts
-// Generated .d.ts
+// Generated .d.ts — exact literal types
 export declare const port: 3000
 export declare const name: 'Stacks'
 export declare const debug: true
 export declare const bigInt: 123n
 export declare const greeting: `Hello World`
-export declare let test: 'test'
-export declare var hello: 'Hello World'
 ```
 
-Every value is preserved as its exact literal type.
+## Mutable Bindings
 
-## Object Types
+`let` and `var` bindings are mutable, so types are widened. The original value is preserved via `@defaultValue`:
 
-dtsx infers exact property types from object values — no `as const` needed:
+```ts
+// Source
+export let test = 'test'
+export var hello = 'Hello World'
+```
+
+```ts
+// Generated .d.ts — widened types with @defaultValue
+/** @defaultValue 'test' */
+export declare let test: string
+/** @defaultValue 'Hello World' */
+export declare var hello: string
+```
+
+## Object Types with `@defaultValue`
+
+Object properties are mutable (even on a `const` binding), so dtsx widens property types and adds `@defaultValue` annotations to preserve the original values:
 
 ```ts
 // Source
@@ -58,42 +75,56 @@ export const config = {
 ```
 
 ```ts
-// Generated .d.ts
+// Generated .d.ts — sound types with @defaultValue
+/**
+ * @defaultValue
+ * ```ts
+ * {
+ *   apiUrl: 'https://api.stacksjs.org',
+ *   timeout: 5000,
+ *   retries: 3,
+ *   features: { darkMode: true, notifications: false },
+ *   routes: ['/', '/about', '/contact']
+ * }
+ * ```
+ */
 export declare const config: {
-  apiUrl: 'https://api.stacksjs.org';
-  timeout: 5000;
-  retries: 3;
+  /** @defaultValue 'https://api.stacksjs.org' */
+  apiUrl: string;
+  /** @defaultValue 5000 */
+  timeout: number;
+  /** @defaultValue 3 */
+  retries: number;
   features: {
-    darkMode: true;
-    notifications: false
+    /** @defaultValue true */
+    darkMode: boolean;
+    /** @defaultValue false */
+    notifications: boolean
   };
-  routes: readonly ['/', '/about', '/contact']
+  routes: string[]
 }
 ```
 
-Every property gets its literal type. Arrays become readonly tuples.
+Every property gets its widened type with the original value in `@defaultValue`. Hovering any property in your IDE shows the default.
 
-## Array → Readonly Tuple
+## Array Types with `@defaultValue`
 
-Arrays are automatically converted to readonly tuples with exact element types:
+Arrays in mutable containers are widened to `T[]`. The original elements are preserved via `@defaultValue`:
 
 ```ts
 // Source
 export const items = [1, 2, 3]
-export const mixed = ['hello', 42, true]
-export const nested = [[1, 2], [3, 4]]
 ```
 
 ```ts
 // Generated .d.ts
-export declare const items: readonly [1, 2, 3]
-export declare const mixed: readonly ['hello', 42, true]
-export declare const nested: readonly [readonly [1, 2], readonly [3, 4]]
+/** @defaultValue `[1, 2, 3]` */
+export declare const items: number[]
 ```
 
 ## Deep `as const`
 
-`as const` declarations get deeply readonly literal types at every nesting level:
+`as const` declarations are explicitly immutable — types stay narrow with no widening and no `@defaultValue` (the types are already self-documenting):
 
 ```ts
 // Source
@@ -112,7 +143,7 @@ export const CONFIG = {
 ```
 
 ```ts
-// Generated .d.ts
+// Generated .d.ts — exact literal types, no @defaultValue needed
 export declare const CONFIG: {
   api: {
     baseUrl: 'https://api.example.com';
@@ -155,9 +186,11 @@ export declare const conf: {
 }
 ```
 
-This applies to these generic types: `any`, `object`, `unknown`, `Record<K, V>`, `Array<T>`, and `{ [key: K]: V }` index signatures.
+This applies to these generic types: `any`, `object`, `unknown`, `Record<K, V>`, `T[]`, and `{ [key: K]: V }` index signatures.
 
 ## Promise Types
+
+Promise resolved values are immutable, so dtsx preserves the narrow type:
 
 ```ts
 // Source
@@ -173,21 +206,28 @@ export declare const promiseVal: Promise<42>
 
 All output below is from running the same source file through each tool. Nothing hand-edited.
 
-### Literal Values
+### Why dtsx Preserves Values
+
+All three tools correctly widen mutable container properties. The difference is what happens to the original values:
+
+| Tool | Widened type | Original value preserved? |
+|---|---|---|
+| **dtsx** | `/** @defaultValue 5000 */ timeout: number` | **Yes** — via `@defaultValue` JSDoc |
+| tsc | `timeout: number` | No — value lost entirely |
+| oxc | `timeout: number` | No — value lost entirely |
+
+### Scalar Constants
 
 ```ts
 export const port = 3000
 export const debug = true
-export const items = [1, 2, 3]
 ```
 
-| | `port` | `debug` | `items` |
-|---|---|---|---|
-| **dtsx** | **`3000`** | **`true`** | **`readonly [1, 2, 3]`** |
-| oxc | `3e3` _(mangled!)_ | `boolean` | `unknown` _(error)_ |
-| tsc | `3000` | `true` | `number[]` |
-
-> oxc and tsc only narrow arrays with explicit `as const`. dtsx always narrows.
+| | `port` | `debug` |
+|---|---|---|
+| **dtsx** | `3000` | `true` |
+| tsc | `3000` | `true` |
+| oxc | `3e3` _(mangled!)_ | `boolean` |
 
 ### Object Properties
 
@@ -200,12 +240,12 @@ export const config = {
 }
 ```
 
-| Property | dtsx | oxc | tsc |
+| Property | dtsx | tsc | oxc |
 |---|---|---|---|
-| `apiUrl` | **`'https://api.stacksjs.org'`** | `string` | `string` |
-| `timeout` | **`5000`** | `number` | `number` |
-| `darkMode` | **`true`** | `boolean` | `boolean` |
-| `routes` | **`readonly ['/', '/about', '/contact']`** | `unknown` _(error)_ | `string[]` |
+| `apiUrl` | `string` + `@defaultValue` | `string` | `string` |
+| `timeout` | `number` + `@defaultValue` | `number` | `number` |
+| `darkMode` | `boolean` + `@defaultValue` | `boolean` | `boolean` |
+| `routes` | `string[]` | `string[]` | `unknown` _(error)_ |
 
 ### Generic Annotations
 
@@ -219,8 +259,8 @@ export const conf: { [key: string]: string } = {
 | Tool | Output |
 |---|---|
 | **dtsx** | `{ apiUrl: 'https://api.stacksjs.org'; timeout: '5000' }` |
-| oxc | `{ [key: string]: string }` — kept broad |
 | tsc | `{ [key: string]: string }` — kept broad |
+| oxc | `{ [key: string]: string }` — kept broad |
 
 ### Promise Types
 
@@ -230,34 +270,35 @@ export const promiseVal = Promise.resolve(42)
 
 | Tool | Output |
 |---|---|
-| **dtsx** | `Promise<42>` |
-| oxc | `unknown` _(error — requires explicit annotation)_ |
+| **dtsx** | `Promise<42>` _(resolved values are immutable)_ |
 | tsc | `Promise<number>` |
+| oxc | `unknown` _(error — requires explicit annotation)_ |
 
 ### Full Summary
 
-| Declaration | dtsx | oxc | tsc |
+| Declaration | dtsx | tsc | oxc |
 |---|---|---|---|
-| `const port = 3000` | `3000` | `3e3` | `3000` |
-| `const debug = true` | `true` | `boolean` | `true` |
-| `const items = [1,2,3]` | `readonly [1,2,3]` | `unknown` (error) | `number[]` |
-| `config.apiUrl` | `'https://...'` | `string` | `string` |
-| `config.timeout` | `5000` | `number` | `number` |
-| `config.routes` | readonly tuple | `unknown` (error) | `string[]` |
+| `const port = 3000` | `3000` | `3000` | `3e3` |
+| `const debug = true` | `true` | `true` | `boolean` |
+| `const items = [1,2,3]` | `number[]` + `@defaultValue` | `number[]` | `unknown` (error) |
+| `config.apiUrl` | `string` + `@defaultValue` | `string` | `string` |
+| `config.timeout` | `number` + `@defaultValue` | `number` | `number` |
+| `config.routes` | `string[]` | `string[]` | `unknown` (error) |
 | `conf` _(generic annotation)_ | exact properties | `{ [key]: string }` | `{ [key]: string }` |
-| `Promise.resolve(42)` | `Promise<42>` | `unknown` (error) | `Promise<number>` |
-| **Errors** | **0** | **3** | **0** |
+| `Promise.resolve(42)` | `Promise<42>` | `Promise<number>` | `unknown` (error) |
+| **Value info preserved?** | **Yes** | **No** | **No** |
+| **Errors** | **0** | **0** | **3** |
 
+- **tsc** compiles fine but widens object properties to `string`/`number`/`boolean` and arrays to `type[]`. Original values are lost.
 - **oxc** uses `isolatedDeclarations` mode which requires explicit type annotations or `as const` — without them it errors and emits `unknown`.
-- **tsc** compiles fine but broadens object properties to `string`/`number`/`boolean` and arrays to `type[]`.
 - **tsc --isolatedDeclarations** produces the same 3 errors as oxc and refuses to emit output.
-- **dtsx** infers the narrowest type from every value automatically. Zero errors, zero annotations needed.
+- **dtsx** produces sound, widened types and preserves every original value via `@defaultValue` JSDoc. Zero errors, zero annotations needed.
 
 ## isolatedDeclarations (Optional)
 
 dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx skips parsing initializer values for declarations that already have explicit, non-generic type annotations — saving time without sacrificing correctness.
 
-When disabled (the default), dtsx reads every initializer and infers the narrowest possible type. This is the recommended mode for most projects.
+When disabled (the default), dtsx reads every initializer and infers the correct type. This is the recommended mode for most projects.
 
 ```json
 {

@@ -241,17 +241,17 @@ describe('zig-dtsx', () => {
       expect(result).toContain('count: number')
     })
 
-    test('const array — readonly tuple', () => {
+    test('const array — widened array type', () => {
       const result = dts(`export const items = [1, 2, 3]`)
-      expect(result).toContain('readonly [1, 2, 3]')
+      expect(result).toContain('number[]')
     })
 
-    test('const mixed array — readonly tuple', () => {
+    test('const mixed array — widened array union type', () => {
       const result = dts(`export const mixed = ['a', 1, true]`)
-      expect(result).toContain('readonly')
-      expect(result).toContain("'a'")
-      expect(result).toContain('1')
-      expect(result).toContain('true')
+      expect(result).toContain('string')
+      expect(result).toContain('number')
+      expect(result).toContain('boolean')
+      expect(result).toContain(')[]')
     })
 
     test('const empty array', () => {
@@ -259,16 +259,18 @@ describe('zig-dtsx', () => {
       expect(result).toContain('declare const empty')
     })
 
-    test('const object literal', () => {
+    test('const object literal — widened with declaration-level @defaultValue', () => {
       const result = dts(`export const obj = { a: 1, b: 'two' }`)
-      expect(result).toContain('a: 1')
-      expect(result).toContain("b: 'two'")
+      expect(result).toContain('a: number')
+      expect(result).toContain('b: string')
+      expect(result).toContain("@defaultValue `{ a: 1, b: 'two' }`")
     })
 
-    test('const nested object', () => {
+    test('const nested object — widened with declaration-level @defaultValue', () => {
       const result = dts(`export const nested = { inner: { value: 42 } }`)
       expect(result).toContain('inner:')
-      expect(result).toContain('value: 42')
+      expect(result).toContain('value: number')
+      expect(result).toContain("@defaultValue `{ inner: { value: 42 } }`")
     })
 
     test('const with as const', () => {
@@ -1177,7 +1179,7 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
     test('const with comma operator value (tricky)', () => {
       // Comma in array initializer
       const result = dts(`export const arr = [1, 2, 3, 4, 5]`)
-      expect(result).toContain('readonly [1, 2, 3, 4, 5]')
+      expect(result).toContain('number[]')
     })
 
     test('function with string param default', () => {
