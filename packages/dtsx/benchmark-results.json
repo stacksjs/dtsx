@@ -1,0 +1,359 @@
+{
+  "timestamp": "2026-02-13T02:47:23.738Z",
+  "platform": "darwin arm64",
+  "nodeVersion": "v24.3.0",
+  "suites": [
+    {
+      "name": "Extraction",
+      "results": [
+        {
+          "name": "Simple (0001.ts)",
+          "avgTimeMs": 0.0008353499999984137,
+          "minTimeMs": 0.00045800000000895125,
+          "maxTimeMs": 0.003500000000002501,
+          "throughputCharsPerSec": 847548931.5871724,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "Medium (0002.ts)",
+          "avgTimeMs": 0.0009958999999966523,
+          "minTimeMs": 0.0004999999999881766,
+          "maxTimeMs": 0.002083999999996422,
+          "throughputCharsPerSec": 988051009.140785,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "Complex (0003.ts)",
+          "avgTimeMs": 0.0005227499999989505,
+          "minTimeMs": 0.0002910000000042601,
+          "maxTimeMs": 0.0037079999999889424,
+          "throughputCharsPerSec": 2525107604.0222864,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "Very Complex (0005.ts)",
+          "avgTimeMs": 0.0038103499999991184,
+          "minTimeMs": 0.0037499999999965894,
+          "maxTimeMs": 0.00437499999998181,
+          "throughputCharsPerSec": 21947065230.233273,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "Lodash-like (real-world)",
+          "avgTimeMs": 0.0013980499999988183,
+          "minTimeMs": 0.0012919999999780885,
+          "maxTimeMs": 0.002125000000006594,
+          "throughputCharsPerSec": 18456421444.169956,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "React-like (real-world)",
+          "avgTimeMs": 0.0016999000000012642,
+          "minTimeMs": 0.0015839999999798238,
+          "maxTimeMs": 0.002416000000010854,
+          "throughputCharsPerSec": 19685863874.33091,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        }
+      ],
+      "totalTimeMs": 14.793708999999978
+    },
+    {
+      "name": "Synthetic",
+      "results": [
+        {
+          "name": "100 lines",
+          "avgTimeMs": 0.0006280240000007211,
+          "minTimeMs": 0.0004590000000064265,
+          "maxTimeMs": 0.004291999999992413,
+          "throughputCharsPerSec": 11243200896.768105,
+          "memoryUsedMB": 0,
+          "iterations": 500
+        },
+        {
+          "name": "500 lines",
+          "avgTimeMs": 0.0018103800000000092,
+          "minTimeMs": 0.0017080000000078144,
+          "maxTimeMs": 0.003666000000009717,
+          "throughputCharsPerSec": 19885880312.420494,
+          "memoryUsedMB": 0,
+          "iterations": 100
+        },
+        {
+          "name": "1000 lines",
+          "avgTimeMs": 0.0033216399999997748,
+          "minTimeMs": 0.003208000000000766,
+          "maxTimeMs": 0.003957999999983031,
+          "throughputCharsPerSec": 21766657434.28093,
+          "memoryUsedMB": 0,
+          "iterations": 50
+        },
+        {
+          "name": "5000 lines",
+          "avgTimeMs": 0.01680400000000475,
+          "minTimeMs": 0.016666000000014947,
+          "maxTimeMs": 0.017042000000003554,
+          "throughputCharsPerSec": 22191204475.1187,
+          "memoryUsedMB": 0,
+          "iterations": 10
+        },
+        {
+          "name": "10000 lines",
+          "avgTimeMs": 0.03336660000000506,
+          "minTimeMs": 0.03308300000000486,
+          "maxTimeMs": 0.033959000000010064,
+          "throughputCharsPerSec": 22474600348.848434,
+          "memoryUsedMB": 0,
+          "iterations": 5
+        }
+      ],
+      "totalTimeMs": 21.384667000000007
+    },
+    {
+      "name": "Memory",
+      "results": [
+        {
+          "name": "Large File Memory",
+          "avgTimeMs": 10.332791999999984,
+          "minTimeMs": 10.332791999999984,
+          "maxTimeMs": 10.332791999999984,
+          "throughputCharsPerSec": 72574866.502684,
+          "memoryUsedMB": 7,
+          "iterations": 1
+        }
+      ],
+      "totalTimeMs": 11.925291999999985
+    },
+    {
+      "name": "Real-World",
+      "results": [
+        {
+          "name": "Lodash-like",
+          "avgTimeMs": 0.0015541999999996391,
+          "minTimeMs": 0.0013329999999882602,
+          "maxTimeMs": 0.0029159999999990305,
+          "throughputCharsPerSec": 16602110410.504435,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        },
+        {
+          "name": "React-like",
+          "avgTimeMs": 0.00482095000000129,
+          "minTimeMs": 0.0030830000000037217,
+          "maxTimeMs": 0.015166999999991049,
+          "throughputCharsPerSec": 6941370476.771393,
+          "memoryUsedMB": 0,
+          "iterations": 20
+        }
+      ],
+      "totalTimeMs": 1.5345829999999978
+    },
+    {
+      "name": "Generation",
+      "results": [
+        {
+          "name": "Single File (100 lines)",
+          "avgTimeMs": 0.3018291999999974,
+          "minTimeMs": 0.2411249999999825,
+          "maxTimeMs": 0.3756659999999954,
+          "throughputCharsPerSec": 23394025.49521405,
+          "memoryUsedMB": 0,
+          "iterations": 10
+        },
+        {
+          "name": "Medium File (1000 lines)",
+          "avgTimeMs": 0.5986254000000087,
+          "minTimeMs": 0.5259590000000003,
+          "maxTimeMs": 0.8107920000000206,
+          "throughputCharsPerSec": 120778369.9121336,
+          "memoryUsedMB": 0,
+          "iterations": 5
+        },
+        {
+          "name": "Large File (5000 lines)",
+          "avgTimeMs": 5.062277999999992,
+          "minTimeMs": 4.436167000000012,
+          "maxTimeMs": 6.1067919999999845,
+          "throughputCharsPerSec": 73662687.03536245,
+          "memoryUsedMB": 0,
+          "iterations": 3
+        }
+      ],
+      "totalTimeMs": 72.02204200000003
+    }
+  ],
+  "phaseTimings": [
+    {
+      "name": "500 lines",
+      "phases": [
+        {
+          "phase": "Processing",
+          "avgTimeMs": 0.18327179999999715,
+          "percentOfTotal": 98.575159997497,
+          "iterations": 40
+        },
+        {
+          "phase": "Extraction",
+          "avgTimeMs": 0.002172825000000245,
+          "percentOfTotal": 1.168682645238323,
+          "iterations": 40
+        },
+        {
+          "phase": "Formatting",
+          "avgTimeMs": 0.00006542499999824258,
+          "percentOfTotal": 0.035189700994168786,
+          "iterations": 40
+        },
+        {
+          "phase": "File Read",
+          "avgTimeMs": 0.0000351999999985253,
+          "percentOfTotal": 0.018932785249921587,
+          "iterations": 40
+        }
+      ],
+      "totalTimeMs": 0.18592087500000076,
+      "fileSize": 36001,
+      "lineCount": 1805
+    },
+    {
+      "name": "2000 lines",
+      "phases": [
+        {
+          "phase": "Processing",
+          "avgTimeMs": 0.7413585000000011,
+          "percentOfTotal": 98.94398674764943,
+          "iterations": 10
+        },
+        {
+          "phase": "Extraction",
+          "avgTimeMs": 0.007379300000005173,
+          "percentOfTotal": 0.9848640858740274,
+          "iterations": 10
+        },
+        {
+          "phase": "Formatting",
+          "avgTimeMs": 0.000054300000002172055,
+          "percentOfTotal": 0.007247045094393964,
+          "iterations": 10
+        },
+        {
+          "phase": "File Read",
+          "avgTimeMs": 0.000029299999997078886,
+          "percentOfTotal": 0.003910468162727071,
+          "iterations": 10
+        }
+      ],
+      "totalTimeMs": 0.7492709000000076,
+      "fileSize": 147301,
+      "lineCount": 7205
+    },
+    {
+      "name": "5000 lines",
+      "phases": [
+        {
+          "phase": "Processing",
+          "avgTimeMs": 4.161416499999987,
+          "percentOfTotal": 99.56707848921513,
+          "iterations": 4
+        },
+        {
+          "phase": "Extraction",
+          "avgTimeMs": 0.017614500000000533,
+          "percentOfTotal": 0.4214488754125761,
+          "iterations": 4
+        },
+        {
+          "phase": "Formatting",
+          "avgTimeMs": 0.0000937499999977831,
+          "percentOfTotal": 0.0022430856435887198,
+          "iterations": 4
+        },
+        {
+          "phase": "File Read",
+          "avgTimeMs": 0.00004150000000180398,
+          "percentOfTotal": 0.0009929392449619157,
+          "iterations": 4
+        }
+      ],
+      "totalTimeMs": 4.179510499999999,
+      "fileSize": 372901,
+      "lineCount": 18005
+    }
+  ],
+  "summary": {
+    "totalTimeMs": 121.660293,
+    "totalBenchmarks": 17,
+    "avgTimeMs": 0.9627701584705874
+  },
+  "crossTool": [
+    {
+      "input": "Small (~50 lines)",
+      "zigDtsxMs": 0.007409959999999955,
+      "dtsxCachedMs": 0.01751502000000187,
+      "dtsxNoCacheMs": 0.045804299999998646,
+      "oxcMs": 0.007874940000002653,
+      "tscMs": 0.752695819999999
+    },
+    {
+      "input": "Medium (~100 lines)",
+      "zigDtsxMs": 0.014915859999998702,
+      "dtsxCachedMs": 0.006166679999997768,
+      "dtsxNoCacheMs": 0.11535172000000216,
+      "oxcMs": 0.02848922000000357,
+      "tscMs": 1.2759633400000008
+    },
+    {
+      "input": "Large (~330 lines)",
+      "zigDtsxMs": 0.030826660000002448,
+      "dtsxCachedMs": 0.06776503999999477,
+      "dtsxNoCacheMs": 0.14680665999999745,
+      "oxcMs": 0.09146423999999798,
+      "tscMs": 2.822128340000006
+    },
+    {
+      "input": "XLarge (~1050 lines)",
+      "zigDtsxMs": 0.2915349800000013,
+      "dtsxCachedMs": 0.13116910000000417,
+      "dtsxNoCacheMs": 0.4782441399999993,
+      "oxcMs": 0.550759239999993,
+      "tscMs": 6.229694199999999
+    },
+    {
+      "input": "XXLarge (~2000 lines)",
+      "zigDtsxMs": 0.3642875199999844,
+      "dtsxCachedMs": 0.6038058999999976,
+      "dtsxNoCacheMs": 1.3476866199999995,
+      "oxcMs": 0.38460998000002744,
+      "tscMs": 9.66624747999997
+    },
+    {
+      "input": "Huge (~5000 lines)",
+      "zigDtsxMs": 0.9375374999999986,
+      "dtsxCachedMs": 4.132687519999995,
+      "dtsxNoCacheMs": 6.035849180000014,
+      "oxcMs": 0.9410590800000136,
+      "tscMs": 18.406624179999998
+    }
+  ],
+  "projectBench": [
+    {
+      "fileCount": 50,
+      "zigDtsxMs": 4.348541599999953,
+      "dtsxMs": 6.567142000000058,
+      "oxcMs": 8.120525199999975,
+      "tscMs": 90.44901639999989
+    },
+    {
+      "fileCount": 100,
+      "zigDtsxMs": 8.364650400000027,
+      "dtsxMs": 14.30802500000009,
+      "oxcMs": 16.688700000000246,
+      "tscMs": 176.9621251999999
+    }
+  ]
+}

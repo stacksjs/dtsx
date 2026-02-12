@@ -86,14 +86,16 @@ export function processDeclarations(
   // Extract and add triple-slash directives at the top of the file
   // Fast check: skip whitespace with charCodeAt to avoid trimStart() allocation
   const src = context.sourceCode
-  let _si = 0
-  while (_si < src.length && (src.charCodeAt(_si) === 32 || src.charCodeAt(_si) === 9 || src.charCodeAt(_si) === 10 || src.charCodeAt(_si) === 13)) _si++
-  if (_si < src.length - 2 && src.charCodeAt(_si) === 47 && src.charCodeAt(_si + 1) === 47 && src.charCodeAt(_si + 2) === 47) {
-    const tripleSlashDirectives = extractTripleSlashDirectives(src)
-    if (tripleSlashDirectives.length > 0) {
-      for (let i = 0; i < tripleSlashDirectives.length; i++) {
-        if (result) result += '\n'
-        result += tripleSlashDirectives[i]
+  if (src) {
+    let _si = 0
+    while (_si < src.length && (src.charCodeAt(_si) === 32 || src.charCodeAt(_si) === 9 || src.charCodeAt(_si) === 10 || src.charCodeAt(_si) === 13)) _si++
+    if (_si < src.length - 2 && src.charCodeAt(_si) === 47 && src.charCodeAt(_si + 1) === 47 && src.charCodeAt(_si + 2) === 47) {
+      const tripleSlashDirectives = extractTripleSlashDirectives(src)
+      if (tripleSlashDirectives.length > 0) {
+        for (let i = 0; i < tripleSlashDirectives.length; i++) {
+          if (result) result += '\n'
+          result += tripleSlashDirectives[i]
+        }
       }
     }
   }
@@ -192,13 +194,14 @@ export function processDeclarations(
   // with O(total_text_length + interfaces * total_text_length) which is more cache-friendly.
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
-    let refText = ''
+    const refParts: string[] = []
     for (const func of functions) {
-      if (func.isExported) refText += func.text + '\n'
+      if (func.isExported) refParts.push(func.text)
     }
-    for (const cls of classes) refText += cls.text + '\n'
-    for (const type of types) refText += type.text + '\n'
-    if (refText) {
+    for (const cls of classes) refParts.push(cls.text)
+    for (const type of types) refParts.push(type.text)
+    if (refParts.length > 0) {
+      const refText = refParts.join('\n')
       for (const iface of interfaces) {
         if (isWordInText(iface.name, refText)) {
           interfaceReferences.add(iface.name)
@@ -213,26 +216,26 @@ export function processDeclarations(
     // Filter imports to only include those that are used in exports or declarations
     const usedImportItems = new Set<string>()
 
-    // Build combined text for import usage detection as a single string directly
-    // (avoids intermediate array allocation + join)
-    let combinedText = ''
+    // Build combined text for import usage detection
+    const textParts: string[] = []
     for (const func of functions) {
-      if (func.isExported) combinedText += func.text + '\n'
+      if (func.isExported) textParts.push(func.text)
     }
     for (const variable of variables) {
       if (variable.isExported) {
-        combinedText += variable.text + '\n'
-        if (variable.typeAnnotation) combinedText += variable.typeAnnotation + '\n'
+        textParts.push(variable.text)
+        if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
       }
     }
     for (const iface of interfaces) {
-      if (iface.isExported || interfaceReferences.has(iface.name)) combinedText += iface.text + '\n'
+      if (iface.isExported || interfaceReferences.has(iface.name)) textParts.push(iface.text)
     }
-    for (const type of types) combinedText += type.text + '\n'
-    for (const cls of classes) combinedText += cls.text + '\n'
-    for (const enumDecl of enums) combinedText += enumDecl.text + '\n'
-    for (const mod of modules) combinedText += mod.text + '\n'
-    for (const exp of exports) combinedText += exp.text + '\n'
+    for (const type of types) textParts.push(type.text)
+    for (const cls of classes) textParts.push(cls.text)
+    for (const enumDecl of enums) textParts.push(enumDecl.text)
+    for (const mod of modules) textParts.push(mod.text)
+    for (const exp of exports) textParts.push(exp.text)
+    const combinedText = textParts.join('\n')
 
     // Import detection: search each import item once in the combined text.
     // This replaces the O(imports * text_parts) nested loop with O(imports) searches

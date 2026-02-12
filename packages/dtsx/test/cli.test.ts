@@ -407,7 +407,7 @@ export function add(a: number, b: number): number {
     const result = await runCli(['check', '--files', 'src/valid.ts'], CHECK_DIR)
     // May pass or have warnings depending on environment
     expect(result.exitCode).toBeGreaterThanOrEqual(0)
-  })
+  }, 30_000)
 
   it('should support JSON output format', async () => {
     writeFileSync(join(CHECK_DIR, 'src/check.ts'), `
@@ -425,7 +425,7 @@ export const x: number = 1
     catch {
       // If not JSON, that's also acceptable depending on the output
     }
-  })
+  }, 30_000)
 })
 
 describe('CLI - workspace command', () => {

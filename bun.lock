@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "@stacksjs/dtsx",
@@ -8,7 +7,6 @@
         "@stacksjs/bumpx": "^0.2.4",
         "@stacksjs/bunpress": "^0.1.1",
         "@stacksjs/clapp": "^0.2.0",
-        "@stacksjs/development": "^0.70.23",
         "@stacksjs/gitlint": "^0.1.5",
         "@stacksjs/logsmith": "^0.2.1",
         "@types/bun": "^1.3.9",
@@ -18,6 +16,7 @@
         "bun-plugin-dtsx": "workspace:*",
         "mitata": "^1.0.34",
         "oxc-transform": "^0.112.0",
+        "pickier": "^0.1.17",
         "typescript": "^5.9.3",
       },
     },
@@ -63,7 +62,7 @@
         "@stacksjs/dtsx": "workspace:*",
       },
       "peerDependencies": {
-        "tsup": "^6.0.0 || ^7.0.0 || ^8.0.0",
+        "tsup": "^8.5.1",
       },
     },
     "packages/vite-plugin": {
@@ -301,10 +300,6 @@
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.57.1", "", { "os": "win32", "cpu": "x64" }, "sha512-mxRFDdHIWRxg3UfIIAwCm6NzvxG0jDX/wBN6KsQFTvKFqqg9vTrWUE68qEjHt19A5wwx5X5aUi2zuZT7YR0jrA=="],
 
-    "@stacksjs/alias": ["@stacksjs/alias@0.70.22", "", {}, "sha512-NzW6bHl0uwLMa37/X0ScE6ju3hYWDwMh2fUk4vZGMx1ivyY9b3xG+KUSiGCTIYhCmIN5W5cWpQ2t3/kqnp0YqQ=="],
-
-    "@stacksjs/build": ["@stacksjs/build@0.70.22", "", {}, "sha512-IkvVdQiqKVD4PLL1idTb9aE5qiUj3U5NWrWkwG3ltsKkVJrwUta+iqLqNpdfo00/bluesOF7V6oKKaSNwfIPsA=="],
-
     "@stacksjs/bumpx": ["@stacksjs/bumpx@0.2.4", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "@stacksjs/logsmith": "^0.2.1", "bunfig": "^0.15.6" }, "bin": { "bumpx": "dist/bin/cli.js" } }, "sha512-bt14GhW4QJKqmAgfTyjW0pDblDu+y6+DSX8xva1HnLk2GtLyQe0YXUs51dUvZBFgYVHcHEUijNoj2pivuwIcjQ=="],
 
     "@stacksjs/bunpress": ["@stacksjs/bunpress@0.1.1", "", { "dependencies": { "@stacksjs/ts-md": "^0.1.1" }, "optionalDependencies": { "@stacksjs/ts-cloud": "^0.1.7", "@stacksjs/ts-cloud-aws-types": "^0.1.7", "@stacksjs/ts-cloud-core": "^0.1.7", "@stacksjs/ts-cloud-types": "^0.1.7" }, "bin": { "bunpress": "./dist/bin/cli.js" } }, "sha512-hof1B0LBTWAWSWlp7+ya5JFlN9967wBNyFFmzp19tSWPFStOJRwbZ881uCrCs/iWRaj968sOrn+ELzrV01LZEg=="],
@@ -313,23 +308,11 @@
 
     "@stacksjs/clarity": ["@stacksjs/clarity@0.3.24", "", { "bin": { "clarity": "dist/bin/cli.js" } }, "sha512-QN21fT/9dovcuFTkni9LFHDzBpiBZ4Q//0a3vFJsckPiblNIu1RhwwePkkTK4j6Xu2DtVYGR60/9Scdrp6wRfw=="],
 
-    "@stacksjs/development": ["@stacksjs/development@0.70.23", "", { "dependencies": { "@stacksjs/alias": "0.70.22", "@stacksjs/build": "0.70.22", "@stacksjs/lint": "0.70.22", "@stacksjs/logging": "0.70.22", "@stacksjs/rpx": "^0.10.0", "@stacksjs/testing": "0.70.22", "@stacksjs/tinker": "0.70.22", "@stacksjs/tunnel": "0.70.22", "@stacksjs/types": "0.70.22", "bun-plugin-dtsx": "^0.21.9", "typescript": "^5.8.2" } }, "sha512-0g1LbqUMRlL4S0noWjFQnzAW8vn7Yu/r/LD5gQDVls9jf7HxHcgoFwi+polPh+8j77j5ETxgJlggFmbd/sZpwA=="],
-
     "@stacksjs/dtsx": ["@stacksjs/dtsx@workspace:packages/dtsx"],
 
     "@stacksjs/gitlint": ["@stacksjs/gitlint@0.1.5", "", { "bin": { "gitlint": "dist/bin/cli.js" } }, "sha512-5nSr6PN8/cRPdIz9Cj65Dh12N9gR7BPtJzR3rnqhAgpm5q0ihjmVTTybFQqigMcYuRpt2qX4HenV7YXuFOYScw=="],
 
-    "@stacksjs/lint": ["@stacksjs/lint@0.70.22", "", {}, "sha512-9HvfH+chetjSDN9BBevMIBbokwVZh69K8KEHz7SsbmWETIkFlhEOh7oda8wCwInN8sXJV8UhL00Buy9FQVBUbA=="],
-
-    "@stacksjs/logging": ["@stacksjs/logging@0.70.22", "", {}, "sha512-Lk/ancAR9zTykc3+EgQxlLMR+E+3z8tTMWoemacGHdeCEed0KNbtsgLi03JxWwh0mZLMPSddFhJ6FPVpylOq5A=="],
-
     "@stacksjs/logsmith": ["@stacksjs/logsmith@0.2.1", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "bunfig": "^0.15.6", "pickier": "^0.1.7" }, "bin": { "logsmith": "dist/bin/cli.js", "@stacksjs/logsmith": "dist/bin/cli.js" } }, "sha512-JbAnn0dWZDEBjks7qRd/L0kWbsD3Qi0uSFmCPkEU9fH0+eP6Fdl7mtnok2oVDUaNitWu97OJZHlFe/MV2ilgnA=="],
-
-    "@stacksjs/rpx": ["@stacksjs/rpx@0.10.0", "", { "bin": { "rpx": "dist/bin/cli.js", "reverse-proxy": "dist/bin/cli.js" } }, "sha512-UKaNvSUxe6SzQqxKPtUV2xXwszLtSnZ2EVP8R1v16ou6Yl/eGT9xzuCSsVa38urIWo69B5TfZob9UV2B6ThptQ=="],
-
-    "@stacksjs/testing": ["@stacksjs/testing@0.70.22", "", {}, "sha512-CoBZalRy7WO4Y8BkXsyTosPYP58Et1oSSVigSYCoznSxKolk68B1y4MpfM3V3yinWOWSQFJP3Mr1l4M1rI0DRg=="],
-
-    "@stacksjs/tinker": ["@stacksjs/tinker@0.70.22", "", {}, "sha512-JdnCQvKBH8PkLohXJibSf+5QogsCEejO5X7bnP0NkQ9QScTmwQPT4t/0ypuZ6lX0FJBZ6VpftCfHRbzfylye2g=="],
 
     "@stacksjs/ts-cloud": ["@stacksjs/ts-cloud@0.1.7", "", { "dependencies": { "@stacksjs/ts-cloud-aws-types": "0.1.7", "@stacksjs/ts-cloud-core": "0.1.7", "@stacksjs/ts-cloud-types": "0.1.7", "fast-xml-parser": "^5.3.5" }, "bin": { "cloud": "./dist/bin/cli.js" } }, "sha512-95WAmP36YBvVLTzfkKI8PrUvMuVq1HZhBflBrgOdQ17H+dGiXxO8pxLDcBMdb9ObQ3OP8vHUJ1e07UjSMQnL5g=="],
 
@@ -340,10 +323,6 @@
     "@stacksjs/ts-cloud-types": ["@stacksjs/ts-cloud-types@0.1.7", "", {}, "sha512-tcAlsNDnRd30Mgr6XUSCSZY2ks4I0b51fjZ5gJqmPJ2qaoJ3o9u68+MXmP9ewquAbVaWOgKxSAm1xSUrUXl7/g=="],
 
     "@stacksjs/ts-md": ["@stacksjs/ts-md@0.1.1", "", { "bin": { "md": "./bin/cli.ts" } }, "sha512-kvsSg7S3vHq65fnHIRggTLudN4n1sjkos86xLB62V6PVRa8iosYAmFKVDTGaJk+0MdsIoRwQbJ2vLWVcNQsgGw=="],
-
-    "@stacksjs/tunnel": ["@stacksjs/tunnel@0.70.22", "", {}, "sha512-IOpbHCQNlQAXaAZYNdclEAF2QbZN2iuegd9OMP5LZtKZ3Beo6c7VO8yQSPtJG+pvSPIS9eCLwy/biy+CYKPTLg=="],
-
-    "@stacksjs/types": ["@stacksjs/types@0.70.22", "", {}, "sha512-9zJP8PypiMyaCjLbbrQjQ3N7pfraHp4aFtItT9V/EwblTZzRlnH/x4PkFsk3JjUZGNv41BNnbTdzfcqWhV+oAg=="],
 
     "@stacksjs/zig-dtsx": ["@stacksjs/zig-dtsx@workspace:packages/zig-dtsx"],
 
@@ -656,8 +635,6 @@
     "wrap-ansi": ["wrap-ansi@9.0.2", "", { "dependencies": { "ansi-styles": "^6.2.1", "string-width": "^7.0.0", "strip-ansi": "^7.1.0" } }, "sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww=="],
 
     "yocto-queue": ["yocto-queue@1.2.2", "", {}, "sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ=="],
-
-    "@stacksjs/development/bun-plugin-dtsx": ["bun-plugin-dtsx@0.21.17", "", { "dependencies": { "@stacksjs/dtsx": "^0.9.8" } }, "sha512-gikZdPs8f7aFPREb+gBn7kaDdjpfQSLIPpVbUI+I5dusAlENvlJmKQj06aq1oS3mP7yg3gdQJBRg+PlzUV5h9g=="],
 
     "esrecurse/estraverse": ["estraverse@5.3.0", "", {}, "sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA=="],
 

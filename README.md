@@ -8,31 +8,220 @@
 
 # dtsx
 
-> A library that helps you generate TypeScript declaration files from your project. Given we do not know the user's input ever, we need to never hardcode based results based from our examples, always create a dynamic solution.
+> Extremely fast, smart `.d.ts` generation with sound type inference & `@defaultValue` preservation.
 
 ## Features
 
-- 🎯 Sound type inference with `@defaultValue` preservation — no `isolatedDeclarations` needed
-- ⚡ Extremely fast .d.ts generation
+- 🎯 Sound type inference with `@defaultValue` preservation
+- ⚡ Extremely fast `.d.ts` generation
+- 🤖 Cross-platform binary _(Zig native + Bun)_
 - 🔄 Parallel processing support
 - 📥 Stdin/stdout support for piping
-- ⚙️ Highly configurable
-- 🪶 Lightweight library
-- 🤖 Cross-platform binary
 - 👀 Watch mode for development
+- ⚙️ Highly configurable
 - ✅ Built-in validation
 
-## Type Inference — dtsx vs tsc vs oxc
+> [!NOTE]
+> dtsx works out of the box without `isolatedDeclarations` — it infers narrow types directly from your source values. That said, enabling `isolatedDeclarations` is still a good idea as it enforces explicit type annotations at module boundaries, encouraging better type hygiene across your codebase. When enabled, dtsx uses it as a fast path to skip initializer parsing where annotations are already present.
 
-dtsx generates **sound, narrow types** with `@defaultValue` preservation — no `isolatedDeclarations` flag required, no explicit type annotations needed. Where tsc and oxc silently discard original values when widening types, dtsx preserves them as standard `@defaultValue` JSDoc so they surface in IDE hover tooltips.
+## Install
 
-All output below is real — same source file, three tools, nothing hand-edited.
+```bash
+bun install -d @stacksjs/dtsx
+```
 
-### Why `@defaultValue`?
+_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
-In TypeScript, `const` only makes the _binding_ immutable — object properties and array elements remain mutable. This means `const config = { timeout: 5000 }` allows `config.timeout = 9999`, so the declared type must be `number`, not `5000`.
+<!-- _Alternatively, you can install:_
 
-All three tools correctly widen mutable container properties. The difference is what happens to the original values:
+```bash
+brew install dtsx # wip
+pkgx install dtsx # wip
+``` -->
+
+## Usage
+
+There are two ways to use dtsx: _as a library or as a CLI._ Both work out of the box — no `isolatedDeclarations` required. dtsx infers narrow types directly from your source values. If you do enable `isolatedDeclarations`, dtsx uses it as a fast path to skip initializer parsing when explicit type annotations are present.
+
+### Library
+
+```ts
+import type { DtsGenerationOptions } from '@stacksjs/dtsx'
+import { generate, processSource } from '@stacksjs/dtsx'
+
+const options: DtsGenerationOptions = {
+  cwd: './', // default: process.cwd()
+  root: './src', // default: './src'
+  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
+  outdir: './dist', // default: './dist'
+  clean: true, // default: false
+  verbose: true, // default: false
+  keepComments: true, // default: true
+  parallel: true, // default: false - process files in parallel
+  concurrency: 4, // default: 4 - number of concurrent workers
+  dryRun: false, // default: false - preview without writing
+  stats: true, // default: false - show generation statistics
+  validate: true, // default: false - validate generated .d.ts files
+}
+
+const stats = await generate(options)
+console.log(`Generated ${stats.filesGenerated} files in ${stats.durationMs}ms`)
+
+// You can also process source code directly:
+const dtsContent = processSource(`
+  export const greeting: string = "Hello";
+  export function greet(name: string): string {
+    return greeting + " " + name;
+  }
+`)
+console.log(dtsContent)
+// Output:
+// export declare const greeting: string;
+// export declare function greet(name: string): string;
+```
+
+Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js`)_ file, automatically loaded when running `./dtsx` _(or `bunx dtsx`)_ and when calling `generate()` unless custom options are provided.
+
+```ts
+// dts.config.ts (or dts.config.js)
+
+export default {
+  cwd: './',
+  root: './src',
+  entrypoints: ['**/*.ts'],
+  outdir: './dist',
+  keepComments: true,
+  clean: true,
+  verbose: true,
+  // Performance options
+  parallel: true,
+  concurrency: 4,
+  // Output options
+  stats: true,
+  validate: true,
+  // Filtering
+  exclude: ['**/*.test.ts', '**/__tests__/**'],
+  importOrder: ['node:', 'bun', '@myorg/'],
+}
+```
+
+_You may also run:_
+
+```bash
+./dtsx generate
+
+# if the package is installed, you can also run:
+# bunx dtsx generate
+```
+
+### CLI
+
+#### Generate Command
+
+Generate declaration files using the default options:
+
+```bash
+dtsx generate
+```
+
+_Or use custom options:_
+
+```bash
+# Generate declarations for specific entry points:
+dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types
+
+# Generate declarations with custom configuration:
+dtsx generate --root ./lib --outdir ./types --clean
+
+# Use parallel processing for large projects:
+dtsx generate --parallel --concurrency 8
+
+# Preview what would be generated (dry run):
+dtsx generate --dry-run --stats
+
+# Validate generated declarations:
+dtsx generate --validate
+
+# Exclude test files:
+dtsx generate --exclude "**/*.test.ts,**/__tests__/**"
+
+# Custom import ordering:
+dtsx generate --import-order "node:,bun,@myorg/"
+
+dtsx --help
+dtsx --version
+```
+
+#### Watch Command
+
+Watch for changes and regenerate automatically:
+
+```bash
+# Watch with default options:
+dtsx watch
+
+# Watch specific directory:
+dtsx watch --root src --outdir dist/types
+```
+
+#### Stdin Command
+
+Process TypeScript from stdin and output declarations to stdout:
+
+```bash
+# Pipe source code directly:
+echo "export const foo: string = 'bar'" | dtsx stdin
+
+# Process a file through stdin:
+cat src/index.ts | dtsx stdin
+
+# Chain with other tools:
+cat src/utils.ts | dtsx stdin > dist/utils.d.ts
+```
+
+#### Options
+
+**Basic Options:**
+- `--cwd <path>`: Set the current working directory _(default: current directory)_
+- `--root <path>`: Specify the root directory of the project _(default: './src')_
+- `--entrypoints <files>`: Define entry point files _(comma-separated, default: '**/*.ts')_
+- `--outdir <path>`: Set the output directory for generated .d.ts files _(default: './dist')_
+- `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
+- `--clean`: Clean output directory before generation _(default: false)_
+- `--tsconfig <path>`: Specify the path to tsconfig.json _(default: 'tsconfig.json')_
+
+**Performance Options:**
+- `--parallel`: Process files in parallel _(default: false)_
+- `--concurrency <number>`: Number of concurrent workers with --parallel _(default: 4)_
+
+**Output Options:**
+- `--verbose`: Enable verbose output _(default: false)_
+- `--log-level <level>`: Log level: debug, info, warn, error, silent _(default: 'info')_
+- `--stats`: Show statistics after generation _(default: false)_
+- `--output-format <format>`: Output format: text or json _(default: 'text')_
+- `--progress`: Show progress during generation _(default: false)_
+- `--diff`: Show diff of changes compared to existing files _(default: false)_
+
+**Validation Options:**
+- `--validate`: Validate generated .d.ts files against TypeScript _(default: false)_
+- `--continue-on-error`: Continue processing if a file fails _(default: false)_
+- `--dry-run`: Preview without writing files _(default: false)_
+
+**Filtering Options:**
+- `--exclude <patterns>`: Glob patterns to exclude _(comma-separated)_
+- `--import-order <patterns>`: Import order priority patterns _(comma-separated)_
+
+To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
+
+## Type Inference
+
+### dtsx vs tsc vs oxc
+
+dtsx generates **sound, narrow types** with `@defaultValue` preservation — no `isolatedDeclarations` flag required, no explicit type annotations needed. Where tsc and oxc silently discard original values when widening types, dtsx preserves them as standard `@defaultValue` JSDoc so they surface in IDE hover tooltips. All output below is real — same source file, three tools, nothing hand-edited.
+
+#### Why `@defaultValue`?
+
+In TypeScript, `const` only makes the _binding_ immutable — object properties and array elements remain mutable. This means `const config = { timeout: 5000 }` allows `config.timeout = 9999`, so the declared type must be `number`, not `5000`. All three tools correctly widen mutable container properties. The difference is what happens to the original values:
 
 | Tool | Widened type | Original value preserved? |
 |---|---|---|
@@ -40,7 +229,7 @@ All three tools correctly widen mutable container properties. The difference is 
 | tsc | `timeout: number` | No — value lost entirely |
 | oxc | `timeout: number` | No — value lost entirely |
 
-### Scalar Constants
+#### Scalar Constants
 
 Scalar `const` bindings are truly immutable — `const port = 3000` can never change. All tools keep the literal type:
 
@@ -56,7 +245,7 @@ export const debug = true
 | tsc | `3000` | `true` |
 | oxc | `3e3` _(mangled!)_ | `boolean` |
 
-### Object Properties — `@defaultValue` Preservation
+#### Object Properties — `@defaultValue` Preservation
 
 ```ts
 // Source
@@ -116,7 +305,7 @@ export declare const config: {
 };
 ```
 
-### Generic Type Replacement
+#### Generic Type Replacement
 
 dtsx replaces broad generic annotations with narrow types inferred from the actual value:
 
@@ -134,7 +323,7 @@ export const conf: { [key: string]: string } = {
 | tsc | `{ [key: string]: string }` — kept broad, lost all property info |
 | oxc | `{ [key: string]: string }` — kept broad, lost all property info |
 
-### Deep `as const`
+#### Deep `as const`
 
 When you explicitly use `as const`, all tools should preserve literal types. dtsx handles this correctly:
 
@@ -164,7 +353,7 @@ export declare const CONFIG: {
 };
 ```
 
-### Promise & Complex Types
+#### Promise & Complex Types
 
 ```ts
 export const promiseVal = Promise.resolve(42)
@@ -176,7 +365,7 @@ export const promiseVal = Promise.resolve(42)
 | tsc | `Promise<number>` |
 | oxc | `unknown` _(error — requires explicit annotation)_ |
 
-### Full Comparison
+#### Full Comparison
 
 | Declaration | dtsx | tsc | oxc |
 |---|---|---|---|
@@ -193,221 +382,13 @@ export const promiseVal = Promise.resolve(42)
 
 dtsx produces **sound** types (correctly widened for mutable containers) while preserving original values via `@defaultValue` JSDoc — something neither tsc nor oxc does. No `as const`, no explicit annotations, no `isolatedDeclarations` flag required.
 
-## Install
-
-```bash
-bun install -d @stacksjs/dtsx
-```
-
-_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
-
-<!-- _Alternatively, you can install:_
-
-```bash
-brew install dtsx # wip
-pkgx install dtsx # wip
-``` -->
-
-## Get Started
-
-There are two ways of using this ".d.ts generation" tool: _as a library or as a CLI._
-
-_dtsx works out of the box — no `isolatedDeclarations` required. It infers narrow types directly from your source values. If you do enable `isolatedDeclarations`, dtsx uses it as a fast path to skip initializer parsing when explicit type annotations are present._
-
-```json
-{
-  "compilerOptions": {
-    "isolatedDeclarations": true // optional — dtsx works great without it
-  }
-}
-```
-
-## Library
-
-Given the npm package is installed, you can use the `generate` function to generate TypeScript declaration files from your project.
-
-### Usage
-
-```ts
-import type { DtsGenerationOptions } from '@stacksjs/dtsx'
-import { generate, processSource } from '@stacksjs/dtsx'
-
-const options: DtsGenerationOptions = {
-  cwd: './', // default: process.cwd()
-  root: './src', // default: './src'
-  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
-  outdir: './dist', // default: './dist'
-  clean: true, // default: false
-  verbose: true, // default: false
-  keepComments: true, // default: true
-  // New options:
-  parallel: true, // default: false - process files in parallel
-  concurrency: 4, // default: 4 - number of concurrent workers
-  dryRun: false, // default: false - preview without writing
-  stats: true, // default: false - show generation statistics
-  validate: true, // default: false - validate generated .d.ts files
-}
-
-const stats = await generate(options)
-console.log(`Generated ${stats.filesGenerated} files in ${stats.durationMs}ms`)
-
-// You can also process source code directly:
-const dtsContent = processSource(`
-  export const greeting: string = "Hello";
-  export function greet(name: string): string {
-    return greeting + " " + name;
-  }
-`)
-console.log(dtsContent)
-// Output:
-// export declare const greeting: string;
-// export declare function greet(name: string): string;
-```
-
-_Available options:_
-
-Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js`)_ file which is automatically loaded when running the `./dtsx` _(or `bunx dtsx`)_ command. It is also loaded when the `generate` function is called, unless custom options are provided.
-
-```ts
-// dts.config.ts (or dts.config.js)
-
-export default {
-  cwd: './',
-  root: './src',
-  entrypoints: ['**/*.ts'],
-  outdir: './dist',
-  keepComments: true,
-  clean: true,
-  verbose: true,
-  // Performance options
-  parallel: true,
-  concurrency: 4,
-  // Output options
-  stats: true,
-  validate: true,
-  // Filtering
-  exclude: ['**/*.test.ts', '**/__tests__/**'],
-  importOrder: ['node:', 'bun', '@myorg/'],
-}
-```
-
-_You may also run:_
-
-```bash
-./dtsx generate
-
-# if the package is installed, you can also run:
-# bunx dtsx generate
-```
-
-## CLI
-
-The `dtsx` CLI provides a simple way to generate TypeScript declaration files from your project. Here's how to use it:
-
-### Generate Command
-
-Generate declaration files using the default options:
-
-```bash
-dtsx generate
-```
-
-_Or use custom options:_
-
-```bash
-# Generate declarations for specific entry points:
-dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types
-
-# Generate declarations with custom configuration:
-dtsx generate --root ./lib --outdir ./types --clean
-
-# Use parallel processing for large projects:
-dtsx generate --parallel --concurrency 8
-
-# Preview what would be generated (dry run):
-dtsx generate --dry-run --stats
-
-# Validate generated declarations:
-dtsx generate --validate
-
-# Exclude test files:
-dtsx generate --exclude "**/*.test.ts,**/__tests__/**"
-
-# Custom import ordering:
-dtsx generate --import-order "node:,bun,@myorg/"
-
-dtsx --help
-dtsx --version
-```
-
-### Watch Command
-
-Watch for changes and regenerate automatically:
-
-```bash
-# Watch with default options:
-dtsx watch
-
-# Watch specific directory:
-dtsx watch --root src --outdir dist/types
-```
-
-### Stdin Command
-
-Process TypeScript from stdin and output declarations to stdout:
-
-```bash
-# Pipe source code directly:
-echo "export const foo: string = 'bar'" | dtsx stdin
-
-# Process a file through stdin:
-cat src/index.ts | dtsx stdin
-
-# Chain with other tools:
-cat src/utils.ts | dtsx stdin > dist/utils.d.ts
-```
-
-### Available Options
-
-**Basic Options:**
-- `--cwd <path>`: Set the current working directory _(default: current directory)_
-- `--root <path>`: Specify the root directory of the project _(default: './src')_
-- `--entrypoints <files>`: Define entry point files _(comma-separated, default: '**/*.ts')_
-- `--outdir <path>`: Set the output directory for generated .d.ts files _(default: './dist')_
-- `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
-- `--clean`: Clean output directory before generation _(default: false)_
-- `--tsconfig <path>`: Specify the path to tsconfig.json _(default: 'tsconfig.json')_
-
-**Performance Options:**
-- `--parallel`: Process files in parallel _(default: false)_
-- `--concurrency <number>`: Number of concurrent workers with --parallel _(default: 4)_
-
-**Output Options:**
-- `--verbose`: Enable verbose output _(default: false)_
-- `--log-level <level>`: Log level: debug, info, warn, error, silent _(default: 'info')_
-- `--stats`: Show statistics after generation _(default: false)_
-- `--output-format <format>`: Output format: text or json _(default: 'text')_
-- `--progress`: Show progress during generation _(default: false)_
-- `--diff`: Show diff of changes compared to existing files _(default: false)_
-
-**Validation Options:**
-- `--validate`: Validate generated .d.ts files against TypeScript _(default: false)_
-- `--continue-on-error`: Continue processing if a file fails _(default: false)_
-- `--dry-run`: Preview without writing files _(default: false)_
-
-**Filtering Options:**
-- `--exclude <patterns>`: Glob patterns to exclude _(comma-separated)_
-- `--import-order <patterns>`: Import order priority patterns _(comma-separated)_
-
-To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
-
 ## Benchmarks
 
 Benchmarked on Apple M3 Pro, macOS _(bun 1.3.10, arm64-darwin)_. Run `bun benchmark/index.ts` to reproduce.
 
 ### In-Process API — Cached
 
-_dtsx uses smart caching (hash check + cache hit) for watch mode, incremental builds, and CI pipelines._
+_Smart caching (hash check + cache hit) for watch mode, incremental builds, and CI._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|-------------------|---------------------|--------------------|--------------------|
@@ -418,7 +399,7 @@ _dtsx uses smart caching (hash check + cache hit) for watch mode, incremental bu
 
 ### In-Process API — No Cache
 
-_Cache cleared every iteration for raw single-transform comparison._
+_Raw single-transform comparison (cache cleared every iteration)._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|-------------------|---------------------|--------------------|--------------------|
@@ -429,7 +410,7 @@ _Cache cleared every iteration for raw single-transform comparison._
 
 ### CLI — Single File
 
-_All tools run as compiled native binaries via subprocess._
+_Compiled native binaries via subprocess._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|-------------------|---------------------|--------------------|--------------------|

@@ -350,7 +350,7 @@ export class WorkerPool {
       this.handleWorkerResult(instance, result)
     })
 
-    worker.on('error', (error) => {
+    worker.on('error', (error: Error) => {
       logger.error('Worker error:', error)
       this.handleWorkerError(instance, error)
     })

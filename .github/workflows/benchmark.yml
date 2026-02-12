@@ -1,4 +1,4 @@
-name: Benchmark
+name: CI
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     paths:
       - 'packages/dtsx/src/**'
       - 'packages/dtsx/benchmark.ts'
+      - 'benchmark/**'
 
   pull_request:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - 'packages/dtsx/src/**'
       - 'packages/dtsx/benchmark.ts'
+      - 'benchmark/**'
 
   workflow_dispatch:
     inputs:
@@ -40,6 +42,9 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2.1.2
 
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
       - name: Use cached node_modules
         uses: actions/cache@v4.3.0
         with:
@@ -51,12 +56,15 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
-      - name: Build
+      - name: Build dtsx
         run: bun run build
         working-directory: packages/dtsx
 
-      - name: Run Benchmarks
-        id: benchmark
+      - name: Build zig-dtsx
+        run: zig build -Doptimize=ReleaseFast
+        working-directory: packages/zig-dtsx
+
+      - name: Run Internal Benchmarks
         run: |
           if [ "${{ github.event.inputs.full_benchmark }}" == "true" ]; then
             bun run benchmark.ts --json --output=benchmark-results.json
@@ -65,15 +73,7 @@ jobs:
           fi
         working-directory: packages/dtsx
 
-      - name: Upload Benchmark Results
-        uses: actions/upload-artifact@v6.0.0
-        with:
-          name: benchmark-results-${{ github.sha }}
-          path: packages/dtsx/benchmark-results.json
-          retention-days: 30
-
-      - name: Download Base Benchmark (for PR comparison)
-        if: github.event_name == 'pull_request'
+      - name: Download Previous Benchmark
         uses: dawidd6/action-download-artifact@v14
         with:
           workflow: benchmark.yml
@@ -83,67 +83,25 @@ jobs:
           if_no_artifact_found: warn
         continue-on-error: true
 
-      - name: Compare Benchmarks
-        if: github.event_name == 'pull_request'
-        id: compare
-        run: |
-          if [ -f "base-benchmark/benchmark-results.json" ]; then
-            node -e "
-              const fs = require('fs');
-              const base = JSON.parse(fs.readFileSync('base-benchmark/benchmark-results.json', 'utf8'));
-              const current = JSON.parse(fs.readFileSync('packages/dtsx/benchmark-results.json', 'utf8'));
+      - name: Generate Summary (cross-tool comparison + regression detection)
+        run: bun benchmark/ci-summary.ts --results packages/dtsx/benchmark-results.json --base base-benchmark/benchmark-results.json
 
-              const baseAvg = base.summary.avgTimeMs;
-              const currentAvg = current.summary.avgTimeMs;
-              const diff = ((currentAvg - baseAvg) / baseAvg * 100).toFixed(2);
-              const emoji = diff > 5 ? '🔴' : diff < -5 ? '🟢' : '🟡';
-
-              let comment = '## Benchmark Results\\n\\n';
-              comment += '| Metric | Base | Current | Change |\\n';
-              comment += '|--------|------|---------|--------|\\n';
-              comment += '| Avg Time | ' + baseAvg.toFixed(2) + 'ms | ' + currentAvg.toFixed(2) + 'ms | ' + emoji + ' ' + diff + '% |\\n';
-              comment += '| Total Benchmarks | ' + base.summary.totalBenchmarks + ' | ' + current.summary.totalBenchmarks + ' | |\\n';
-              comment += '\\n';
-
-              // Detail by suite
-              comment += '### Suite Details\\n\\n';
-              for (const suite of current.suites) {
-                const baseSuite = base.suites.find(s => s.name === suite.name);
-                if (baseSuite) {
-                  comment += '**' + suite.name + '**\\n';
-                  comment += '| Benchmark | Base | Current | Change |\\n';
-                  comment += '|-----------|------|---------|--------|\\n';
-                  for (const result of suite.results) {
-                    const baseResult = baseSuite.results.find(r => r.name === result.name);
-                    if (baseResult) {
-                      const d = ((result.avgTimeMs - baseResult.avgTimeMs) / baseResult.avgTimeMs * 100).toFixed(2);
-                      const e = d > 10 ? '🔴' : d < -10 ? '🟢' : '';
-                      comment += '| ' + result.name + ' | ' + baseResult.avgTimeMs.toFixed(2) + 'ms | ' + result.avgTimeMs.toFixed(2) + 'ms | ' + e + ' ' + d + '% |\\n';
-                    }
-                  }
-                  comment += '\\n';
-                }
-              }
-
-              fs.writeFileSync('benchmark-comment.md', comment);
-              console.log('Benchmark comparison generated');
-            "
-            echo "has_comparison=true" >> $GITHUB_OUTPUT
-          else
-            echo "No base benchmark found for comparison"
-            echo "has_comparison=false" >> $GITHUB_OUTPUT
-          fi
-        continue-on-error: true
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: packages/dtsx/benchmark-results.json
+          retention-days: 30
 
       - name: Comment on PR
-        if: github.event_name == 'pull_request' && steps.compare.outputs.has_comparison == 'true'
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
-            const comment = fs.readFileSync('benchmark-comment.md', 'utf8');
+            if (!fs.existsSync('benchmark-summary.md')) return;
+            const comment = fs.readFileSync('benchmark-summary.md', 'utf8');
 
-            // Find existing benchmark comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -171,33 +129,3 @@ jobs:
               });
             }
         continue-on-error: true
-
-      - name: Check for Performance Regression
-        run: |
-          node -e "
-            const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('packages/dtsx/benchmark-results.json', 'utf8'));
-
-            // Define performance thresholds (in ms)
-            const thresholds = {
-              'Simple (0001.ts)': 5,
-              'Medium (0002.ts)': 10,
-              'Complex (0003.ts)': 20,
-              'Very Complex (0005.ts)': 50,
-            };
-
-            let failed = false;
-            for (const suite of results.suites) {
-              for (const result of suite.results) {
-                const threshold = thresholds[result.name];
-                if (threshold && result.avgTimeMs > threshold) {
-                  console.log('⚠️ Performance threshold exceeded: ' + result.name);
-                  console.log('   Expected: <' + threshold + 'ms, Actual: ' + result.avgTimeMs.toFixed(2) + 'ms');
-                  // Don't fail yet - just warn
-                }
-              }
-            }
-
-            console.log('✅ Benchmark completed successfully');
-            console.log('Summary: ' + results.summary.totalBenchmarks + ' benchmarks, avg ' + results.summary.avgTimeMs.toFixed(2) + 'ms');
-          "

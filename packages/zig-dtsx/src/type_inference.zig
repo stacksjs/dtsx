@@ -8,6 +8,30 @@ const MAX_INFERENCE_DEPTH = 20;
 /// Error type for type inference operations
 pub const InferError = std.mem.Allocator.Error;
 
+// ---------------------------------------------------------------------------
+// Module-level storage for computing clean default alongside type inference.
+// This avoids double-parsing: inferObjectType/inferArrayType build the
+// @defaultValue content during the same pass that infers types.
+// ---------------------------------------------------------------------------
+var _collect_clean_default: bool = false;
+var _clean_default_result: ?[]const u8 = null;
+
+/// Enable clean default collection for the next type inference pass.
+/// Must be called before inferNarrowType when you need a @defaultValue.
+pub fn enableCleanDefaultCollection() void {
+    _collect_clean_default = true;
+    _clean_default_result = null;
+}
+
+/// Consume the computed clean default (also disables collection).
+/// Returns null if no clean default was computed.
+pub fn consumeCleanDefault() ?[]const u8 {
+    _collect_clean_default = false;
+    const val = _clean_default_result;
+    _clean_default_result = null;
+    return val;
+}
+
 /// Check if a string is a numeric literal (matches /^-?\d+(\.\d+)?$/)
 pub fn isNumericLiteral(s: []const u8) bool {
     if (s.len == 0) return false;
@@ -699,18 +723,62 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
         return parts.toOwnedSlice();
     }
 
-    // Regular array processing
+    // Regular array processing — also track nested defaults for clean default building
+    const track_defaults = _collect_clean_default and !is_const;
     var element_types = std.array_list.Managed([]const u8).init(alloc);
+    var nested_defaults = std.array_list.Managed(?[]const u8).init(alloc);
     for (elements) |el| {
         const trimmed_el = trim(el);
+        const saved = _clean_default_result;
+        _clean_default_result = null;
         if (trimmed_el.len > 1 and trimmed_el[0] == '[' and trimmed_el[trimmed_el.len - 1] == ']') {
             try element_types.append(try inferArrayType(alloc, trimmed_el, is_const, depth + 1));
         } else {
             try element_types.append(try inferNarrowTypeInUnion(alloc, trimmed_el, is_const, depth + 1));
         }
+        if (track_defaults) try nested_defaults.append(_clean_default_result);
+        _clean_default_result = saved;
     }
 
     const types = element_types.items;
+
+    // Build clean default for non-const arrays (same pass, no re-parse)
+    if (track_defaults) {
+        if (isSimpleArrayDefault(value)) {
+            _clean_default_result = try collapseWhitespace(alloc, value);
+        } else {
+            var clean_elems = std.array_list.Managed([]const u8).init(alloc);
+            for (elements, 0..) |el, ei| {
+                const te = trim(el);
+                if (ch.endsWith(te, " as const") or ch.endsWith(te, "as const")) continue;
+                if (isPrimitiveLiteral(te) or std.mem.eql(u8, te, "null") or std.mem.eql(u8, te, "undefined")) {
+                    try clean_elems.append(te);
+                } else if (te.len > 0 and te[0] == '[' and isSimpleArrayDefault(te)) {
+                    try clean_elems.append(try collapseWhitespace(alloc, te));
+                } else if (te.len > 0 and te[0] == '{') {
+                    if (nested_defaults.items[ei]) |nd| try clean_elems.append(nd);
+                } else {
+                    // Re-infer without union context for the clean default
+                    // (types[ei] was inferred via inferNarrowTypeInUnion which
+                    // wraps function types in parens and widens return types)
+                    const clean_type = try inferNarrowType(alloc, te, false, false, 0);
+                    if (!std.mem.eql(u8, clean_type, "unknown")) {
+                        try clean_elems.append(clean_type);
+                    }
+                }
+            }
+            if (clean_elems.items.len > 0) {
+                var buf = std.array_list.Managed(u8).init(alloc);
+                try buf.append('[');
+                for (clean_elems.items, 0..) |item, ci| {
+                    if (ci > 0) try buf.appendSlice(", ");
+                    try buf.appendSlice(item);
+                }
+                try buf.append(']');
+                _clean_default_result = try buf.toOwnedSlice();
+            }
+        }
+    }
 
     // For const arrays, always create readonly tuples
     if (is_const) {
@@ -725,16 +793,26 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
         return parts.toOwnedSlice();
     }
 
-    // Check if all are literals
+    // Single-pass: deduplicate types AND check if all are literals
+    var unique = std.array_list.Managed([]const u8).init(alloc);
     var all_literals = true;
     for (types) |t| {
-        const is_literal = isNumericLiteral(t) or
-            std.mem.eql(u8, t, "true") or std.mem.eql(u8, t, "false") or
-            (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') or
-            (t.len >= 2 and t[0] == '\'' and t[t.len - 1] == '\'');
-        if (!is_literal) {
-            all_literals = false;
-            break;
+        // Dedup check
+        var found = false;
+        for (unique.items) |u| {
+            if (std.mem.eql(u8, t, u)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) try unique.append(t);
+        // Literal check
+        if (all_literals) {
+            const is_literal = isNumericLiteral(t) or
+                std.mem.eql(u8, t, "true") or std.mem.eql(u8, t, "false") or
+                (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') or
+                (t.len >= 2 and t[0] == '\'' and t[t.len - 1] == '\'');
+            if (!is_literal) all_literals = false;
         }
     }
 
@@ -747,19 +825,6 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
         }
         try parts.append(']');
         return parts.toOwnedSlice();
-    }
-
-    // Deduplicate types
-    var unique = std.array_list.Managed([]const u8).init(alloc);
-    for (types) |t| {
-        var found = false;
-        for (unique.items) |u| {
-            if (std.mem.eql(u8, t, u)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) try unique.append(t);
     }
 
     if (unique.items.len == 1) {
@@ -852,7 +917,44 @@ fn isSimpleArrayDefault(val: []const u8) bool {
 
 /// Collapse whitespace in a string to single spaces
 pub fn collapseWhitespace(alloc: std.mem.Allocator, val: []const u8) ![]const u8 {
+    // Fast path: check if there's actually any consecutive whitespace or non-space ws
+    var needs_collapse = false;
+    {
+        var prev_ws = false;
+        var in_str = false;
+        var qc: u8 = 0;
+        for (val) |c| {
+            if (in_str) {
+                if (c == '\\') {
+                    prev_ws = false;
+                    continue;
+                }
+                if (c == qc) in_str = false;
+                prev_ws = false;
+                continue;
+            }
+            if (c == '\'' or c == '"' or c == '`') {
+                in_str = true;
+                qc = c;
+                prev_ws = false;
+                continue;
+            }
+            if (ch.isWhitespace(c)) {
+                if (c != ' ' or prev_ws) {
+                    needs_collapse = true;
+                    break;
+                }
+                prev_ws = true;
+            } else {
+                prev_ws = false;
+            }
+        }
+    }
+    if (!needs_collapse) return val;
+
+    // Slow path: actually collapse
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(val.len);
     var in_ws = false;
     var in_string = false;
     var quote_char: u8 = 0;
@@ -886,145 +988,10 @@ pub fn collapseWhitespace(alloc: std.mem.Allocator, val: []const u8) ![]const u8
     return result.toOwnedSlice();
 }
 
-/// Build a clean @default annotation value from a container literal.
-/// Only includes properties with primitive or simple array values.
-/// Returns null if no clean representation is possible.
-pub fn buildCleanDefault(alloc: std.mem.Allocator, value: []const u8) !?[]const u8 {
-    return buildCleanDefaultIndented(alloc, value, 0);
-}
 
-fn buildCleanDefaultIndented(alloc: std.mem.Allocator, value: []const u8, indent: usize) !?[]const u8 {
-    const trimmed = trim(value);
-
-    // Arrays: build a clean representation
-    if (trimmed.len > 0 and trimmed[0] == '[') {
-        // Fast path: fully simple arrays — collapse whitespace and return
-        if (isSimpleArrayDefault(trimmed)) {
-            return try collapseWhitespace(alloc, trimmed);
-        }
-        // Slow path: parse elements, keep simple ones, replace complex with inferred types
-        if (trimmed.len > 1 and trimmed[trimmed.len - 1] == ']') {
-            const content = trim(trimmed[1 .. trimmed.len - 1]);
-            if (content.len == 0) return "[]";
-            const elements = try parseArrayElements(alloc, content);
-            var clean_elems = std.array_list.Managed([]const u8).init(alloc);
-            for (elements) |el| {
-                const te = trim(el);
-                // Skip 'as const' elements — type already narrow
-                if (ch.endsWith(te, " as const") or ch.endsWith(te, "as const")) continue;
-                if (isPrimitiveLiteral(te) or std.mem.eql(u8, te, "null") or std.mem.eql(u8, te, "undefined")) {
-                    try clean_elems.append(te);
-                } else if (te.len > 0 and te[0] == '[' and isSimpleArrayDefault(te)) {
-                    try clean_elems.append(try collapseWhitespace(alloc, te));
-                } else if (te.len > 0 and te[0] == '{') {
-                    if (try buildCleanDefaultIndented(alloc, te, indent)) |nested| {
-                        try clean_elems.append(nested);
-                    }
-                } else {
-                    // Complex element: show inferred type instead
-                    const inferred = try inferNarrowType(alloc, te, false, false, 0);
-                    if (!std.mem.eql(u8, inferred, "unknown")) {
-                        try clean_elems.append(inferred);
-                    }
-                }
-            }
-            const items = clean_elems.items;
-            if (items.len == 0) return null;
-            var result = std.array_list.Managed(u8).init(alloc);
-            try result.append('[');
-            for (items, 0..) |item, idx| {
-                if (idx > 0) try result.appendSlice(", ");
-                try result.appendSlice(item);
-            }
-            try result.append(']');
-            const slice = try result.toOwnedSlice();
-            return @as(?[]const u8, slice);
-        }
-        return null;
-    }
-
-    // Objects: include only properties with primitive/simple values
-    if (trimmed.len > 1 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
-        const content = trim(trimmed[1 .. trimmed.len - 1]);
-        if (content.len == 0) return "{}";
-
-        const properties = try parseObjectProperties(alloc, content);
-
-        // Collect clean props
-        var prop_strs = std.array_list.Managed([]const u8).init(alloc);
-        for (properties) |prop| {
-            const tv = trim(prop[1]);
-            // Skip 'as const' properties — their types are already narrow literals,
-            // so @defaultValue would be redundant (the type IS the value)
-            if (ch.endsWith(tv, " as const") or ch.endsWith(tv, "as const")) continue;
-            var prop_str = std.array_list.Managed(u8).init(alloc);
-            if (isPrimitiveLiteral(tv)) {
-                try prop_str.appendSlice(prop[0]);
-                try prop_str.appendSlice(": ");
-                try prop_str.appendSlice(tv);
-                try prop_strs.append(try prop_str.toOwnedSlice());
-            } else if (tv.len > 0 and tv[0] == '[' and isSimpleArrayDefault(tv)) {
-                try prop_str.appendSlice(prop[0]);
-                try prop_str.appendSlice(": ");
-                const collapsed = try collapseWhitespace(alloc, tv);
-                try prop_str.appendSlice(collapsed);
-                try prop_strs.append(try prop_str.toOwnedSlice());
-            } else if (tv.len > 0 and tv[0] == '{') {
-                if (try buildCleanDefaultIndented(alloc, tv, indent + 1)) |nested| {
-                    try prop_str.appendSlice(prop[0]);
-                    try prop_str.appendSlice(": ");
-                    try prop_str.appendSlice(nested);
-                    try prop_strs.append(try prop_str.toOwnedSlice());
-                }
-            } else if (tv.len > 0 and tv[0] != '[' and (ch.contains(tv, "=>") or ch.startsWith(tv, "function") or ch.startsWith(tv, "async"))) {
-                // Functions: include with their inferred type signature
-                const fn_type = try inferFunctionType(alloc, tv, false, 0, true);
-                try prop_str.appendSlice(prop[0]);
-                try prop_str.appendSlice(": ");
-                try prop_str.appendSlice(fn_type);
-                try prop_strs.append(try prop_str.toOwnedSlice());
-            }
-        }
-
-        const items = prop_strs.items;
-        if (items.len == 0) return null;
-
-        // Try one-line first
-        var one_line = std.array_list.Managed(u8).init(alloc);
-        try one_line.appendSlice("{ ");
-        for (items, 0..) |item, idx| {
-            if (idx > 0) try one_line.appendSlice(", ");
-            try one_line.appendSlice(item);
-        }
-        try one_line.appendSlice(" }");
-        const one_line_str = try one_line.toOwnedSlice();
-
-        if (one_line_str.len <= 80) return one_line_str;
-
-        // Multi-line with proper indentation
-        const pad_size = (indent + 1) * 2;
-        const close_pad_size = indent * 2;
-        var result = std.array_list.Managed(u8).init(alloc);
-        try result.appendSlice("{\n");
-        for (items, 0..) |item, idx| {
-            var p: usize = 0;
-            while (p < pad_size) : (p += 1) try result.append(' ');
-            try result.appendSlice(item);
-            if (idx < items.len - 1) try result.append(',');
-            try result.append('\n');
-        }
-        {
-            var p: usize = 0;
-            while (p < close_pad_size) : (p += 1) try result.append(' ');
-        }
-        try result.append('}');
-        return try result.toOwnedSlice();
-    }
-
-    return null;
-}
-
-/// Infer object type from object literal
+/// Infer object type from object literal.
+/// When _collect_clean_default is set and !is_const, also builds the @defaultValue
+/// content during the same pass — avoiding double-parsing of parseObjectProperties.
 pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
     const content = trim(value[1 .. value.len - 1]);
     if (content.len == 0) return "{}";
@@ -1032,18 +999,30 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     const properties = try parseObjectProperties(alloc, content);
 
+    // Track clean default parts when collecting and this is a non-const container
+    const build_default = _collect_clean_default and !is_const;
+    var clean_props = std.array_list.Managed([]const u8).init(alloc);
+
     var parts = std.array_list.Managed(u8).init(alloc);
     try parts.ensureTotalCapacity(content.len + 32);
     try parts.appendSlice("{\n  ");
     for (properties, 0..) |prop, idx| {
         if (idx > 0) try parts.appendSlice(";\n  ");
+
+        // Save parent's clean default before recursive call (nested objects overwrite it)
+        const saved_default = _clean_default_result;
+        _clean_default_result = null;
+
         var val_type = try inferNarrowType(alloc, prop[1], is_const, false, depth + 1);
+
+        // Capture nested clean default (set by recursive inferObjectType/inferArrayType)
+        const nested_default = _clean_default_result;
+        _clean_default_result = saved_default; // restore parent's
+
         // Clean method signatures in inferred types
         if (ch.contains(val_type, "=>")) {
-            // Full cleaning including whitespace collapse for arrow function types
             val_type = try cleanMethodSignature(alloc, val_type);
         } else if (ch.contains(val_type, "async")) {
-            // Only strip async keyword without collapsing whitespace
             val_type = try stripAsyncKeyword(alloc, val_type);
         }
 
@@ -1057,8 +1036,84 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         try parts.appendSlice(prop[0]); // key
         try parts.appendSlice(": ");
         try parts.appendSlice(val_type);
+
+        // Build clean default entry for this property (same loop, no re-parse)
+        if (build_default) {
+            if (ch.endsWith(raw_val, " as const") or ch.endsWith(raw_val, "as const")) {
+                // skip — type already narrow
+            } else if (isPrimitiveLiteral(raw_val)) {
+                var ps = std.array_list.Managed(u8).init(alloc);
+                try ps.appendSlice(prop[0]);
+                try ps.appendSlice(": ");
+                try ps.appendSlice(raw_val);
+                try clean_props.append(try ps.toOwnedSlice());
+            } else if (raw_val.len > 0 and raw_val[0] == '[' and isSimpleArrayDefault(raw_val)) {
+                var ps = std.array_list.Managed(u8).init(alloc);
+                try ps.appendSlice(prop[0]);
+                try ps.appendSlice(": ");
+                try ps.appendSlice(try collapseWhitespace(alloc, raw_val));
+                try clean_props.append(try ps.toOwnedSlice());
+            } else if (raw_val.len > 0 and raw_val[0] == '{') {
+                if (nested_default) |nd| {
+                    var ps = std.array_list.Managed(u8).init(alloc);
+                    try ps.appendSlice(prop[0]);
+                    try ps.appendSlice(": ");
+                    try ps.appendSlice(nd);
+                    try clean_props.append(try ps.toOwnedSlice());
+                }
+            } else if (raw_val.len > 0 and raw_val[0] != '[' and
+                (ch.contains(raw_val, "=>") or ch.startsWith(raw_val, "function") or ch.startsWith(raw_val, "async")))
+            {
+                // Use already-computed val_type instead of re-inferring
+                var ps = std.array_list.Managed(u8).init(alloc);
+                try ps.appendSlice(prop[0]);
+                try ps.appendSlice(": ");
+                try ps.appendSlice(val_type);
+                try clean_props.append(try ps.toOwnedSlice());
+            }
+        }
     }
     try parts.appendSlice("\n}");
+
+    // Store computed clean default for parent/emitter to consume
+    if (build_default and clean_props.items.len > 0) {
+        var one_line = std.array_list.Managed(u8).init(alloc);
+        try one_line.appendSlice("{ ");
+        for (clean_props.items, 0..) |item, ci| {
+            if (ci > 0) try one_line.appendSlice(", ");
+            try one_line.appendSlice(item);
+        }
+        try one_line.appendSlice(" }");
+        const one_line_str = try one_line.toOwnedSlice();
+        if (one_line_str.len <= 80) {
+            _clean_default_result = one_line_str;
+        } else {
+            // Multi-line with proper indentation based on nesting depth.
+            // depth increments by 2 per nesting level (once in inferNarrowType, once here),
+            // so indent = (depth - 1) / 2 maps depth to the correct indent level.
+            const indent = if (depth > 0) (depth - 1) / 2 else 0;
+            const pad_size = (indent + 1) * 2;
+            const close_pad_size = indent * 2;
+            var ml = std.array_list.Managed(u8).init(alloc);
+            try ml.appendSlice("{\n");
+            for (clean_props.items, 0..) |item, ci| {
+                {
+                    var p: usize = 0;
+                    while (p < pad_size) : (p += 1) try ml.append(' ');
+                }
+                try ml.appendSlice(item);
+                if (ci < clean_props.items.len - 1) try ml.append(',');
+                try ml.append('\n');
+            }
+            {
+                var p: usize = 0;
+                while (p < close_pad_size) : (p += 1) try ml.append(' ');
+            }
+            try ml.append('}');
+            _clean_default_result = try ml.toOwnedSlice();
+        }
+    }
+
     return parts.toOwnedSlice();
 }
 

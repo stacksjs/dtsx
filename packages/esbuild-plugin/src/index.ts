@@ -12,7 +12,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 /**
  * Plugin configuration options
  */
-export interface DtsxEsbuildOptions extends Partial<DtsGenerationOption> {
+export interface DtsxEsbuildOptions extends Omit<Partial<DtsGenerationOption>, 'exclude' | 'include'> {
   /**
    * When to generate declarations
    * - 'build': Generate after build completes
@@ -151,7 +151,7 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
 
     setup(build) {
       state.buildOptions = build.initialOptions
-      state.isWatchMode = !!build.initialOptions.watch
+      state.isWatchMode = !!(build.initialOptions as any).watch
 
       // Determine if we should run
       const shouldRun = trigger === 'both' ||
@@ -204,9 +204,7 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
             entrypoints: filesToProcess.map(f => relative(config.cwd || process.cwd(), f)),
           })
 
-          state.generatedFiles = new Set(
-            stats.filesGenerated?.map(f => f.path) || []
-          )
+          state.generatedFiles = new Set<string>()
 
           // Bundle if requested
           if (bundleDeclarations && state.generatedFiles.size > 0) {

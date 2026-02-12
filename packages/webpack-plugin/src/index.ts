@@ -3,7 +3,7 @@
  * Integrates with webpack's compilation pipeline for seamless .d.ts generation
  */
 
-import type { Compiler, Compilation, WebpackPluginInstance } from 'webpack'
+import type { Compiler, Compilation } from 'webpack'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import { generate } from '@stacksjs/dtsx'
 import { resolve, relative, join, dirname } from 'node:path'
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 /**
  * Plugin configuration options
  */
-export interface DtsxWebpackOptions extends Partial<DtsGenerationOption> {
+export interface DtsxWebpackOptions extends Omit<Partial<DtsGenerationOption>, 'exclude' | 'include'> {
   /**
    * When to generate declarations
    * - 'emit': Generate during emit phase
@@ -110,7 +110,7 @@ const PLUGIN_NAME = 'DtsxWebpackPlugin'
 /**
  * Webpack plugin for dtsx declaration generation
  */
-export class DtsxWebpackPlugin implements WebpackPluginInstance {
+export class DtsxWebpackPlugin {
   private options: DtsxWebpackOptions
   private state: PluginState
 
@@ -239,9 +239,7 @@ export class DtsxWebpackPlugin implements WebpackPluginInstance {
         entrypoints: filesToProcess.map(f => relative(config.cwd || process.cwd(), f)),
       })
 
-      this.state.generatedFiles = new Set(
-        stats.filesGenerated?.map(f => f.path) || []
-      )
+      this.state.generatedFiles = new Set<string>()
 
       // Bundle if requested
       if (bundle && this.state.generatedFiles.size > 0) {
@@ -496,7 +494,7 @@ export function dtsx(options: DtsxWebpackOptions = {}): DtsxWebpackPlugin {
 /**
  * Create a minimal plugin that only validates types
  */
-export class DtsxCheckPlugin implements WebpackPluginInstance {
+export class DtsxCheckPlugin {
   apply(compiler: Compiler): void {
     compiler.hooks.done.tap('DtsxCheckPlugin', (stats) => {
       if (stats.hasErrors()) {
@@ -519,7 +517,7 @@ export function dtsxCheck(): DtsxCheckPlugin {
 /**
  * Create a plugin that watches for .d.ts changes
  */
-export class DtsxWatchPlugin implements WebpackPluginInstance {
+export class DtsxWatchPlugin {
   private options: {
     onDeclarationChange?: (file: string) => void
   }

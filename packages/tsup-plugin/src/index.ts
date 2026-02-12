@@ -3,7 +3,7 @@
  * Integrates with tsup's build pipeline for seamless .d.ts generation
  */
 
-import type { Options as TsupOptions, Plugin as TsupPlugin } from 'tsup'
+import type { Options as TsupOptions } from 'tsup'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import { generate } from '@stacksjs/dtsx'
 import { resolve, relative, join, dirname } from 'node:path'
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 /**
  * Plugin configuration options
  */
-export interface DtsxTsupOptions extends Partial<DtsGenerationOption> {
+export interface DtsxTsupOptions extends Omit<Partial<DtsGenerationOption>, 'exclude' | 'include'> {
   /**
    * When to generate declarations
    * - 'buildStart': Generate before build starts
@@ -102,7 +102,7 @@ const PLUGIN_NAME = 'dtsx'
 /**
  * Create tsup plugin for dtsx declaration generation
  */
-export function dtsxPlugin(options: DtsxTsupOptions = {}): TsupPlugin {
+export function dtsxPlugin(options: DtsxTsupOptions = {}): any {
   const {
     trigger = 'buildEnd',
     entryPointsOnly = true,
@@ -130,7 +130,7 @@ export function dtsxPlugin(options: DtsxTsupOptions = {}): TsupPlugin {
     name: PLUGIN_NAME,
 
     // Capture tsup options
-    esbuildOptions(esbuildOptions, context) {
+    esbuildOptions(esbuildOptions: any, context: any) {
       state.tsupOptions = context.options as TsupOptions
     },
 
@@ -193,9 +193,7 @@ export function dtsxPlugin(options: DtsxTsupOptions = {}): TsupPlugin {
         entrypoints: filesToProcess.map(f => relative(config.cwd || process.cwd(), f)),
       })
 
-      state.generatedFiles = new Set(
-        stats.filesGenerated?.map(f => f.path) || []
-      )
+      state.generatedFiles = new Set<string>()
 
       // Bundle if requested
       if (bundleDeclarations && state.generatedFiles.size > 0) {

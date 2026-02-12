@@ -274,6 +274,8 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         // Scalars keep narrow literal types (sound: const binding is immutable)
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
         const is_container = trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[');
+        // Enable clean default collection for containers to avoid double-parsing
+        if (is_container) type_inf.enableCleanDefaultCollection();
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, !is_container, false, 0);
     } else if (type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
         const inferred = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
@@ -304,8 +306,9 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 default_val = trimmed_val;
             }
         } else if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
-            // const containers — clean @defaultValue with only primitive/simple values
-            default_val = try type_inf.buildCleanDefault(alloc, trimmed_val);
+            // const containers — consume clean default computed during type inference
+            // (avoids double-parsing of parseObjectProperties/parseArrayElements)
+            default_val = type_inf.consumeCleanDefault();
             is_container = true;
         }
 

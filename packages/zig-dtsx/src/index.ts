@@ -40,13 +40,8 @@ for (const libPath of libPaths) {
   }
 }
 
-if (!lib) {
-  throw new Error(
-    `Failed to load zig-dtsx shared library. Tried:\n${libPaths.join('\n')}\n\nRun 'zig build -Doptimize=ReleaseFast' first.`,
-  )
-}
-
-const { process_source, process_source_with_options, result_length, free_result } = lib.symbols
+const symbols = lib?.symbols as any
+const { process_source, process_source_with_options, result_length, free_result } = symbols ?? {}
 
 function readResult(resultPtr: ReturnType<typeof process_source>): string {
   if (!resultPtr) {
@@ -76,7 +71,14 @@ function readResult(resultPtr: ReturnType<typeof process_source>): string {
  * @param isolatedDeclarations - Skip initializer parsing when explicit type annotations exist (default: false)
  * @returns The generated .d.ts declaration content
  */
+export const ZIG_AVAILABLE: boolean = !!lib
+
 export function processSource(sourceCode: string, keepComments: boolean = true, isolatedDeclarations: boolean = false): string {
+  if (!lib) {
+    throw new Error(
+      `zig-dtsx shared library not found. Run 'zig build -Doptimize=ReleaseFast' first.`,
+    )
+  }
   if (!sourceCode || sourceCode.length === 0) {
     return ''
   }
@@ -91,4 +93,4 @@ export function processSource(sourceCode: string, keepComments: boolean = true, 
   return readResult(resultPtr)
 }
 
-export default { processSource }
+export default { processSource } as { processSource: typeof processSource }

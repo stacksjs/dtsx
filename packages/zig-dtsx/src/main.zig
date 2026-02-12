@@ -44,35 +44,32 @@ const c = if (builtin.os.tag == .windows) struct {
 });
 
 fn getStdout() *c.FILE {
-    if (builtin.os.tag == .windows) {
-        return c.__acrt_iob_func(1);
-    } else {
-        return switch (@typeInfo(@TypeOf(c.stdout))) {
-            .optional => c.stdout.?,
-            else => c.stdout(),
-        };
-    }
+    if (builtin.os.tag == .windows) return c.__acrt_iob_func(1);
+    return getStdioPtr(c.stdout);
 }
 
 fn getStdin() *c.FILE {
-    if (builtin.os.tag == .windows) {
-        return c.__acrt_iob_func(0);
-    } else {
-        return switch (@typeInfo(@TypeOf(c.stdin))) {
-            .optional => c.stdin.?,
-            else => c.stdin(),
-        };
-    }
+    if (builtin.os.tag == .windows) return c.__acrt_iob_func(0);
+    return getStdioPtr(c.stdin);
 }
 
 fn getStderr() *c.FILE {
-    if (builtin.os.tag == .windows) {
-        return c.__acrt_iob_func(2);
+    if (builtin.os.tag == .windows) return c.__acrt_iob_func(2);
+    return getStdioPtr(c.stderr);
+}
+
+/// Resolve a C stdio handle that may be a pointer, optional pointer, or function.
+/// All parameters are runtime-evaluated to avoid comptime issues on Linux.
+inline fn getStdioPtr(val: anytype) *c.FILE {
+    const T = @TypeOf(val);
+    const info = @typeInfo(T);
+    if (info == .optional) {
+        return val.?;
+    } else if (info == .pointer) {
+        return @ptrCast(val);
     } else {
-        return switch (@typeInfo(@TypeOf(c.stderr))) {
-            .optional => c.stderr.?,
-            else => c.stderr(),
-        };
+        // Function-like (e.g., macOS where stdout is a function)
+        return val();
     }
 }
 
@@ -396,26 +393,39 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     }
 }
 
-pub fn main(init: std.process.Init.Minimal) !void {
-    // Use c_allocator directly (libc is already linked) — avoids GPA tracking overhead.
-    // The arena wrapping this provides fast bump allocation; c_allocator is only
-    // the backing allocator for large/rare requests.
-    const alloc = std.heap.c_allocator;
+// Support both Zig 0.15.x (argsAlloc) and 0.16+ (Init.Minimal)
+const has_process_init = @hasDecl(std.process, "Init");
 
-    // Platform-aware args iteration (Windows requires initAllocator)
-    var args_iter = if (builtin.os.tag == .windows)
+pub const main = if (has_process_init) mainInit else mainLegacy;
+
+fn mainInit(init: std.process.Init.Minimal) !void {
+    const alloc = std.heap.c_allocator;
+    var args_buf = std.array_list.Managed([]const u8).init(alloc);
+    defer args_buf.deinit();
+    var iter = if (builtin.os.tag == .windows)
         try std.process.Args.Iterator.initAllocator(init.args, alloc)
     else
         init.args.iterate();
-    defer args_iter.deinit();
-
-    var args_buf = std.array_list.Managed([]const u8).init(alloc);
-    defer args_buf.deinit();
-    while (args_iter.next()) |arg| {
+    defer iter.deinit();
+    while (iter.next()) |arg| {
         try args_buf.append(arg);
     }
-    const args = args_buf.items;
+    try run(alloc, args_buf.items);
+}
 
+fn mainLegacy() !void {
+    const alloc = std.heap.c_allocator;
+    const raw_args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, raw_args);
+    var args_buf = std.array_list.Managed([]const u8).init(alloc);
+    defer args_buf.deinit();
+    for (raw_args) |arg| {
+        try args_buf.append(arg);
+    }
+    try run(alloc, args_buf.items);
+}
+
+fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var project_dir: ?[]const u8 = null;

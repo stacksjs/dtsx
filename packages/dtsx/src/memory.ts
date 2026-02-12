@@ -141,8 +141,8 @@ export class StreamingProcessor {
       external: mem.external,
       arrayBuffers: mem.arrayBuffers,
       rss: mem.rss,
-      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
-      percentUsed: Math.round((mem.heapUsed / mem.heapTotal) * 100),
+      heapUsedMB: Math.ceil(mem.heapUsed / 1024 / 1024),
+      percentUsed: Math.min(100, Math.round((mem.heapUsed / mem.heapTotal) * 100)),
     }
   }
 

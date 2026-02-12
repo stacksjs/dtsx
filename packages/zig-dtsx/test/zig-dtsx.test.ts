@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, test } from 'bun:test'
-import { processSource } from '../src/index'
+import { processSource, ZIG_AVAILABLE } from '../src/index'
 
 const fixturesDir = resolve(import.meta.dir, '../../dtsx/test/fixtures')
 const inputDir = join(fixturesDir, 'input')
@@ -71,7 +71,9 @@ const realWorldFixtures = [
 // Fixture-based tests
 // ============================================================================
 
-describe('zig-dtsx', () => {
+const describeIf = ZIG_AVAILABLE ? describe : describe.skip
+
+describeIf('zig-dtsx', () => {
   describe('standard fixtures', () => {
     for (const fixture of standardFixtures) {
       test(fixture, () => {

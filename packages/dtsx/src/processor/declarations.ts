@@ -4,7 +4,7 @@
 
 import type { Declaration } from '../types'
 import { formatComments } from './comments'
-import { buildCleanDefault, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
 
 /**
  * Format a @defaultValue tag as a standalone JSDoc block
@@ -107,40 +107,38 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
 
   // Add type annotation
   let typeAnnotation = decl.typeAnnotation
+  const value = decl.value as string | undefined
 
   // Check for 'satisfies' operator - extract the type from the satisfies clause
-  if (decl.value && decl.value.includes(' satisfies ')) {
-    const satisfiesType = extractSatisfiesType(decl.value)
+  if (value && value.includes(' satisfies ')) {
+    const satisfiesType = extractSatisfiesType(value)
     if (satisfiesType) {
       typeAnnotation = satisfiesType
     }
   }
   // If we have a value that ends with 'as const' at the top level, infer narrow from value
-  else if (decl.value && decl.value.trim().endsWith('as const')) {
-    typeAnnotation = inferNarrowType(decl.value, true)
+  else if (value && value.trim().endsWith('as const')) {
+    typeAnnotation = inferNarrowType(value, true)
   }
-  else if (!typeAnnotation && decl.value && kind === 'const') {
+  else if (!typeAnnotation && value && kind === 'const') {
     // For const declarations WITHOUT explicit type annotation, infer types from the value
     // Containers (objects/arrays) get widened types (sound: properties/elements are mutable)
     // Scalars keep narrow literal types (sound: const binding is immutable)
-    const trimmedVal = decl.value.trim()
-    if (trimmedVal.startsWith('{') || trimmedVal.startsWith('[')) {
-      typeAnnotation = inferNarrowType(decl.value, false)
-    }
-    else {
-      typeAnnotation = inferNarrowType(decl.value, true)
-    }
+    const trimmedVal = value.trim()
+    const isContainer = trimmedVal.startsWith('{') || trimmedVal.startsWith('[')
+    if (isContainer) enableCleanDefaultCollection()
+    typeAnnotation = inferNarrowType(value, !isContainer)
   }
-  else if (typeAnnotation && decl.value && kind === 'const' && isGenericType(typeAnnotation)) {
+  else if (typeAnnotation && value && kind === 'const' && isGenericType(typeAnnotation)) {
     // For const declarations with generic type annotations (Record, any, object), prefer narrow inference
-    const inferredType = inferNarrowType(decl.value, true)
+    const inferredType = inferNarrowType(value, true)
     if (inferredType !== 'unknown') {
       typeAnnotation = inferredType
     }
   }
-  else if (!typeAnnotation && decl.value) {
+  else if (!typeAnnotation && value) {
     // If no explicit type annotation, try to infer from value
-    typeAnnotation = inferNarrowType(decl.value, kind === 'const')
+    typeAnnotation = inferNarrowType(value, kind === 'const')
   }
 
   // Default to unknown if we couldn't determine type
@@ -151,8 +149,8 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   // Build @defaultValue content for widened declarations (TSDoc standard)
   // Skip when value uses 'as const' — types are already narrow/self-documenting
   let defaultTag = ''
-  if (decl.value && !decl.typeAnnotation && !decl.value.trim().endsWith('as const')) {
-    const trimVal = decl.value.trim()
+  if (value && !decl.typeAnnotation && !value.trim().endsWith('as const')) {
+    const trimVal = value.trim()
     if (kind !== 'const') {
       // let/var with widened primitives
       const isWidenedPrimitive = (typeAnnotation === 'string' || typeAnnotation === 'number' || typeAnnotation === 'boolean')
@@ -161,8 +159,8 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
       }
     }
     else if (trimVal.startsWith('{') || trimVal.startsWith('[')) {
-      // const containers — clean @defaultValue with only primitive/simple values
-      const cleanDefault = buildCleanDefault(trimVal)
+      // const containers — clean @defaultValue computed inline during type inference
+      const cleanDefault = consumeCleanDefault()
       if (cleanDefault) {
         if (cleanDefault.includes('\n')) {
           const lines = cleanDefault.split('\n')
