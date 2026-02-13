@@ -42,6 +42,26 @@ function isWordInText(name: string, text: string): boolean {
   return false
 }
 
+/** Extract all identifier words from text into a Set. O(n) single pass. */
+function extractWordSet(text: string): Set<string> {
+  const words = new Set<string>()
+  let i = 0
+  const len = text.length
+  while (i < len) {
+    const ch = text.charCodeAt(i)
+    if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch === 95 || ch === 36 || ch > 127) {
+      const start = i
+      i++
+      while (i < len && isIdentChar(text.charCodeAt(i))) i++
+      words.add(text.substring(start, i))
+    }
+    else {
+      i++
+    }
+  }
+  return words
+}
+
 // Re-export all public APIs
 export { clearProcessorCaches } from './cache'
 export { formatComments } from './comments'
@@ -188,10 +208,8 @@ export function processDeclarations(
     }
   }
 
-  // Build reference check sets for interfaces
-  // Join all referencing texts into ONE string, then search each interface name once.
-  // This replaces the O(interfaces * (functions + classes + types)) nested loop
-  // with O(total_text_length + interfaces * total_text_length) which is more cache-friendly.
+  // Build reference check sets for interfaces using a word Set.
+  // Extract all words from referencing texts in O(n), then O(1) lookup per interface.
   const interfaceReferences = new Set<string>()
   if (interfaces.length > 0) {
     const refParts: string[] = []
@@ -201,9 +219,9 @@ export function processDeclarations(
     for (const cls of classes) refParts.push(cls.text)
     for (const type of types) refParts.push(type.text)
     if (refParts.length > 0) {
-      const refText = refParts.join('\n')
+      const refWords = extractWordSet(refParts.join('\n'))
       for (const iface of interfaces) {
-        if (isWordInText(iface.name, refText)) {
+        if (refWords.has(iface.name)) {
           interfaceReferences.add(iface.name)
         }
       }
@@ -237,12 +255,12 @@ export function processDeclarations(
     for (const exp of exports) textParts.push(exp.text)
     const combinedText = textParts.join('\n')
 
-    // Import detection: search each import item once in the combined text.
-    // This replaces the O(imports * text_parts) nested loop with O(imports) searches
-    // on a single string, leveraging native indexOf for cache-friendly scanning.
+    // Import detection: extract all words from combined text once (O(n)),
+    // then O(1) lookup per import item.
     if (combinedText && allImportedItemsMap.size > 0) {
+      const combinedWords = extractWordSet(combinedText)
       for (const item of allImportedItemsMap.keys()) {
-        if (isWordInText(item, combinedText)) {
+        if (combinedWords.has(item)) {
           usedImportItems.add(item)
         }
       }

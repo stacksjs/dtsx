@@ -726,7 +726,9 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
     // Regular array processing — also track nested defaults for clean default building
     const track_defaults = _collect_clean_default and !is_const;
     var element_types = std.array_list.Managed([]const u8).init(alloc);
+    try element_types.ensureTotalCapacity(elements.len);
     var nested_defaults = std.array_list.Managed(?[]const u8).init(alloc);
+    if (track_defaults) try nested_defaults.ensureTotalCapacity(elements.len);
     for (elements) |el| {
         const trimmed_el = trim(el);
         const saved = _clean_default_result;
@@ -748,6 +750,7 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
             _clean_default_result = try collapseWhitespace(alloc, value);
         } else {
             var clean_elems = std.array_list.Managed([]const u8).init(alloc);
+            try clean_elems.ensureTotalCapacity(elements.len);
             for (elements, 0..) |el, ei| {
                 const te = trim(el);
                 if (ch.endsWith(te, " as const") or ch.endsWith(te, "as const")) continue;
@@ -793,19 +796,17 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
         return parts.toOwnedSlice();
     }
 
-    // Single-pass: deduplicate types AND check if all are literals
+    // Single-pass: deduplicate types (O(1) HashMap lookup) AND check if all are literals
     var unique = std.array_list.Managed([]const u8).init(alloc);
+    var unique_set = std.StringHashMap(void).init(alloc);
+    try unique_set.ensureTotalCapacity(@intCast(@max(types.len, 4)));
     var all_literals = true;
     for (types) |t| {
-        // Dedup check
-        var found = false;
-        for (unique.items) |u| {
-            if (std.mem.eql(u8, t, u)) {
-                found = true;
-                break;
-            }
+        // O(1) dedup check via HashMap
+        if (!unique_set.contains(t)) {
+            try unique_set.put(t, {});
+            try unique.append(t);
         }
-        if (!found) try unique.append(t);
         // Literal check
         if (all_literals) {
             const is_literal = isNumericLiteral(t) or

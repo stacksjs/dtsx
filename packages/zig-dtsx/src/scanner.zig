@@ -448,8 +448,8 @@ pub const Scanner = struct {
         var brace_depth: isize = 0;
         while (self.pos < self.len) {
             // SIMD fast-skip: bulk-skip bytes that can't be structural.
-            // Look for: { } ; ' " ` / \n \r
             if (brace_depth > 0) {
+                // Inside braces: look for { } ' " ` /
                 while (self.pos + 16 <= self.len) {
                     const chunk: @Vector(16, u8) = self.source[self.pos..][0..16].*;
                     const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
@@ -464,8 +464,27 @@ pub const Scanner = struct {
                         break;
                     }
                 }
-                if (self.pos >= self.len) break;
+            } else {
+                // At depth 0: also look for ; \n \r (statement terminators)
+                while (self.pos + 16 <= self.len) {
+                    const chunk: @Vector(16, u8) = self.source[self.pos..][0..16].*;
+                    const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
+                    if (!@reduce(.Or, interesting)) {
+                        self.pos += 16;
+                    } else {
+                        break;
+                    }
+                }
             }
+            if (self.pos >= self.len) break;
 
             const c = self.source[self.pos];
 
@@ -693,6 +712,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
     // Collect text parts for searching
     var text_parts = std.array_list.Managed([]const u8).init(declarations.allocator);
+    text_parts.ensureTotalCapacity(declarations.items.len) catch {};
     defer text_parts.deinit();
     for (declarations.items) |d| {
         if (d.kind != .import_decl) {
@@ -703,10 +723,12 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     var word_set = std.StringHashMap(void).init(declarations.allocator);
     defer word_set.deinit();
 
+    // Track how far we've extracted words — only process new text_parts each iteration
+    var words_extracted_up_to: usize = 0;
+
     while (true) {
-        // Build word set from all text parts (single pass per part)
-        word_set.clearRetainingCapacity();
-        for (text_parts.items) |part| {
+        // Incrementally extract words from only the NEW text parts
+        for (text_parts.items[words_extracted_up_to..]) |part| {
             var i: usize = 0;
             while (i < part.len) {
                 if (ch.isIdentStart(part[i])) {
@@ -719,8 +741,10 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
                 }
             }
         }
+        words_extracted_up_to = text_parts.items.len;
 
         var to_insert = std.array_list.Managed(Declaration).init(declarations.allocator);
+        to_insert.ensureTotalCapacity(non_exported_types.count()) catch {};
         defer to_insert.deinit();
 
         var it = non_exported_types.iterator();
@@ -749,6 +773,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
         // Merge at correct source positions
         var merged = std.array_list.Managed(Declaration).init(declarations.allocator);
+        merged.ensureTotalCapacity(declarations.items.len + to_insert.items.len) catch {};
         var ti: usize = 0;
         for (declarations.items) |d| {
             while (ti < to_insert.items.len and to_insert.items[ti].start <= d.start) {

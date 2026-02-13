@@ -8,9 +8,11 @@
  * Usage: bun benchmark/ci-summary.ts [--results path] [--base path]
  */
 
-import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { isolatedDeclarationSync } from 'oxc-transform'
 import ts from 'typescript'
 
@@ -192,7 +194,7 @@ function dtsxGenerateNoCache(source: string, filename: string): string {
 }
 
 // zig-dtsx — FFI (in-process, no spawn overhead)
-let zigProcessSource: ((source: string, keepComments: boolean) => string) | null = null
+let zigProcessSource: ((source: string, keepComments: boolean, isolatedDeclarations?: boolean) => string) | null = null
 try {
   const zigMod = await import('../packages/zig-dtsx/src/index')
   if (zigMod.ZIG_AVAILABLE) {
@@ -210,7 +212,36 @@ catch (e) {
 const hasZigDtsx = zigProcessSource !== null
 
 function zigDtsxGenerate(source: string): string {
-  return zigProcessSource!(source, true)
+  return zigProcessSource!(source, true, true)
+}
+
+// tsgo — CLI only (no in-process API)
+const tsgoBin = join(
+  import.meta.dir, '..', 'node_modules',
+  `@typescript/native-preview-${process.platform}-${process.arch}`,
+  'lib',
+  process.platform === 'win32' ? 'tsgo.exe' : 'tsgo',
+)
+const hasTsgo = existsSync(tsgoBin)
+if (hasTsgo) console.log('tsgo CLI available')
+else console.log('tsgo CLI not found, skipping')
+
+const tsgoTmpDir = join(tmpdir(), 'dtsx-bench-tsgo')
+const tsgoOutDir = join(tsgoTmpDir, 'out')
+if (hasTsgo) mkdirSync(tsgoOutDir, { recursive: true })
+
+const tsgoFlags = [
+  '--declaration', '--emitDeclarationOnly', '--isolatedDeclarations',
+  '--skipLibCheck', '--ignoreConfig', '--quiet', '--outDir', tsgoOutDir,
+]
+
+function tsgoGenerate(source: string, filename: string): string {
+  const safeFilename = filename.replace(/[/\\]/g, '_')
+  const tmpFile = join(tsgoTmpDir, safeFilename)
+  writeFileSync(tmpFile, source)
+  spawnSync(tsgoBin, [...tsgoFlags, tmpFile], { stdio: 'pipe', timeout: 30000 })
+  const dtsFile = join(tsgoOutDir, safeFilename.replace(/\.ts$/, '.d.ts'))
+  try { return readFileSync(dtsFile, 'utf8') } catch { return '' }
 }
 
 // Benchmark runner
@@ -235,6 +266,7 @@ interface CrossToolResult {
   dtsxNoCache: TimingResult
   oxc: TimingResult
   tsc: TimingResult
+  tsgo: TimingResult | null
 }
 
 console.log('Running cross-tool comparison...')
@@ -248,10 +280,14 @@ for (const input of crossToolInputs) {
   const dtsxNoCache = benchFn(() => dtsxGenerateNoCache(input.source, input.filename))
   const oxc = benchFn(() => isolatedDeclarationSync(input.filename, input.source, { sourcemap: false }))
   const tsc = benchFn(() => tscGenerate(input.source, input.filename))
+  const tsgo = hasTsgo
+    ? benchFn(() => tsgoGenerate(input.source, input.filename), 2, 20)
+    : null
 
-  crossToolResults.push({ input: input.name, zigDtsx, dtsx, dtsxNoCache, oxc, tsc })
+  crossToolResults.push({ input: input.name, zigDtsx, dtsx, dtsxNoCache, oxc, tsc, tsgo })
   const zigStr = zigDtsx ? `zig-dtsx=${zigDtsx.avg.toFixed(3)}ms ` : ''
-  console.log(`  ${input.name}: ${zigStr}dtsx=${dtsx.avg.toFixed(3)}ms oxc=${oxc.avg.toFixed(3)}ms tsc=${tsc.avg.toFixed(3)}ms`)
+  const tsgoStr = tsgo ? ` tsgo=${tsgo.avg.toFixed(3)}ms` : ''
+  console.log(`  ${input.name}: ${zigStr}dtsx=${dtsx.avg.toFixed(3)}ms oxc=${oxc.avg.toFixed(3)}ms tsc=${tsc.avg.toFixed(3)}ms${tsgoStr}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +300,7 @@ interface ProjectResult {
   dtsx: TimingResult
   oxc: TimingResult
   tsc: TimingResult
+  tsgo: TimingResult | null
 }
 
 const projectCounts = [50, 100]
@@ -304,9 +341,31 @@ for (const count of projectCounts) {
     for (const f of projectFiles) tscGenerate(f.source, f.name)
   }, 1, 5)
 
-  projectResults.push({ fileCount: count, zigDtsx: zigProject, dtsx: dtsxProject, oxc: oxcProject, tsc: tscProject })
+  // tsgo: write all files to temp dir, then benchmark single invocation with all files
+  let tsgoProject: TimingResult | null = null
+  if (hasTsgo) {
+    const tsgoProjectDir = join(tsgoTmpDir, `project-${count}`)
+    const tsgoProjectOut = join(tsgoProjectDir, 'out')
+    mkdirSync(tsgoProjectOut, { recursive: true })
+    const tsgoProjectFiles: string[] = []
+    for (const f of projectFiles) {
+      const fpath = join(tsgoProjectDir, f.name)
+      writeFileSync(fpath, f.source)
+      tsgoProjectFiles.push(fpath)
+    }
+    tsgoProject = benchFn(() => {
+      spawnSync(tsgoBin, [
+        '--declaration', '--emitDeclarationOnly', '--isolatedDeclarations',
+        '--skipLibCheck', '--ignoreConfig', '--quiet',
+        '--outDir', tsgoProjectOut, ...tsgoProjectFiles,
+      ], { stdio: 'pipe', timeout: 60000 })
+    }, 1, 5)
+  }
+
+  projectResults.push({ fileCount: count, zigDtsx: zigProject, dtsx: dtsxProject, oxc: oxcProject, tsc: tscProject, tsgo: tsgoProject })
   const zigStr = zigProject ? `zig-dtsx=${zigProject.avg.toFixed(1)}ms ` : ''
-  console.log(`  ${count} files: ${zigStr}dtsx=${dtsxProject.avg.toFixed(1)}ms oxc=${oxcProject.avg.toFixed(1)}ms tsc=${tscProject.avg.toFixed(1)}ms`)
+  const tsgoStr = tsgoProject ? ` tsgo=${tsgoProject.avg.toFixed(1)}ms` : ''
+  console.log(`  ${count} files: ${zigStr}dtsx=${dtsxProject.avg.toFixed(1)}ms oxc=${oxcProject.avg.toFixed(1)}ms tsc=${tscProject.avg.toFixed(1)}ms${tsgoStr}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +461,13 @@ noCacheTools.push(
 )
 renderTable('In-Process API — No Cache', 'Raw single-transform comparison (cache cleared every iteration).', noCacheTools)
 
+// --- tsgo note (CLI-only, not comparable to in-process tools) ---
+if (hasTsgo) {
+  md += '> **Note:** tsgo (`@typescript/native-preview`) is CLI-only — no in-process API is available yet. '
+  md += 'Each measurement includes ~40ms process spawn overhead, so it is not directly comparable to the in-process tools above. '
+  md += 'Once tsgo ships an in-process API, it will be added to the tables.\n\n'
+}
+
 // --- Multi-file project table ---
 if (projectResults.length > 0) {
   md += '### Multi-File Project\n\n'
@@ -477,6 +543,78 @@ else {
   md += '> _No previous benchmark found for regression comparison_\n\n'
 }
 
+// Cross-tool regression tracking (zig-dtsx vs oxc-transform specific + all tools)
+if (hasZigDtsx) {
+  md += '### zig-dtsx vs oxc-transform\n\n'
+  md += '| Input Size | zig-dtsx | oxc-transform | Speedup |\n'
+  md += '|-----------|----------|---------------|----------|\n'
+  for (const r of crossToolResults) {
+    if (!r.zigDtsx) continue
+    const speedup = r.oxc.avg / r.zigDtsx.avg
+    const emoji = speedup >= 1 ? ':green_circle:' : ':red_circle:'
+    md += `| ${r.input} | ${fmt(r.zigDtsx.avg)} | ${fmt(r.oxc.avg)} | ${emoji} ${speedup.toFixed(2)}x |\n`
+  }
+  md += '\n'
+}
+
+// zig-dtsx self-improvement vs previous run
+const baseCrossToolForSelf = (base as any)?.crossTool as { input: string, zigDtsxMs: number | null }[] | undefined
+const baseProjectForSelf = (base as any)?.projectBench as { fileCount: number, zigDtsxMs: number | null }[] | undefined
+
+if (hasZigDtsx && baseCrossToolForSelf && baseCrossToolForSelf.length > 0) {
+  md += '### zig-dtsx Improvement vs Previous Run\n\n'
+  md += '| Input Size | Previous | Current | Change |\n'
+  md += '|-----------|----------|---------|--------|\n'
+
+  for (const r of crossToolResults) {
+    if (!r.zigDtsx) continue
+    const baseRow = baseCrossToolForSelf.find(b => b.input === r.input)
+    if (!baseRow || baseRow.zigDtsxMs == null) continue
+    const delta = fmtDelta(r.zigDtsx.avg, baseRow.zigDtsxMs)
+    md += `| ${r.input} | ${fmt(baseRow.zigDtsxMs)} | ${fmt(r.zigDtsx.avg)} | ${delta} |\n`
+  }
+
+  // Also include multi-file project comparison
+  if (baseProjectForSelf && baseProjectForSelf.length > 0) {
+    for (const r of projectResults) {
+      if (!r.zigDtsx) continue
+      const baseRow = baseProjectForSelf.find(b => b.fileCount === r.fileCount)
+      if (!baseRow || baseRow.zigDtsxMs == null) continue
+      const delta = fmtDelta(r.zigDtsx.avg, baseRow.zigDtsxMs)
+      md += `| ${r.fileCount} files (project) | ${fmt(baseRow.zigDtsxMs)} | ${fmt(r.zigDtsx.avg)} | ${delta} |\n`
+    }
+  }
+  md += '\n'
+}
+
+// Cross-tool regression vs previous run
+const baseCrossTool = (base as any)?.crossTool as { input: string, zigDtsxMs: number | null, dtsxCachedMs: number, dtsxNoCacheMs: number, oxcMs: number, tscMs: number, tsgoMs?: number | null }[] | undefined
+if (baseCrossTool && baseCrossTool.length > 0) {
+  md += '### Cross-Tool Changes vs Previous Run\n\n'
+  md += '| Input Size | Tool | Previous | Current | Change |\n'
+  md += '|-----------|------|----------|---------|--------|\n'
+
+  const toolAccessors: { name: string, baseKey: string, getCurrent: (r: CrossToolResult) => number | null }[] = [
+    { name: 'zig-dtsx', baseKey: 'zigDtsxMs', getCurrent: r => r.zigDtsx?.avg ?? null },
+    { name: 'oxc-transform', baseKey: 'oxcMs', getCurrent: r => r.oxc.avg },
+    { name: 'dtsx (no-cache)', baseKey: 'dtsxNoCacheMs', getCurrent: r => r.dtsxNoCache.avg },
+    { name: 'tsc', baseKey: 'tscMs', getCurrent: r => r.tsc.avg },
+  ]
+
+  for (const r of crossToolResults) {
+    const baseRow = baseCrossTool.find(b => b.input === r.input)
+    if (!baseRow) continue
+    for (const tool of toolAccessors) {
+      const prev = (baseRow as any)[tool.baseKey] as number | null
+      const curr = tool.getCurrent(r)
+      if (prev == null || curr == null) continue
+      const delta = fmtDelta(curr, prev)
+      md += `| ${r.input} | ${tool.name} | ${fmt(prev)} | ${fmt(curr)} | ${delta} |\n`
+    }
+  }
+  md += '\n'
+}
+
 // Internal benchmark details (collapsible)
 md += '<details>\n<summary><strong>Internal Benchmark Details</strong></summary>\n\n'
 
@@ -540,6 +678,7 @@ const fullResults = {
     dtsxNoCacheMs: r.dtsxNoCache.avg,
     oxcMs: r.oxc.avg,
     tscMs: r.tsc.avg,
+    tsgoMs: r.tsgo?.avg ?? null,
   })),
   projectBench: projectResults.map(r => ({
     fileCount: r.fileCount,
@@ -547,6 +686,7 @@ const fullResults = {
     dtsxMs: r.dtsx.avg,
     oxcMs: r.oxc.avg,
     tscMs: r.tsc.avg,
+    tsgoMs: r.tsgo?.avg ?? null,
   })),
 }
 writeFileSync(resultsPath, JSON.stringify(fullResults, null, 2))

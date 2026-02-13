@@ -1356,7 +1356,7 @@ export function isGenericType(typeAnnotation: string): boolean {
 
   // Object types like { [key: string]: any }
   // Use [^\]]* instead of .* to avoid backtracking past the closing bracket
-  if (trimmed.match(/^\{\s*\[[^\]]*\]:\s*(any|string|number|unknown)\s*\}$/)) {
+  if (/^\{\s*\[[^\]]*\]:\s*(any|string|number|unknown)\s*\}$/.test(trimmed)) {
     return true
   }
 

@@ -214,7 +214,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 continue;
             };
             const output = emitter.processDeclarations(
-                alloc, scanner.declarations.items, buf[0..nread],
+                alloc, alloc, scanner.declarations.items, buf[0..nread],
                 task.keep_comments, &default_import_order,
             ) catch {
                 _ = arena.reset(.retain_capacity);
@@ -262,7 +262,7 @@ fn workerFn(ctx: WorkerCtx) void {
                 continue;
             };
             const output = emitter.processDeclarations(
-                alloc, scanner.declarations.items, source,
+                alloc, alloc, scanner.declarations.items, source,
                 task.keep_comments, &default_import_order,
             ) catch {
                 _ = arena.reset(.retain_capacity);
@@ -504,6 +504,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
 
     const default_import_order = [_][]const u8{"bun"};
     const dts_output = try emitter.processDeclarations(
+        arena_alloc,
         arena_alloc,
         scanner.declarations.items,
         source,

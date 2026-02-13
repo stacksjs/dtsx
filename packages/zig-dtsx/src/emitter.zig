@@ -8,7 +8,7 @@ const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 
 /// Check if a character is an identifier character (for word boundary checks)
-fn isIdentChar(c: u8) bool {
+inline fn isIdentChar(c: u8) bool {
     return (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '_' or c == '$' or c > 127;
 }
 
@@ -80,7 +80,12 @@ fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_
     const cmts = comments orelse return "";
     if (cmts.len == 0) return "";
 
+    // Pre-size: estimate total comment length
+    var total_len: usize = cmts.len; // newlines
+    for (cmts) |c| total_len += c.len;
+
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(total_len);
     if (cmts.len == 1) {
         const t = ch.sliceTrimmed(cmts[0], 0, cmts[0].len);
         try result.appendSlice(t);
@@ -97,142 +102,31 @@ fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_
     return result.toOwnedSlice();
 }
 
-/// Parse import statement to extract components
-fn parseImportStatement(alloc: std.mem.Allocator, import_text: []const u8) !?struct {
+const ParsedImportResult = struct {
     default_name: ?[]const u8,
-    named_items: [][]const u8,
+    named_items: []const []const u8,
     source: []const u8,
     is_type_only: bool,
-} {
-    // Find 'from' and extract source
-    const from_idx = ch.indexOf(import_text, " from ", 0) orelse return null;
+};
 
-    // Extract source between quotes
-    var after_from_start = from_idx + 6;
-    while (after_from_start < import_text.len and ch.isWhitespace(import_text[after_from_start])) after_from_start += 1;
-    if (after_from_start >= import_text.len) return null;
-
-    const quote_char = import_text[after_from_start];
-    if (quote_char != '"' and quote_char != '\'') return null;
-
-    const end_quote = ch.indexOfChar(import_text, quote_char, after_from_start + 1) orelse return null;
-    const source = import_text[after_from_start + 1 .. end_quote];
-
-    // Parse the import part (before 'from')
-    var import_part = ch.sliceTrimmed(import_text, 0, from_idx);
-
-    // Check for 'import type'
-    var is_type_only = false;
-    if (ch.startsWith(import_part, "import type ")) {
-        is_type_only = true;
-        import_part = ch.sliceTrimmed(import_part, 12, import_part.len);
-    } else if (ch.startsWith(import_part, "import ")) {
-        import_part = ch.sliceTrimmed(import_part, 7, import_part.len);
-    }
-
-    // Handle 'type ' prefix after removing 'import'
-    if (ch.startsWith(import_part, "type ")) {
-        import_part = ch.sliceTrimmed(import_part, 5, import_part.len);
-    }
-
-    var default_name: ?[]const u8 = null;
-    var named_items = std.array_list.Managed([]const u8).init(alloc);
-
-    // Check for braces
-    const brace_start = ch.indexOfChar(import_part, '{', 0);
-    const brace_end = std.mem.lastIndexOf(u8, import_part, "}");
-
-    if (brace_start != null and brace_end != null) {
-        const bs = brace_start.?;
-        const be = brace_end.?;
-
-        // Check for default import before braces
-        if (bs > 0) {
-            var before_brace = ch.sliceTrimmed(import_part, 0, bs);
-            if (before_brace.len > 0 and before_brace[before_brace.len - 1] == ',') {
-                before_brace = ch.sliceTrimmed(before_brace, 0, before_brace.len - 1);
-                if (before_brace.len > 0) default_name = before_brace;
-            }
-        }
-
-        // Extract named imports
-        const named_part = import_part[bs + 1 .. be];
-        var iter = std.mem.splitSequence(u8, named_part, ",");
-        while (iter.next()) |item| {
-            const trimmed = ch.sliceTrimmed(item, 0, item.len);
-            if (trimmed.len > 0) {
-                try named_items.append(trimmed);
-            }
-        }
-    } else {
-        // Default import only
-        if (import_part.len > 0) default_name = import_part;
-    }
-
+/// Get parsed import components from a declaration's cached parsed_import.
+fn getParsedImport(decl: Declaration) ?ParsedImportResult {
+    const pi = decl.parsed_import orelse return null;
     return .{
-        .default_name = default_name,
-        .named_items = try named_items.toOwnedSlice(),
-        .source = source,
-        .is_type_only = is_type_only,
+        .default_name = pi.default_name,
+        .named_items = pi.named_items,
+        .source = pi.source,
+        .is_type_only = pi.is_type_only,
     };
 }
 
-/// Extract all imported item names from an import statement (for filtering)
-fn extractAllImportedItems(alloc: std.mem.Allocator, import_text: []const u8) ![][]const u8 {
-    var items = std.array_list.Managed([]const u8).init(alloc);
-
-    const from_idx = ch.indexOf(import_text, " from ", 0) orelse return items.toOwnedSlice();
-
-    var import_part = ch.sliceTrimmed(import_text, 0, from_idx);
-
-    // Remove 'import' and optional 'type'
-    if (ch.startsWith(import_part, "import ")) {
-        import_part = ch.sliceTrimmed(import_part, 7, import_part.len);
+/// Extract all imported item names from an import declaration (for filtering).
+/// Uses cached parsed_import when available to avoid re-parsing.
+fn extractAllImportedItems(decl: Declaration) []const []const u8 {
+    if (decl.parsed_import) |pi| {
+        return pi.resolved_items;
     }
-    if (ch.startsWith(import_part, "type ")) {
-        import_part = ch.sliceTrimmed(import_part, 5, import_part.len);
-    }
-
-    const brace_start = ch.indexOfChar(import_part, '{', 0);
-    const brace_end = std.mem.lastIndexOf(u8, import_part, "}");
-
-    if (brace_start != null and brace_end != null) {
-        const bs = brace_start.?;
-        const be = brace_end.?;
-
-        // Default before braces
-        if (bs > 0) {
-            var before = ch.sliceTrimmed(import_part, 0, bs);
-            if (before.len > 0 and before[before.len - 1] == ',') {
-                before = ch.sliceTrimmed(before, 0, before.len - 1);
-            }
-            if (before.len > 0 and !ch.contains(before, ",")) {
-                try items.append(before);
-            }
-        }
-
-        // Named imports
-        const named_part = import_part[bs + 1 .. be];
-        var iter = std.mem.splitSequence(u8, named_part, ",");
-        while (iter.next()) |raw_item| {
-            var trimmed = ch.sliceTrimmed(raw_item, 0, raw_item.len);
-            if (trimmed.len == 0) continue;
-            // Remove 'type ' prefix
-            if (ch.startsWith(trimmed, "type ")) {
-                trimmed = ch.sliceTrimmed(trimmed, 5, trimmed.len);
-            }
-            // Handle 'as' alias
-            if (ch.indexOf(trimmed, " as ", 0)) |as_idx| {
-                trimmed = ch.sliceTrimmed(trimmed, as_idx + 4, trimmed.len);
-            }
-            if (trimmed.len > 0) try items.append(trimmed);
-        }
-    } else {
-        // Default import only
-        if (import_part.len > 0) try items.append(import_part);
-    }
-
-    return items.items;
+    return &.{};
 }
 
 /// Process a variable declaration for DTS output
@@ -241,10 +135,30 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
 
     // Fast path: if we have type annotation and no value needing special inference
     if (decl.type_annotation.len > 0 and decl.value.len == 0) {
+        if (comments.len == 0) return decl.text;
         var result = std.array_list.Managed(u8).init(alloc);
         try result.appendSlice(comments);
         try result.appendSlice(decl.text);
         return result.toOwnedSlice();
+    }
+
+    // Fast path: type annotation set + value exists but doesn't need special handling.
+    // The scanner already built the correct DTS text using the type annotation,
+    // so we can return it directly without type inference or value processing.
+    if (decl.type_annotation.len > 0 and decl.value.len > 0) {
+        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
+        if (!ch.endsWith(trimmed_val, "as const") and
+            !ch.contains(decl.value, " satisfies "))
+        {
+            const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
+            if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
+                if (comments.len == 0) return decl.text;
+                var result = std.array_list.Managed(u8).init(alloc);
+                try result.appendSlice(comments);
+                try result.appendSlice(decl.text);
+                return result.toOwnedSlice();
+            }
+        }
     }
 
     var result = std.array_list.Managed(u8).init(alloc);
@@ -414,13 +328,16 @@ fn processInterfaceDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep
 
     // If the text already starts with proper keywords, use it
     if (ch.startsWith(decl.text, "export declare interface") or ch.startsWith(decl.text, "declare interface")) {
+        if (comments.len == 0) return decl.text;
         var result = std.array_list.Managed(u8).init(alloc);
+        try result.ensureTotalCapacity(comments.len + decl.text.len);
         try result.appendSlice(comments);
         try result.appendSlice(decl.text);
         return result.toOwnedSlice();
     }
 
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
     try result.appendSlice(comments);
 
     if (decl.is_exported) try result.appendSlice("export ");
@@ -449,6 +366,7 @@ fn processTypeDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comm
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
     try result.appendSlice(comments);
 
     if (decl.is_exported) try result.appendSlice("export ");
@@ -485,6 +403,7 @@ fn processEnumDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comm
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
     try result.appendSlice(comments);
 
     if (decl.is_exported) try result.appendSlice("export ");
@@ -520,7 +439,9 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
 
     // Global augmentation
     if (ch.startsWith(decl.text, "declare global")) {
+        if (comments.len == 0) return decl.text;
         var result = std.array_list.Managed(u8).init(alloc);
+        try result.ensureTotalCapacity(comments.len + decl.text.len);
         try result.appendSlice(comments);
         try result.appendSlice(decl.text);
         return result.toOwnedSlice();
@@ -532,6 +453,7 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
 
     if (is_ambient) {
         var result = std.array_list.Managed(u8).init(alloc);
+        try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
         try result.appendSlice(comments);
         try result.appendSlice("declare module ");
         try result.appendSlice(decl.name);
@@ -547,6 +469,7 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
 
     // Regular namespace
     var result = std.array_list.Managed(u8).init(alloc);
+    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
     try result.appendSlice(comments);
 
     if (decl.is_exported) try result.appendSlice("export ");
@@ -576,16 +499,19 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
     return result.toOwnedSlice();
 }
 
-/// Main entry point: process declarations array into final .d.ts output
+/// Main entry point: process declarations array into final .d.ts output.
+/// `result_alloc` is used for the final output buffer (may differ from `alloc`
+/// so the result can survive arena reset in FFI mode).
 pub fn processDeclarations(
     alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
     declarations: []const Declaration,
     source_code: []const u8,
     keep_comments: bool,
     import_order: []const []const u8,
 ) ![]const u8 {
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(source_code.len / 2);
+    var result = std.array_list.Managed(u8).init(result_alloc);
+    try result.ensureTotalCapacity(source_code.len);
 
     // Extract triple-slash directives
     // Fast check: skip whitespace
@@ -599,16 +525,26 @@ pub fn processDeclarations(
         }
     }
 
-    // Group declarations by type
+    // Group declarations by type (pre-size to avoid incremental reallocation)
+    const group_cap: usize = @max(declarations.len / 4, 4);
     var imports = std.array_list.Managed(Declaration).init(alloc);
+    try imports.ensureTotalCapacity(group_cap);
     var functions = std.array_list.Managed(Declaration).init(alloc);
+    try functions.ensureTotalCapacity(group_cap);
     var variables = std.array_list.Managed(Declaration).init(alloc);
+    try variables.ensureTotalCapacity(group_cap);
     var interfaces = std.array_list.Managed(Declaration).init(alloc);
+    try interfaces.ensureTotalCapacity(group_cap);
     var type_decls = std.array_list.Managed(Declaration).init(alloc);
+    try type_decls.ensureTotalCapacity(group_cap);
     var classes = std.array_list.Managed(Declaration).init(alloc);
+    try classes.ensureTotalCapacity(group_cap);
     var enums = std.array_list.Managed(Declaration).init(alloc);
+    try enums.ensureTotalCapacity(group_cap);
     var modules = std.array_list.Managed(Declaration).init(alloc);
+    try modules.ensureTotalCapacity(group_cap);
     var exports = std.array_list.Managed(Declaration).init(alloc);
+    try exports.ensureTotalCapacity(group_cap);
 
     for (declarations) |d| {
         switch (d.kind) {
@@ -629,27 +565,35 @@ pub fn processDeclarations(
     var exported_items = std.StringHashMap(void).init(alloc);
     try exported_items.ensureTotalCapacity(@intCast(@max(exports.items.len * 4, 8)));
     var type_export_stmts = std.array_list.Managed([]const u8).init(alloc);
+    try type_export_stmts.ensureTotalCapacity(@max(exports.items.len / 2, 2));
     var value_export_stmts = std.array_list.Managed([]const u8).init(alloc);
+    try value_export_stmts.ensureTotalCapacity(@max(exports.items.len / 2, 2));
     var default_exports = std.array_list.Managed([]const u8).init(alloc);
     var seen_exports = std.StringHashMap(void).init(alloc);
     try seen_exports.ensureTotalCapacity(@intCast(@max(exports.items.len, 4)));
+
+    // Reusable buffer for building export statements (avoids per-iteration alloc)
+    var stmt_buf = std.array_list.Managed(u8).init(alloc);
+    try stmt_buf.ensureTotalCapacity(256);
 
     for (exports.items) |decl| {
         const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
         if (ch.startsWith(decl.text, "export default")) {
-            var stmt = std.array_list.Managed(u8).init(alloc);
-            try stmt.appendSlice(comments);
-            try stmt.appendSlice(decl.text);
-            if (!ch.endsWith(decl.text, ";")) try stmt.append(';');
-            try default_exports.append(try stmt.toOwnedSlice());
+            stmt_buf.clearRetainingCapacity();
+            try stmt_buf.appendSlice(comments);
+            try stmt_buf.appendSlice(decl.text);
+            if (!ch.endsWith(decl.text, ";")) try stmt_buf.append(';');
+            try default_exports.append(try stmt_buf.toOwnedSlice());
         } else {
             var export_text = ch.sliceTrimmed(decl.text, 0, decl.text.len);
             // Ensure semicolon
-            var text_buf = std.array_list.Managed(u8).init(alloc);
-            try text_buf.appendSlice(export_text);
-            if (!ch.endsWith(export_text, ";")) try text_buf.append(';');
-            export_text = try text_buf.toOwnedSlice();
+            if (!ch.endsWith(export_text, ";")) {
+                stmt_buf.clearRetainingCapacity();
+                try stmt_buf.appendSlice(export_text);
+                try stmt_buf.append(';');
+                export_text = try stmt_buf.toOwnedSlice();
+            }
 
             // Extract exported items for tracking
             // Look for export { items } or export type { items }
@@ -666,13 +610,13 @@ pub fn processDeclarations(
                 }
             }
 
-            var full = std.array_list.Managed(u8).init(alloc);
-            try full.appendSlice(comments);
-            try full.appendSlice(export_text);
-            const full_text = try full.toOwnedSlice();
+            stmt_buf.clearRetainingCapacity();
+            try stmt_buf.appendSlice(comments);
+            try stmt_buf.appendSlice(export_text);
+            const full_text = try stmt_buf.toOwnedSlice();
 
-            if (!seen_exports.contains(full_text)) {
-                try seen_exports.put(full_text, {});
+            const gop = try seen_exports.getOrPut(full_text);
+            if (!gop.found_existing) {
                 if (ch.contains(full_text, "export type")) {
                     try type_export_stmts.append(full_text);
                 } else {
@@ -682,69 +626,62 @@ pub fn processDeclarations(
         }
     }
 
-    // Build import-item-to-declaration map
-    const ImportDeclMap = std.StringHashMap(Declaration);
-    var all_imported_items_map = ImportDeclMap.init(alloc);
-    try all_imported_items_map.ensureTotalCapacity(@intCast(@max(imports.items.len * 4, 8)));
-    for (imports.items) |imp| {
-        const items = try extractAllImportedItems(alloc, imp.text);
-        for (items) |item| {
-            try all_imported_items_map.put(item, imp);
-        }
-    }
-
-    // Build combined word set — used for BOTH interface reference detection
-    // AND import usage filtering. Single pass over all declaration texts.
-    var combined_words = std.StringHashMap(void).init(alloc);
-    try combined_words.ensureTotalCapacity(128);
-    for (functions.items) |func| {
-        if (func.is_exported) extractWords(&combined_words, func.text);
-    }
-    for (variables.items) |variable| {
-        if (variable.is_exported) {
-            extractWords(&combined_words, variable.text);
-            if (variable.type_annotation.len > 0) {
-                extractWords(&combined_words, variable.type_annotation);
-            }
-        }
-    }
-    for (type_decls.items) |td| {
-        extractWords(&combined_words, td.text);
-    }
-    for (classes.items) |cls| {
-        extractWords(&combined_words, cls.text);
-    }
-    for (enums.items) |e| {
-        extractWords(&combined_words, e.text);
-    }
-    for (modules.items) |m| {
-        extractWords(&combined_words, m.text);
-    }
-    for (exports.items) |exp| {
-        extractWords(&combined_words, exp.text);
-    }
-
-    // Interface reference detection using the combined word set
+    // Short-circuit: skip combined_words building and import map when there are no imports.
+    // For import-free code (e.g. synthetic benchmarks), this avoids O(n) word
+    // extraction across all declarations — a significant saving on large inputs.
     var interface_references = std.StringHashMap(void).init(alloc);
-    try interface_references.ensureTotalCapacity(@intCast(@max(interfaces.items.len, 4)));
-    if (interfaces.items.len > 0 and combined_words.count() > 0) {
-        for (interfaces.items) |iface| {
-            if (combined_words.contains(iface.name)) {
-                try interface_references.put(iface.name, {});
+    var processed_imports = std.array_list.Managed([]const u8).init(alloc);
+
+    if (imports.items.len > 0) {
+        // Build import-item-to-declaration map (only when imports exist)
+        const ImportDeclMap = std.StringHashMap(Declaration);
+        var all_imported_items_map = ImportDeclMap.init(alloc);
+        try all_imported_items_map.ensureTotalCapacity(@intCast(@max(imports.items.len * 4, 8)));
+        for (imports.items) |imp| {
+            const items = extractAllImportedItems(imp);
+            for (items) |item| {
+                try all_imported_items_map.put(item, imp);
             }
         }
-    }
-
-    // Now add interface text to combined_words (after reference detection, before import filtering)
-    for (interfaces.items) |iface| {
-        if (iface.is_exported or interface_references.contains(iface.name)) {
-            extractWords(&combined_words, iface.text);
+        // Build combined word set for interface reference detection AND import filtering.
+        // Single pass over all declarations instead of 7 separate loops per group.
+        var combined_words = std.StringHashMap(void).init(alloc);
+        try combined_words.ensureTotalCapacity(@intCast(@max(declarations.len * 4, 128)));
+        for (declarations) |d| {
+            switch (d.kind) {
+                .function_decl => {
+                    if (d.is_exported) extractWords(&combined_words, d.text);
+                },
+                .variable_decl => {
+                    if (d.is_exported) {
+                        extractWords(&combined_words, d.text);
+                        if (d.type_annotation.len > 0)
+                            extractWords(&combined_words, d.type_annotation);
+                    }
+                },
+                .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {
+                    extractWords(&combined_words, d.text);
+                },
+                .interface_decl, .import_decl, .unknown_decl => {},
+            }
         }
-    }
 
-    // Import usage detection using the same combined word set
-    var processed_imports = std.array_list.Managed([]const u8).init(alloc);
-    if (imports.items.len > 0) {
+        // Interface reference detection
+        try interface_references.ensureTotalCapacity(@intCast(@max(interfaces.items.len, 4)));
+        if (interfaces.items.len > 0 and combined_words.count() > 0) {
+            for (interfaces.items) |iface| {
+                if (combined_words.contains(iface.name)) {
+                    try interface_references.put(iface.name, {});
+                }
+            }
+        }
+
+        // Add interface text to combined_words (after ref detection, before import filtering)
+        for (interfaces.items) |iface| {
+            if (iface.is_exported or interface_references.contains(iface.name)) {
+                extractWords(&combined_words, iface.text);
+            }
+        }
         var used_import_items = std.StringHashMap(void).init(alloc);
         try used_import_items.ensureTotalCapacity(@intCast(@max(imports.items.len * 4, 8)));
 
@@ -766,21 +703,28 @@ pub fn processDeclarations(
         }
 
         // Filter and rebuild imports
+        try processed_imports.ensureTotalCapacity(imports.items.len);
+        // Reusable buffer for building import statements
+        var import_buf = std.array_list.Managed(u8).init(alloc);
+        try import_buf.ensureTotalCapacity(256);
+        var used_named = std.array_list.Managed([]const u8).init(alloc);
+        try used_named.ensureTotalCapacity(16);
+
         for (imports.items) |imp| {
             // Preserve side-effect imports
             if (imp.is_side_effect) {
                 const trimmed_imp = ch.sliceTrimmed(imp.text, 0, imp.text.len);
-                var se_buf = std.array_list.Managed(u8).init(alloc);
-                try se_buf.appendSlice(trimmed_imp);
-                if (!ch.endsWith(trimmed_imp, ";")) try se_buf.append(';');
-                try processed_imports.append(try se_buf.toOwnedSlice());
+                import_buf.clearRetainingCapacity();
+                try import_buf.appendSlice(trimmed_imp);
+                if (!ch.endsWith(trimmed_imp, ";")) try import_buf.append(';');
+                try processed_imports.append(try import_buf.toOwnedSlice());
                 continue;
             }
 
-            const parsed = try parseImportStatement(alloc, imp.text) orelse continue;
+            const parsed = getParsedImport(imp) orelse continue;
 
             const used_default = if (parsed.default_name) |dn| used_import_items.contains(dn) else false;
-            var used_named = std.array_list.Managed([]const u8).init(alloc);
+            used_named.clearRetainingCapacity();
 
             for (parsed.named_items) |item| {
                 var clean_item = item;
@@ -796,37 +740,37 @@ pub fn processDeclarations(
             }
 
             if (used_default or used_named.items.len > 0) {
-                var import_stmt = std.array_list.Managed(u8).init(alloc);
+                import_buf.clearRetainingCapacity();
                 if (parsed.is_type_only) {
-                    try import_stmt.appendSlice("import type ");
+                    try import_buf.appendSlice("import type ");
                 } else {
-                    try import_stmt.appendSlice("import ");
+                    try import_buf.appendSlice("import ");
                 }
 
                 if (used_default) {
-                    if (parsed.default_name) |dn| try import_stmt.appendSlice(dn);
+                    if (parsed.default_name) |dn| try import_buf.appendSlice(dn);
                     if (used_named.items.len > 0) {
-                        try import_stmt.appendSlice(", { ");
+                        try import_buf.appendSlice(", { ");
                         for (used_named.items, 0..) |ni, idx| {
-                            if (idx > 0) try import_stmt.appendSlice(", ");
-                            try import_stmt.appendSlice(ni);
+                            if (idx > 0) try import_buf.appendSlice(", ");
+                            try import_buf.appendSlice(ni);
                         }
-                        try import_stmt.appendSlice(" }");
+                        try import_buf.appendSlice(" }");
                     }
                 } else if (used_named.items.len > 0) {
-                    try import_stmt.appendSlice("{ ");
+                    try import_buf.appendSlice("{ ");
                     for (used_named.items, 0..) |ni, idx| {
-                        if (idx > 0) try import_stmt.appendSlice(", ");
-                        try import_stmt.appendSlice(ni);
+                        if (idx > 0) try import_buf.appendSlice(", ");
+                        try import_buf.appendSlice(ni);
                     }
-                    try import_stmt.appendSlice(" }");
+                    try import_buf.appendSlice(" }");
                 }
 
-                try import_stmt.appendSlice(" from '");
-                try import_stmt.appendSlice(parsed.source);
-                try import_stmt.appendSlice("';");
+                try import_buf.appendSlice(" from '");
+                try import_buf.appendSlice(parsed.source);
+                try import_buf.appendSlice("';");
 
-                try processed_imports.append(try import_stmt.toOwnedSlice());
+                try processed_imports.append(try import_buf.toOwnedSlice());
             }
         }
 
@@ -913,32 +857,58 @@ pub fn processDeclarations(
 
     for (decl_groups) |group| {
         for (group.items) |decl| {
-            const processed = switch (decl.kind) {
-                .function_decl => blk: {
-                    const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
-                    var buf = std.array_list.Managed(u8).init(alloc);
-                    try buf.appendSlice(comments);
-                    try buf.appendSlice(decl.text);
-                    break :blk try buf.toOwnedSlice();
+            switch (decl.kind) {
+                .function_decl, .class_decl => {
+                    // Direct emit: write comments + text straight to result buffer
+                    // avoiding intermediate allocation + double copy
+                    if (decl.text.len == 0) continue;
+                    if (result.items.len > 0) try result.append('\n');
+                    if (keep_comments) {
+                        if (decl.leading_comments) |cmts| {
+                            if (cmts.len > 0) {
+                                const comments = try formatComments(alloc, cmts, true);
+                                if (comments.len > 0) try result.appendSlice(comments);
+                            }
+                        }
+                    }
+                    try result.appendSlice(decl.text);
                 },
-                .variable_decl => try processVariableDeclaration(alloc, decl, keep_comments),
-                .interface_decl => try processInterfaceDeclaration(alloc, decl, keep_comments),
-                .type_decl => try processTypeDeclaration(alloc, decl, keep_comments),
-                .class_decl => blk: {
-                    const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
-                    var buf = std.array_list.Managed(u8).init(alloc);
-                    try buf.appendSlice(comments);
-                    try buf.appendSlice(decl.text);
-                    break :blk try buf.toOwnedSlice();
+                .variable_decl => {
+                    const processed = try processVariableDeclaration(alloc, decl, keep_comments);
+                    if (processed.len > 0) {
+                        if (result.items.len > 0) try result.append('\n');
+                        try result.appendSlice(processed);
+                    }
                 },
-                .enum_decl => try processEnumDeclaration(alloc, decl, keep_comments),
-                .module_decl, .namespace_decl => try processModuleDeclaration(alloc, decl, keep_comments),
-                else => "",
-            };
-
-            if (processed.len > 0) {
-                if (result.items.len > 0) try result.append('\n');
-                try result.appendSlice(processed);
+                .interface_decl => {
+                    const processed = try processInterfaceDeclaration(alloc, decl, keep_comments);
+                    if (processed.len > 0) {
+                        if (result.items.len > 0) try result.append('\n');
+                        try result.appendSlice(processed);
+                    }
+                },
+                .type_decl => {
+                    const processed = try processTypeDeclaration(alloc, decl, keep_comments);
+                    if (processed.len > 0) {
+                        if (result.items.len > 0) try result.append('\n');
+                        try result.appendSlice(processed);
+                    }
+                },
+                .enum_decl => {
+                    const processed = try processEnumDeclaration(alloc, decl, keep_comments);
+                    if (processed.len > 0) {
+                        if (result.items.len > 0) try result.append('\n');
+                        try result.appendSlice(processed);
+                    }
+                },
+                .module_decl, .namespace_decl => {
+                    const processed = try processModuleDeclaration(alloc, decl, keep_comments);
+                    if (processed.len > 0) {
+                        if (result.items.len > 0) try result.append('\n');
+                        try result.appendSlice(processed);
+                    }
+                },
+                else => {},
             }
         }
     }
@@ -955,7 +925,12 @@ pub fn processDeclarations(
         try result.appendSlice(stmt);
     }
 
-    return result.toOwnedSlice();
+    // Append null terminator so FFI callers get a C string without extra copy.
+    // Returned slice length does NOT include the null byte.
+    const content_len = result.items.len;
+    try result.append(0);
+    const owned = try result.toOwnedSlice();
+    return owned[0..content_len];
 }
 
 // --- Tests ---

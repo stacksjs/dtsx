@@ -626,9 +626,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
       // Check for block comment ending with */
       if (p >= 1 && source.charCodeAt(p) === CH_SLASH && source.charCodeAt(p - 1) === CH_STAR) {
         // Find matching /* or /**
-        let start = p - 2
-        while (start >= 1 && !(source.charCodeAt(start) === CH_SLASH && source.charCodeAt(start + 1) === CH_STAR)) start--
-        if (start >= 0 && source.charCodeAt(start) === CH_SLASH && source.charCodeAt(start + 1) === CH_STAR) {
+        const start = source.lastIndexOf('/*', p - 2)
+        if (start >= 0) {
           comments.push(source.slice(start, p + 1))
           hasBlockComment = true
           p = start - 1
@@ -3184,6 +3183,32 @@ function isWordInText(name: string, text: string): boolean {
   return false
 }
 
+/** Extract all identifier words from text into an existing Set. O(n) single pass. */
+function addWordsToSet(text: string, words: Set<string>): void {
+  let i = 0
+  const len = text.length
+  while (i < len) {
+    const c = text.charCodeAt(i)
+    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36 || c > 127) {
+      const start = i
+      i++
+      while (i < len) {
+        const ch = text.charCodeAt(i)
+        if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) || ch === 95 || ch === 36 || ch > 127) {
+          i++
+        }
+        else {
+          break
+        }
+      }
+      words.add(text.substring(start, i))
+    }
+    else {
+      i++
+    }
+  }
+}
+
 /** Resolve non-exported types that are referenced by exported declarations */
 function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>): void {
   // Iteratively resolve referenced non-exported types (transitive closure)
@@ -3191,29 +3216,23 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   const declNames = new Set<string>()
   for (const d of declarations) declNames.add(d.name)
 
-  // Keep declaration texts as an array — search each part individually (avoids giant join allocation)
+  // Build a word set from all declaration texts — O(1) lookups per type name
+  const wordSet = new Set<string>()
   const textParts: string[] = []
   for (let i = 0; i < declarations.length; i++) {
     if (declarations[i].kind !== 'import') {
       textParts.push(declarations[i].text)
+      addWordsToSet(declarations[i].text, wordSet)
     }
   }
 
   for (;;) {
-    // Collect referenced non-exported types not yet resolved
+    // Collect referenced non-exported types not yet resolved — O(1) per type
     const toInsert: Declaration[] = []
     for (const [name, decl] of nonExportedTypes) {
       if (resolved.has(name))
         continue
-      // Search each text part individually with early break
-      let found = false
-      for (let p = 0; p < textParts.length; p++) {
-        if (isWordInText(name, textParts[p])) {
-          found = true
-          break
-        }
-      }
-      if (found) {
+      if (wordSet.has(name)) {
         if (!declNames.has(name)) {
           toInsert.push(decl)
           declNames.add(name)
@@ -3240,10 +3259,11 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
     declarations.length = 0
     for (let i = 0; i < merged.length; i++) declarations.push(merged[i])
 
-    // Append new texts to parts array for next iteration
+    // Incrementally add new words from inserted declarations
     for (const decl of toInsert) {
       if (decl.kind !== 'import') {
         textParts.push(decl.text)
+        addWordsToSet(decl.text, wordSet)
       }
     }
   }

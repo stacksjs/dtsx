@@ -15,6 +15,15 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
+    // Enable LTO on Linux (LLD required; macOS Mach-O doesn't support LLD)
+    if (target.result.os.tag == .linux) {
+        lib.use_lld = true;
+        lib.lto = .full;
+    }
+    // Strip debug symbols in release builds for smaller binary + faster loads
+    if (optimize != .Debug) {
+        lib.root_module.strip = true;
+    }
     b.installArtifact(lib);
 
     // CLI binary (needs libc for C stdio)
@@ -27,6 +36,9 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
+    if (optimize != .Debug) {
+        exe.root_module.strip = true;
+    }
     b.installArtifact(exe);
 
     // CLI-only step (for cross-compilation without shared library)

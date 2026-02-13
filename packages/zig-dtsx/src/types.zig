@@ -74,6 +74,8 @@ pub const Declaration = struct {
     extends_clause: []const u8 = "",
     /// Implements list
     implements_list: ?[]const []const u8 = null,
+    /// Cached parsed import (populated during scan, avoids re-parsing in emitter)
+    parsed_import: ?ParsedImport = null,
 };
 
 /// Parsed import statement for filtering/sorting
@@ -84,6 +86,8 @@ pub const ParsedImport = struct {
     is_type_only: bool = false,
     is_namespace: bool = false,
     namespace_name: ?[]const u8 = null,
+    /// Pre-resolved item names (type/as stripped) for fast filtering
+    resolved_items: []const []const u8 = &.{},
 };
 
 /// Constructor parameter modifiers (hoisted to avoid per-call allocation)

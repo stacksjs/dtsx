@@ -1,8 +1,19 @@
 /// C ABI exports for Bun FFI integration.
-/// Provides process_source, result_length, free_result.
+/// Provides process_source(+len variants), result_length, free_result.
 const std = @import("std");
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
+
+const ProcessResult = struct {
+    ptr: [*]const u8,
+    len: usize,
+};
+
+fn emptyResult() ProcessResult {
+    const empty = std.heap.c_allocator.alloc(u8, 1) catch @panic("OOM");
+    empty[0] = 0;
+    return .{ .ptr = empty.ptr, .len = 0 };
+}
 
 /// Process TypeScript source → .d.ts output.
 /// Returns a pointer to the result string (null-terminated).
@@ -12,12 +23,38 @@ export fn process_source(
     len: usize,
     keep_comments: bool,
 ) [*]const u8 {
-    return processSourceInternal(input, len, keep_comments, false) catch {
+    const result = processSourceInternal(input, len, keep_comments, false) catch {
         // Return empty string on error — must be c_allocator-allocated so free_result() is safe
-        const empty = std.heap.c_allocator.alloc(u8, 1) catch @panic("OOM");
-        empty[0] = 0;
-        return empty.ptr;
+        return emptyResult().ptr;
     };
+    return result.ptr;
+}
+
+/// Process source and return output length through out_len.
+/// This avoids an extra pass in result_length() on the JS side.
+export fn process_source_with_len(
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    out_len: *u64,
+) [*]const u8 {
+    const result = processSourceInternal(input, len, keep_comments, false) catch {
+        out_len.* = 0;
+        return emptyResult().ptr;
+    };
+    out_len.* = @intCast(result.len);
+    return result.ptr;
+}
+
+/// Thread-local arena: reuse across calls to avoid repeated mmap/munmap syscalls.
+/// reset(.retain_capacity) keeps the backing memory warm in CPU cache.
+threadlocal var tls_arena: ?std.heap.ArenaAllocator = null;
+
+fn getOrInitArena() *std.heap.ArenaAllocator {
+    if (tls_arena == null) {
+        tls_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    }
+    return &(tls_arena.?);
 }
 
 fn processSourceInternal(
@@ -25,41 +62,40 @@ fn processSourceInternal(
     len: usize,
     keep_comments: bool,
     isolated_declarations: bool,
-) ![*]const u8 {
+) !ProcessResult {
     // Handle empty input
     if (len == 0) {
         const result = try std.heap.c_allocator.alloc(u8, 1);
         result[0] = 0;
-        return result.ptr;
+        return .{ .ptr = result.ptr, .len = 0 };
     }
 
     const source = input[0..len];
 
-    // Use arena allocator for all intermediary work
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-    defer arena.deinit();
+    // Reuse thread-local arena — reset frees all allocations but keeps backing pages
+    const arena = getOrInitArena();
+    _ = arena.reset(.retain_capacity);
     const arena_alloc = arena.allocator();
 
     // Scan
     var scanner = Scanner.init(arena_alloc, source, keep_comments, isolated_declarations);
     _ = try scanner.scan();
 
-    // Emit
+    // Emit — result buffer uses c_allocator directly so it survives arena.reset().
+    // processDeclarations appends '\0' before toOwnedSlice, so the result is
+    // already null-terminated with no extra copy needed.
     const default_import_order = [_][]const u8{"bun"};
     const dts_output = try emitter.processDeclarations(
         arena_alloc,
+        std.heap.c_allocator,
         scanner.declarations.items,
         source,
         keep_comments,
         &default_import_order,
     );
 
-    // Copy result to c_allocator so it survives arena.deinit()
-    const result = try std.heap.c_allocator.alloc(u8, dts_output.len + 1);
-    @memcpy(result[0..dts_output.len], dts_output);
-    result[dts_output.len] = 0; // null terminate
-
-    return result.ptr;
+    // dts_output[0..len] is content, dts_output.ptr[len] == 0 (null terminator)
+    return .{ .ptr = dts_output.ptr, .len = dts_output.len };
 }
 
 /// Get the length of a result string (without null terminator)
@@ -82,9 +118,24 @@ export fn process_source_with_options(
     keep_comments: bool,
     isolated_declarations: bool,
 ) [*]const u8 {
-    return processSourceInternal(input, len, keep_comments, isolated_declarations) catch {
-        const empty = std.heap.c_allocator.alloc(u8, 1) catch @panic("OOM");
-        empty[0] = 0;
-        return empty.ptr;
+    const result = processSourceInternal(input, len, keep_comments, isolated_declarations) catch {
+        return emptyResult().ptr;
     };
+    return result.ptr;
+}
+
+/// Same as process_source_with_options but returns length through out_len.
+export fn process_source_with_options_len(
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    isolated_declarations: bool,
+    out_len: *u64,
+) [*]const u8 {
+    const result = processSourceInternal(input, len, keep_comments, isolated_declarations) catch {
+        out_len.* = 0;
+        return emptyResult().ptr;
+    };
+    out_len.* = @intCast(result.len);
+    return result.ptr;
 }

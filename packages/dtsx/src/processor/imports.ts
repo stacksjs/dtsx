@@ -91,8 +91,17 @@ export function parseImportStatement(importText: string): {
 
     // Extract named imports
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
-    namedItems.push(...items)
+    // Single-pass parsing: avoid split().map().filter() triple allocation
+    let itemStart = 0
+    for (let i = 0; i <= namedPart.length; i++) {
+      if (i === namedPart.length || namedPart.charCodeAt(i) === 44 /* , */) {
+        let s = itemStart, e = i
+        while (s < e && (namedPart.charCodeAt(s) === 32 || namedPart.charCodeAt(s) === 9 || namedPart.charCodeAt(s) === 10)) s++
+        while (e > s && (namedPart.charCodeAt(e - 1) === 32 || namedPart.charCodeAt(e - 1) === 9 || namedPart.charCodeAt(e - 1) === 10)) e--
+        if (s < e) namedItems.push(namedPart.slice(s, e))
+        itemStart = i + 1
+      }
+    }
   }
   else {
     // Default import only
@@ -245,9 +254,21 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
       defaultName = beforeBrace.slice(0, -1).trim() || null
     }
 
-    // Extract named imports with type-only detection
+    // Extract named imports with type-only detection (single-pass parsing)
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
+    const items: string[] = []
+    {
+      let _s = 0
+      for (let _i = 0; _i <= namedPart.length; _i++) {
+        if (_i === namedPart.length || namedPart.charCodeAt(_i) === 44) {
+          let a = _s, b = _i
+          while (a < b && (namedPart.charCodeAt(a) <= 32)) a++
+          while (b > a && (namedPart.charCodeAt(b - 1) <= 32)) b--
+          if (a < b) items.push(namedPart.slice(a, b))
+          _s = _i + 1
+        }
+      }
+    }
 
     for (const item of items) {
       const itemIsTypeOnly = item.startsWith('type ')
@@ -370,10 +391,22 @@ export function parseExportDetailed(exportText: string): {
     }
   }
 
-  // Extract named exports with type-only detection
+  // Extract named exports with type-only detection (single-pass parsing)
   const namedItems: ImportItem[] = []
   const namedPart = text.slice(braceStart + 1, braceEnd)
-  const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
+  const items: string[] = []
+  {
+    let _s = 0
+    for (let _i = 0; _i <= namedPart.length; _i++) {
+      if (_i === namedPart.length || namedPart.charCodeAt(_i) === 44) {
+        let a = _s, b = _i
+        while (a < b && (namedPart.charCodeAt(a) <= 32)) a++
+        while (b > a && (namedPart.charCodeAt(b - 1) <= 32)) b--
+        if (a < b) items.push(namedPart.slice(a, b))
+        _s = _i + 1
+      }
+    }
+  }
 
   for (const item of items) {
     const itemIsTypeOnly = item.startsWith('type ')

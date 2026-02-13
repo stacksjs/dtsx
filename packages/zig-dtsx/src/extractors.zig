@@ -22,6 +22,7 @@ pub fn extractLeadingComments(s: *Scanner, decl_start: usize) ?[]const []const u
     if (p < 0) return null;
 
     var comments = std.array_list.Managed([]const u8).init(s.allocator);
+    comments.ensureTotalCapacity(4) catch {};
     var has_block_comment = false;
 
     while (p >= 0) {
@@ -183,6 +184,99 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
 
     const comments = extractLeadingComments(s, stmt_start);
 
+    // Parse import clause once (cached in Declaration to avoid re-parsing in emitter)
+    var parsed_import: ?types.ParsedImport = null;
+    if (!is_side_effect) pi: {
+        const from_idx = ch.indexOf(text, " from ", 0) orelse break :pi;
+        var import_part = ch.sliceTrimmed(text, 0, from_idx);
+
+        // Strip 'import' and optional 'type'
+        if (ch.startsWith(import_part, "import type ")) {
+            import_part = ch.sliceTrimmed(import_part, 12, import_part.len);
+        } else if (ch.startsWith(import_part, "import ")) {
+            import_part = ch.sliceTrimmed(import_part, 7, import_part.len);
+        }
+        if (ch.startsWith(import_part, "type ")) {
+            import_part = ch.sliceTrimmed(import_part, 5, import_part.len);
+        }
+
+        var default_name: ?[]const u8 = null;
+        var named_items = std.array_list.Managed([]const u8).init(s.allocator);
+        named_items.ensureTotalCapacity(8) catch break :pi;
+
+        // Also collect "resolved" items (with type/as stripped) for filtering
+        var resolved_items = std.array_list.Managed([]const u8).init(s.allocator);
+        resolved_items.ensureTotalCapacity(8) catch break :pi;
+
+        var is_namespace = false;
+        var namespace_name: ?[]const u8 = null;
+
+        const brace_start = ch.indexOfChar(import_part, '{', 0);
+        const brace_end = std.mem.lastIndexOf(u8, import_part, "}");
+
+        // Check for namespace import: * as Name
+        if (ch.indexOf(import_part, "* as ", 0)) |star_idx| {
+            is_namespace = true;
+            const ns_name = ch.sliceTrimmed(import_part, star_idx + 5, if (brace_start) |bs| bs else import_part.len);
+            if (ns_name.len > 0) {
+                namespace_name = ns_name;
+                resolved_items.append(ns_name) catch {};
+            }
+        }
+
+        if (brace_start != null and brace_end != null) {
+            const bs = brace_start.?;
+            const be = brace_end.?;
+
+            // Default import before braces
+            if (bs > 0) {
+                var before = ch.sliceTrimmed(import_part, 0, bs);
+                if (before.len > 0 and before[before.len - 1] == ',') {
+                    before = ch.sliceTrimmed(before, 0, before.len - 1);
+                }
+                if (before.len > 0 and !ch.contains(before, "*")) {
+                    default_name = before;
+                    resolved_items.append(before) catch {};
+                }
+            }
+
+            // Named imports
+            const named_part = import_part[bs + 1 .. be];
+            var iter = std.mem.splitSequence(u8, named_part, ",");
+            while (iter.next()) |raw_item| {
+                const trimmed = ch.sliceTrimmed(raw_item, 0, raw_item.len);
+                if (trimmed.len == 0) continue;
+                named_items.append(trimmed) catch {};
+
+                // Resolve: strip 'type ' prefix, use alias after ' as '
+                var resolved = trimmed;
+                if (ch.startsWith(resolved, "type ")) {
+                    resolved = ch.sliceTrimmed(resolved, 5, resolved.len);
+                }
+                if (ch.indexOf(resolved, " as ", 0)) |as_idx| {
+                    resolved = ch.sliceTrimmed(resolved, as_idx + 4, resolved.len);
+                }
+                if (resolved.len > 0) resolved_items.append(resolved) catch {};
+            }
+        } else if (!is_namespace) {
+            // Default import only
+            if (import_part.len > 0 and !ch.contains(import_part, "*")) {
+                default_name = import_part;
+                resolved_items.append(import_part) catch {};
+            }
+        }
+
+        parsed_import = .{
+            .default_name = default_name,
+            .named_items = named_items.items,
+            .source = module_src,
+            .is_type_only = is_type_only,
+            .is_namespace = is_namespace,
+            .namespace_name = namespace_name,
+            .resolved_items = resolved_items.items,
+        };
+    }
+
     return .{
         .kind = .import_decl,
         .name = "",
@@ -194,6 +288,7 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
         .leading_comments = comments,
         .start = stmt_start,
         .end = s.pos,
+        .parsed_import = parsed_import,
     };
 }
 
@@ -209,27 +304,27 @@ pub fn extractGenerics(s: *Scanner) []const u8 {
     const raw = s.source[start..s.pos];
     // Normalize multi-line generics to single line
     if (ch.indexOf(raw, "\n", 0) != null) {
-        var result = std.array_list.Managed(u8).init(s.allocator);
+        // Direct alloc: output ≤ input length (whitespace collapsed)
+        const buf = s.allocator.alloc(u8, raw.len) catch return raw;
+        var pos: usize = 0;
         var prev_space = false;
         for (raw) |c| {
             if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
-                if (!prev_space and result.items.len > 0) {
-                    result.append(' ') catch {};
+                if (!prev_space and pos > 0 and buf[pos - 1] != '<') {
+                    buf[pos] = ' ';
+                    pos += 1;
                     prev_space = true;
                 }
             } else {
-                result.append(c) catch {};
+                if (c == '>' and prev_space and pos > 0 and buf[pos - 1] == ' ') {
+                    pos -= 1;
+                }
+                buf[pos] = c;
+                pos += 1;
                 prev_space = false;
             }
         }
-        // Trim spaces around < and >
-        if (result.items.len > 1 and result.items[1] == ' ') {
-            _ = result.orderedRemove(1);
-        }
-        if (result.items.len > 1 and result.items[result.items.len - 2] == ' ') {
-            _ = result.orderedRemove(result.items.len - 2);
-        }
-        return result.toOwnedSlice() catch raw;
+        return buf[0..pos];
     }
     return raw;
 }
@@ -376,26 +471,37 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     const inner = std.mem.trim(u8, raw_params[1 .. raw_params.len - 1], " \t\r\n");
     if (inner.len == 0) return "()";
 
-    // Fast path: no newlines, all params typed, no destructuring/defaults/decorators
-    if (ch.indexOfChar(raw_params, '\n', 0) == null and ch.indexOfChar(inner, ':', 0) != null and
-        ch.indexOfChar(inner, '{', 0) == null and ch.indexOfChar(inner, '[', 0) == null and
-        ch.indexOfChar(inner, '=', 0) == null and ch.indexOfChar(inner, '@', 0) == null and
-        ch.indexOf(inner, "...", 0) == null)
-    {
-        // Verify every param has type: count colons vs commas at depth 0
+    // Fast path: single-pass analysis — allow { and [ in type positions (after colon).
+    // Only reject destructuring ({ or [ before colon), defaults (=), and decorators (@).
+    if (ch.indexOfChar(raw_params, '\n', 0) == null and inner.len > 0) {
+        var depth: isize = 0;
+        var seen_colon = false;
         var colons: usize = 0;
         var commas: usize = 0;
-        var depth: isize = 0;
-        for (inner) |c| {
-            if (c == ch.CH_LPAREN or c == ch.CH_LANGLE or c == ch.CH_LBRACE) {
+        var can_passthrough = true;
+        var fp_i: usize = 0;
+        while (fp_i < inner.len) : (fp_i += 1) {
+            const c = inner[fp_i];
+            if (c == ch.CH_LPAREN or c == ch.CH_LANGLE) {
                 depth += 1;
-            } else if (c == ch.CH_RPAREN or c == ch.CH_RANGLE or c == ch.CH_RBRACE) {
+            } else if (c == ch.CH_RPAREN or c == ch.CH_RANGLE) {
+                depth -= 1;
+            } else if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
+                if (depth == 0 and !seen_colon) { can_passthrough = false; break; }
+                depth += 1;
+            } else if (c == ch.CH_RBRACE or c == ch.CH_RBRACKET) {
                 depth -= 1;
             } else if (depth == 0) {
-                if (c == ch.CH_COLON) colons += 1 else if (c == ch.CH_COMMA) commas += 1;
+                if (c == ch.CH_COLON) { colons += 1; seen_colon = true; } else if (c == ch.CH_COMMA) { commas += 1; seen_colon = false; } else if (c == ch.CH_EQUAL and (fp_i + 1 >= inner.len or (inner[fp_i + 1] != ch.CH_RANGLE and inner[fp_i + 1] != ch.CH_EQUAL))) {
+                    can_passthrough = false;
+                    break;
+                } else if (c == ch.CH_AT) {
+                    can_passthrough = false;
+                    break;
+                }
             }
         }
-        if (colons >= commas + 1) {
+        if (can_passthrough and colons >= commas + 1) {
             // Check for parameter modifiers
             var has_modifier = false;
             for (types.PARAM_MODIFIERS) |mod| {
@@ -415,6 +521,7 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
 
     // Split parameters by comma at depth 0
     var params = std.array_list.Managed([]const u8).init(s.allocator);
+    params.ensureTotalCapacity(8) catch {};
     var param_start: usize = 0;
     var depth: isize = 0;
     var in_str = false;
@@ -442,21 +549,26 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     }
     params.append(std.mem.trim(u8, inner[param_start..], " \t\r\n")) catch {};
 
-    // Build DTS params
-    var result = std.array_list.Managed(u8).init(s.allocator);
-    result.append('(') catch {};
+    // Build DTS params — direct alloc, output ≤ raw_params.len + extra for type annotations
+    const buf = s.allocator.alloc(u8, raw_params.len * 2 + 16) catch return "()";
+    var pos: usize = 0;
+    buf[pos] = '(';
+    pos += 1;
     var first = true;
     for (params.items) |param| {
         if (param.len == 0) continue;
         if (!first) {
-            result.appendSlice(", ") catch {};
+            @memcpy(buf[pos..][0..2], ", ");
+            pos += 2;
         }
         first = false;
         const dts_param = buildSingleDtsParam(s, param);
-        result.appendSlice(dts_param) catch {};
+        @memcpy(buf[pos..][0..dts_param.len], dts_param);
+        pos += dts_param.len;
     }
-    result.append(')') catch {};
-    return result.toOwnedSlice() catch "()";
+    buf[pos] = ')';
+    pos += 1;
+    return buf[0..pos];
 }
 
 /// Build a single DTS parameter from raw source text
@@ -583,6 +695,7 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
 /// "{\n  name,\n  headers = { ... },\n}" → "{\n  name,\n  headers,\n}"
 fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []const u8 {
     var result = std.array_list.Managed(u8).init(alloc);
+    result.ensureTotalCapacity(pattern.len) catch {};
     var i: usize = 0;
     var depth: isize = 0;
     var in_str = false;
@@ -666,6 +779,7 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
     if (ch.indexOf(cleaned, "\n", 0) != null) {
         // Collapse newlines and extra whitespace to single spaces
         var collapsed = std.array_list.Managed(u8).init(alloc);
+        collapsed.ensureTotalCapacity(cleaned.len) catch {};
         var in_ws = false;
         for (cleaned) |c2| {
             if (c2 == '\n' or c2 == '\r' or c2 == ' ' or c2 == '\t') {
@@ -684,6 +798,7 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
         }
         // Keep multiline but normalize indent
         var normalized = std.array_list.Managed(u8).init(alloc);
+        normalized.ensureTotalCapacity(cleaned.len) catch {};
         var line_start: usize = 0;
         var ci: usize = 0;
         while (ci <= cleaned.len) : (ci += 1) {
@@ -759,6 +874,7 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare function ") catch {};
     text.appendSlice(func_name) catch {};
@@ -801,6 +917,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
     s.skipWhitespaceAndComments();
 
     var results = std.array_list.Managed(Declaration).init(s.allocator);
+    results.ensureTotalCapacity(2) catch {};
 
     if (s.pos >= s.len) return results.toOwnedSlice() catch &.{};
 
@@ -897,6 +1014,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     text.appendSlice(kind) catch {};
@@ -970,6 +1088,7 @@ pub fn extractInterface(s: *Scanner, decl_start: usize, is_exported: bool) Decla
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare interface ") catch {};
     text.appendSlice(name) catch {};
@@ -1033,6 +1152,7 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
 
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("type ") catch {};
     text.appendSlice(name) catch {};
@@ -1155,6 +1275,7 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     if (is_abstract) text.appendSlice("abstract ") catch {};
@@ -1193,6 +1314,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
     s.pos += 1; // skip {
 
     var members = std.array_list.Managed([]const u8).init(s.allocator);
+    members.ensureTotalCapacity(16) catch {};
 
     while (s.pos < s.len) {
         s.skipWhitespaceAndComments();
@@ -1365,8 +1487,11 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
 
     if (members.items.len == 0) return "{}";
 
-    // Join members
+    // Join members — pre-calculate total length
+    var total_len: usize = 4; // "{\n" + "\n}"
+    for (members.items) |m| total_len += m.len + 1;
     var result = std.array_list.Managed(u8).init(s.allocator);
+    result.ensureTotalCapacity(total_len) catch {};
     result.appendSlice("{\n") catch {};
     for (members.items, 0..) |m, i| {
         result.appendSlice(m) catch {};
@@ -1658,6 +1783,7 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
         "{}";
 
     var text = std.array_list.Managed(u8).init(s.allocator);
+    text.ensureTotalCapacity(128) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     text.appendSlice(keyword) catch {};
@@ -1687,6 +1813,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
     s.pos += 1; // skip {
 
     var lines = std.array_list.Managed([]const u8).init(s.allocator);
+    lines.ensureTotalCapacity(16) catch {};
 
     while (s.pos < s.len) {
         s.skipWhitespaceAndComments();
@@ -2061,12 +2188,36 @@ fn stripTrailingInlineComment(line: []const u8) []const u8 {
 pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
     if (raw.len < 2) return raw;
 
+    // Fast path: no comment markers, no semicolons, and ≤2-space indent → body is already clean.
+    // This avoids line-by-line processing for simple interface/namespace bodies.
+    if (ch.indexOfChar(raw, '/', 0) == null and ch.indexOfChar(raw, ';', 0) == null) {
+        // Verify first member line has ≤ 2-space indentation (else re-indent is needed)
+        var needs_reindent = false;
+        if (ch.indexOfChar(raw, '\n', 0)) |nl| {
+            var after = nl + 1;
+            var indent: usize = 0;
+            while (after < raw.len and (raw[after] == ' ' or raw[after] == '\t')) {
+                indent += 1;
+                after += 1;
+            }
+            if (after < raw.len and raw[after] != '\n' and raw[after] != '\r' and
+                raw[after] != '}' and raw[after] != ']' and indent > 2)
+            {
+                needs_reindent = true;
+            }
+        }
+        if (!needs_reindent) return raw;
+    }
+
     // Check if there are any comment markers
     const has_comments = ch.contains(raw, "//") or ch.contains(raw, "/*");
 
     // Split raw text by newlines and process line by line
+    const est_lines = @max(raw.len / 30, 4);
     var filtered = std.array_list.Managed([]const u8).init(s.allocator);
+    filtered.ensureTotalCapacity(est_lines) catch {};
     var indent_cache = std.array_list.Managed(usize).init(s.allocator);
+    indent_cache.ensureTotalCapacity(est_lines) catch {};
     var in_block_comment = false;
     var min_indent: usize = std.math.maxInt(usize);
 
@@ -2141,47 +2292,55 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
 
     if (filtered.items.len == 0) return "{}";
 
+    // Direct alloc: output ≤ raw.len (we're only removing/shifting content)
+    const buf = s.allocator.alloc(u8, raw.len) catch return raw;
+    var pos: usize = 0;
+
     // If minIndent <= 2, return filtered lines as-is
     if (min_indent == std.math.maxInt(usize) or min_indent <= 2) {
-        var result = std.array_list.Managed(u8).init(s.allocator);
         for (filtered.items, 0..) |line, i| {
-            if (i > 0) result.append('\n') catch {};
-            result.appendSlice(line) catch {};
+            if (i > 0) {
+                buf[pos] = '\n';
+                pos += 1;
+            }
+            @memcpy(buf[pos..][0..line.len], line);
+            pos += line.len;
         }
-        return result.toOwnedSlice() catch raw;
+        return buf[0..pos];
     }
 
     // Re-indent: offset = minIndent - 2
-    const offset = min_indent - 2;
-    var result = std.array_list.Managed(u8).init(s.allocator);
+    const offs = min_indent - 2;
     for (filtered.items, 0..) |line, i| {
-        if (i > 0) result.append('\n') catch {};
+        if (i > 0) {
+            buf[pos] = '\n';
+            pos += 1;
+        }
 
         const ct = ch.sliceTrimmed(line, 0, line.len);
         if (std.mem.eql(u8, ct, "{")) {
-            result.appendSlice(ct) catch {};
+            @memcpy(buf[pos..][0..ct.len], ct);
+            pos += ct.len;
             continue;
         }
 
         const current_indent = indent_cache.items[i];
         if (current_indent > min_indent) {
-            // Lines deeper than minIndent: keep as-is
-            result.appendSlice(line) catch {};
+            @memcpy(buf[pos..][0..line.len], line);
+            pos += line.len;
         } else if (current_indent == min_indent and ct.len > 0 and (ct[0] == '}' or ct[0] == ']' or ct[0] == ')')) {
-            // Closing brackets at minIndent: keep as-is
-            result.appendSlice(line) catch {};
+            @memcpy(buf[pos..][0..line.len], line);
+            pos += line.len;
         } else {
-            // Shift by offset
-            const new_indent = if (current_indent >= offset) current_indent - offset else 0;
-            var j: usize = 0;
-            while (j < new_indent) : (j += 1) {
-                result.append(' ') catch {};
-            }
-            result.appendSlice(ct) catch {};
+            const new_indent = if (current_indent >= offs) current_indent - offs else 0;
+            @memset(buf[pos..][0..new_indent], ' ');
+            pos += new_indent;
+            @memcpy(buf[pos..][0..ct.len], ct);
+            pos += ct.len;
         }
     }
 
-    return result.toOwnedSlice() catch raw;
+    return buf[0..pos];
 }
 
 // ========================================================================
@@ -2254,6 +2413,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
         s.skipWhitespaceAndComments();
         const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, "  ") else "{}";
         var text = std.array_list.Managed(u8).init(s.allocator);
+        text.ensureTotalCapacity(128) catch {};
         text.appendSlice("declare global ") catch {};
         text.appendSlice(body) catch {};
         const comments = extractLeadingComments(s, stmt_start);

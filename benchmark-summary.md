@@ -8,10 +8,10 @@ _Smart caching (hash check + cache hit) for watch mode, incremental builds, and 
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) | XXLarge (~2000 lines) | Huge (~5000 lines) |
 |------|------|------|------|------|------|------|
-| **dtsx (cached)** | 17.5 µs _(2.4x)_ | **6.2 µs** | 67.8 µs _(2.2x)_ | **131.2 µs** | 603.8 µs _(1.7x)_ | 4.13 ms _(4.4x)_ |
-| zig-dtsx | **7.4 µs** | 14.9 µs _(2.4x)_ | **30.8 µs** | 291.5 µs _(2.2x)_ | **364.3 µs** | **937.5 µs** |
-| oxc-transform | 7.9 µs _(1.1x)_ | 28.5 µs _(4.6x)_ | 91.5 µs _(3.0x)_ | 550.8 µs _(4.2x)_ | 384.6 µs _(1.1x)_ | 941.1 µs _(1.0x)_ |
-| tsc | 752.7 µs _(101.6x)_ | 1.28 ms _(206.9x)_ | 2.82 ms _(91.5x)_ | 6.23 ms _(47.5x)_ | 9.67 ms _(26.5x)_ | 18.41 ms _(19.6x)_ |
+| **dtsx (cached)** | 21.9 µs _(3.3x)_ | 19.6 µs _(2.3x)_ | 59.4 µs _(2.4x)_ | **93.8 µs** | 223.2 µs _(1.0x)_ | 614.0 µs _(1.1x)_ |
+| zig-dtsx | **6.6 µs** | **8.6 µs** | **24.8 µs** | 150.6 µs _(1.6x)_ | **222.6 µs** | **550.2 µs** |
+| oxc-transform | 7.7 µs _(1.2x)_ | 23.8 µs _(2.8x)_ | 87.9 µs _(3.5x)_ | 557.8 µs _(5.9x)_ | 398.6 µs _(1.8x)_ | 963.5 µs _(1.8x)_ |
+| tsc | 665.1 µs _(101.4x)_ | 976.9 µs _(113.8x)_ | 2.18 ms _(87.9x)_ | 5.65 ms _(60.2x)_ | 8.85 ms _(39.8x)_ | 18.42 ms _(33.5x)_ |
 
 ### In-Process API — No Cache
 
@@ -19,10 +19,12 @@ _Raw single-transform comparison (cache cleared every iteration)._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) | XXLarge (~2000 lines) | Huge (~5000 lines) |
 |------|------|------|------|------|------|------|
-| **zig-dtsx** | **7.4 µs** | **14.9 µs** | **30.8 µs** | **291.5 µs** | **364.3 µs** | **937.5 µs** |
-| oxc-transform | 7.9 µs _(1.1x)_ | 28.5 µs _(1.9x)_ | 91.5 µs _(3.0x)_ | 550.8 µs _(1.9x)_ | 384.6 µs _(1.1x)_ | 941.1 µs _(1.0x)_ |
-| dtsx (no-cache) | 45.8 µs _(6.2x)_ | 115.4 µs _(7.7x)_ | 146.8 µs _(4.8x)_ | 478.2 µs _(1.6x)_ | 1.35 ms _(3.7x)_ | 6.04 ms _(6.4x)_ |
-| tsc | 752.7 µs _(101.6x)_ | 1.28 ms _(85.5x)_ | 2.82 ms _(91.5x)_ | 6.23 ms _(21.4x)_ | 9.67 ms _(26.5x)_ | 18.41 ms _(19.6x)_ |
+| **zig-dtsx** | **6.6 µs** | **8.6 µs** | **24.8 µs** | **150.6 µs** | **222.6 µs** | **550.2 µs** |
+| oxc-transform | 7.7 µs _(1.2x)_ | 23.8 µs _(2.8x)_ | 87.9 µs _(3.5x)_ | 557.8 µs _(3.7x)_ | 398.6 µs _(1.8x)_ | 963.5 µs _(1.8x)_ |
+| dtsx (no-cache) | 48.4 µs _(7.4x)_ | 64.1 µs _(7.5x)_ | 121.9 µs _(4.9x)_ | 669.7 µs _(4.4x)_ | 1.04 ms _(4.7x)_ | 2.48 ms _(4.5x)_ |
+| tsc | 665.1 µs _(101.4x)_ | 976.9 µs _(113.8x)_ | 2.18 ms _(87.9x)_ | 5.65 ms _(37.5x)_ | 8.85 ms _(39.8x)_ | 18.42 ms _(33.5x)_ |
+
+> **Note:** tsgo (`@typescript/native-preview`) is CLI-only — no in-process API is available yet. Each measurement includes ~40ms process spawn overhead, so it is not directly comparable to the in-process tools above. Once tsgo ships an in-process API, it will be added to the tables.
 
 ### Multi-File Project
 
@@ -30,12 +32,23 @@ _All tools processing files in-process sequentially._
 
 | Tool | 50 files | 100 files |
 |------|------|------|
-| **zig-dtsx** | **4.35 ms** | **8.36 ms** |
-| dtsx | 6.57 ms _(1.5x)_ | 14.31 ms _(1.7x)_ |
-| oxc-transform | 8.12 ms _(1.9x)_ | 16.69 ms _(2.0x)_ |
-| tsc | 90.45 ms _(20.8x)_ | 176.96 ms _(21.2x)_ |
+| **zig-dtsx** | **2.33 ms** | **5.07 ms** |
+| dtsx | 8.66 ms _(3.7x)_ | 18.39 ms _(3.6x)_ |
+| oxc-transform | 8.52 ms _(3.7x)_ | 17.72 ms _(3.5x)_ |
+| tsc | 85.32 ms _(36.6x)_ | 177.05 ms _(34.9x)_ |
 
 > _No previous benchmark found for regression comparison_
+
+### zig-dtsx vs oxc-transform
+
+| Input Size | zig-dtsx | oxc-transform | Speedup |
+|-----------|----------|---------------|----------|
+| Small (~50 lines) | 6.6 µs | 7.7 µs | :green_circle: 1.17x |
+| Medium (~100 lines) | 8.6 µs | 23.8 µs | :green_circle: 2.77x |
+| Large (~330 lines) | 24.8 µs | 87.9 µs | :green_circle: 3.54x |
+| XLarge (~1050 lines) | 150.6 µs | 557.8 µs | :green_circle: 3.70x |
+| XXLarge (~2000 lines) | 222.6 µs | 398.6 µs | :green_circle: 1.79x |
+| Huge (~5000 lines) | 550.2 µs | 963.5 µs | :green_circle: 1.75x |
 
 <details>
 <summary><strong>Internal Benchmark Details</strong></summary>
