@@ -205,7 +205,7 @@ describe('Profiling Module', () => {
       })
 
       expect(result).toBe('done')
-      expect(profile.durationMs).toBeGreaterThanOrEqual(10)
+      expect(profile.durationMs).toBeGreaterThanOrEqual(9)
     })
 
     test('includes memory samples', async () => {

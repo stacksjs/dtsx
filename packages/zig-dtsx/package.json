@@ -1,0 +1,23 @@
+{
+  "name": "@stacksjs/zig-dtsx",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "High-performance DTS emitter written in Zig",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build:zig": "zig build -Doptimize=ReleaseFast",
+    "build:zig-debug": "zig build",
+    "build": "bun run build:zig",
+    "test": "bun test",
+    "test:zig": "zig build test",
+    "benchmark": "bun run test/benchmark.ts"
+  },
+  "dependencies": {
+    "@stacksjs/dtsx": "workspace:*"
+  }
+}

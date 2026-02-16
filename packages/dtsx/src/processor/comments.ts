@@ -10,10 +10,15 @@ export function formatComments(comments: string[] | undefined, keepComments: boo
     return ''
   }
 
-  const formattedComments = comments.map((comment) => {
-    // Ensure proper spacing and formatting
-    return comment.trim()
-  }).join('\n')
+  // Fast path: single comment (most common case)
+  if (comments.length === 1)
+    return comments[0].trim() + '\n'
 
-  return `${formattedComments}\n`
+  // Multiple comments: join with newlines
+  let result = ''
+  for (let i = 0; i < comments.length; i++) {
+    if (i > 0) result += '\n'
+    result += comments[i].trim()
+  }
+  return result + '\n'
 }

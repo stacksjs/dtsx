@@ -1055,9 +1055,6 @@ export class DtsxLanguageServer {
       filePath: this.uriToPath(uri),
       sourceCode: doc.content,
       declarations: doc.declarations,
-      imports: new Map<string, Set<string>>(),
-      exports: new Set<string>(),
-      usedTypes: new Set<string>(),
     }
 
     return processDeclarations(doc.declarations, context, true, this.config.importOrder)
@@ -1200,18 +1197,21 @@ export class DtsxLanguageServer {
       process.exit(0)
     }
 
+    // eslint-disable-next-line ts/no-explicit-any -- LSP protocol guarantees param shapes
+    const params = message.params as any
+
     if (message.method === 'textDocument/didOpen') {
-      this.didOpen(message.params)
+      this.didOpen(params)
       return null
     }
 
     if (message.method === 'textDocument/didChange') {
-      this.didChange(message.params)
+      this.didChange(params)
       return null
     }
 
     if (message.method === 'textDocument/didClose') {
-      this.didClose(message.params)
+      this.didClose(params)
       return null
     }
 
@@ -1219,7 +1219,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.hover(message.params),
+        result: this.hover(params),
       }
     }
 
@@ -1227,7 +1227,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.completion(message.params),
+        result: this.completion(params),
       }
     }
 
@@ -1235,7 +1235,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.definition(message.params),
+        result: this.definition(params),
       }
     }
 
@@ -1243,7 +1243,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.references(message.params),
+        result: this.references(params),
       }
     }
 
@@ -1251,7 +1251,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.prepareRename(message.params),
+        result: this.prepareRename(params),
       }
     }
 
@@ -1259,7 +1259,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.rename(message.params),
+        result: this.rename(params),
       }
     }
 
@@ -1267,7 +1267,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.documentSymbols(message.params),
+        result: this.documentSymbols(params),
       }
     }
 
@@ -1275,7 +1275,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.workspaceSymbols(message.params),
+        result: this.workspaceSymbols(params),
       }
     }
 
@@ -1283,7 +1283,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.codeActions(message.params),
+        result: this.codeActions(params),
       }
     }
 
@@ -1291,7 +1291,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.signatureHelp(message.params),
+        result: this.signatureHelp(params),
       }
     }
 
@@ -1299,7 +1299,7 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.documentHighlight(message.params),
+        result: this.documentHighlight(params),
       }
     }
 
@@ -1307,12 +1307,12 @@ export class DtsxLanguageServer {
       return {
         jsonrpc: '2.0',
         id: message.id,
-        result: this.formatting(message.params),
+        result: this.formatting(params),
       }
     }
 
     if (message.method === 'textDocument/diagnostic') {
-      const uri = message.params?.textDocument?.uri
+      const uri = params?.textDocument?.uri
       return {
         jsonrpc: '2.0',
         id: message.id,

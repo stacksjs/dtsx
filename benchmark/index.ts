@@ -1,27 +1,30 @@
 /**
- * dtsx benchmark suite — compares dtsx vs oxc-transform vs tsc vs tsgo
+ * dtsx benchmark suite — compares dtsx vs zig-dtsx vs oxc-transform vs tsc vs tsgo
  *
- * Section 1: In-process API benchmark — cached (dtsx, oxc-transform, tsc)
+ * Section 1: In-process API benchmark — cached (dtsx, zig-dtsx FFI, oxc-transform, tsc)
  *            dtsx uses smart caching (hash check + cache hit) which is how it
  *            actually runs in watch mode, incremental builds, and CI pipelines.
- * Section 2: In-process API benchmark — no cache (dtsx, oxc-transform, tsc)
+ *            zig-dtsx uses Bun FFI to call the Zig shared library in-process.
+ * Section 2: In-process API benchmark — no cache (dtsx, zig-dtsx FFI, oxc-transform, tsc)
  *            Cache cleared every iteration for raw single-transform comparison.
- * Section 3: CLI benchmark (dtsx vs oxc vs tsc vs tsgo) — compiled binaries
- * Section 4: Multi-file project benchmarks (dtsx vs oxc vs tsc vs tsgo)
+ * Section 3: CLI benchmark (dtsx vs zig-dtsx vs oxc vs tsc vs tsgo) — compiled binaries
+ * Section 4: Multi-file project benchmarks (dtsx vs zig-dtsx vs oxc vs tsc vs tsgo)
  *
  * Run: bun benchmark/index.ts
  */
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, cpus, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
 import ts from 'typescript'
 import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
+import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
+import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -114,7 +117,23 @@ function tscGenerate(source: string, filename: string): string {
 // ---------------------------------------------------------------------------
 
 const dtsxExe = join(import.meta.dir, '..', 'packages', 'dtsx', 'bin', 'dtsx')
+const zigDtsxExe = join(import.meta.dir, '..', 'packages', 'zig-dtsx', 'zig-out', 'bin', 'zig-dtsx')
+const hasZigBin = existsSync(zigDtsxExe)
 const oxcExe = join(import.meta.dir, 'oxc-emit')
+
+// Resolve native binding for compiled oxc-emit CLI (Bun --compile can't find N-API addons via virtual FS)
+const oxcNativeBinding = (() => {
+  try {
+    const bindingPkg = `@oxc-transform/binding-${platform()}-${arch()}`
+    const pkgDir = join(import.meta.dir, '..', 'node_modules', bindingPkg)
+    const nodeFile = readdirSync(pkgDir).find(f => f.endsWith('.node'))
+    return nodeFile ? join(pkgDir, nodeFile) : undefined
+  }
+  catch { return undefined }
+})()
+const oxcCliEnv = oxcNativeBinding
+  ? { ...process.env, NAPI_RS_NATIVE_LIBRARY_PATH: oxcNativeBinding }
+  : process.env
 
 const tsgoExe = join(
   import.meta.dir,
@@ -149,8 +168,12 @@ function dtsxGenerateCLI(filename: string): void {
   spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
 }
 
+function zigDtsxGenerateCLI(filename: string): void {
+  spawnSync(zigDtsxExe, [join(cliBenchDir, filename), '-o', join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
+}
+
 function oxcGenerateCLI(filename: string): void {
-  spawnSync(oxcExe, [join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
+  spawnSync(oxcExe, [join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe', env: oxcCliEnv })
 }
 
 function tsgoGenerateCLI(filename: string): void {
@@ -176,10 +199,12 @@ function tscGenerateCLI(filename: string): void {
 // ---------------------------------------------------------------------------
 
 for (const { filename, source } of inputs) {
-  processSource(source, filename)
+  processSource(source, filename, true, ['bun'], true)
+  zigProcessSource(source, true)
   isolatedDeclarationSync(filename, source, { sourcemap: false })
   tscGenerate(source, filename)
   dtsxGenerateCLI(filename)
+  if (hasZigBin) zigDtsxGenerateCLI(filename)
   oxcGenerateCLI(filename)
   tsgoGenerateCLI(filename)
   tscGenerateCLI(filename)
@@ -195,7 +220,11 @@ for (const { filename, source } of inputs) {
 for (const { name, filename, source } of inputs) {
   summary(() => {
     bench(`dtsx (cached) — ${name}`, () => {
-      processSource(source, filename)
+      processSource(source, filename, true, ['bun'], true)
+    })
+
+    bench(`zig-dtsx — ${name}`, () => {
+      zigProcessSource(source, true)
     })
 
     bench(`oxc-transform — ${name}`, () => {
@@ -218,8 +247,13 @@ for (const { name, filename, source } of inputs) {
   summary(() => {
     bench(`dtsx (no-cache) — ${name}`, () => {
       clearSourceFileCache()
+      clearDeclarationCache()
       clearProcessorCaches()
-      processSource(source, filename)
+      processSource(source, filename, true, ['bun'], true)
+    })
+
+    bench(`zig-dtsx — ${name}`, () => {
+      zigProcessSource(source, true)
     })
 
     bench(`oxc-transform — ${name}`, () => {
@@ -245,6 +279,12 @@ for (const { name, filename } of inputs) {
     bench(`dtsx (cli) — ${name}`, () => {
       dtsxGenerateCLI(filename)
     })
+
+    if (hasZigBin) {
+      bench(`zig-dtsx (cli) — ${name}`, () => {
+        zigDtsxGenerateCLI(filename)
+      })
+    }
 
     bench(`oxc (cli) — ${name}`, () => {
       oxcGenerateCLI(filename)
@@ -292,6 +332,7 @@ interface ProjectBench {
   count: number
   dir: string
   outDirDtsx: string
+  outDirZigDtsx: string
   outDirOxc: string
   outDirTsgo: string
   outDirTsc: string
@@ -301,10 +342,12 @@ interface ProjectBench {
 const projects: ProjectBench[] = projectSizes.map((count) => {
   const dir = join(tmpdir(), `dtsx-bench-project-${count}`)
   const outDirDtsx = join(dir, 'out-dtsx')
+  const outDirZigDtsx = join(dir, 'out-zig-dtsx')
   const outDirOxc = join(dir, 'out-oxc')
   const outDirTsgo = join(dir, 'out-tsgo')
   const outDirTsc = join(dir, 'out-tsc')
   mkdirSync(outDirDtsx, { recursive: true })
+  mkdirSync(outDirZigDtsx, { recursive: true })
   mkdirSync(outDirOxc, { recursive: true })
   mkdirSync(outDirTsgo, { recursive: true })
   mkdirSync(outDirTsc, { recursive: true })
@@ -314,6 +357,7 @@ const projects: ProjectBench[] = projectSizes.map((count) => {
     count,
     dir,
     outDirDtsx,
+    outDirZigDtsx,
     outDirOxc,
     outDirTsgo,
     outDirTsc,
@@ -333,6 +377,15 @@ function dtsxGenerateProject(p: ProjectBench): void {
   ], { stdio: 'pipe' })
 }
 
+function zigDtsxGenerateProject(p: ProjectBench): void {
+  rmSync(p.outDirZigDtsx, { recursive: true, force: true })
+  mkdirSync(p.outDirZigDtsx, { recursive: true })
+  spawnSync(zigDtsxExe, [
+    '--project', p.dir,
+    '--outdir', p.outDirZigDtsx,
+  ], { stdio: 'pipe' })
+}
+
 function oxcGenerateProject(p: ProjectBench): void {
   rmSync(p.outDirOxc, { recursive: true, force: true })
   mkdirSync(p.outDirOxc, { recursive: true })
@@ -341,7 +394,7 @@ function oxcGenerateProject(p: ProjectBench): void {
     p.dir,
     '--outdir',
     p.outDirOxc,
-  ], { stdio: 'pipe' })
+  ], { stdio: 'pipe', env: oxcCliEnv })
 }
 
 function tsgoGenerateProject(p: ProjectBench): void {
@@ -379,6 +432,7 @@ function tscGenerateProject(p: ProjectBench): void {
 // Warmup for multi-file benchmarks
 for (const p of projects) {
   dtsxGenerateProject(p)
+  if (hasZigBin) zigDtsxGenerateProject(p)
   oxcGenerateProject(p)
   tsgoGenerateProject(p)
   tscGenerateProject(p)
@@ -389,6 +443,12 @@ for (const p of projects) {
     bench(`dtsx (project) — ${p.name}`, () => {
       dtsxGenerateProject(p)
     })
+
+    if (hasZigBin) {
+      bench(`zig-dtsx (project) — ${p.name}`, () => {
+        zigDtsxGenerateProject(p)
+      })
+    }
 
     bench(`oxc (project) — ${p.name}`, () => {
       oxcGenerateProject(p)

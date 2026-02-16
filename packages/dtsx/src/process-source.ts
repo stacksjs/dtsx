@@ -1,5 +1,6 @@
 import type { ProcessingContext } from './types'
-import { extractDeclarations } from './extractor'
+import { extractDeclarations } from './extractor/extract'
+import { scanDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
 
 /**
@@ -12,20 +13,38 @@ export function processSource(
   filename: string = 'stdin.ts',
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
+  isolatedDeclarations: boolean = false,
 ): string {
   // Extract declarations
-  const declarations = extractDeclarations(sourceCode, filename, keepComments)
+  const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
 
   // Create processing context
   const context: ProcessingContext = {
     filePath: filename,
     sourceCode,
     declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
   }
 
   // Process declarations to generate DTS
+  return processDeclarations(declarations, context, keepComments, importOrder)
+}
+
+/**
+ * Fast path for project mode — skips cache lookup/store.
+ * Use when processing many files once (no cache benefit).
+ */
+export function processSourceDirect(
+  sourceCode: string,
+  filename: string = 'stdin.ts',
+  keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
+  isolatedDeclarations: boolean = false,
+): string {
+  const declarations = scanDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
+  const context: ProcessingContext = {
+    filePath: filename,
+    sourceCode,
+    declarations,
+  }
   return processDeclarations(declarations, context, keepComments, importOrder)
 }

@@ -1,6 +1,6 @@
 # API Documentation
 
-> Generated on 2026-02-08T21:47:46.814Z
+> Generated on 2026-02-14T01:45:25.420Z
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@
 ### greet
 
 ```typescript
-export function greet (name: string) : string
+export function greet () : string
 ```
 
 A well-documented function

@@ -439,9 +439,10 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
 
       // Phase 3: Processing
       const processStart = performance.now()
-      const processed = processDeclarations(source, declarations, {
-        dtsLines: [],
-        imports: [],
+      const processed = processDeclarations(declarations, {
+        filePath: `phase-test-${size}.ts`,
+        sourceCode: source,
+        declarations,
         usedTypes: new Set(),
       })
       const processEnd = performance.now()
@@ -449,7 +450,7 @@ async function runPhaseTimingBenchmarks(config: BenchmarkConfig): Promise<PhaseT
 
       // Phase 4: Formatting (string operations)
       const formatStart = performance.now()
-      const _output = processed.join('\n')
+      const _output = typeof processed === 'string' ? processed : processed.join('\n')
       const formatEnd = performance.now()
       phaseTimes.Formatting.push(formatEnd - formatStart)
 

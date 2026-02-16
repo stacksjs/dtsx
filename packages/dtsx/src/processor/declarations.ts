@@ -4,13 +4,31 @@
 
 import type { Declaration } from '../types'
 import { formatComments } from './comments'
-import { extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+
+/**
+ * Format a @defaultValue tag as a standalone JSDoc block
+ */
+function formatDefaultJsdoc(tag: string): string {
+  if (tag.includes('\n')) {
+    return `/**\n * ${tag}\n */\n`
+  }
+  return `/** ${tag} */\n`
+}
 
 /**
  * Find the start of interface body, accounting for nested braces in generics
  * Returns the index of the opening brace of the body, or -1 if not found
  */
 function findInterfaceBodyStart(text: string): number {
+  const braceIdx = text.indexOf('{')
+  if (braceIdx === -1) return -1
+
+  // Fast path: if no '<' before the first '{', no generics to worry about
+  const angleIdx = text.indexOf('<')
+  if (angleIdx === -1 || angleIdx > braceIdx) return braceIdx
+
+  // Slow path: has generics, need to track angle bracket depth
   let angleDepth = 0
   let inString = false
   let stringChar = ''
@@ -64,6 +82,12 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
 
+  // Fast path: if we have an explicit type annotation and no value needing special inference,
+  // use the scanner's pre-built text directly
+  if (decl.typeAnnotation && !decl.value) {
+    return comments + decl.text
+  }
+
   let result = ''
 
   // Add export if needed
@@ -83,32 +107,38 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
 
   // Add type annotation
   let typeAnnotation = decl.typeAnnotation
+  const value = decl.value as string | undefined
 
   // Check for 'satisfies' operator - extract the type from the satisfies clause
-  if (decl.value && decl.value.includes(' satisfies ')) {
-    const satisfiesType = extractSatisfiesType(decl.value)
+  if (value && value.includes(' satisfies ')) {
+    const satisfiesType = extractSatisfiesType(value)
     if (satisfiesType) {
       typeAnnotation = satisfiesType
     }
   }
-  // If we have a value, check if it has 'as const' - if so, infer from value instead of type annotation
-  else if (decl.value && decl.value.includes('as const')) {
-    typeAnnotation = inferNarrowType(decl.value, true)
+  // If we have a value that ends with 'as const' at the top level, infer narrow from value
+  else if (value && value.trim().endsWith('as const')) {
+    typeAnnotation = inferNarrowType(value, true)
   }
-  else if (!typeAnnotation && decl.value && kind === 'const') {
-    // For const declarations WITHOUT explicit type annotation, infer narrow types from the value
-    typeAnnotation = inferNarrowType(decl.value, true)
+  else if (!typeAnnotation && value && kind === 'const') {
+    // For const declarations WITHOUT explicit type annotation, infer types from the value
+    // Containers (objects/arrays) get widened types (sound: properties/elements are mutable)
+    // Scalars keep narrow literal types (sound: const binding is immutable)
+    const trimmedVal = value.trim()
+    const isContainer = trimmedVal.startsWith('{') || trimmedVal.startsWith('[')
+    if (isContainer) enableCleanDefaultCollection()
+    typeAnnotation = inferNarrowType(value, !isContainer)
   }
-  else if (typeAnnotation && decl.value && kind === 'const' && isGenericType(typeAnnotation)) {
+  else if (typeAnnotation && value && kind === 'const' && isGenericType(typeAnnotation)) {
     // For const declarations with generic type annotations (Record, any, object), prefer narrow inference
-    const inferredType = inferNarrowType(decl.value, true)
+    const inferredType = inferNarrowType(value, true)
     if (inferredType !== 'unknown') {
       typeAnnotation = inferredType
     }
   }
-  else if (!typeAnnotation && decl.value) {
+  else if (!typeAnnotation && value) {
     // If no explicit type annotation, try to infer from value
-    typeAnnotation = inferNarrowType(decl.value, kind === 'const')
+    typeAnnotation = inferNarrowType(value, kind === 'const')
   }
 
   // Default to unknown if we couldn't determine type
@@ -116,8 +146,61 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     typeAnnotation = 'unknown'
   }
 
+  // Build @defaultValue content for widened declarations (TSDoc standard)
+  // Skip when value uses 'as const' — types are already narrow/self-documenting
+  let defaultTag = ''
+  if (value && !decl.typeAnnotation && !value.trim().endsWith('as const')) {
+    const trimVal = value.trim()
+    if (kind !== 'const') {
+      // let/var with widened primitives
+      const isWidenedPrimitive = (typeAnnotation === 'string' || typeAnnotation === 'number' || typeAnnotation === 'boolean')
+      if (isWidenedPrimitive && trimVal.length > 0) {
+        defaultTag = `@defaultValue ${trimVal}`
+      }
+    }
+    else if (trimVal.startsWith('{') || trimVal.startsWith('[')) {
+      // const containers — clean @defaultValue computed inline during type inference
+      const cleanDefault = consumeCleanDefault()
+      if (cleanDefault) {
+        if (cleanDefault.includes('\n')) {
+          const lines = cleanDefault.split('\n')
+          defaultTag = `@defaultValue\n * \`\`\`ts\n${lines.map(l => ` * ${l}`).join('\n')}\n * \`\`\``
+        }
+        else {
+          defaultTag = `@defaultValue \`${cleanDefault}\``
+        }
+      }
+    }
+  }
+
   result += `: ${typeAnnotation};`
 
+  // Skip generated @defaultValue if user already has one
+  if (defaultTag && comments && comments.includes('@defaultValue')) {
+    defaultTag = ''
+  }
+
+  // Merge @defaultValue into existing JSDoc comment, or create standalone
+  if (defaultTag && comments) {
+    // Inject @defaultValue before closing */ of existing JSDoc block
+    const trimmedComments = comments.trimEnd()
+    const closingIdx = trimmedComments.lastIndexOf('*/')
+    if (closingIdx !== -1) {
+      let before = trimmedComments.slice(0, closingIdx).trimEnd()
+      // Convert single-line `/** text` to multi-line `/**\n * text`
+      if (before.startsWith('/** ') && !before.includes('\n')) {
+        before = `/**\n * ${before.slice(4)}`
+      }
+      const merged = `${before}\n * ${defaultTag}\n */\n`
+      return merged + result
+    }
+    // Line comment (// ...) — convert to JSDoc block and merge
+    const commentText = trimmedComments.replace(/^\/\/\s*/, '')
+    return `/**\n * ${commentText}\n * ${defaultTag}\n */\n` + result
+  }
+  if (defaultTag) {
+    return formatDefaultJsdoc(defaultTag) + result
+  }
   return comments + result
 }
 
@@ -197,11 +280,14 @@ export function processTypeDeclaration(decl: Declaration, keepComments: boolean 
     result += 'declare '
   }
 
-  // Extract the type definition from the original text
-  // Remove leading/trailing whitespace and comments
-  const typeMatch = decl.text.match(/type\s[^=]+=\s*([\s\S]+)/)
-  if (typeMatch) {
-    const typeDef = typeMatch[0].replace(/;?\s*$/, '')
+  // Extract the type definition from the original text using indexOf instead of regex
+  const typeIdx = decl.text.indexOf('type ')
+  if (typeIdx !== -1) {
+    let typeDef = decl.text.slice(typeIdx)
+    // Strip trailing semicolons and whitespace
+    let end = typeDef.length
+    while (end > 0 && (typeDef.charCodeAt(end - 1) === 59 /* ; */ || typeDef.charCodeAt(end - 1) === 32 || typeDef.charCodeAt(end - 1) === 10 || typeDef.charCodeAt(end - 1) === 13)) end--
+    if (end < typeDef.length) typeDef = typeDef.slice(0, end)
     result += typeDef
   }
   else {
@@ -214,7 +300,8 @@ export function processTypeDeclaration(decl: Declaration, keepComments: boolean 
   }
 
   // Ensure semicolon at end (unless it's a multi-line type that ends with })
-  if (!result.trimEnd().endsWith(';') && !result.trimEnd().endsWith('}')) {
+  const _trimmed = result.trimEnd()
+  if (!_trimmed.endsWith(';') && !_trimmed.endsWith('}')) {
     result += ';'
   }
 
@@ -260,10 +347,10 @@ export function processEnumDeclaration(decl: Declaration, keepComments: boolean 
   // Add enum name
   result += decl.name
 
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    result += ` ${bodyMatch[0]}`
+  // Extract the body from the original text using indexOf instead of regex
+  const enumBraceIdx = decl.text.indexOf('{')
+  if (enumBraceIdx !== -1) {
+    result += ' ' + decl.text.slice(enumBraceIdx)
   }
   else {
     result += ' {}'
@@ -280,8 +367,10 @@ export function processImportDeclaration(decl: Declaration): string {
   // Just ensure they end with semicolon
   let result = decl.text.trim()
 
-  // Remove any existing semicolon to avoid doubles
-  result = result.replace(/;+$/, '')
+  // Remove trailing semicolons without regex
+  let end = result.length
+  while (end > 0 && result.charCodeAt(end - 1) === 59 /* ; */) end--
+  if (end < result.length) result = result.slice(0, end)
 
   // Add single semicolon
   result += ';'
@@ -320,10 +409,10 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
     // Add module name
     result += decl.name
 
-    // Extract the body from the original text
-    const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-    if (bodyMatch) {
-      result += ` ${bodyMatch[0]}`
+    // Extract the body from the original text using indexOf
+    const modBraceIdx = decl.text.indexOf('{')
+    if (modBraceIdx !== -1) {
+      result += ' ' + decl.text.slice(modBraceIdx)
     }
     else {
       result += ' {}'
@@ -351,10 +440,10 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
   // Add namespace name
   result += decl.name
 
-  // Extract the body from the original text
-  const bodyMatch = decl.text.match(/\{[\s\S]*\}/)
-  if (bodyMatch) {
-    result += ` ${bodyMatch[0]}`
+  // Extract the body from the original text using indexOf
+  const nsBraceIdx = decl.text.indexOf('{')
+  if (nsBraceIdx !== -1) {
+    result += ' ' + decl.text.slice(nsBraceIdx)
   }
   else {
     result += ' {}'

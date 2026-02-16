@@ -4,9 +4,9 @@ dtsx provides a comprehensive set of features for generating TypeScript declarat
 
 ## Core Features
 
+- **🎯 Sound Type Inference with `@defaultValue`**: Generates correct widened types for mutable containers while preserving original values via `@defaultValue` JSDoc — unlike tsc and oxc which lose all value info. Scalar `const` keeps literal types. No `isolatedDeclarations` required. [See comparison →](./type-inference.md)
 - **⚡ Fast TypeScript Declaration Generation**: Generate `.d.ts` files quickly and efficiently using Bun's optimized runtime
 - **🔧 Smart Import Optimization**: Automatically optimizes imports based on actual usage and removes unused imports
-- **🧠 Intelligent Type Inference**: Advanced type inference for complex structures, including narrow types for constants
 - **💬 Comment Preservation**: Maintains JSDoc and other documentation comments in generated declarations (enabled by default)
 - **📝 Multi-line Type Formatting**: Properly formats complex multi-line type definitions with correct indentation
 - **🏗️ Flexible Output Structure**: Choose between mirroring source structure or flat output organization
@@ -53,7 +53,7 @@ dtsx supports all TypeScript declaration types:
 
 ### Development Options
 - **Verbose Logging**: Detailed generation logs for debugging (`verbose`)
-- **Isolated Declarations**: Automatic detection and validation
+- **Isolated Declarations**: Optional fast path — dtsx works great without it
 - **Error Handling**: Comprehensive error reporting and validation
 
 ## Comment Preservation
@@ -136,7 +136,7 @@ export interface User {
 ## Quality Features
 
 ### Type Safety
-- **Isolated Declarations**: Requires and validates isolated declarations
+- **Sound Type Inference**: Generates correct widened types with `@defaultValue` preservation for mutable containers
 - **Type Validation**: Ensures type correctness in output
 - **Import Resolution**: Proper import path resolution
 - **Export Tracking**: Tracks all exports and their usage

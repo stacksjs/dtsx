@@ -36,6 +36,12 @@ export interface WorkerPoolConfig {
    * @default 10000
    */
   idleTimeout?: number
+
+  /**
+   * Initial number of workers to pre-spawn
+   * @default min(2, maxWorkers)
+   */
+  initialWorkers?: number
 }
 
 /**
@@ -43,21 +49,35 @@ export interface WorkerPoolConfig {
  */
 export interface WorkerTask {
   id: string
-  type: 'process' | 'extract' | 'transform'
+  type: 'process' | 'extract' | 'transform' | 'process-batch'
   filePath: string
-  sourceCode: string
+  sourceCode?: string
+  files?: Array<{ filePath: string, sourceCode?: string, outPath?: string }>
+  filePaths?: string[]
+  sources?: string[]
+  outPaths?: string[]
   config: Partial<DtsGenerationConfig>
+  writeOutput?: boolean
 }
 
 /**
  * Result from a worker task
  */
+export interface WorkerBatchResult {
+  filePath: string
+  success: boolean
+  content?: string
+  declarations?: Declaration[]
+  error?: string
+}
+
 export interface WorkerResult {
   id: string
   success: boolean
   filePath: string
   content?: string
   declarations?: Declaration[]
+  batchResults?: WorkerBatchResult[]
   error?: string
   duration: number
 }
@@ -82,6 +102,12 @@ interface WorkerInstance {
   busy: boolean
   taskCount: number
   lastActive: number
+  currentTask: {
+    id: string
+    resolve: (result: WorkerResult) => void
+    reject: (error: Error) => void
+    timeout: ReturnType<typeof setTimeout>
+  } | null
 }
 
 /**
@@ -109,11 +135,13 @@ export class WorkerPool {
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(config: WorkerPoolConfig = {}) {
+    const maxWorkers = config.maxWorkers ?? Math.max(1, cpus().length - 1)
     this.config = {
-      maxWorkers: config.maxWorkers ?? Math.max(1, cpus().length - 1),
+      maxWorkers,
       taskTimeout: config.taskTimeout ?? 30000,
       recycleAfter: config.recycleAfter ?? 100,
       idleTimeout: config.idleTimeout ?? 10000,
+      initialWorkers: config.initialWorkers ?? Math.min(2, maxWorkers),
     }
   }
 
@@ -122,15 +150,17 @@ export class WorkerPool {
    */
   async init(): Promise<void> {
     // Create initial workers
-    const initialWorkers = Math.min(2, this.config.maxWorkers)
+    const initialWorkers = Math.min(this.config.initialWorkers, this.config.maxWorkers)
     for (let i = 0; i < initialWorkers; i++) {
       this.createWorker()
     }
 
-    // Start idle check
-    this.idleCheckInterval = setInterval(() => {
-      this.checkIdleWorkers()
-    }, 5000)
+    // Start idle check only when enabled
+    if (this.config.idleTimeout > 0) {
+      this.idleCheckInterval = setInterval(() => {
+        this.checkIdleWorkers()
+      }, 5000)
+    }
   }
 
   /**
@@ -139,18 +169,128 @@ export class WorkerPool {
   private createWorker(): WorkerInstance {
     const workerCode = `
       const { parentPort } = require('worker_threads');
+      const bun = typeof Bun !== 'undefined' ? Bun : null;
+      const fs = bun ? null : require('node:fs');
+
+      const libsPromise = (async () => {
+        const { extractDeclarations } = await import('${resolve(__dirname, 'extractor.js')}');
+        const { processDeclarations } = await import('${resolve(__dirname, 'processor.js')}');
+        return { extractDeclarations, processDeclarations };
+      })();
 
       // Dynamic import for ESM compatibility
       async function processTask(task) {
         const startTime = Date.now();
 
         try {
-          // Import the processing functions
-          const { extractDeclarations } = await import('${resolve(__dirname, 'extractor.js')}');
-          const { processDeclarations } = await import('${resolve(__dirname, 'processor.js')}');
+          const { extractDeclarations, processDeclarations } = await libsPromise;
+
+          const keepComments = task.config?.keepComments;
+          const isolatedDeclarations = task.config?.isolatedDeclarations;
+          const importOrder = task.config?.importOrder;
+
+          if (task.type === 'process-batch') {
+            const filePaths = task.filePaths;
+            const outPaths = task.outPaths;
+            const files = filePaths ? null : (task.files || []);
+            const fileCount = filePaths ? filePaths.length : files.length;
+            const writeOutput = task.writeOutput === true;
+            const results = writeOutput ? null : new Array(fileCount);
+            let errorResults = null;
+
+            let sources = task.sources;
+            if (!sources && fileCount > 0) {
+              const readPromises = new Array(fileCount);
+              for (let i = 0; i < fileCount; i++) {
+                const file = files ? files[i] : null;
+                const sourceCode = file ? file.sourceCode : undefined;
+                const filePath = filePaths ? filePaths[i] : file.filePath;
+                if (sourceCode != null) {
+                  readPromises[i] = Promise.resolve(sourceCode);
+                } else if (bun) {
+                  readPromises[i] = bun.file(filePath).text();
+                } else {
+                  readPromises[i] = Promise.resolve(fs.readFileSync(filePath, 'utf-8'));
+                }
+              }
+              sources = await Promise.all(readPromises);
+            }
+
+            const ctx = { filePath: '', sourceCode: '', declarations: [] };
+            const writePromises = writeOutput && bun ? new Array(fileCount) : null;
+            let success = true;
+
+            for (let i = 0; i < fileCount; i++) {
+              const file = files ? files[i] : null;
+              const filePath = filePaths ? filePaths[i] : file.filePath;
+              const outPath = outPaths ? outPaths[i] : (file ? file.outPath : undefined);
+              try {
+                const sourceCode = sources ? sources[i] : (file?.sourceCode || '');
+                const declarations = extractDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations);
+                ctx.filePath = filePath;
+                ctx.sourceCode = sourceCode;
+                ctx.declarations = declarations;
+                const content = processDeclarations(declarations, ctx, true, importOrder);
+
+                if (writeOutput) {
+                  if (!outPath) {
+                    throw new Error('Missing outPath for ' + filePath);
+                  }
+                  if (bun) {
+                    writePromises[i] = bun.write(outPath, content);
+                  } else {
+                    fs.writeFileSync(outPath, content);
+                  }
+                } else if (results) {
+                  results[i] = {
+                    filePath,
+                    success: true,
+                    content,
+                    declarations,
+                  };
+                }
+              } catch (error) {
+                const message = error && error.message ? error.message : String(error);
+                if (writeOutput) {
+                  if (!errorResults) {
+                    errorResults = [];
+                  }
+                  errorResults.push({
+                    filePath,
+                    success: false,
+                    error: message,
+                  });
+                } else if (results) {
+                  results[i] = {
+                    filePath,
+                    success: false,
+                    error: message,
+                  };
+                }
+                success = false;
+              }
+            }
+
+            if (writePromises) {
+              await Promise.all(writePromises);
+            }
+
+            const errorMessage = errorResults?.length
+              ? (errorResults[0].filePath + ': ' + (errorResults[0].error || 'Worker batch failed'))
+              : undefined;
+
+            return {
+              id: task.id,
+              success,
+              filePath: task.filePath,
+              batchResults: writeOutput ? errorResults || undefined : results,
+              error: errorMessage,
+              duration: Date.now() - startTime,
+            };
+          }
 
           if (task.type === 'extract') {
-            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments);
+            const declarations = extractDeclarations(task.sourceCode, task.filePath, keepComments, isolatedDeclarations);
             return {
               id: task.id,
               success: true,
@@ -161,15 +301,12 @@ export class WorkerPool {
           }
 
           if (task.type === 'process') {
-            const declarations = extractDeclarations(task.sourceCode, task.filePath, task.config?.keepComments);
+            const declarations = extractDeclarations(task.sourceCode, task.filePath, keepComments, isolatedDeclarations);
             const content = processDeclarations(declarations, {
               filePath: task.filePath,
               sourceCode: task.sourceCode,
               declarations,
-              imports: new Map(),
-              exports: new Set(),
-              usedTypes: new Set(),
-            }, true, task.config?.importOrder);
+            }, true, importOrder);
 
             return {
               id: task.id,
@@ -206,13 +343,14 @@ export class WorkerPool {
       busy: false,
       taskCount: 0,
       lastActive: Date.now(),
+      currentTask: null,
     }
 
     worker.on('message', (result: WorkerResult) => {
       this.handleWorkerResult(instance, result)
     })
 
-    worker.on('error', (error) => {
+    worker.on('error', (error: Error) => {
       logger.error('Worker error:', error)
       this.handleWorkerError(instance, error)
     })
@@ -237,6 +375,13 @@ export class WorkerPool {
     instance.busy = false
     instance.taskCount++
     instance.lastActive = Date.now()
+
+    if (instance.currentTask && instance.currentTask.id === result.id) {
+      clearTimeout(instance.currentTask.timeout)
+      const { resolve } = instance.currentTask
+      instance.currentTask = null
+      resolve(result)
+    }
 
     // Update stats
     if (result.success) {
@@ -265,6 +410,12 @@ export class WorkerPool {
    */
   private handleWorkerError(instance: WorkerInstance, _error: Error): void {
     instance.busy = false
+    if (instance.currentTask) {
+      clearTimeout(instance.currentTask.timeout)
+      const { reject } = instance.currentTask
+      instance.currentTask = null
+      reject(_error)
+    }
     this.stats.failedTasks++
     this.updateStats()
 
@@ -304,7 +455,8 @@ export class WorkerPool {
     const now = Date.now()
     const minWorkers = 1
 
-    for (const instance of [...this.workers]) {
+    for (let i = this.workers.length - 1; i >= 0; i--) {
+      const instance = this.workers[i]
       if (
         !instance.busy
         && now - instance.lastActive > this.config.idleTimeout
@@ -319,49 +471,45 @@ export class WorkerPool {
    * Process the task queue
    */
   private processQueue(): void {
-    if (this.taskQueue.length === 0)
-      return
-
-    // Find an available worker
-    let worker = this.workers.find(w => !w.busy)
-
-    // Create new worker if needed and under limit
-    if (!worker && this.workers.length < this.config.maxWorkers) {
-      worker = this.createWorker()
-    }
-
-    if (!worker)
-      return
-
-    const { task, resolve, reject } = this.taskQueue.shift()!
-
-    worker.busy = true
-    worker.lastActive = Date.now()
-
-    // Set timeout
-    const timeout = setTimeout(() => {
-      reject(new Error(`Task ${task.id} timed out`))
-      this.recycleWorker(worker!)
-    }, this.config.taskTimeout)
-
-    // Store resolve/reject for later
-    const originalResolve = resolve
-    const wrappedResolve = (result: WorkerResult) => {
-      clearTimeout(timeout)
-      originalResolve(result)
-    }
-
-    // Listen for this specific task result
-    const handler = (result: WorkerResult) => {
-      if (result.id === task.id) {
-        wrappedResolve(result)
+    while (this.taskQueue.length > 0) {
+      // Find an available worker
+      let worker: WorkerInstance | undefined
+      for (let i = 0; i < this.workers.length; i++) {
+        if (!this.workers[i].busy) { worker = this.workers[i]; break }
       }
+
+      // Create new worker if needed and under limit
+      if (!worker && this.workers.length < this.config.maxWorkers) {
+        worker = this.createWorker()
+      }
+
+      if (!worker)
+        return
+
+      const { task, resolve, reject } = this.taskQueue.shift()!
+
+      worker.busy = true
+      worker.lastActive = Date.now()
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        if (worker!.currentTask?.id === task.id) {
+          worker!.currentTask = null
+        }
+        reject(new Error(`Task ${task.id} timed out`))
+        this.recycleWorker(worker!)
+      }, this.config.taskTimeout)
+
+      worker.currentTask = {
+        id: task.id,
+        resolve,
+        reject,
+        timeout,
+      }
+      worker.worker.postMessage(task)
+
+      this.updateStats()
     }
-
-    worker.worker.once('message', handler)
-    worker.worker.postMessage(task)
-
-    this.updateStats()
   }
 
   /**
@@ -398,8 +546,12 @@ export class WorkerPool {
    * Update statistics
    */
   private updateStats(): void {
-    this.stats.activeWorkers = this.workers.filter(w => w.busy).length
-    this.stats.idleWorkers = this.workers.filter(w => !w.busy).length
+    let active = 0
+    for (let i = 0; i < this.workers.length; i++) {
+      if (this.workers[i].busy) active++
+    }
+    this.stats.activeWorkers = active
+    this.stats.idleWorkers = this.workers.length - active
   }
 
   /**

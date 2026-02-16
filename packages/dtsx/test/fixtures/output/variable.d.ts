@@ -5,56 +5,113 @@ export declare const conf: {
   apiUrl: 'https://api.stacksjs.org';
   timeout: '5000'
 };
-export declare let test: 'test';
-export declare var helloWorld: 'Hello World';
+/** @defaultValue 'test' */
+export declare let test: string;
+/** @defaultValue 'Hello World' */
+export declare var helloWorld: string;
+/**
+ * @defaultValue
+ * ```ts
+ * {
+ *   someString: 'Stacks',
+ *   someNumber: 1000,
+ *   someBoolean: true,
+ *   someFalse: false,
+ *   someFunction: () => unknown,
+ *   anotherOne: () => unknown,
+ *   someArray: [1, 2, 3],
+ *   someNestedArray: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], ],
+ *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
+ *   someNestedArray3: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', [11, 12, 13], ],
+ *   someObject: { key: 'value' },
+ *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => unknown } },
+ *   someNestedObjectArray: [ { key: 'value' }, { key2: 'value2' }, ]
+ * }
+ * ```
+ */
 export declare const someObject: {
-  someString: 'Stacks';
-  someNumber: 1000;
-  someBoolean: true;
-  someFalse: false;
+  /** @defaultValue 'Stacks' */
+  someString: string;
+  /** @defaultValue 1000 */
+  someNumber: number;
+  /** @defaultValue true */
+  someBoolean: boolean;
+  /** @defaultValue false */
+  someFalse: boolean;
   someFunction: () => unknown;
   anotherOne: () => unknown;
-  someArray: readonly [1, 2, 3];
-  someNestedArray: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10]];
-  someNestedArray2: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10], 'dummy value'];
-  someNestedArray3: readonly [readonly [1, 2, 3], readonly [4, 5, 6, 7, 8, 9, 10], 'dummy value', readonly [11, 12, 13]];
-  someOtherNestedArray: readonly [readonly ['some text', 2, unknown, (() => unknown), unknown], readonly [4, 5, 6, 7, 8, 9, 10]];
-  someComplexArray: readonly [readonly [{
-  key: 'value'
-}], readonly [{
-  key2: 'value2'
-}, 'test', 1000], readonly ['some string', unknown, unknown]];
+  someArray: number[];
+  someNestedArray: number[][];
+  someNestedArray2: (number[] | string)[];
+  someNestedArray3: (number[] | string)[];
+  someOtherNestedArray: ((string | number | unknown | (() => unknown))[] | number[])[];
+  someComplexArray: ({
+  /** @defaultValue 'value' */
+  key: string
+}[] | ({
+  /** @defaultValue 'value2' */
+  key2: string
+} | string | number)[] | (string | unknown)[])[];
   someObject: {
-  key: 'value'
+  /** @defaultValue 'value' */
+  key: string
 };
-  someNestedObject: { key: { nestedKey: 'value' }; otherKey: { nestedKey: unknown; nestedKey2: () => unknown } };
-  someNestedObjectArray: readonly [{
-  key: 'value'
-}, {
-  key2: 'value2'
-}];
+  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => unknown } };
+  someNestedObjectArray: ({
+  /** @defaultValue 'value' */
+  key: string
+} | {
+  /** @defaultValue 'value2' */
+  key2: string
+})[];
   someOtherObject: unknown;
   someInlineCall2: unknown;
   someInlineCall3: unknown
 };
+/** @defaultValue `{ 'Content-Type': 'application/json' }` */
 export declare const defaultHeaders: {
-  'Content-Type': 'application/json'
+  /** @defaultValue 'application/json' */
+  'Content-Type': string
 };
-// Complex Arrays and Tuples
+/**
+ * Complex Arrays and Tuples
+ * @defaultValue
+ * ```ts
+ * {
+ *   matrix: [ [1, 2, [3, 4, [5, 6]]], ['a', 'b', ['c', 'd']], [true, [false, [true]]], ],
+ *   tuples: [ [1, 'string', true] as const, ['literal', 42, false] as const, ]
+ * }
+ * ```
+ */
 export declare const complexArrays: {
-  matrix: readonly [readonly [1, 2, readonly [3, 4, readonly [5, 6]]], readonly ['a', 'b', readonly ['c', 'd']], readonly [true, readonly [false, readonly [true]]]];
+  matrix: ((number | (number | number[])[])[] | (string | string[])[] | (boolean | (boolean | boolean[])[])[])[];
   tuples: readonly [
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  // TODO: () => unknown
+  mixedArrays: (Date | Promise<string> | (() => unknown) | (() => Generator<any, any, any>))[]
 };
-// Nested Object Types with Methods
+/**
+ * Nested Object Types with Methods
+ * @defaultValue
+ * ```ts
+ * {
+ *   handlers: {
+ *     onSuccess<T>: (data: T) => unknown,
+ *     onError: (error: Error & { code?: number }) => unknown,
+ *     someOtherMethod: () => unknown
+ *   },
+ *   utils: {
+ *     formatters: {
+ *       date: (input: Date) => unknown,
+ *       currency: (amount: number, currency?) => unknown
+ *     }
+ *   }
+ * }
+ * ```
+ */
 export declare const complexObject: {
-  handlers: {
-  onSuccess<T>(data: T): unknown;
-  onError(error: Error & { code?: number }): unknown
-};
+  handlers: { onSuccess<T>: (data: T) => unknown; onError: (error: Error & { code?: number }) => unknown; someOtherMethod: () => unknown };
   utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)

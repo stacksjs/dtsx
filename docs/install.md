@@ -142,12 +142,12 @@ dtsx --verbose
 
 ### Project Requirements
 
-Your TypeScript project must have `isolatedDeclarations` enabled in `tsconfig.json`:
+For optimal performance, you can optionally enable `isolatedDeclarations` in `tsconfig.json`. dtsx works great without it — it infers narrow types directly from your source values:
 
 ```json
 {
   "compilerOptions": {
-    "isolatedDeclarations": true,
+    "isolatedDeclarations": true, // optional fast path
     "declaration": true
   }
 }
@@ -172,8 +172,8 @@ Your TypeScript project must have `isolatedDeclarations` enabled in `tsconfig.js
 
 3. **TypeScript Errors**
    ```bash
-   # Ensure isolatedDeclarations is enabled
-   # Check your tsconfig.json file
+   # dtsx works without isolatedDeclarations
+   # Check your source files for syntax errors
    ```
 
 ### Getting Help

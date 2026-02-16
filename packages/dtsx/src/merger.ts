@@ -133,11 +133,10 @@ export function mergeDeclarations(
     }
 
     // Check if we should merge this kind
-    const shouldMerge
-      = (decl.kind === 'interface' && mergeInterfaces)
-        || (decl.kind === 'module' && mergeNamespaces)
-        || (decl.kind === 'type' && mergeTypes)
-        || (decl.kind === 'enum' && mergeEnums)
+    const shouldMerge = (decl.kind === 'interface' && mergeInterfaces)
+      || (decl.kind === 'module' && mergeNamespaces)
+      || (decl.kind === 'type' && mergeTypes)
+      || (decl.kind === 'enum' && mergeEnums)
 
     if (!shouldMerge) {
       // Keep all declarations as-is

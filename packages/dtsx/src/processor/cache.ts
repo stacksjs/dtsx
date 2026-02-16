@@ -33,8 +33,9 @@ export function getCachedRegex(pattern: string): RegExp {
 
     // Evict a batch of entries if cache is too large
     if (regexCache.size > MAX_REGEX_CACHE_SIZE) {
-      const keysToDelete = Array.from(regexCache.keys()).slice(0, 50)
-      for (const key of keysToDelete) {
+      let count = 0
+      for (const key of regexCache.keys()) {
+        if (count++ >= 50) break
         regexCache.delete(key)
       }
     }
@@ -57,8 +58,9 @@ export function setImportItemsCache(importText: string, items: string[]): void {
 
   // Evict a batch of entries if cache is too large
   if (importItemsCache.size > MAX_IMPORT_CACHE_SIZE) {
-    const keysToDelete = Array.from(importItemsCache.keys()).slice(0, 20)
-    for (const key of keysToDelete) {
+    let count = 0
+    for (const key of importItemsCache.keys()) {
+      if (count++ >= 20) break
       importItemsCache.delete(key)
     }
   }

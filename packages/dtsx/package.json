@@ -77,8 +77,8 @@
     "compile:windows-x64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-windows-x64 --outfile bin/dtsx-windows-x64.exe",
     "compile:darwin-x64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-darwin-x64 --outfile bin/dtsx-darwin-x64",
     "compile:darwin-arm64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-darwin-arm64 --outfile bin/dtsx-darwin-arm64",
-    "lint": "bunx --bun eslint .",
-    "lint:fix": "bunx --bun eslint . --fix",
+    "lint": "bunx --bun pickier run . --mode lint",
+    "lint:fix": "bunx --bun pickier run . --mode lint --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
     "changelog": "bunx changelogen --output CHANGELOG.md",
     "prepublishOnly": "bun --bun run build && bun run compile:all && bun run zip",
@@ -94,7 +94,7 @@
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "peerDependencies": {
-    "typescript": ">=5.0.0"
+    "typescript": ">=5.9.3"
   },
   "peerDependenciesMeta": {
     "typescript": {
@@ -107,12 +107,12 @@
   "devDependencies": {
     "bunfig": "^0.15.6",
     "oxc-parser": "^0.112.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.9.3"
   },
   "git-hooks": {
     "pre-commit": {
       "staged-lint": {
-        "*.{js,ts,json,yaml,yml,md}": "bunx --bun eslint . --fix"
+        "*.{js,ts,json,yaml,yml,md}": "bunx --bun pickier run . --mode lint --fix"
       }
     }
   }

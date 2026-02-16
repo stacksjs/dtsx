@@ -37,10 +37,14 @@ export declare const deeplyNested: {
 }
 }
 };
-// Mixed type arrays
-export declare const mixedTypeArray: readonly ['string', 123, true, null, undefined, {
-  key: 'value'
-}, readonly [1, 2, 3], (() => unknown), Date, Promise<'async'>];
+/**
+ * Mixed type arrays
+ * @defaultValue `['string', 123, true, null, undefined, { key: 'value' }, [1, 2, 3], () => string, Date, Promise<string>]`
+ */
+export declare const mixedTypeArray: (string | number | boolean | null | undefined | {
+  /** @defaultValue 'value' */
+  key: string
+} | number[] | (() => unknown) | Date | Promise<string>)[];
 // Type with conditional and infer
 export type ExtractPromise<T> = T extends Promise<infer U> ? U : never;
 export type ExtractArray<T> = T extends (infer U)[] ? U : never;

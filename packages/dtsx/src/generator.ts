@@ -1,10 +1,11 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
+import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
-import { file, isBun, spawnProcess } from './compat'
+import { file, isBun, readTextFile, spawnProcess } from './compat'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
@@ -12,7 +13,7 @@ import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
-import { addSourceMapComment, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
+import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
 /**
  * Generate DTS files from TypeScript source files
@@ -38,6 +39,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
     // Run onStart hooks (may modify config)
     config = await pluginManager.runOnStart(config)
+  }
+
+  if (config.isolatedDeclarations === undefined) {
+    config.isolatedDeclarations = await checkIsolatedDeclarationsConfig(config)
   }
 
   // Initialize incremental build cache if enabled
@@ -105,7 +110,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
 
   // Helper function to process a single file
-  const processSingleFile = async (file: string): Promise<{
+  // Accepts optional pre-read source to avoid redundant I/O when files are batch-read
+  const processSingleFile = async (file: string, preReadSource?: string): Promise<{
     success: boolean
     file: string
     declarationCount: number
@@ -130,8 +136,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         }
       }
 
-      // Read source first for better error context
-      sourceCode = await readFile(file, 'utf-8')
+      // Use pre-read source if available, otherwise read from disk
+      sourceCode = preReadSource ?? await readTextFile(file)
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
 
       let validationErrorCount = 0
@@ -147,7 +153,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Show diff if enabled
         if (config.diff) {
           try {
-            const existingContent = await readFile(outputPath, 'utf-8')
+            const existingContent = await readTextFile(outputPath)
             const diffOutput = createDiff(existingContent, dtsContent, relative(config.cwd, outputPath))
             if (diffOutput) {
               logger.info(`\n${diffOutput}`)
@@ -251,51 +257,75 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
 
-  // Process files either in parallel or sequentially
-  if (config.parallel) {
-    // Parallel processing with concurrency limit
-    const concurrency = config.concurrency || 4
-    const results: Array<Awaited<ReturnType<typeof processSingleFile>>> = []
+  // Auto-enable parallel processing for multiple files (unless explicitly set to false)
+  const useParallel = config.parallel || (config.parallel !== false && files.length >= 10)
+  const concurrency = config.concurrency || (availableParallelism?.() ?? 8)
 
-    for (let i = 0; i < files.length; i += concurrency) {
-      const batch = files.slice(i, i + concurrency)
-      const batchResults = await Promise.all(batch.map(processSingleFile))
-      results.push(...batchResults)
+  // Pre-read all file sources in parallel for faster I/O
+  // This allows overlapping disk reads instead of sequential read-process-write
+  const preReadSources = new Map<string, string>()
+  if (useParallel && files.length > 1) {
+    const readPromises = files.map(async (f) => {
+      try {
+        const src = await readTextFile(f)
+        return { file: f, source: src }
+      }
+      catch {
+        return { file: f, source: null }
+      }
+    })
+    for (const result of await Promise.all(readPromises)) {
+      if (result.source !== null) preReadSources.set(result.file, result.source)
+    }
+  }
 
-      // Update stats and show progress after each batch
-      for (const result of batchResults) {
-        stats.filesProcessed++
-        if (result.success) {
-          if (result.cached) {
-            cacheHits++
-          }
-          else {
-            stats.filesGenerated++
-            stats.declarationsFound += result.declarationCount
-            stats.importsProcessed += result.importCount
-            stats.exportsProcessed += result.exportCount
-          }
-          if (config.validate) {
-            stats.filesValidated++
-            if (result.validationErrorCount) {
-              stats.validationErrors += result.validationErrorCount
-            }
-          }
+  // Helper to update stats from a result
+  const updateStats = (result: Awaited<ReturnType<typeof processSingleFile>>) => {
+    stats.filesProcessed++
+    if (result.success) {
+      if (result.cached) {
+        cacheHits++
+      }
+      else {
+        stats.filesGenerated++
+        stats.declarationsFound += result.declarationCount
+        stats.importsProcessed += result.importCount
+        stats.exportsProcessed += result.exportCount
+      }
+      if (config.validate) {
+        stats.filesValidated++
+        if (result.validationErrorCount) {
+          stats.validationErrors += result.validationErrorCount
+        }
+      }
+    }
+    else {
+      stats.filesFailed++
+      if (result.dtsError) {
+        stats.errors.push(result.dtsError)
+        const errorMsg = formatDtsError(result.dtsError)
+        if (config.continueOnError) {
+          logger.warn(errorMsg)
         }
         else {
-          stats.filesFailed++
-          if (result.dtsError) {
-            stats.errors.push(result.dtsError)
-            const errorMsg = formatDtsError(result.dtsError)
-            if (config.continueOnError) {
-              logger.warn(errorMsg)
-            }
-            else {
-              logger.error(errorMsg)
-              throw new Error(result.dtsError.message)
-            }
-          }
+          logger.error(errorMsg)
+          throw new Error(result.dtsError.message)
         }
+      }
+    }
+  }
+
+  // Process files either in parallel or sequentially
+  if (useParallel) {
+    // Parallel processing with concurrency limit
+    for (let i = 0; i < files.length; i += concurrency) {
+      const batch = files.slice(i, i + concurrency)
+      const batchResults = await Promise.all(
+        batch.map(f => processSingleFile(f, preReadSources.get(f))),
+      )
+
+      for (const result of batchResults) {
+        updateStats(result)
       }
 
       if (config.progress) {
@@ -305,48 +335,16 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
   else {
-    // Sequential processing (original behavior)
+    // Sequential processing (single file or explicitly disabled)
     for (const file of files) {
       const result = await processSingleFile(file)
+      updateStats(result)
 
-      stats.filesProcessed++
-      if (result.success) {
-        if (result.cached) {
-          cacheHits++
-        }
-        else {
-          stats.filesGenerated++
-          stats.declarationsFound += result.declarationCount
-          stats.importsProcessed += result.importCount
-          stats.exportsProcessed += result.exportCount
-        }
-        if (config.validate) {
-          stats.filesValidated++
-          if (result.validationErrorCount) {
-            stats.validationErrors += result.validationErrorCount
-          }
-        }
-
-        // Show progress
-        if (config.progress) {
-          const percent = Math.round((stats.filesProcessed / files.length) * 100)
-          const status = result.cached ? '[cached]' : ''
-          logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)} ${status}`)
-        }
-      }
-      else {
-        stats.filesFailed++
-        if (result.dtsError) {
-          stats.errors.push(result.dtsError)
-          const errorMsg = formatDtsError(result.dtsError)
-          if (config.continueOnError) {
-            logger.warn(errorMsg)
-          }
-          else {
-            logger.error(errorMsg)
-            throw new Error(result.dtsError.message)
-          }
-        }
+      // Show progress
+      if (config.progress) {
+        const percent = Math.round((stats.filesProcessed / files.length) * 100)
+        const status = result.cached ? '[cached]' : ''
+        logger.info(`[${stats.filesProcessed}/${files.length}] ${percent}% - ${relative(config.cwd, file)} ${status}`)
       }
     }
   }
@@ -365,7 +363,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       // Read all source files
       const sourceContents = new Map<string, string>()
       for (const file of files) {
-        const content = await readFile(file, 'utf-8')
+        const content = await readTextFile(file)
         sourceContents.set(file, content)
       }
 
@@ -578,7 +576,7 @@ async function processFileWithStats(
   pluginManager?: PluginManager,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
-  const sourceCode = await readFile(filePath, 'utf-8')
+  const sourceCode = await readTextFile(filePath)
   return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager)
 }
 
@@ -598,25 +596,27 @@ async function processFileWithStatsFromSource(
   }
 
   // Extract declarations
-  let declarations = extractDeclarations(processedSource, filePath, config.keepComments)
+  let declarations = extractDeclarations(processedSource, filePath, config.keepComments, config.isolatedDeclarations ?? false)
 
   // Run onDeclarations hooks (may modify declarations)
   if (pluginManager) {
     declarations = await pluginManager.runOnDeclarations(filePath, processedSource, declarations)
   }
 
-  // Count imports and exports
-  const importCount = declarations.filter(d => d.kind === 'import').length
-  const exportCount = declarations.filter(d => d.kind === 'export' || d.isExported).length
+  // Count imports and exports (single pass, no temporary arrays)
+  let importCount = 0
+  let exportCount = 0
+  for (let i = 0; i < declarations.length; i++) {
+    const d = declarations[i]
+    if (d.kind === 'import') importCount++
+    if (d.kind === 'export' || d.isExported) exportCount++
+  }
 
   // Create processing context
   const context: ProcessingContext = {
     filePath,
     sourceCode: processedSource,
     declarations,
-    imports: new Map(),
-    exports: new Set(),
-    usedTypes: new Set(),
   }
 
   // Process declarations to generate DTS

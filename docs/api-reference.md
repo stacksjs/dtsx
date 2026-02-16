@@ -346,7 +346,7 @@ const defaultConfig: DtsGenerationConfig = {
    - Set appropriate `outputStructure` ('mirror' or 'flat')
 
 2. **Type Processing**
-   - Ensure `isolatedDeclarations` is enabled in tsconfig.json
+   - Optionally enable `isolatedDeclarations` in tsconfig.json for a performance fast path
    - Use type-only imports when possible
    - Handle circular dependencies carefully
    - Validate type definitions before processing

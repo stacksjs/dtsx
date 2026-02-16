@@ -91,8 +91,17 @@ export function parseImportStatement(importText: string): {
 
     // Extract named imports
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
-    namedItems.push(...items)
+    // Single-pass parsing: avoid split().map().filter() triple allocation
+    let itemStart = 0
+    for (let i = 0; i <= namedPart.length; i++) {
+      if (i === namedPart.length || namedPart.charCodeAt(i) === 44 /* , */) {
+        let s = itemStart, e = i
+        while (s < e && (namedPart.charCodeAt(s) === 32 || namedPart.charCodeAt(s) === 9 || namedPart.charCodeAt(s) === 10)) s++
+        while (e > s && (namedPart.charCodeAt(e - 1) === 32 || namedPart.charCodeAt(e - 1) === 9 || namedPart.charCodeAt(e - 1) === 10)) e--
+        if (s < e) namedItems.push(namedPart.slice(s, e))
+        itemStart = i + 1
+      }
+    }
   }
   else {
     // Default import only
@@ -114,22 +123,6 @@ export function extractAllImportedItems(importText: string): string[] {
   }
 
   const items: string[] = []
-
-  // Helper to clean import item names and extract alias if present
-  // For 'SomeType as AliasedType', returns 'AliasedType' (the local name used in code)
-  const cleanImportItem = (item: string): string => {
-    let trimmed = item.trim()
-    // Remove 'type ' prefix
-    if (trimmed.startsWith('type ')) {
-      trimmed = trimmed.slice(5).trim()
-    }
-    // Handle aliases: 'OriginalName as AliasName' -> 'AliasName'
-    const asIndex = trimmed.indexOf(' as ')
-    if (asIndex !== -1) {
-      return trimmed.slice(asIndex + 4).trim()
-    }
-    return trimmed
-  }
 
   // Find 'from' keyword position
   const fromIndex = importText.indexOf(' from ')
@@ -168,10 +161,21 @@ export function extractAllImportedItems(importText: string): string[] {
       items.push(beforeBrace)
     }
 
-    // Extract named imports from braces
+    // Extract named imports from braces (inline clean to avoid closure allocation)
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const namedItems = namedPart.split(',').map(cleanImportItem).filter(Boolean)
-    items.push(...namedItems)
+    const rawItems = namedPart.split(',')
+    for (let ri = 0; ri < rawItems.length; ri++) {
+      let trimmed = rawItems[ri].trim()
+      if (!trimmed) continue
+      if (trimmed.startsWith('type ')) {
+        trimmed = trimmed.slice(5).trim()
+      }
+      const asIndex = trimmed.indexOf(' as ')
+      if (asIndex !== -1) {
+        trimmed = trimmed.slice(asIndex + 4).trim()
+      }
+      if (trimmed) items.push(trimmed)
+    }
   }
   else {
     // Default import only: import defaultName from 'module'
@@ -250,9 +254,21 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
       defaultName = beforeBrace.slice(0, -1).trim() || null
     }
 
-    // Extract named imports with type-only detection
+    // Extract named imports with type-only detection (single-pass parsing)
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
+    const items: string[] = []
+    {
+      let _s = 0
+      for (let _i = 0; _i <= namedPart.length; _i++) {
+        if (_i === namedPart.length || namedPart.charCodeAt(_i) === 44) {
+          let a = _s, b = _i
+          while (a < b && (namedPart.charCodeAt(a) <= 32)) a++
+          while (b > a && (namedPart.charCodeAt(b - 1) <= 32)) b--
+          if (a < b) items.push(namedPart.slice(a, b))
+          _s = _i + 1
+        }
+      }
+    }
 
     for (const item of items) {
       const itemIsTypeOnly = item.startsWith('type ')
@@ -375,10 +391,22 @@ export function parseExportDetailed(exportText: string): {
     }
   }
 
-  // Extract named exports with type-only detection
+  // Extract named exports with type-only detection (single-pass parsing)
   const namedItems: ImportItem[] = []
   const namedPart = text.slice(braceStart + 1, braceEnd)
-  const items = namedPart.split(',').map(s => s.trim()).filter(Boolean)
+  const items: string[] = []
+  {
+    let _s = 0
+    for (let _i = 0; _i <= namedPart.length; _i++) {
+      if (_i === namedPart.length || namedPart.charCodeAt(_i) === 44) {
+        let a = _s, b = _i
+        while (a < b && (namedPart.charCodeAt(a) <= 32)) a++
+        while (b > a && (namedPart.charCodeAt(b - 1) <= 32)) b--
+        if (a < b) items.push(namedPart.slice(a, b))
+        _s = _i + 1
+      }
+    }
+  }
 
   for (const item of items) {
     const itemIsTypeOnly = item.startsWith('type ')

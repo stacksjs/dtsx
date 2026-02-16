@@ -402,15 +402,43 @@ export declare const colors: readonly ["red", "green", "blue"]
 export declare const point: [number, number]
 ```
 
-## Limitations and Considerations
+## Sound Type Inference with `@defaultValue`
 
-### Isolated Declarations Requirement
+Unlike other tools that require `isolatedDeclarations` and explicit type annotations, dtsx infers sound types directly from your source values — and preserves original values via `@defaultValue` JSDoc:
 
-dtsx requires TypeScript's `isolatedDeclarations` to be enabled, which means:
+```ts
+// Source — no type annotations needed
+export const port = 3000
+export const name = 'Stacks'
+export const items = [1, 2, 3]
+export const config = {
+  apiUrl: 'https://api.stacksjs.org',
+  timeout: 5000,
+}
+```
 
-- All exported declarations must have explicit type annotations
-- Type inference is limited to what TypeScript can determine in isolation
-- Complex type computations may need explicit annotations
+```ts
+// Generated .d.ts — sound types with @defaultValue
+export declare const port: 3000
+export declare const name: 'Stacks'
+/** @defaultValue `[1, 2, 3]` */
+export declare const items: number[]
+/** @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: 5000 }` */
+export declare const config: {
+  /** @defaultValue 'https://api.stacksjs.org' */
+  apiUrl: string;
+  /** @defaultValue 5000 */
+  timeout: number
+}
+```
+
+Scalar `const` keeps literal types (truly immutable). Mutable container properties are widened with original values preserved via `@defaultValue`. See the [Type Inference](./type-inference.md) page for the full comparison with tsc and oxc.
+
+## isolatedDeclarations (Optional)
+
+dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx skips parsing initializer values for declarations that already have explicit, non-generic type annotations — a performance optimization without sacrificing correctness.
+
+When disabled (the default), dtsx reads every initializer and infers the correct type. This is the recommended mode for most projects.
 
 ### Implementation Details
 
@@ -420,13 +448,14 @@ dtsx focuses on generating clean declaration files by:
 - Removing implementation details
 - Preserving type information and comments
 - Optimizing import statements
+- Inferring sound types from values with `@defaultValue` preservation
 
 ### Best Practices
 
 For optimal results with dtsx:
 
-1. **Use explicit type annotations** for all exported declarations
+1. **Write normal TypeScript** — dtsx infers types from your values automatically
 2. **Add comprehensive JSDoc comments** for documentation
-3. **Leverage const assertions** for literal types
+3. **Use `as const`** when you want deeply readonly literal types
 4. **Organize types logically** in your source files
 5. **Use type-only imports** when importing only for types
