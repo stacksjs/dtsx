@@ -48,7 +48,7 @@
     "lint:fix": "bunx --bun pickier run . --mode lint --fix --config .config/pickier.ts",
     "changelog": "bunx logsmith --verbose",
     "changelog:generate": "bunx logsmith --output CHANGELOG.md",
-    "release": "bun run changelog:generate && bunx --bun bumpx prompt --recursive",
+    "release": "bun --bun run changelog:generate && bunx --bun bumpx prompt --recursive",
     "typecheck": "bunx tsc --noEmit",
     "dev:docs": "bun --bun vitepress dev docs",
     "build:docs": "bun --bun vitepress build docs",
