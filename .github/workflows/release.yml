@@ -61,7 +61,7 @@ jobs:
           zip -j ../dtsx/bin/dtsx-freebsd-x64.zip zig-out/bin/zig-dtsx
 
       - name: Publish
-        run: pantry npm:publish --access public
+        run: pantry publish --npm --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
