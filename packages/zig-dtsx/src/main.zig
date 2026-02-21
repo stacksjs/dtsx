@@ -89,7 +89,9 @@ fn readFile(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
     defer _ = c.fclose(fp);
 
     _ = c.fseek(fp, 0, c.SEEK_END);
-    const size: usize = @intCast(c.ftell(fp));
+    const tell_result = c.ftell(fp);
+    if (tell_result < 0) return error.FileNotFound;
+    const size: usize = @intCast(tell_result);
     _ = c.fseek(fp, 0, c.SEEK_SET);
 
     const buf = try alloc.alloc(u8, size);
@@ -198,7 +200,13 @@ fn workerFn(ctx: WorkerCtx) void {
                 continue;
             };
             _ = c.fseek(fp, 0, c.SEEK_END);
-            const size: usize = @intCast(c.ftell(fp));
+            const tell_result = c.ftell(fp);
+            if (tell_result < 0) {
+                _ = c.fclose(fp);
+                _ = arena.reset(.retain_capacity);
+                continue;
+            }
+            const size: usize = @intCast(tell_result);
             _ = c.fseek(fp, 0, c.SEEK_SET);
             const buf = alloc.alloc(u8, size) catch {
                 _ = c.fclose(fp);
@@ -370,7 +378,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     const remainder = filenames.len % max_threads;
     const threads = try sa.alloc(std.Thread, max_threads);
 
-    var spawned: usize = 0;
+    var thread_spawned: [256]bool = .{false} ** 256; // max 256 threads
     var offset: usize = 0;
     for (0..max_threads) |t| {
         const count = files_per_thread + @as(usize, if (t < remainder) 1 else 0);
@@ -385,11 +393,13 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
             workerFn(ctx);
             continue;
         };
-        spawned += 1;
+        thread_spawned[t] = true;
     }
 
-    for (threads[0..spawned]) |th| {
-        th.join();
+    for (0..max_threads) |t| {
+        if (thread_spawned[t]) {
+            threads[t].join();
+        }
     }
 }
 

@@ -98,6 +98,10 @@ export class StreamingProcessor {
     this.cleanupTimer = setInterval(() => {
       this.checkMemoryAndCleanup()
     }, this.config.cleanupInterval)
+    // Don't prevent process exit when idle
+    if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) {
+      this.cleanupTimer.unref()
+    }
   }
 
   /**

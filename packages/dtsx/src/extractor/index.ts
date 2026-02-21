@@ -7,9 +7,9 @@ import type { Declaration } from '../types'
 import type { AsyncParseConfig } from './cache'
 import { forEachChild, SyntaxKind } from 'typescript'
 import { getSourceFileAsync } from './cache'
-import { hashContent } from './hash'
 // Re-export all public APIs
 import { clearSourceFileCache as _clearSFCache } from './cache'
+import { clearDeclarationCache as _clearDeclCache, extractDeclarations as extractDeclarationsFromScanner } from './extract'
 import {
   extractClassDeclaration,
   extractEnumDeclaration,
@@ -24,7 +24,6 @@ import {
   findReferencedTypes,
 } from './declarations'
 import { shouldIncludeNonExportedFunction, shouldIncludeNonExportedInterface } from './helpers'
-import { scanDeclarations } from './scanner'
 
 export {
   buildClassBody,
@@ -73,26 +72,17 @@ export {
 } from './helpers'
 
 /**
- * Cache for extracted declarations to avoid re-walking the AST when source hasn't changed.
- * Key: `${filePath}:${keepComments}`, Value: { declarations, contentHash, lastAccess }
- * Bounded to prevent memory leaks when processing many files
- */
-const MAX_DECLARATION_CACHE_SIZE = 100
-let _accessCounter = 0
-const declarationCache = new Map<string, { declarations: Declaration[], contentHash: number | bigint, lastAccess: number }>()
-
-/**
  * Clear all extractor caches (source files and declarations)
  */
 export function clearSourceFileCache(): void {
   _clearSFCache()
-  declarationCache.clear()
+  _clearDeclCache()
 }
 
 /**
  * Extract only public API declarations from TypeScript source code
  * Uses fast string-based scanner (no TypeScript parser) for maximum performance.
- * Falls back to TS parser-based extraction if scanner is not available.
+ * Delegates to extract.ts which owns the shared declaration cache with proper LRU eviction.
  */
 export function extractDeclarations(
   sourceCode: string,
@@ -100,29 +90,7 @@ export function extractDeclarations(
   keepComments: boolean = true,
   isolatedDeclarations: boolean = false,
 ): Declaration[] {
-  const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
-  const cached = declarationCache.get(cacheKey)
-
-  if (cached && cached.contentHash === contentHash) {
-    cached.lastAccess = ++_accessCounter
-    return cached.declarations
-  }
-
-  // Use fast string scanner (no TS parser needed)
-  const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
-
-  declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
-
-  // Evict oldest entry if cache exceeds max size (FIFO via Map insertion order)
-  if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
-    const oldestKey = declarationCache.keys().next().value
-    if (oldestKey) {
-      declarationCache.delete(oldestKey)
-    }
-  }
-
-  return declarations
+  return extractDeclarationsFromScanner(sourceCode, filePath, keepComments, isolatedDeclarations)
 }
 
 /**

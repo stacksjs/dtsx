@@ -13,8 +13,8 @@ pub const InferError = std.mem.Allocator.Error;
 // This avoids double-parsing: inferObjectType/inferArrayType build the
 // @defaultValue content during the same pass that infers types.
 // ---------------------------------------------------------------------------
-var _collect_clean_default: bool = false;
-var _clean_default_result: ?[]const u8 = null;
+threadlocal var _collect_clean_default: bool = false;
+threadlocal var _clean_default_result: ?[]const u8 = null;
 
 /// Enable clean default collection for the next type inference pass.
 /// Must be called before inferNarrowType when you need a @defaultValue.
@@ -482,14 +482,44 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
     return properties.items;
 }
 
-/// Find matching bracket (open/close) starting from `start`
+/// Find matching bracket (open/close) starting from `start`, skipping strings and comments.
 fn findMatchingBracket(str: []const u8, start: usize, open: u8, close: u8) ?usize {
     var depth: i32 = 0;
     var i = start;
     while (i < str.len) : (i += 1) {
-        if (str[i] == open) {
+        const c = str[i];
+        // Skip string literals
+        if (c == '"' or c == '\'' or c == '`') {
+            i += 1;
+            while (i < str.len) : (i += 1) {
+                if (str[i] == '\\') {
+                    i += 1; // skip escaped char
+                    continue;
+                }
+                if (str[i] == c) break;
+            }
+            continue;
+        }
+        // Skip line comments
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '/') {
+            i += 2;
+            while (i < str.len and str[i] != '\n') : (i += 1) {}
+            continue;
+        }
+        // Skip block comments
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < str.len) : (i += 1) {
+                if (str[i] == '*' and str[i + 1] == '/') {
+                    i += 1;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (c == open) {
             depth += 1;
-        } else if (str[i] == close) {
+        } else if (c == close) {
             depth -= 1;
             if (depth == 0) return i;
         }
@@ -501,6 +531,8 @@ fn findMatchingBracket(str: []const u8, start: usize, open: u8, close: u8) ?usiz
 fn findMainArrowIndex(str: []const u8) ?usize {
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var angle_depth: i32 = 0;
     var in_string = false;
     var string_char: u8 = 0;
 
@@ -509,19 +541,28 @@ fn findMainArrowIndex(str: []const u8) ?usize {
         const c = str[i];
         const prev = if (i > 0) str[i - 1] else @as(u8, 0);
 
-        if (!in_string and (c == '"' or c == '\'' or c == '`')) {
-            in_string = true;
-            string_char = c;
-        } else if (in_string and c == string_char and prev != '\\') {
-            in_string = false;
+        if (in_string) {
+            if (c == '\\') {
+                i += 1; // skip escaped char
+                continue;
+            }
+            if (c == string_char) in_string = false;
+            continue;
         }
 
-        if (!in_string) {
-            if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1;
+        if (c == '"' or c == '\'' or c == '`') {
+            in_string = true;
+            string_char = c;
+            _ = prev;
+            continue;
+        }
 
-            if (c == '=' and str[i + 1] == '>' and paren_depth == 0 and bracket_depth == 0) {
-                return i;
-            }
+        if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') brace_depth -= 1 else if (c == '<') angle_depth += 1 else if (c == '>') {
+            if (angle_depth > 0) angle_depth -= 1;
+        }
+
+        if (c == '=' and str[i + 1] == '>' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 and angle_depth == 0) {
+            return i;
         }
     }
     return null;

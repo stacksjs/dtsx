@@ -264,16 +264,16 @@ export function createWatcher(
       relativePath: relative(root, fullPath),
     }
 
-    // Check if file was deleted
-    stat(fullPath).catch(() => {
+    // Determine if file was deleted before storing the event
+    stat(fullPath).then(() => {
+      watchedFiles.add(fullPath)
+    }).catch(() => {
       event.type = 'unlink'
       watchedFiles.delete(fullPath)
+    }).finally(() => {
+      pendingChanges.set(fullPath, event)
+      scheduleBuild()
     })
-
-    pendingChanges.set(fullPath, event)
-    watchedFiles.add(fullPath)
-
-    scheduleBuild()
   }
 
   /**

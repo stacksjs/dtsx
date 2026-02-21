@@ -537,7 +537,11 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
 function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   const rootPath = resolve(config.cwd, config.root)
   const relativePath = relative(rootPath, inputPath)
-  const dtsPath = relativePath.replace(/\.ts$/, '.d.ts')
+  const dtsPath = relativePath.replace(/\.(m?tsx?|cts)$/, (ext) => {
+    if (ext === '.mts') return '.d.mts'
+    if (ext === '.cts') return '.d.cts'
+    return '.d.ts'
+  })
 
   if (config.outputStructure === 'mirror') {
     // Mirror the source structure

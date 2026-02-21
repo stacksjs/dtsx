@@ -526,10 +526,18 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     var depth: isize = 0;
     var in_str = false;
     var str_ch: u8 = 0;
+    var skip_next = false;
 
     for (inner, 0..) |c, i| {
+        if (skip_next) {
+            skip_next = false;
+            continue;
+        }
         if (in_str) {
-            if (c == ch.CH_BACKSLASH) continue; // next char is escaped (simplified)
+            if (c == ch.CH_BACKSLASH) {
+                skip_next = true; // skip the escaped character
+                continue;
+            }
             if (c == str_ch) in_str = false;
             continue;
         }
@@ -613,10 +621,18 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     var depth: isize = 0;
     var in_str2 = false;
     var str_ch2: u8 = 0;
+    var skip_next2 = false;
 
     for (p, 0..) |c, i| {
+        if (skip_next2) {
+            skip_next2 = false;
+            continue;
+        }
         if (in_str2) {
-            if (c == ch.CH_BACKSLASH) continue;
+            if (c == ch.CH_BACKSLASH) {
+                skip_next2 = true;
+                continue;
+            }
             if (c == str_ch2) in_str2 = false;
             continue;
         }
@@ -1670,9 +1686,17 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
     var depth: isize = 0;
     var in_str = false;
     var str_ch_val: u8 = 0;
+    var skip_next3 = false;
     for (inner, 0..) |c, i| {
+        if (skip_next3) {
+            skip_next3 = false;
+            continue;
+        }
         if (in_str) {
-            if (c == ch.CH_BACKSLASH) continue;
+            if (c == ch.CH_BACKSLASH) {
+                skip_next3 = true;
+                continue;
+            }
             if (c == str_ch_val) in_str = false;
             continue;
         }
@@ -1758,6 +1782,14 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
     s.skipWhitespaceAndComments();
 
     var name: []const u8 = "";
+    if (s.pos >= s.len) return .{
+        .kind = .module_decl,
+        .name = name,
+        .text = "",
+        .is_exported = is_exported,
+        .start = decl_start,
+        .end = s.pos,
+    };
     const c = s.source[s.pos];
     if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE) {
         const quote_start = s.pos;

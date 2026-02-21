@@ -160,6 +160,10 @@ export class WorkerPool {
       this.idleCheckInterval = setInterval(() => {
         this.checkIdleWorkers()
       }, 5000)
+      // Don't prevent process exit when idle
+      if (this.idleCheckInterval && typeof this.idleCheckInterval === 'object' && 'unref' in this.idleCheckInterval) {
+        this.idleCheckInterval.unref()
+      }
     }
   }
 

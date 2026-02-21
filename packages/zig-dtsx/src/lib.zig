@@ -221,30 +221,25 @@ export fn process_batch(
     defer std.heap.c_allocator.free(threads);
 
     const chunk_size = (n + num_threads - 1) / num_threads;
-    var spawned: usize = 0;
+    var thread_spawned: [64]bool = .{false} ** 64; // max 64 threads
 
     for (0..num_threads) |t| {
         const start = t * chunk_size;
         if (start >= n) break;
         const end = @min(start + chunk_size, n);
         threads[t] = std.Thread.spawn(.{}, batchWorker, .{tasks[start..end]}) catch {
-            // If spawn fails, process this chunk in the current thread later
+            // If spawn fails, process this chunk on the main thread immediately
+            batchWorker(tasks[start..end]);
             continue;
         };
-        spawned += 1;
+        thread_spawned[t] = true;
     }
 
-    // If some threads failed to spawn, process remaining chunks on main thread
-    for (spawned..num_threads) |t| {
-        const start = t * chunk_size;
-        if (start >= n) break;
-        const end = @min(start + chunk_size, n);
-        batchWorker(tasks[start..end]);
-    }
-
-    // Join all spawned threads
-    for (threads[0..spawned]) |thread| {
-        thread.join();
+    // Join all successfully spawned threads
+    for (0..num_threads) |t| {
+        if (thread_spawned[t]) {
+            threads[t].join();
+        }
     }
 }
 
