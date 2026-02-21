@@ -48,6 +48,14 @@ for (const libPath of libPaths) {
         args: [FFIType.ptr, FFIType.u64],
         returns: FFIType.void,
       },
+      process_batch: {
+        args: [FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.bool, FFIType.ptr, FFIType.ptr, FFIType.u32],
+        returns: FFIType.void,
+      },
+      free_batch_results: {
+        args: [FFIType.ptr, FFIType.ptr, FFIType.u32],
+        returns: FFIType.void,
+      },
     })
     break
   }
@@ -64,6 +72,8 @@ const {
   process_source_with_options_len,
   result_length,
   free_result,
+  process_batch: _process_batch,
+  free_batch_results: _free_batch_results,
 } = symbols ?? {}
 
 function readResult(resultPtr: ReturnType<typeof process_source>, knownLen?: number): string {
@@ -131,4 +141,82 @@ export function processSource(sourceCode: string, keepComments: boolean = true, 
   return readResult(resultPtr)
 }
 
-export default { processSource } as { processSource: typeof processSource }
+/**
+ * Process multiple TypeScript source files in parallel.
+ * Uses Zig threads for true parallelism — faster than sequential processSource calls.
+ *
+ * @param sources - Array of TypeScript source code strings
+ * @param keepComments - Whether to preserve comments in output (default: true)
+ * @param threadCount - Number of worker threads (0 = auto-detect CPU count)
+ * @returns Array of generated .d.ts declaration strings
+ */
+export function processBatch(sources: string[], keepComments: boolean = true, threadCount: number = 0): string[] {
+  if (!lib) {
+    throw new Error(
+      `zig-dtsx shared library not found. Run 'zig build -Doptimize=ReleaseFast' first.`,
+    )
+  }
+  const count = sources.length
+  if (count === 0) return []
+
+  // Encode all sources into separate buffers and collect pointers
+  const encodedBuffers: Uint8Array[] = new Array(count)
+  const encodedLens: number[] = new Array(count)
+  for (let i = 0; i < count; i++) {
+    const src = sources[i]
+    if (!src || src.length === 0) {
+      encodedBuffers[i] = new Uint8Array(1)
+      encodedLens[i] = 0
+    }
+    else {
+      const buf = new Uint8Array(src.length * 3)
+      const { written } = encoder.encodeInto(src, buf)
+      encodedBuffers[i] = buf
+      encodedLens[i] = written
+    }
+  }
+
+  // Build pointer array (array of pointers to input buffers)
+  const inputPtrsArray = new BigUint64Array(count)
+  const inputLensArray = new BigUint64Array(count)
+  for (let i = 0; i < count; i++) {
+    inputPtrsArray[i] = BigInt(ptr(encodedBuffers[i]))
+    inputLensArray[i] = BigInt(encodedLens[i])
+  }
+
+  // Allocate output arrays
+  const outPtrsArray = new BigUint64Array(count)
+  const outLensArray = new BigUint64Array(count)
+
+  // Call batch API
+  _process_batch(
+    ptr(inputPtrsArray),
+    ptr(inputLensArray),
+    count,
+    keepComments,
+    ptr(outPtrsArray),
+    ptr(outLensArray),
+    threadCount,
+  )
+
+  // Read results
+  const results: string[] = new Array(count)
+  for (let i = 0; i < count; i++) {
+    const resultPtr = Number(outPtrsArray[i])
+    const resultLen = Number(outLensArray[i])
+    if (resultLen === 0) {
+      results[i] = ''
+    }
+    else {
+      const buf = toArrayBuffer(resultPtr, 0, resultLen)
+      results[i] = decoder.decode(buf)
+    }
+  }
+
+  // Free all results at once
+  _free_batch_results(ptr(outPtrsArray), ptr(outLensArray), count)
+
+  return results
+}
+
+export default { processSource, processBatch } as { processSource: typeof processSource, processBatch: typeof processBatch }

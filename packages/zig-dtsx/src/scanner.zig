@@ -102,28 +102,45 @@ pub const Scanner = struct {
         }
     }
 
-    /// Skip past a quoted string (single or double quote)
+    /// Skip past a quoted string (single or double quote).
+    /// Uses SIMD to find quote/backslash in 16-byte chunks.
     pub fn skipString(self: *Scanner, quote: u8) void {
         self.pos += 1; // skip opening quote
-        while (self.pos < self.len) {
-            const idx = std.mem.indexOfScalarPos(u8, self.source, self.pos, quote) orelse {
-                self.pos = self.len;
-                return;
-            };
-            // Count consecutive backslashes before quote
-            var bs: usize = 0;
-            var p: usize = idx;
-            while (p > 0 and self.source[p - 1] == ch.CH_BACKSLASH) {
-                bs += 1;
-                p -= 1;
+        const src = self.source;
+        const len = self.len;
+        var pos = self.pos;
+
+        while (pos < len) {
+            // SIMD: scan 16 bytes at a time for quote or backslash
+            while (pos + 16 <= len) {
+                const chunk: @Vector(16, u8) = src[pos..][0..16].*;
+                const quote_vec: @Vector(16, u8) = @splat(quote);
+                const bs_vec: @Vector(16, u8) = @splat(ch.CH_BACKSLASH);
+                const match_mask = (chunk == quote_vec) | (chunk == bs_vec);
+                if (@reduce(.Or, match_mask)) {
+                    // Found a quote or backslash in this chunk — find first match
+                    const match_bits: u16 = @bitCast(match_mask);
+                    const offset = @ctz(match_bits);
+                    pos += offset;
+                    break;
+                }
+                pos += 16;
             }
-            if (bs % 2 == 0) {
-                // Not escaped — found closing quote
-                self.pos = idx + 1;
+
+            // Scalar fallback for remaining bytes or after SIMD found a match
+            if (pos >= len) break;
+            const c = src[pos];
+            if (c == quote) {
+                self.pos = pos + 1;
                 return;
             }
-            self.pos = idx + 1; // Escaped quote, keep searching
+            if (c == ch.CH_BACKSLASH) {
+                pos += 2; // skip escaped character
+                continue;
+            }
+            pos += 1;
         }
+        self.pos = len;
     }
 
     /// Skip past a template literal (backtick string with ${} interpolation)

@@ -74,32 +74,42 @@ fn extractTripleSlashDirectives(alloc: std.mem.Allocator, source: []const u8) ![
     return directives.toOwnedSlice();
 }
 
-/// Format leading comments
+/// Format leading comments — direct alloc, output ≤ total comment length + newlines
 fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_comments: bool) ![]const u8 {
     if (!keep_comments) return "";
     const cmts = comments orelse return "";
     if (cmts.len == 0) return "";
 
-    // Pre-size: estimate total comment length
-    var total_len: usize = cmts.len; // newlines
-    for (cmts) |c| total_len += c.len;
-
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(total_len);
+    // Fast path: single comment (very common)
     if (cmts.len == 1) {
         const t = ch.sliceTrimmed(cmts[0], 0, cmts[0].len);
-        try result.appendSlice(t);
-        try result.append('\n');
-        return result.toOwnedSlice();
+        const buf = try alloc.alloc(u8, t.len + 1);
+        @memcpy(buf[0..t.len], t);
+        buf[t.len] = '\n';
+        return buf;
     }
 
-    for (cmts, 0..) |c, idx| {
-        if (idx > 0) try result.append('\n');
+    // Pre-compute exact size
+    var total_len: usize = cmts.len; // newlines between + trailing
+    for (cmts) |c| {
         const t = ch.sliceTrimmed(c, 0, c.len);
-        try result.appendSlice(t);
+        total_len += t.len;
     }
-    try result.append('\n');
-    return result.toOwnedSlice();
+
+    const buf = try alloc.alloc(u8, total_len);
+    var pos: usize = 0;
+    for (cmts, 0..) |c, idx| {
+        if (idx > 0) {
+            buf[pos] = '\n';
+            pos += 1;
+        }
+        const t = ch.sliceTrimmed(c, 0, c.len);
+        @memcpy(buf[pos..][0..t.len], t);
+        pos += t.len;
+    }
+    buf[pos] = '\n';
+    pos += 1;
+    return buf[0..pos];
 }
 
 const ParsedImportResult = struct {
@@ -136,10 +146,10 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     // Fast path: if we have type annotation and no value needing special inference
     if (decl.type_annotation.len > 0 and decl.value.len == 0) {
         if (comments.len == 0) return decl.text;
-        var result = std.array_list.Managed(u8).init(alloc);
-        try result.appendSlice(comments);
-        try result.appendSlice(decl.text);
-        return result.toOwnedSlice();
+        const buf = try alloc.alloc(u8, comments.len + decl.text.len);
+        @memcpy(buf[0..comments.len], comments);
+        @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
+        return buf;
     }
 
     // Fast path: type annotation set + value exists but doesn't need special handling.
@@ -153,26 +163,16 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
             const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
             if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
                 if (comments.len == 0) return decl.text;
-                var result = std.array_list.Managed(u8).init(alloc);
-                try result.appendSlice(comments);
-                try result.appendSlice(decl.text);
-                return result.toOwnedSlice();
+                const buf = try alloc.alloc(u8, comments.len + decl.text.len);
+                @memcpy(buf[0..comments.len], comments);
+                @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
+                return buf;
             }
         }
     }
 
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(comments.len + decl.name.len + decl.type_annotation.len + decl.value.len + 32);
-    try result.appendSlice(comments);
-
-    if (decl.is_exported) try result.appendSlice("export ");
-    try result.appendSlice("declare ");
-
     // Variable kind from modifiers
     const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
-    try result.appendSlice(kind);
-    try result.append(' ');
-    try result.appendSlice(decl.name);
 
     // Determine type annotation
     var type_annotation: []const u8 = decl.type_annotation;
@@ -184,11 +184,8 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     } else if (decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
     } else if (type_annotation.len == 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const")) {
-        // Containers (objects/arrays) get widened types (sound: properties/elements are mutable)
-        // Scalars keep narrow literal types (sound: const binding is immutable)
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
         const is_container = trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[');
-        // Enable clean default collection for containers to avoid double-parsing
         if (is_container) type_inf.enableCleanDefaultCollection();
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, !is_container, false, 0);
     } else if (type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
@@ -212,7 +209,6 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
 
         if (!std.mem.eql(u8, kind, "const")) {
-            // let/var with widened primitives
             const is_widened = std.mem.eql(u8, type_annotation, "string") or
                 std.mem.eql(u8, type_annotation, "number") or
                 std.mem.eql(u8, type_annotation, "boolean");
@@ -220,8 +216,6 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 default_val = trimmed_val;
             }
         } else if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
-            // const containers — consume clean default computed during type inference
-            // (avoids double-parsing of parseObjectProperties/parseArrayElements)
             default_val = type_inf.consumeCleanDefault();
             is_container = true;
         }
@@ -232,94 +226,108 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         }
 
         if (default_val) |dv| {
-            // Build the @defaultValue tag content
-            var tag_buf = std.array_list.Managed(u8).init(alloc);
+            // Build the @defaultValue tag content using direct alloc
+            const tag_max = 24 + dv.len * 4 + 16; // generous upper bound for multi-line
+            const tag_mem = try alloc.alloc(u8, tag_max);
+            var tp: usize = 0;
+
             if (std.mem.indexOf(u8, dv, "\n")) |_| {
-                // Multi-line: use code fence (TSDoc standard)
-                try tag_buf.appendSlice("@defaultValue\n * ```ts\n");
+                const hdr = "@defaultValue\n * ```ts\n";
+                @memcpy(tag_mem[tp..][0..hdr.len], hdr); tp += hdr.len;
                 var line_iter = std.mem.splitScalar(u8, dv, '\n');
                 while (line_iter.next()) |line| {
-                    try tag_buf.appendSlice(" * ");
-                    try tag_buf.appendSlice(line);
-                    try tag_buf.append('\n');
+                    @memcpy(tag_mem[tp..][0..3], " * "); tp += 3;
+                    @memcpy(tag_mem[tp..][0..line.len], line); tp += line.len;
+                    tag_mem[tp] = '\n'; tp += 1;
                 }
-                try tag_buf.appendSlice(" * ```");
+                @memcpy(tag_mem[tp..][0..6], " * ```"); tp += 6;
             } else if (is_container) {
-                try tag_buf.appendSlice("@defaultValue `");
-                try tag_buf.appendSlice(dv);
-                try tag_buf.append('`');
+                @memcpy(tag_mem[tp..][0..15], "@defaultValue `"); tp += 15;
+                @memcpy(tag_mem[tp..][0..dv.len], dv); tp += dv.len;
+                tag_mem[tp] = '`'; tp += 1;
             } else {
-                try tag_buf.appendSlice("@defaultValue ");
-                try tag_buf.appendSlice(dv);
+                @memcpy(tag_mem[tp..][0..14], "@defaultValue "); tp += 14;
+                @memcpy(tag_mem[tp..][0..dv.len], dv); tp += dv.len;
             }
-            const default_tag = try tag_buf.toOwnedSlice();
+            const default_tag = tag_mem[0..tp];
 
-            var rebuilt = std.array_list.Managed(u8).init(alloc);
+            // Build rebuilt output using direct alloc
+            const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
+            const decl_suffix_len = export_prefix.len + 8 + kind.len + 1 + decl.name.len + 2 + type_annotation.len + 1; // "declare " + kind + ' ' + name + ": " + type + ';'
+            const rebuilt_max = comments.len + default_tag.len + decl_suffix_len + 64;
+            const rbuf = try alloc.alloc(u8, rebuilt_max);
+            var rp: usize = 0;
 
             // Try to merge into existing JSDoc comment block
             const closing_idx = std.mem.lastIndexOf(u8, comments, "*/");
             if (closing_idx != null and comments.len > 0) {
-                // Inject @defaultValue before closing */
                 const before_raw = comments[0..closing_idx.?];
-                // Trim trailing whitespace from before
                 var end = before_raw.len;
                 while (end > 0 and (before_raw[end - 1] == ' ' or before_raw[end - 1] == '\t' or before_raw[end - 1] == '\n' or before_raw[end - 1] == '\r')) : (end -= 1) {}
                 const before = before_raw[0..end];
-                // Convert single-line `/** text` to multi-line `/**\n * text`
                 if (before.len > 4 and ch.startsWith(before, "/** ") and std.mem.indexOf(u8, before, "\n") == null) {
-                    try rebuilt.appendSlice("/**\n * ");
-                    try rebuilt.appendSlice(before[4..]);
+                    @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
+                    @memcpy(rbuf[rp..][0..before.len - 4], before[4..]); rp += before.len - 4;
                 } else {
-                    try rebuilt.appendSlice(before);
+                    @memcpy(rbuf[rp..][0..before.len], before); rp += before.len;
                 }
-                try rebuilt.appendSlice("\n * ");
-                try rebuilt.appendSlice(default_tag);
-                try rebuilt.appendSlice("\n */\n");
+                @memcpy(rbuf[rp..][0..4], "\n * "); rp += 4;
+                @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
+                @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
             } else if (comments.len > 0) {
-                // Line comment (// ...) — convert to JSDoc block and merge
                 const trimmed_cmt = std.mem.trim(u8, comments, " \t\n\r");
-                // Strip leading "// " prefix
                 const cmt_text = if (ch.startsWith(trimmed_cmt, "// "))
                     trimmed_cmt[3..]
                 else if (ch.startsWith(trimmed_cmt, "//"))
                     trimmed_cmt[2..]
                 else
                     trimmed_cmt;
-                try rebuilt.appendSlice("/**\n * ");
-                try rebuilt.appendSlice(cmt_text);
-                try rebuilt.appendSlice("\n * ");
-                try rebuilt.appendSlice(default_tag);
-                try rebuilt.appendSlice("\n */\n");
+                @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
+                @memcpy(rbuf[rp..][0..cmt_text.len], cmt_text); rp += cmt_text.len;
+                @memcpy(rbuf[rp..][0..4], "\n * "); rp += 4;
+                @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
+                @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
             } else {
-                // No existing comments — create standalone JSDoc
                 if (std.mem.indexOf(u8, default_tag, "\n") != null) {
-                    try rebuilt.appendSlice("/**\n * ");
-                    try rebuilt.appendSlice(default_tag);
-                    try rebuilt.appendSlice("\n */\n");
+                    @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
+                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
+                    @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
                 } else {
-                    try rebuilt.appendSlice("/** ");
-                    try rebuilt.appendSlice(default_tag);
-                    try rebuilt.appendSlice(" */\n");
+                    @memcpy(rbuf[rp..][0..4], "/** "); rp += 4;
+                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
+                    @memcpy(rbuf[rp..][0..4], " */\n"); rp += 4;
                 }
             }
 
-            if (decl.is_exported) try rebuilt.appendSlice("export ");
-            try rebuilt.appendSlice("declare ");
-            try rebuilt.appendSlice(kind);
-            try rebuilt.append(' ');
-            try rebuilt.appendSlice(decl.name);
-            try rebuilt.appendSlice(": ");
-            try rebuilt.appendSlice(type_annotation);
-            try rebuilt.append(';');
-            return rebuilt.toOwnedSlice();
+            @memcpy(rbuf[rp..][0..export_prefix.len], export_prefix); rp += export_prefix.len;
+            @memcpy(rbuf[rp..][0..8], "declare "); rp += 8;
+            @memcpy(rbuf[rp..][0..kind.len], kind); rp += kind.len;
+            rbuf[rp] = ' '; rp += 1;
+            @memcpy(rbuf[rp..][0..decl.name.len], decl.name); rp += decl.name.len;
+            @memcpy(rbuf[rp..][0..2], ": "); rp += 2;
+            @memcpy(rbuf[rp..][0..type_annotation.len], type_annotation); rp += type_annotation.len;
+            rbuf[rp] = ';'; rp += 1;
+            return rbuf[0..rp];
         }
     }
 
-    try result.appendSlice(": ");
-    try result.appendSlice(type_annotation);
-    try result.append(';');
+    // Build final result with direct alloc
+    const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
+    const total = comments.len + export_prefix.len + 8 + kind.len + 1 + decl.name.len + 2 + type_annotation.len + 1;
+    const buf = try alloc.alloc(u8, total);
+    var pos: usize = 0;
 
-    return result.toOwnedSlice();
+    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len;
+    @memcpy(buf[pos..][0..8], "declare "); pos += 8;
+    @memcpy(buf[pos..][0..kind.len], kind); pos += kind.len;
+    buf[pos] = ' '; pos += 1;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name); pos += decl.name.len;
+    @memcpy(buf[pos..][0..2], ": "); pos += 2;
+    @memcpy(buf[pos..][0..type_annotation.len], type_annotation); pos += type_annotation.len;
+    buf[pos] = ';'; pos += 1;
+
+    return buf[0..pos];
 }
 
 /// Process an interface declaration for DTS output
@@ -329,108 +337,144 @@ fn processInterfaceDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep
     // If the text already starts with proper keywords, use it
     if (ch.startsWith(decl.text, "export declare interface") or ch.startsWith(decl.text, "declare interface")) {
         if (comments.len == 0) return decl.text;
-        var result = std.array_list.Managed(u8).init(alloc);
-        try result.ensureTotalCapacity(comments.len + decl.text.len);
-        try result.appendSlice(comments);
-        try result.appendSlice(decl.text);
-        return result.toOwnedSlice();
+        const buf = try alloc.alloc(u8, comments.len + decl.text.len);
+        @memcpy(buf[0..comments.len], comments);
+        @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
+        return buf;
     }
 
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
-    try result.appendSlice(comments);
+    // Direct alloc: compute max size
+    const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
+    const extends_kw: []const u8 = if (decl.extends_clause.len > 0) " extends " else "";
+    const body_start = ch.indexOfChar(decl.text, '{', 0);
+    const body = if (body_start) |bi| decl.text[bi..] else "{}";
+    const max_len = comments.len + export_prefix.len + "declare interface ".len +
+        decl.name.len + decl.generics.len + extends_kw.len + decl.extends_clause.len + 1 + body.len;
 
-    if (decl.is_exported) try result.appendSlice("export ");
-    try result.appendSlice("declare interface ");
-    try result.appendSlice(decl.name);
-
-    if (decl.generics.len > 0) try result.appendSlice(decl.generics);
+    const buf = try alloc.alloc(u8, max_len);
+    var pos: usize = 0;
+    @memcpy(buf[pos..][0..comments.len], comments);
+    pos += comments.len;
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix);
+    pos += export_prefix.len;
+    const di = "declare interface ";
+    @memcpy(buf[pos..][0..di.len], di);
+    pos += di.len;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name);
+    pos += decl.name.len;
+    if (decl.generics.len > 0) {
+        @memcpy(buf[pos..][0..decl.generics.len], decl.generics);
+        pos += decl.generics.len;
+    }
     if (decl.extends_clause.len > 0) {
-        try result.appendSlice(" extends ");
-        try result.appendSlice(decl.extends_clause);
+        @memcpy(buf[pos..][0..extends_kw.len], extends_kw);
+        pos += extends_kw.len;
+        @memcpy(buf[pos..][0..decl.extends_clause.len], decl.extends_clause);
+        pos += decl.extends_clause.len;
     }
+    buf[pos] = ' ';
+    pos += 1;
+    @memcpy(buf[pos..][0..body.len], body);
+    pos += body.len;
 
-    // Find body brace
-    if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| {
-        try result.append(' ');
-        try result.appendSlice(decl.text[brace_idx..]);
-    } else {
-        try result.appendSlice(" {}");
-    }
-
-    return result.toOwnedSlice();
+    return buf[0..pos];
 }
 
 /// Process a type alias declaration for DTS output
 fn processTypeDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
-    try result.appendSlice(comments);
-
-    if (decl.is_exported) try result.appendSlice("export ");
-    if (!decl.is_exported and !ch.contains(decl.text, " from ")) {
-        try result.appendSlice("declare ");
-    }
+    const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
+    const declare_prefix: []const u8 = if (!decl.is_exported and !ch.contains(decl.text, " from ")) "declare " else "";
 
     // Extract type definition from original text
+    var type_def: []const u8 = undefined;
+    var fallback = false;
     if (ch.indexOf(decl.text, "type ", 0)) |type_idx| {
-        var type_def = decl.text[type_idx..];
-        // Strip trailing semicolons and whitespace
-        var end = type_def.len;
-        while (end > 0 and (type_def[end - 1] == ';' or type_def[end - 1] == ' ' or type_def[end - 1] == '\n' or type_def[end - 1] == '\r')) end -= 1;
-        type_def = type_def[0..end];
-        try result.appendSlice(type_def);
+        var td = decl.text[type_idx..];
+        var end = td.len;
+        while (end > 0 and (td[end - 1] == ';' or td[end - 1] == ' ' or td[end - 1] == '\n' or td[end - 1] == '\r')) end -= 1;
+        type_def = td[0..end];
     } else {
-        try result.appendSlice("type ");
-        try result.appendSlice(decl.name);
-        if (decl.generics.len > 0) try result.appendSlice(decl.generics);
-        try result.appendSlice(" = any");
+        fallback = true;
+        type_def = ""; // unused, assembled below
     }
 
-    // Ensure semicolon
-    const trimmed_end = result.items;
-    if (trimmed_end.len > 0 and trimmed_end[trimmed_end.len - 1] != ';' and trimmed_end[trimmed_end.len - 1] != '}') {
-        try result.append(';');
+    // Calculate total length
+    const needs_semi = if (!fallback)
+        (type_def.len > 0 and type_def[type_def.len - 1] != ';' and type_def[type_def.len - 1] != '}')
+    else
+        true; // fallback " = any" always needs semi
+
+    const body_len = if (!fallback) type_def.len else 5 + decl.name.len + decl.generics.len + 6; // "type " + name + generics + " = any"
+    const total = comments.len + export_prefix.len + declare_prefix.len + body_len + @as(usize, if (needs_semi) 1 else 0);
+
+    const buf = try alloc.alloc(u8, total);
+    var pos: usize = 0;
+
+    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
+    if (export_prefix.len > 0) { @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len; }
+    if (declare_prefix.len > 0) { @memcpy(buf[pos..][0..declare_prefix.len], declare_prefix); pos += declare_prefix.len; }
+
+    if (!fallback) {
+        @memcpy(buf[pos..][0..type_def.len], type_def);
+        pos += type_def.len;
+    } else {
+        @memcpy(buf[pos..][0..5], "type ");
+        pos += 5;
+        @memcpy(buf[pos..][0..decl.name.len], decl.name);
+        pos += decl.name.len;
+        if (decl.generics.len > 0) { @memcpy(buf[pos..][0..decl.generics.len], decl.generics); pos += decl.generics.len; }
+        @memcpy(buf[pos..][0..6], " = any");
+        pos += 6;
     }
 
-    return result.toOwnedSlice();
+    if (needs_semi) { buf[pos] = ';'; pos += 1; }
+
+    return buf[0..pos];
 }
 
 /// Process an enum declaration for DTS output
 fn processEnumDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
-    try result.appendSlice(comments);
-
-    if (decl.is_exported) try result.appendSlice("export ");
-    try result.appendSlice("declare ");
-
-    // Check for const modifier
+    const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
+    var is_const = false;
     if (decl.modifiers) |mods| {
         for (mods) |m| {
             if (std.mem.eql(u8, m, "const")) {
-                try result.appendSlice("const ");
+                is_const = true;
                 break;
             }
         }
     }
+    const const_kw: []const u8 = if (is_const) "const " else "";
+    const body_start = ch.indexOfChar(decl.text, '{', 0);
+    const body = if (body_start) |bi| decl.text[bi..] else "{}";
 
-    try result.appendSlice("enum ");
-    try result.appendSlice(decl.name);
+    const buf = try alloc.alloc(u8, comments.len + export_prefix.len + "declare ".len +
+        const_kw.len + "enum ".len + decl.name.len + 1 + body.len);
+    var pos: usize = 0;
+    @memcpy(buf[pos..][0..comments.len], comments);
+    pos += comments.len;
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix);
+    pos += export_prefix.len;
+    const dec = "declare ";
+    @memcpy(buf[pos..][0..dec.len], dec);
+    pos += dec.len;
+    @memcpy(buf[pos..][0..const_kw.len], const_kw);
+    pos += const_kw.len;
+    const en = "enum ";
+    @memcpy(buf[pos..][0..en.len], en);
+    pos += en.len;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name);
+    pos += decl.name.len;
+    buf[pos] = ' ';
+    pos += 1;
+    @memcpy(buf[pos..][0..body.len], body);
+    pos += body.len;
 
-    // Extract body
-    if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| {
-        try result.append(' ');
-        try result.appendSlice(decl.text[brace_idx..]);
-    } else {
-        try result.appendSlice(" {}");
-    }
-
-    return result.toOwnedSlice();
+    return buf[0..pos];
 }
 
 /// Process a module/namespace declaration for DTS output
@@ -881,10 +925,26 @@ pub fn processDeclarations(
                     }
                 },
                 .interface_decl => {
-                    const processed = try processInterfaceDeclaration(alloc, decl, keep_comments);
-                    if (processed.len > 0) {
+                    // Fast path: text already has correct keywords → direct emit
+                    if (decl.text.len > 0 and (ch.startsWith(decl.text, "export declare interface") or
+                        ch.startsWith(decl.text, "declare interface")))
+                    {
                         if (result.items.len > 0) try result.append('\n');
-                        try result.appendSlice(processed);
+                        if (keep_comments) {
+                            if (decl.leading_comments) |cmts| {
+                                if (cmts.len > 0) {
+                                    const comments = try formatComments(alloc, cmts, true);
+                                    if (comments.len > 0) try result.appendSlice(comments);
+                                }
+                            }
+                        }
+                        try result.appendSlice(decl.text);
+                    } else {
+                        const processed = try processInterfaceDeclaration(alloc, decl, keep_comments);
+                        if (processed.len > 0) {
+                            if (result.items.len > 0) try result.append('\n');
+                            try result.appendSlice(processed);
+                        }
                     }
                 },
                 .type_decl => {
@@ -895,17 +955,49 @@ pub fn processDeclarations(
                     }
                 },
                 .enum_decl => {
-                    const processed = try processEnumDeclaration(alloc, decl, keep_comments);
-                    if (processed.len > 0) {
+                    // Fast path: text already has correct keywords → direct emit
+                    if (decl.text.len > 0 and ch.startsWith(decl.text, "declare ")) {
                         if (result.items.len > 0) try result.append('\n');
-                        try result.appendSlice(processed);
+                        if (keep_comments) {
+                            if (decl.leading_comments) |cmts| {
+                                if (cmts.len > 0) {
+                                    const comments = try formatComments(alloc, cmts, true);
+                                    if (comments.len > 0) try result.appendSlice(comments);
+                                }
+                            }
+                        }
+                        if (decl.is_exported) try result.appendSlice("export ");
+                        try result.appendSlice(decl.text);
+                    } else {
+                        const processed = try processEnumDeclaration(alloc, decl, keep_comments);
+                        if (processed.len > 0) {
+                            if (result.items.len > 0) try result.append('\n');
+                            try result.appendSlice(processed);
+                        }
                     }
                 },
                 .module_decl, .namespace_decl => {
-                    const processed = try processModuleDeclaration(alloc, decl, keep_comments);
-                    if (processed.len > 0) {
+                    // Fast path: text already has correct keywords → direct emit
+                    if (decl.text.len > 0 and (ch.startsWith(decl.text, "export declare namespace") or
+                        ch.startsWith(decl.text, "declare namespace") or
+                        ch.startsWith(decl.text, "declare module")))
+                    {
                         if (result.items.len > 0) try result.append('\n');
-                        try result.appendSlice(processed);
+                        if (keep_comments) {
+                            if (decl.leading_comments) |cmts| {
+                                if (cmts.len > 0) {
+                                    const comments = try formatComments(alloc, cmts, true);
+                                    if (comments.len > 0) try result.appendSlice(comments);
+                                }
+                            }
+                        }
+                        try result.appendSlice(decl.text);
+                    } else {
+                        const processed = try processModuleDeclaration(alloc, decl, keep_comments);
+                        if (processed.len > 0) {
+                            if (result.items.len > 0) try result.append('\n');
+                            try result.appendSlice(processed);
+                        }
                     }
                 },
                 else => {},

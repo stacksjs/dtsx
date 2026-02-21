@@ -8,10 +8,10 @@ _Smart caching (hash check + cache hit) for watch mode, incremental builds, and 
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) | XXLarge (~2000 lines) | Huge (~5000 lines) |
 |------|------|------|------|------|------|------|
-| **dtsx (cached)** | 21.9 µs _(3.3x)_ | 19.6 µs _(2.3x)_ | 59.4 µs _(2.4x)_ | **93.8 µs** | 223.2 µs _(1.0x)_ | 614.0 µs _(1.1x)_ |
-| zig-dtsx | **6.6 µs** | **8.6 µs** | **24.8 µs** | 150.6 µs _(1.6x)_ | **222.6 µs** | **550.2 µs** |
-| oxc-transform | 7.7 µs _(1.2x)_ | 23.8 µs _(2.8x)_ | 87.9 µs _(3.5x)_ | 557.8 µs _(5.9x)_ | 398.6 µs _(1.8x)_ | 963.5 µs _(1.8x)_ |
-| tsc | 665.1 µs _(101.4x)_ | 976.9 µs _(113.8x)_ | 2.18 ms _(87.9x)_ | 5.65 ms _(60.2x)_ | 8.85 ms _(39.8x)_ | 18.42 ms _(33.5x)_ |
+| **dtsx (cached)** | 24.3 µs _(3.4x)_ | 19.3 µs _(2.3x)_ | 62.4 µs _(2.6x)_ | **96.5 µs** | 254.9 µs _(1.1x)_ | 578.0 µs _(1.0x)_ |
+| zig-dtsx | **7.2 µs** | **8.4 µs** | **24.4 µs** | 159.2 µs _(1.6x)_ | **223.8 µs** | **563.9 µs** |
+| oxc-transform | 8.3 µs _(1.1x)_ | 23.5 µs _(2.8x)_ | 93.0 µs _(3.8x)_ | 560.5 µs _(5.8x)_ | 390.0 µs _(1.7x)_ | 1.42 ms _(2.5x)_ |
+| tsc | 1.01 ms _(140.3x)_ | 1.26 ms _(149.8x)_ | 3.22 ms _(132.3x)_ | 5.90 ms _(61.1x)_ | 8.96 ms _(40.0x)_ | 18.11 ms _(32.1x)_ |
 
 ### In-Process API — No Cache
 
@@ -19,10 +19,10 @@ _Raw single-transform comparison (cache cleared every iteration)._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) | XXLarge (~2000 lines) | Huge (~5000 lines) |
 |------|------|------|------|------|------|------|
-| **zig-dtsx** | **6.6 µs** | **8.6 µs** | **24.8 µs** | **150.6 µs** | **222.6 µs** | **550.2 µs** |
-| oxc-transform | 7.7 µs _(1.2x)_ | 23.8 µs _(2.8x)_ | 87.9 µs _(3.5x)_ | 557.8 µs _(3.7x)_ | 398.6 µs _(1.8x)_ | 963.5 µs _(1.8x)_ |
-| dtsx (no-cache) | 48.4 µs _(7.4x)_ | 64.1 µs _(7.5x)_ | 121.9 µs _(4.9x)_ | 669.7 µs _(4.4x)_ | 1.04 ms _(4.7x)_ | 2.48 ms _(4.5x)_ |
-| tsc | 665.1 µs _(101.4x)_ | 976.9 µs _(113.8x)_ | 2.18 ms _(87.9x)_ | 5.65 ms _(37.5x)_ | 8.85 ms _(39.8x)_ | 18.42 ms _(33.5x)_ |
+| **zig-dtsx** | **7.2 µs** | **8.4 µs** | **24.4 µs** | **159.2 µs** | **223.8 µs** | **563.9 µs** |
+| oxc-transform | 8.3 µs _(1.1x)_ | 23.5 µs _(2.8x)_ | 93.0 µs _(3.8x)_ | 560.5 µs _(3.5x)_ | 390.0 µs _(1.7x)_ | 1.42 ms _(2.5x)_ |
+| dtsx (no-cache) | 45.9 µs _(6.3x)_ | 71.4 µs _(8.5x)_ | 133.0 µs _(5.5x)_ | 671.1 µs _(4.2x)_ | 991.0 µs _(4.4x)_ | 2.44 ms _(4.3x)_ |
+| tsc | 1.01 ms _(140.3x)_ | 1.26 ms _(149.8x)_ | 3.22 ms _(132.3x)_ | 5.90 ms _(37.1x)_ | 8.96 ms _(40.0x)_ | 18.11 ms _(32.1x)_ |
 
 > **Note:** tsgo (`@typescript/native-preview`) is CLI-only — no in-process API is available yet. Each measurement includes ~40ms process spawn overhead, so it is not directly comparable to the in-process tools above. Once tsgo ships an in-process API, it will be added to the tables.
 
@@ -32,10 +32,10 @@ _All tools processing files in-process sequentially._
 
 | Tool | 50 files | 100 files |
 |------|------|------|
-| **zig-dtsx** | **2.33 ms** | **5.07 ms** |
-| dtsx | 8.66 ms _(3.7x)_ | 18.39 ms _(3.6x)_ |
-| oxc-transform | 8.52 ms _(3.7x)_ | 17.72 ms _(3.5x)_ |
-| tsc | 85.32 ms _(36.6x)_ | 177.05 ms _(34.9x)_ |
+| **zig-dtsx** | **2.32 ms** | **4.79 ms** |
+| dtsx | 8.77 ms _(3.8x)_ | 18.23 ms _(3.8x)_ |
+| oxc-transform | 8.45 ms _(3.6x)_ | 17.57 ms _(3.7x)_ |
+| tsc | 85.76 ms _(36.9x)_ | 171.33 ms _(35.7x)_ |
 
 > _No previous benchmark found for regression comparison_
 
@@ -43,12 +43,12 @@ _All tools processing files in-process sequentially._
 
 | Input Size | zig-dtsx | oxc-transform | Speedup |
 |-----------|----------|---------------|----------|
-| Small (~50 lines) | 6.6 µs | 7.7 µs | :green_circle: 1.17x |
-| Medium (~100 lines) | 8.6 µs | 23.8 µs | :green_circle: 2.77x |
-| Large (~330 lines) | 24.8 µs | 87.9 µs | :green_circle: 3.54x |
-| XLarge (~1050 lines) | 150.6 µs | 557.8 µs | :green_circle: 3.70x |
-| XXLarge (~2000 lines) | 222.6 µs | 398.6 µs | :green_circle: 1.79x |
-| Huge (~5000 lines) | 550.2 µs | 963.5 µs | :green_circle: 1.75x |
+| Small (~50 lines) | 7.2 µs | 8.3 µs | :green_circle: 1.14x |
+| Medium (~100 lines) | 8.4 µs | 23.5 µs | :green_circle: 2.79x |
+| Large (~330 lines) | 24.4 µs | 93.0 µs | :green_circle: 3.82x |
+| XLarge (~1050 lines) | 159.2 µs | 560.5 µs | :green_circle: 3.52x |
+| XXLarge (~2000 lines) | 223.8 µs | 390.0 µs | :green_circle: 1.74x |
+| Huge (~5000 lines) | 563.9 µs | 1.42 ms | :green_circle: 2.51x |
 
 <details>
 <summary><strong>Internal Benchmark Details</strong></summary>

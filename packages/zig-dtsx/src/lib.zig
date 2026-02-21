@@ -139,3 +139,121 @@ export fn process_source_with_options_len(
     out_len.* = @intCast(result.len);
     return result.ptr;
 }
+
+// ---------------------------------------------------------------------------
+// Batch API — process multiple files in parallel from a single FFI call
+// ---------------------------------------------------------------------------
+
+const BatchTask = struct {
+    input: [*]const u8,
+    input_len: usize,
+    keep_comments: bool,
+    out_ptr: *usize, // where to write result pointer
+    out_len: *u64, // where to write result length
+};
+
+fn batchWorker(tasks: []const BatchTask) void {
+    for (tasks) |task| {
+        const result = processSourceInternal(task.input, task.input_len, task.keep_comments, false) catch {
+            const empty = emptyResult();
+            task.out_ptr.* = @intFromPtr(empty.ptr);
+            task.out_len.* = 0;
+            continue;
+        };
+        task.out_ptr.* = @intFromPtr(result.ptr);
+        task.out_len.* = @intCast(result.len);
+    }
+}
+
+/// Process multiple files in parallel.
+/// inputs: array of pointers to source buffers
+/// input_lens: array of source lengths
+/// count: number of files
+/// keep_comments: whether to preserve comments
+/// out_ptrs: pre-allocated array where result pointers are written (as usize)
+/// out_lens: pre-allocated array where result lengths are written
+/// thread_count: number of worker threads (0 = auto-detect)
+export fn process_batch(
+    inputs: [*]const [*]const u8,
+    input_lens: [*]const u64,
+    count: u32,
+    keep_comments: bool,
+    out_ptrs: [*]usize,
+    out_lens: [*]u64,
+    thread_count: u32,
+) void {
+    const n: usize = @intCast(count);
+    if (n == 0) return;
+
+    // Build task list
+    const tasks = std.heap.c_allocator.alloc(BatchTask, n) catch return;
+    defer std.heap.c_allocator.free(tasks);
+
+    for (0..n) |i| {
+        tasks[i] = .{
+            .input = inputs[i],
+            .input_len = @intCast(input_lens[i]),
+            .keep_comments = keep_comments,
+            .out_ptr = &out_ptrs[i],
+            .out_len = &out_lens[i],
+        };
+    }
+
+    // Determine thread count
+    const max_threads: usize = if (thread_count > 0)
+        @intCast(thread_count)
+    else
+        @intCast(std.Thread.getCpuCount() catch 4);
+    const num_threads = @min(max_threads, n);
+
+    if (num_threads <= 1) {
+        // Single-threaded: process all sequentially
+        batchWorker(tasks);
+        return;
+    }
+
+    // Distribute tasks across threads
+    const threads = std.heap.c_allocator.alloc(std.Thread, num_threads) catch {
+        // Fallback to single-threaded
+        batchWorker(tasks);
+        return;
+    };
+    defer std.heap.c_allocator.free(threads);
+
+    const chunk_size = (n + num_threads - 1) / num_threads;
+    var spawned: usize = 0;
+
+    for (0..num_threads) |t| {
+        const start = t * chunk_size;
+        if (start >= n) break;
+        const end = @min(start + chunk_size, n);
+        threads[t] = std.Thread.spawn(.{}, batchWorker, .{tasks[start..end]}) catch {
+            // If spawn fails, process this chunk in the current thread later
+            continue;
+        };
+        spawned += 1;
+    }
+
+    // If some threads failed to spawn, process remaining chunks on main thread
+    for (spawned..num_threads) |t| {
+        const start = t * chunk_size;
+        if (start >= n) break;
+        const end = @min(start + chunk_size, n);
+        batchWorker(tasks[start..end]);
+    }
+
+    // Join all spawned threads
+    for (threads[0..spawned]) |thread| {
+        thread.join();
+    }
+}
+
+/// Free multiple results from a batch call.
+export fn free_batch_results(ptrs: [*]const usize, lens: [*]const u64, count: u32) void {
+    const n: usize = @intCast(count);
+    for (0..n) |i| {
+        const p: [*]u8 = @ptrFromInt(ptrs[i]);
+        const l: usize = @intCast(lens[i]);
+        std.heap.c_allocator.free(p[0 .. l + 1]); // +1 for null terminator
+    }
+}

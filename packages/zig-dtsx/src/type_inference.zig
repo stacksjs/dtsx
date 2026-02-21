@@ -552,6 +552,26 @@ fn extractInnerFunctionSignature(alloc: std.mem.Allocator, body: []const u8, gen
     return "any";
 }
 
+/// Single-pass scan hints to avoid multiple ch.contains() calls.
+const ValueHints = struct {
+    has_dollar_brace: bool = false, // "${" — template interpolation
+    has_arrow: bool = false, // "=>" — arrow function
+    has_raw_template: bool = false, // ".raw`" — tagged template literal
+
+    fn scan(s: []const u8) ValueHints {
+        var h = ValueHints{};
+        if (s.len < 2) return h;
+        var i: usize = 0;
+        while (i < s.len - 1) : (i += 1) {
+            const c = s[i];
+            if (c == '$' and s[i + 1] == '{') { h.has_dollar_brace = true; }
+            if (c == '=' and s[i + 1] == '>') { h.has_arrow = true; }
+            if (c == '.' and i + 4 < s.len and s[i + 1] == 'r' and s[i + 2] == 'a' and s[i + 3] == 'w' and s[i + 4] == '`') { h.has_raw_template = true; }
+        }
+        return h;
+    }
+};
+
 /// Infer narrow type from a value expression.
 /// Returns a type string (allocated from `alloc`).
 pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, in_union: bool, depth: usize) InferError![]const u8 {
@@ -567,15 +587,18 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     // Symbol.for
     if (ch.startsWith(trimmed, "Symbol.for(")) return "symbol";
 
+    // Single-pass scan for substring hints (replaces 5 separate ch.contains calls)
+    const hints = ValueHints.scan(trimmed);
+
     // Tagged template literals
-    if (ch.contains(trimmed, ".raw`") or ch.contains(trimmed, "String.raw`")) return "string";
+    if (hints.has_raw_template) return "string";
 
     // String literals
     if ((trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') or
         (trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') or
         (trimmed[0] == '`' and trimmed[trimmed.len - 1] == '`'))
     {
-        if (!ch.contains(trimmed, "${")) {
+        if (!hints.has_dollar_brace) {
             if (!is_const) return "string";
             return trimmed;
         }
@@ -615,7 +638,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     }
 
     // Function expressions
-    if (ch.contains(trimmed, "=>") or ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
+    if (hints.has_arrow or ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
         return inferFunctionType(alloc, trimmed, in_union, depth, is_const);
     }
 
@@ -642,7 +665,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     // Template literal
     if (trimmed[0] == '`' and trimmed[trimmed.len - 1] == '`') {
         if (!is_const) return "string";
-        if (!ch.contains(trimmed, "${")) return trimmed;
+        if (!hints.has_dollar_brace) return trimmed;
         return "string";
     }
 

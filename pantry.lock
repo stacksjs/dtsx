@@ -1,36 +1,16 @@
 {
   "version": "1.0.0",
   "lockfileVersion": 1,
-  "generatedAt": "1770829058",
+  "generatedAt": "1771634741",
   "packages": {
-    "vite@^4.0.0 || ^5.0.0": {
-      "name": "vite",
-      "version": "^4.0.0 || ^5.0.0",
-      "source": "pkgx"
-    },
-    "typescript@^5.9.3": {
-      "name": "typescript",
-      "version": "^5.9.3",
-      "source": "pkgx"
-    },
-    "bunfig@^0.15.6": {
-      "name": "bunfig",
-      "version": "^0.15.6",
-      "source": "pkgx"
-    },
     "vite@^5.4.21": {
       "name": "vite",
       "version": "^5.4.21",
       "source": "pkgx"
     },
-    "esbuild@>=0.27.3": {
-      "name": "esbuild",
-      "version": ">=0.27.3",
-      "source": "pkgx"
-    },
-    "tsup@^6.0.0 || ^7.0.0 || ^8.0.0": {
-      "name": "tsup",
-      "version": "^6.0.0 || ^7.0.0 || ^8.0.0",
+    "typescript@^5.9.3": {
+      "name": "typescript",
+      "version": "^5.9.3",
       "source": "pkgx"
     },
     "npm:@stacksjs/clapp@^0.2.0": {
@@ -43,14 +23,9 @@
       "version": "^0.112.0",
       "source": "pkgx"
     },
-    "typescript@>=5.9.3": {
-      "name": "typescript",
-      "version": ">=5.9.3",
-      "source": "pkgx"
-    },
-    "webpack@^4.0.0 || ^5.0.0": {
-      "name": "webpack",
-      "version": "^4.0.0 || ^5.0.0",
+    "bunfig@^0.15.6": {
+      "name": "bunfig",
+      "version": "^0.15.6",
       "source": "pkgx"
     }
   }
