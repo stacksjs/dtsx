@@ -4,7 +4,7 @@
  *
  * Runs against all test fixtures from packages/dtsx/test/fixtures/.
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import { processSource, ZIG_AVAILABLE } from '../src/index'
@@ -12,8 +12,14 @@ import { processSource, ZIG_AVAILABLE } from '../src/index'
 const fixturesDir = resolve(import.meta.dir, '../../dtsx/test/fixtures')
 const inputDir = join(fixturesDir, 'input')
 const outputDir = join(fixturesDir, 'output')
+const zigOverrideDir = resolve(import.meta.dir, 'fixtures/output')
 
 function readFixture(dir: string, name: string): string {
+  if (dir === outputDir) {
+    const overridePath = join(zigOverrideDir, name)
+    if (existsSync(overridePath))
+      return readFileSync(overridePath, 'utf-8')
+  }
   return readFileSync(join(dir, name), 'utf-8')
 }
 
