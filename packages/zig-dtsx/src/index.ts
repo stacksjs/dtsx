@@ -1,7 +1,7 @@
 /**
  * TypeScript wrapper for the Zig DTS emitter using Bun FFI.
  */
-import { dlopen, FFIType, ptr, suffix, toArrayBuffer } from 'bun:ffi'
+import { dlopen, FFIType, type Pointer, ptr, suffix, toArrayBuffer } from 'bun:ffi'
 import { join } from 'node:path'
 
 const LIB_NAME = `libzig-dtsx.${suffix}`
@@ -208,7 +208,7 @@ export function processBatch(sources: string[], keepComments: boolean = true, th
       results[i] = ''
     }
     else {
-      const buf = toArrayBuffer(resultPtr, 0, resultLen)
+      const buf = toArrayBuffer(resultPtr as Pointer, 0, resultLen)
       results[i] = decoder.decode(buf)
     }
   }
