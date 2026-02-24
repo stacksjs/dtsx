@@ -120,6 +120,49 @@ jobs:
         working-directory: packages/zig-dtsx
         run: bun test test/zig-dtsx.test.ts
 
+  zig-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0-dev.2565+684032671
+
+      - name: Build Zig CLI Binaries
+        working-directory: packages/zig-dtsx
+        env:
+          ZIG_GLOBAL_CACHE_DIR: .zig-cache
+          ZIG_LOCAL_CACHE_DIR: .zig-cache
+        run: |
+          mkdir -p ../dtsx/bin
+
+          # Linux x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+          zip -j ../dtsx/bin/dtsx-linux-x64.zip zig-out/bin/zig-dtsx
+
+          # Linux arm64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-linux
+          zip -j ../dtsx/bin/dtsx-linux-arm64.zip zig-out/bin/zig-dtsx
+
+          # macOS x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+          zip -j ../dtsx/bin/dtsx-darwin-x64.zip zig-out/bin/zig-dtsx
+
+          # macOS arm64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+          zip -j ../dtsx/bin/dtsx-darwin-arm64.zip zig-out/bin/zig-dtsx
+
+          # Windows x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+          zip -j ../dtsx/bin/dtsx-windows-x64.zip zig-out/bin/zig-dtsx.exe
+
+          # FreeBSD x64
+          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-freebsd
+          zip -j ../dtsx/bin/dtsx-freebsd-x64.zip zig-out/bin/zig-dtsx
+
   publish-commit:
     runs-on: ubuntu-latest
 
