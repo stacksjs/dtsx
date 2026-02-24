@@ -799,7 +799,7 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
 
     fs.watch(rootPath, { recursive: true }, (eventType, filename) => {
       if (filename && filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
-        console.log(`CHANGED:${filename}`);
+        console.log('CHANGED:' + filename);
       }
     });
 

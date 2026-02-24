@@ -634,6 +634,8 @@ export function buildDeclarationMappings(
     originalColumn: number
     name: string
   }> {
+  const generatedContent = _generatedContent
+  const declarationInfos = _declarationInfos
   const lines = generatedContent.split('\n')
   const mappings: Array<{
     generatedLine: number

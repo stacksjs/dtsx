@@ -618,6 +618,9 @@ export async function validateGeneratedDeclarations(
       dtsType: string
     }>
   }> {
+  const sourceFiles = _sourceFiles
+  const dtsFiles = _dtsFiles
+  const tsconfigPath = _tsconfigPath
   const mismatches: Array<{
     sourceName: string
     sourceType: string

@@ -692,6 +692,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
  * Clean method signatures for declaration files
  */
 function cleanMethodSignature(_signature: string): string {
+  const signature = _signature
   // 1. Strip 'async' keyword at word boundaries
   let cleaned = signature
   const asyncIdx = cleaned.indexOf('async')
@@ -1729,6 +1730,7 @@ export function extractInferTypes(typeStr: string): string[] {
  * Check if a type uses advanced TypeScript features
  */
 export function isComplexType(_typeStr: string): boolean {
+  const typeStr = _typeStr
   const trimmed = typeStr.trim()
 
   // Mapped types: [key in ...

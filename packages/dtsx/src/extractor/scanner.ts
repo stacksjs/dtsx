@@ -74,6 +74,8 @@ const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override
  */
 export function scanDeclarations(_source: string, _filename: string, _keepComments: boolean = true, _isolatedDeclarations: boolean = false): Declaration[] {
   const source = _source
+  const keepComments = _keepComments
+  const isolatedDeclarations = _isolatedDeclarations
   const len = source.length
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
