@@ -16,6 +16,30 @@ const MAX_INFERENCE_DEPTH = 20
 let _collectCleanDefault = false
 let _cleanDefaultResult: string | null = null
 
+/** Strip block/JSDoc comments from a property key to keep @defaultValue clean */
+function stripBlockComments(s: string): string {
+  let result = ''
+  let i = 0
+  while (i < s.length) {
+    if (s.charCodeAt(i) === 47 /* / */ && i + 1 < s.length && s.charCodeAt(i + 1) === 42 /* * */) {
+      // Skip until closing */
+      i += 2
+      while (i < s.length - 1) {
+        if (s.charCodeAt(i) === 42 /* * */ && s.charCodeAt(i + 1) === 47 /* / */) {
+          i += 2
+          break
+        }
+        i++
+      }
+    }
+    else {
+      result += s.charAt(i)
+      i++
+    }
+  }
+  return result.trim()
+}
+
 /**
  * Enable clean default collection for the next type inference pass.
  * Must be called before inferNarrowType when you need a @defaultValue.
@@ -651,22 +675,24 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
 
     // Build clean default inline (same pass, no re-parse)
+    // Strip block/JSDoc comments from key to prevent nested */ in @defaultValue code blocks
     if (trackDefaults) {
+      const cleanKey = stripBlockComments(key)
       if (rawVal.endsWith('as const')) {
         // skip — type already narrow
       }
       else if (isPrimitiveLiteral(rawVal)) {
-        cleanProps.push(`${key}: ${rawVal}`)
+        cleanProps.push(`${cleanKey}: ${rawVal}`)
       }
       else if (rawVal.startsWith('[') && isSimpleArrayDefault(rawVal)) {
-        cleanProps.push(`${key}: ${collapseWhitespace(rawVal)}`)
+        cleanProps.push(`${cleanKey}: ${collapseWhitespace(rawVal)}`)
       }
       else if (rawVal.startsWith('{')) {
-        if (nestedDefault) cleanProps.push(`${key}: ${nestedDefault}`)
+        if (nestedDefault) cleanProps.push(`${cleanKey}: ${nestedDefault}`)
       }
       else if (!rawVal.startsWith('[') && (rawVal.includes('=>') || rawVal.startsWith('function') || rawVal.startsWith('async'))) {
         const fnType = inferFunctionType(rawVal, false, 0, true)
-        cleanProps.push(`${key}: ${fnType}`)
+        cleanProps.push(`${cleanKey}: ${fnType}`)
       }
     }
   }
