@@ -1074,7 +1074,32 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
     for (const param of params) {
       if (!param)
         continue
-      dtsParams.push(buildSingleDtsParam(param))
+      // Skip parameters that are entirely inline comments (e.g. "// 7 days default")
+      const trimmedParam = param.trim()
+      if (trimmedParam.startsWith('//') || trimmedParam.startsWith('/*'))
+        continue
+      // Strip trailing inline comments from the parameter
+      let cleanedParam = param
+      {
+        let si = false
+        let sc = 0
+        for (let ci = 0; ci < cleanedParam.length - 1; ci++) {
+          const cc = cleanedParam.charCodeAt(ci)
+          if (si) {
+            if (cc === CH_BACKSLASH) { ci++; continue }
+            if (cc === sc) si = false
+            continue
+          }
+          if (cc === CH_SQUOTE || cc === CH_DQUOTE || cc === CH_BACKTICK) { si = true; sc = cc; continue }
+          if (cc === CH_SLASH && cleanedParam.charCodeAt(ci + 1) === CH_SLASH) {
+            cleanedParam = cleanedParam.slice(0, ci).trimEnd()
+            break
+          }
+        }
+      }
+      if (!cleanedParam.trim())
+        continue
+      dtsParams.push(buildSingleDtsParam(cleanedParam))
     }
 
     return `(${dtsParams.join(', ')})`

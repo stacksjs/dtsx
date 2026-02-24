@@ -718,7 +718,8 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
  * Clean method signatures for declaration files
  */
 function cleanMethodSignature(_signature: string): string {
-  const signature = _signature
+  // 0. Strip inline // comments from each line before processing
+  const signature = _signature.split('\n').map(line => stripTrailingInlineComment(line)).join('\n')
   // 1. Strip 'async' keyword at word boundaries
   let cleaned = signature
   const asyncIdx = cleaned.indexOf('async')
@@ -886,9 +887,13 @@ export function cleanParameterDefaults(params: string): string {
   for (const param of paramParts) {
     const trimmed = param.trim()
     if (!trimmed) { cleaned.push(param); continue }
+    // Skip parameters that are entirely inline comments (e.g. "// 7 days default")
+    if (trimmed.startsWith('//')) continue
+    // Strip trailing inline comments from the parameter (e.g. "name: Type // comment")
+    const stripped = stripTrailingInlineComment(trimmed)
     // Preserve leading whitespace from original param
     const leadingWs = param.slice(0, param.length - param.trimStart().length)
-    cleaned.push(leadingWs + cleanSingleParam(trimmed))
+    cleaned.push(leadingWs + cleanSingleParam(stripped))
   }
 
   // Rejoin with original separators
@@ -898,6 +903,25 @@ export function cleanParameterDefaults(params: string): string {
   }
 
   return hadParens ? `(${result})` : result
+}
+
+/** Strip trailing inline // comments from a string, respecting string literals */
+function stripTrailingInlineComment(text: string): string {
+  let inStr = false
+  let strCh = 0
+  for (let i = 0; i < text.length - 1; i++) {
+    const ch = text.charCodeAt(i)
+    if (inStr) {
+      if (ch === 92 /* \\ */) { i++; continue }
+      if (ch === strCh) inStr = false
+      continue
+    }
+    if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
+    if (ch === 47 /* / */ && text.charCodeAt(i + 1) === 47 /* / */) {
+      return text.slice(0, i).trimEnd()
+    }
+  }
+  return text
 }
 
 /** Clean a single parameter: strip default value, add ? to name if needed */
