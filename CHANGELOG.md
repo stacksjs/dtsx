@@ -1,4 +1,225 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.9...v0.9.10)
+
+### 🚀 Features
+
+- add `zig-dtsx` ([74dd741](https://github.com/stacksjs/dtsx/commit/74dd741)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- make use of `defaultValue` ([d82e9f4](https://github.com/stacksjs/dtsx/commit/d82e9f4)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.10 ([cfc7e59](https://github.com/stacksjs/dtsx/commit/cfc7e59)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([2bd423e](https://github.com/stacksjs/dtsx/commit/2bd423e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([2e1b981](https://github.com/stacksjs/dtsx/commit/2e1b981)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([0c2e95d](https://github.com/stacksjs/dtsx/commit/0c2e95d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c9a3224](https://github.com/stacksjs/dtsx/commit/c9a3224)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([8a534e9](https://github.com/stacksjs/dtsx/commit/8a534e9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a8d7823](https://github.com/stacksjs/dtsx/commit/a8d7823)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fbb60f7](https://github.com/stacksjs/dtsx/commit/fbb60f7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1ec2503](https://github.com/stacksjs/dtsx/commit/1ec2503)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([b7a3df4](https://github.com/stacksjs/dtsx/commit/b7a3df4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([6a47af8](https://github.com/stacksjs/dtsx/commit/6a47af8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#3028) ([e8ddc81](https://github.com/stacksjs/dtsx/commit/e8ddc81)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3028](https://github.com/stacksjs/dtsx/issues/3028), [#3028](https://github.com/stacksjs/dtsx/issues/3028))
+- **deps**: update all non-major dependencies (#3027) ([8d370be](https://github.com/stacksjs/dtsx/commit/8d370be)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3027](https://github.com/stacksjs/dtsx/issues/3027), [#3027](https://github.com/stacksjs/dtsx/issues/3027))
+- **deps**: update dependency vite to 7.3.1 (#2987) ([43bb541](https://github.com/stacksjs/dtsx/commit/43bb541)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2987](https://github.com/stacksjs/dtsx/issues/2987), [#2987](https://github.com/stacksjs/dtsx/issues/2987))
+- several minor perf improvements ([a6b1afe](https://github.com/stacksjs/dtsx/commit/a6b1afe)) _(by Chris <chrisbreuer93@gmail.com>)_
+- update deps ([6045f6d](https://github.com/stacksjs/dtsx/commit/6045f6d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- adjust cover image ([ba0690b](https://github.com/stacksjs/dtsx/commit/ba0690b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- minor config cleanup ([65eaae5](https://github.com/stacksjs/dtsx/commit/65eaae5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- several minor updates ([9bdfba1](https://github.com/stacksjs/dtsx/commit/9bdfba1)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update dependency tsup to 8.5.1 (#2986) ([1e8dd6e](https://github.com/stacksjs/dtsx/commit/1e8dd6e)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2986](https://github.com/stacksjs/dtsx/issues/2986), [#2986](https://github.com/stacksjs/dtsx/issues/2986))
+- **deps**: update dependency dawidd6/action-download-artifact to v14 (#2985) ([9aa0554](https://github.com/stacksjs/dtsx/commit/9aa0554)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2985](https://github.com/stacksjs/dtsx/issues/2985), [#2985](https://github.com/stacksjs/dtsx/issues/2985))
+- **deps**: update dependency actions/upload-artifact to v6.0.0 (#2984) ([72ca5a5](https://github.com/stacksjs/dtsx/commit/72ca5a5)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2984](https://github.com/stacksjs/dtsx/issues/2984), [#2984](https://github.com/stacksjs/dtsx/issues/2984))
+- **deps**: update all non-major dependencies (#3023) ([46d523a](https://github.com/stacksjs/dtsx/commit/46d523a)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3023](https://github.com/stacksjs/dtsx/issues/3023), [#3023](https://github.com/stacksjs/dtsx/issues/3023))
+- **deps**: update dependency actions/github-script to v8 (#2983) ([927d5bd](https://github.com/stacksjs/dtsx/commit/927d5bd)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2983](https://github.com/stacksjs/dtsx/issues/2983), [#2983](https://github.com/stacksjs/dtsx/issues/2983))
+- **deps**: update dependency actions/cache to v5.0.3 (#2982) ([74ce6ad](https://github.com/stacksjs/dtsx/commit/74ce6ad)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2982](https://github.com/stacksjs/dtsx/issues/2982), [#2982](https://github.com/stacksjs/dtsx/issues/2982))
+- wip ([07e668b](https://github.com/stacksjs/dtsx/commit/07e668b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([1b0eb12](https://github.com/stacksjs/dtsx/commit/1b0eb12)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([fbf60e4](https://github.com/stacksjs/dtsx/commit/fbf60e4)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([d83519d](https://github.com/stacksjs/dtsx/commit/d83519d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: update all non-major dependencies (#3020) ([32682c4](https://github.com/stacksjs/dtsx/commit/32682c4)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3020](https://github.com/stacksjs/dtsx/issues/3020), [#3020](https://github.com/stacksjs/dtsx/issues/3020))
+- wip ([e6d093c](https://github.com/stacksjs/dtsx/commit/e6d093c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f3f1b9](https://github.com/stacksjs/dtsx/commit/8f3f1b9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([2924dde](https://github.com/stacksjs/dtsx/commit/2924dde)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([68f134c](https://github.com/stacksjs/dtsx/commit/68f134c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([6b034a0](https://github.com/stacksjs/dtsx/commit/6b034a0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b2e4832](https://github.com/stacksjs/dtsx/commit/b2e4832)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a378623](https://github.com/stacksjs/dtsx/commit/a378623)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([231cf85](https://github.com/stacksjs/dtsx/commit/231cf85)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b0f622a](https://github.com/stacksjs/dtsx/commit/b0f622a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([061d148](https://github.com/stacksjs/dtsx/commit/061d148)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([eff635d](https://github.com/stacksjs/dtsx/commit/eff635d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([1787a1c](https://github.com/stacksjs/dtsx/commit/1787a1c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([61a135f](https://github.com/stacksjs/dtsx/commit/61a135f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([e53d611](https://github.com/stacksjs/dtsx/commit/e53d611)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([3e40db0](https://github.com/stacksjs/dtsx/commit/3e40db0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([899bcd8](https://github.com/stacksjs/dtsx/commit/899bcd8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- several improvements ([da82012](https://github.com/stacksjs/dtsx/commit/da82012)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([22a10ef](https://github.com/stacksjs/dtsx/commit/22a10ef)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b0032a9](https://github.com/stacksjs/dtsx/commit/b0032a9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4acb43e](https://github.com/stacksjs/dtsx/commit/4acb43e)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a3fba2a](https://github.com/stacksjs/dtsx/commit/a3fba2a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5c5d15d](https://github.com/stacksjs/dtsx/commit/5c5d15d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bd0fb7e](https://github.com/stacksjs/dtsx/commit/bd0fb7e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([99f7ed7](https://github.com/stacksjs/dtsx/commit/99f7ed7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([0c93c65](https://github.com/stacksjs/dtsx/commit/0c93c65)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([19d80b4](https://github.com/stacksjs/dtsx/commit/19d80b4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([63d4ee7](https://github.com/stacksjs/dtsx/commit/63d4ee7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([71b0ad4](https://github.com/stacksjs/dtsx/commit/71b0ad4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([62024d3](https://github.com/stacksjs/dtsx/commit/62024d3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9a34251](https://github.com/stacksjs/dtsx/commit/9a34251)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9e63aa8](https://github.com/stacksjs/dtsx/commit/9e63aa8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+-  wip ([0c15304](https://github.com/stacksjs/dtsx/commit/0c15304)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([255e913](https://github.com/stacksjs/dtsx/commit/255e913)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([feee6e6](https://github.com/stacksjs/dtsx/commit/feee6e6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5a69ced](https://github.com/stacksjs/dtsx/commit/5a69ced)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([843b57d](https://github.com/stacksjs/dtsx/commit/843b57d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fcadf17](https://github.com/stacksjs/dtsx/commit/fcadf17)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([f5a3a3e](https://github.com/stacksjs/dtsx/commit/f5a3a3e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5db57cd](https://github.com/stacksjs/dtsx/commit/5db57cd)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bbfa6e1](https://github.com/stacksjs/dtsx/commit/bbfa6e1)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([050c85d](https://github.com/stacksjs/dtsx/commit/050c85d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cbc305b](https://github.com/stacksjs/dtsx/commit/cbc305b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([22325a6](https://github.com/stacksjs/dtsx/commit/22325a6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([55f8103](https://github.com/stacksjs/dtsx/commit/55f8103)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c9be8df](https://github.com/stacksjs/dtsx/commit/c9be8df)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([df8c374](https://github.com/stacksjs/dtsx/commit/df8c374)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cfe4051](https://github.com/stacksjs/dtsx/commit/cfe4051)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([29c6bfb](https://github.com/stacksjs/dtsx/commit/29c6bfb)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c3168aa](https://github.com/stacksjs/dtsx/commit/c3168aa)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([33a566b](https://github.com/stacksjs/dtsx/commit/33a566b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([6d726b3](https://github.com/stacksjs/dtsx/commit/6d726b3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fe5be15](https://github.com/stacksjs/dtsx/commit/fe5be15)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1afdea2](https://github.com/stacksjs/dtsx/commit/1afdea2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([a0cccac](https://github.com/stacksjs/dtsx/commit/a0cccac)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([ba310da](https://github.com/stacksjs/dtsx/commit/ba310da)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([f881469](https://github.com/stacksjs/dtsx/commit/f881469)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cbcb9f8](https://github.com/stacksjs/dtsx/commit/cbcb9f8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([eccd364](https://github.com/stacksjs/dtsx/commit/eccd364)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9c0f6d5](https://github.com/stacksjs/dtsx/commit/9c0f6d5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([41110f5](https://github.com/stacksjs/dtsx/commit/41110f5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: update all non-major dependencies (#78) ([03f22ac](https://github.com/stacksjs/dtsx/commit/03f22ac)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#78](https://github.com/stacksjs/dtsx/issues/78), [#78](https://github.com/stacksjs/dtsx/issues/78))
+- **deps**: update actions/checkout action to v6 (#82) ([835ffe0](https://github.com/stacksjs/dtsx/commit/835ffe0)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#82](https://github.com/stacksjs/dtsx/issues/82), [#82](https://github.com/stacksjs/dtsx/issues/82))
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.9...HEAD)
+
+### 🚀 Features
+
+- add `zig-dtsx` ([74dd741](https://github.com/stacksjs/dtsx/commit/74dd741)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- make use of `defaultValue` ([d82e9f4](https://github.com/stacksjs/dtsx/commit/d82e9f4)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- wip ([2bd423e](https://github.com/stacksjs/dtsx/commit/2bd423e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([2e1b981](https://github.com/stacksjs/dtsx/commit/2e1b981)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([0c2e95d](https://github.com/stacksjs/dtsx/commit/0c2e95d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c9a3224](https://github.com/stacksjs/dtsx/commit/c9a3224)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([8a534e9](https://github.com/stacksjs/dtsx/commit/8a534e9)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a8d7823](https://github.com/stacksjs/dtsx/commit/a8d7823)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fbb60f7](https://github.com/stacksjs/dtsx/commit/fbb60f7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1ec2503](https://github.com/stacksjs/dtsx/commit/1ec2503)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([b7a3df4](https://github.com/stacksjs/dtsx/commit/b7a3df4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([6a47af8](https://github.com/stacksjs/dtsx/commit/6a47af8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update all non-major dependencies (#3028) ([e8ddc81](https://github.com/stacksjs/dtsx/commit/e8ddc81)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3028](https://github.com/stacksjs/dtsx/issues/3028), [#3028](https://github.com/stacksjs/dtsx/issues/3028))
+- **deps**: update all non-major dependencies (#3027) ([8d370be](https://github.com/stacksjs/dtsx/commit/8d370be)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3027](https://github.com/stacksjs/dtsx/issues/3027), [#3027](https://github.com/stacksjs/dtsx/issues/3027))
+- **deps**: update dependency vite to 7.3.1 (#2987) ([43bb541](https://github.com/stacksjs/dtsx/commit/43bb541)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2987](https://github.com/stacksjs/dtsx/issues/2987), [#2987](https://github.com/stacksjs/dtsx/issues/2987))
+- several minor perf improvements ([a6b1afe](https://github.com/stacksjs/dtsx/commit/a6b1afe)) _(by Chris <chrisbreuer93@gmail.com>)_
+- update deps ([6045f6d](https://github.com/stacksjs/dtsx/commit/6045f6d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- adjust cover image ([ba0690b](https://github.com/stacksjs/dtsx/commit/ba0690b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- minor config cleanup ([65eaae5](https://github.com/stacksjs/dtsx/commit/65eaae5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- several minor updates ([9bdfba1](https://github.com/stacksjs/dtsx/commit/9bdfba1)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update dependency tsup to 8.5.1 (#2986) ([1e8dd6e](https://github.com/stacksjs/dtsx/commit/1e8dd6e)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2986](https://github.com/stacksjs/dtsx/issues/2986), [#2986](https://github.com/stacksjs/dtsx/issues/2986))
+- **deps**: update dependency dawidd6/action-download-artifact to v14 (#2985) ([9aa0554](https://github.com/stacksjs/dtsx/commit/9aa0554)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2985](https://github.com/stacksjs/dtsx/issues/2985), [#2985](https://github.com/stacksjs/dtsx/issues/2985))
+- **deps**: update dependency actions/upload-artifact to v6.0.0 (#2984) ([72ca5a5](https://github.com/stacksjs/dtsx/commit/72ca5a5)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2984](https://github.com/stacksjs/dtsx/issues/2984), [#2984](https://github.com/stacksjs/dtsx/issues/2984))
+- **deps**: update all non-major dependencies (#3023) ([46d523a](https://github.com/stacksjs/dtsx/commit/46d523a)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3023](https://github.com/stacksjs/dtsx/issues/3023), [#3023](https://github.com/stacksjs/dtsx/issues/3023))
+- **deps**: update dependency actions/github-script to v8 (#2983) ([927d5bd](https://github.com/stacksjs/dtsx/commit/927d5bd)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2983](https://github.com/stacksjs/dtsx/issues/2983), [#2983](https://github.com/stacksjs/dtsx/issues/2983))
+- **deps**: update dependency actions/cache to v5.0.3 (#2982) ([74ce6ad](https://github.com/stacksjs/dtsx/commit/74ce6ad)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#2982](https://github.com/stacksjs/dtsx/issues/2982), [#2982](https://github.com/stacksjs/dtsx/issues/2982))
+- wip ([07e668b](https://github.com/stacksjs/dtsx/commit/07e668b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([1b0eb12](https://github.com/stacksjs/dtsx/commit/1b0eb12)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([fbf60e4](https://github.com/stacksjs/dtsx/commit/fbf60e4)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([d83519d](https://github.com/stacksjs/dtsx/commit/d83519d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: update all non-major dependencies (#3020) ([32682c4](https://github.com/stacksjs/dtsx/commit/32682c4)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#3020](https://github.com/stacksjs/dtsx/issues/3020), [#3020](https://github.com/stacksjs/dtsx/issues/3020))
+- wip ([e6d093c](https://github.com/stacksjs/dtsx/commit/e6d093c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f3f1b9](https://github.com/stacksjs/dtsx/commit/8f3f1b9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([2924dde](https://github.com/stacksjs/dtsx/commit/2924dde)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([68f134c](https://github.com/stacksjs/dtsx/commit/68f134c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([6b034a0](https://github.com/stacksjs/dtsx/commit/6b034a0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b2e4832](https://github.com/stacksjs/dtsx/commit/b2e4832)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a378623](https://github.com/stacksjs/dtsx/commit/a378623)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([231cf85](https://github.com/stacksjs/dtsx/commit/231cf85)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b0f622a](https://github.com/stacksjs/dtsx/commit/b0f622a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([061d148](https://github.com/stacksjs/dtsx/commit/061d148)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([eff635d](https://github.com/stacksjs/dtsx/commit/eff635d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([1787a1c](https://github.com/stacksjs/dtsx/commit/1787a1c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([61a135f](https://github.com/stacksjs/dtsx/commit/61a135f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([e53d611](https://github.com/stacksjs/dtsx/commit/e53d611)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([3e40db0](https://github.com/stacksjs/dtsx/commit/3e40db0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([899bcd8](https://github.com/stacksjs/dtsx/commit/899bcd8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- several improvements ([da82012](https://github.com/stacksjs/dtsx/commit/da82012)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([22a10ef](https://github.com/stacksjs/dtsx/commit/22a10ef)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b0032a9](https://github.com/stacksjs/dtsx/commit/b0032a9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4acb43e](https://github.com/stacksjs/dtsx/commit/4acb43e)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a3fba2a](https://github.com/stacksjs/dtsx/commit/a3fba2a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5c5d15d](https://github.com/stacksjs/dtsx/commit/5c5d15d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bd0fb7e](https://github.com/stacksjs/dtsx/commit/bd0fb7e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([99f7ed7](https://github.com/stacksjs/dtsx/commit/99f7ed7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([0c93c65](https://github.com/stacksjs/dtsx/commit/0c93c65)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([19d80b4](https://github.com/stacksjs/dtsx/commit/19d80b4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([63d4ee7](https://github.com/stacksjs/dtsx/commit/63d4ee7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([71b0ad4](https://github.com/stacksjs/dtsx/commit/71b0ad4)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([62024d3](https://github.com/stacksjs/dtsx/commit/62024d3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9a34251](https://github.com/stacksjs/dtsx/commit/9a34251)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9e63aa8](https://github.com/stacksjs/dtsx/commit/9e63aa8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+-  wip ([0c15304](https://github.com/stacksjs/dtsx/commit/0c15304)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([255e913](https://github.com/stacksjs/dtsx/commit/255e913)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([feee6e6](https://github.com/stacksjs/dtsx/commit/feee6e6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5a69ced](https://github.com/stacksjs/dtsx/commit/5a69ced)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([843b57d](https://github.com/stacksjs/dtsx/commit/843b57d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fcadf17](https://github.com/stacksjs/dtsx/commit/fcadf17)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([f5a3a3e](https://github.com/stacksjs/dtsx/commit/f5a3a3e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5db57cd](https://github.com/stacksjs/dtsx/commit/5db57cd)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bbfa6e1](https://github.com/stacksjs/dtsx/commit/bbfa6e1)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([050c85d](https://github.com/stacksjs/dtsx/commit/050c85d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cbc305b](https://github.com/stacksjs/dtsx/commit/cbc305b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([22325a6](https://github.com/stacksjs/dtsx/commit/22325a6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([55f8103](https://github.com/stacksjs/dtsx/commit/55f8103)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c9be8df](https://github.com/stacksjs/dtsx/commit/c9be8df)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([df8c374](https://github.com/stacksjs/dtsx/commit/df8c374)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cfe4051](https://github.com/stacksjs/dtsx/commit/cfe4051)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([29c6bfb](https://github.com/stacksjs/dtsx/commit/29c6bfb)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c3168aa](https://github.com/stacksjs/dtsx/commit/c3168aa)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([33a566b](https://github.com/stacksjs/dtsx/commit/33a566b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([6d726b3](https://github.com/stacksjs/dtsx/commit/6d726b3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([fe5be15](https://github.com/stacksjs/dtsx/commit/fe5be15)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1afdea2](https://github.com/stacksjs/dtsx/commit/1afdea2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([a0cccac](https://github.com/stacksjs/dtsx/commit/a0cccac)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([ba310da](https://github.com/stacksjs/dtsx/commit/ba310da)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([f881469](https://github.com/stacksjs/dtsx/commit/f881469)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([cbcb9f8](https://github.com/stacksjs/dtsx/commit/cbcb9f8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([eccd364](https://github.com/stacksjs/dtsx/commit/eccd364)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([9c0f6d5](https://github.com/stacksjs/dtsx/commit/9c0f6d5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([41110f5](https://github.com/stacksjs/dtsx/commit/41110f5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: update all non-major dependencies (#78) ([03f22ac](https://github.com/stacksjs/dtsx/commit/03f22ac)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#78](https://github.com/stacksjs/dtsx/issues/78), [#78](https://github.com/stacksjs/dtsx/issues/78))
+- **deps**: update actions/checkout action to v6 (#82) ([835ffe0](https://github.com/stacksjs/dtsx/commit/835ffe0)) _(by [renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot]))_ ([#82](https://github.com/stacksjs/dtsx/issues/82), [#82](https://github.com/stacksjs/dtsx/issues/82))
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _[renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>](https://github.com/renovate[bot])_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.8...v0.9.9)
 
 ### 🧹 Chores
