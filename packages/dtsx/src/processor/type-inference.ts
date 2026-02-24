@@ -526,7 +526,7 @@ export function parseArrayElements(content: string): string[] {
   for (let i = 0; i < content.length; i++) {
     const c = content.charCodeAt(i)
 
-    if (!inString && (c === 34 || c === 39 || c === 96)) { // " ' `
+    if (!inString && (c === 34 || c === 39 || c === 96)) { // double, single, backtick
       inString = true
       stringChar = c
     }
@@ -691,7 +691,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
 /**
  * Clean method signatures for declaration files
  */
-function cleanMethodSignature(signature: string): string {
+function cleanMethodSignature(_signature: string): string {
   // 1. Strip 'async' keyword at word boundaries
   let cleaned = signature
   const asyncIdx = cleaned.indexOf('async')
@@ -1080,7 +1080,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 /**
  * Convert method definition to function type signature
  */
-function convertMethodToFunctionType(methodName: string, methodDef: string): string {
+function convertMethodToFunctionType(_methodName: string, methodDef: string): string {
   // Remove async modifier if present — no regex
   let cleaned = methodDef
   let ci = 0
@@ -1393,7 +1393,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       }
       const params = trimmed.substring(parenIdx + 1, closeIdx - 1).trim()
 
-      let paramTypes = params ? `(${params})` : '()'
+      const paramTypes = params ? `(${params})` : '()'
 
       if (isGenerator) {
         // Check for explicit Generator return type after the closing paren
@@ -1728,7 +1728,7 @@ export function extractInferTypes(typeStr: string): string[] {
 /**
  * Check if a type uses advanced TypeScript features
  */
-export function isComplexType(typeStr: string): boolean {
+export function isComplexType(_typeStr: string): boolean {
   const trimmed = typeStr.trim()
 
   // Mapped types: [key in ...

@@ -36,8 +36,8 @@ function zigCli(input: string): string {
   return result.stdout
 }
 
-let zigFfi: ((input: string) => string) | null = null
-let tsProcess: ((input: string) => string) | null = null
+let zigFfi: ((_input: string) => string) | null = null
+let tsProcess: ((_input: string) => string) | null = null
 
 async function loadRunners(): Promise<void> {
   // Zig FFI

@@ -78,7 +78,7 @@ export function extractExportAssignment(node: ExportAssignment, sourceCode: stri
 /**
  * Extract function declaration with proper signature
  */
-export function extractFunctionDeclaration(node: FunctionDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration | null {
+export function extractFunctionDeclaration(node: FunctionDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration | null {
   if (!node.name)
     return null // Skip anonymous functions
 
@@ -214,7 +214,7 @@ function inferAsConstType(expression: import('typescript').Expression, sf: Sourc
 /**
  * Extract variable statement (only exported ones for DTS)
  */
-export function extractVariableStatement(node: VariableStatement, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration[] {
+export function extractVariableStatement(node: VariableStatement, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration[] {
   const declarations: Declaration[] = []
   const isExported = hasExportModifier(node)
 
@@ -274,7 +274,7 @@ export function extractVariableStatement(node: VariableStatement, sourceCode: st
 /**
  * Extract interface declaration
  */
-export function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
+export function extractInterfaceDeclaration(node: InterfaceDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 
@@ -308,7 +308,7 @@ export function extractInterfaceDeclaration(node: InterfaceDeclaration, sourceCo
 /**
  * Extract type alias declaration
  */
-export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
+export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 
@@ -336,7 +336,7 @@ export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, sourceCo
 /**
  * Extract class declaration
  */
-export function extractClassDeclaration(node: ClassDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
+export function extractClassDeclaration(node: ClassDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name?.getText(sourceFile) || 'AnonymousClass'
   const isExported = hasExportModifier(node)
 
@@ -406,7 +406,7 @@ export function extractEnumDeclaration(node: EnumDeclaration, sourceCode: string
 /**
  * Extract module/namespace declaration
  */
-export function extractModuleDeclaration(node: ModuleDeclaration, sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
+export function extractModuleDeclaration(node: ModuleDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
 

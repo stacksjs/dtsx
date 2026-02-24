@@ -196,10 +196,10 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     }
     // Line comment (// ...) — convert to JSDoc block and merge
     const commentText = trimmedComments.replace(/^\/\/\s*/, '')
-    return `/**\n * ${commentText}\n * ${defaultTag}\n */\n` + result
+    return `/**\n * ${commentText}\n * ${defaultTag}\n */\n${result}`
   }
   if (defaultTag) {
-    return formatDefaultJsdoc(defaultTag) + result
+    return `${formatDefaultJsdoc(defaultTag)}${result}`
   }
   return comments + result
 }
@@ -350,7 +350,7 @@ export function processEnumDeclaration(decl: Declaration, keepComments: boolean 
   // Extract the body from the original text using indexOf instead of regex
   const enumBraceIdx = decl.text.indexOf('{')
   if (enumBraceIdx !== -1) {
-    result += ' ' + decl.text.slice(enumBraceIdx)
+    result += ` ${decl.text.slice(enumBraceIdx)}`
   }
   else {
     result += ' {}'
@@ -412,7 +412,7 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
     // Extract the body from the original text using indexOf
     const modBraceIdx = decl.text.indexOf('{')
     if (modBraceIdx !== -1) {
-      result += ' ' + decl.text.slice(modBraceIdx)
+      result += ` ${decl.text.slice(modBraceIdx)}`
     }
     else {
       result += ' {}'
@@ -443,7 +443,7 @@ export function processModuleDeclaration(decl: Declaration, keepComments: boolea
   // Extract the body from the original text using indexOf
   const nsBraceIdx = decl.text.indexOf('{')
   if (nsBraceIdx !== -1) {
-    result += ' ' + decl.text.slice(nsBraceIdx)
+    result += ` ${decl.text.slice(nsBraceIdx)}`
   }
   else {
     result += ' {}'

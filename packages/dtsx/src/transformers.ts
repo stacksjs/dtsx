@@ -72,7 +72,7 @@ export interface DeclarationVisitor {
   /** Called after visiting children */
   leave?: (decl: Declaration, parent: Declaration | null) => void
   /** Visit specific declaration kinds */
-  function?: (decl: Declaration, parent: Declaration | null) => void
+  function?: (_decl: Declaration, _parent: Declaration | null) => void
   variable?: (decl: Declaration, parent: Declaration | null) => void
   interface?: (decl: Declaration, parent: Declaration | null) => void
   type?: (decl: Declaration, parent: Declaration | null) => void
@@ -350,7 +350,7 @@ export function createTransformerPlugin(options: {
  */
 export function createRenameTransformer(
   pattern: string | RegExp,
-  replacement: string | ((match: string, decl: Declaration) => string),
+  replacement: string | ((_match: string, _decl: Declaration) => string),
 ): Transformer {
   const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern
 
@@ -426,7 +426,7 @@ export function createSuffixTransformer(
  * Remove declarations by name pattern
  */
 export function createRemoveTransformer(
-  pattern: string | RegExp | ((decl: Declaration) => boolean),
+  pattern: string | RegExp | ((_decl: Declaration) => boolean),
 ): Transformer {
   const shouldRemove = typeof pattern === 'function'
     ? pattern

@@ -72,7 +72,8 @@ const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override
  * Scan TypeScript source code and extract declarations without using the TypeScript parser.
  * This is the fast path that replaces createSourceFile() + AST walk.
  */
-export function scanDeclarations(source: string, filename: string, keepComments: boolean = true, isolatedDeclarations: boolean = false): Declaration[] {
+export function scanDeclarations(_source: string, _filename: string, _keepComments: boolean = true, _isolatedDeclarations: boolean = false): Declaration[] {
+  const source = _source
   const len = source.length
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
@@ -160,7 +161,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
           // Inline /* ... */ — find closing and replace with space
           const closeIdx = line.indexOf('*/', i + 2)
           if (closeIdx !== -1) {
-            line = line.slice(0, i) + ' ' + line.slice(closeIdx + 2)
+            line = `${line.slice(0, i)} ${line.slice(closeIdx + 2)}`
             i-- // re-scan
             continue
           }
@@ -968,8 +969,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         }
       }
       // Trim spaces around < and >
-      if (result.charCodeAt(1) === 32) result = '<' + result.slice(2)
-      if (result.charCodeAt(result.length - 2) === 32) result = result.slice(0, -2) + '>'
+      if (result.charCodeAt(1) === 32) result = `<${result.slice(2)}`
+      if (result.charCodeAt(result.length - 2) === 32) result = `${result.slice(0, -2)}>`
       return result
     }
     return raw
@@ -1748,7 +1749,7 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     skipWhitespaceAndComments()
 
     // Extract enum body (raw text)
-    const bodyStart = pos
+    const _bodyStart = pos
     if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
       findMatchingClose(CH_LBRACE, CH_RBRACE)
     }

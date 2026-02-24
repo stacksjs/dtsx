@@ -50,7 +50,7 @@ export interface VitePluginOptions extends Partial<DtsGenerationConfig> {
  */
 interface VitePlugin {
   name: string
-  apply?: 'build' | 'serve' | ((config: { mode: string }) => boolean)
+  apply?: 'build' | 'serve' | ((_config: { mode: string }) => boolean)
   buildStart?: () => Promise<void> | void
   buildEnd?: () => Promise<void> | void
   writeBundle?: () => Promise<void> | void

@@ -221,8 +221,8 @@ export function computeDiff(
  */
 function createHunks(
   operations: Array<{ op: DiffOperation, oldIdx?: number, newIdx?: number, line: string }>,
-  oldLines: string[],
-  newLines: string[],
+  _oldLines: string[],
+  _newLines: string[],
   _oldMapping: number[],
   _newMapping: number[],
   context: number,

@@ -489,7 +489,7 @@ export function orderDeclarations(content: string, config: DeclarationOrder): st
   const lines = content.split('\n')
   const declarations: { lines: string[], kind: DeclarationKind, name: string, isExport: boolean }[] = []
   const preamble: string[] = [] // Imports, comments at top
-  const trailer: string[] = [] // Final comments, etc.
+  const trailer: string[] = [] // Final trailing comments
 
   let currentDecl: { lines: string[], kind: DeclarationKind, name: string, isExport: boolean } | null = null
   let braceDepth = 0

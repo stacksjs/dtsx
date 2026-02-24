@@ -20,5 +20,5 @@ export function formatComments(comments: string[] | undefined, keepComments: boo
     if (i > 0) result += '\n'
     result += comments[i].trim()
   }
-  return result + '\n'
+  return `${result}\n`
 }

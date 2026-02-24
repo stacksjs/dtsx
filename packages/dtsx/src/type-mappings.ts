@@ -337,7 +337,7 @@ export function applyTypeMappings(
   // This is a simplified version - a full implementation would use AST
   return declarationText.replace(
     /:\s*([^;,)\]}]+)/g,
-    (match, type) => {
+    (_match, type) => {
       const mappedType = mapper.map(type.trim(), context)
       return `: ${mappedType}`
     },

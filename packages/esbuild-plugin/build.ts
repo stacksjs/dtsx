@@ -3,7 +3,7 @@ import { generate } from '@stacksjs/dtsx'
 
 console.log('Building...')
 
-const result = await build({
+await build({
   entryPoints: ['src/index.ts'],
   outdir: 'dist',
   bundle: true,

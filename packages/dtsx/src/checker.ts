@@ -607,9 +607,9 @@ export async function typeCheckWithConfig(
  * Validate generated declarations match the source types
  */
 export async function validateGeneratedDeclarations(
-  sourceFiles: string[],
-  dtsFiles: string[],
-  tsconfigPath?: string,
+  _sourceFiles: string[],
+  _dtsFiles: string[],
+  _tsconfigPath?: string,
 ): Promise<{
     valid: boolean
     mismatches: Array<{

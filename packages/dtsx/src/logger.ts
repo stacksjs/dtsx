@@ -40,7 +40,7 @@ export interface Logger {
 let currentLevel: LogLevel = 'info'
 let currentPrefix = '[dtsx]'
 let showTimestamps = false
-let customOutput: ((level: LogLevel, ...args: unknown[]) => void) | null = null
+let customOutput: ((_level: LogLevel, ..._args: unknown[]) => void) | null = null
 
 /**
  * Check if a log level should be output given the current level

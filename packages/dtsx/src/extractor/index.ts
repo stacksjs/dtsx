@@ -242,7 +242,7 @@ export async function batchExtractDeclarations(
     const batch = files.slice(i, i + concurrency)
 
     const batchResults = await Promise.all(
-      batch.map(async ({ filePath, sourceCode, keepComments = true }) => {
+      batch.map(async ({ filePath, sourceCode, keepComments }) => {
         const declarations = await extractDeclarationsAsync(sourceCode, filePath, keepComments, config)
         return { filePath, declarations }
       }),

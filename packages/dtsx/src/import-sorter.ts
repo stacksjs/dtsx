@@ -117,7 +117,7 @@ export const DEFAULT_GROUP_ORDER: ImportGroup[] = [
 export function parseImport(statement: string): ParsedImport | null {
   // Match: import ... from '...'
   const importMatch = statement.match(
-    /^(import\s+)(type\s+)?(.+?)\s+from\s+['"]([^'"]+)['"]/,
+    /^(import\s+)(type\s+)?(.+?)\s+from\s+["']([^"']+)["']/,
   )
 
   if (!importMatch) {

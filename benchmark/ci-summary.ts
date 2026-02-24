@@ -194,7 +194,7 @@ function dtsxGenerateNoCache(source: string, filename: string): string {
 }
 
 // zig-dtsx — FFI (in-process, no spawn overhead)
-let zigProcessSource: ((source: string, keepComments: boolean, isolatedDeclarations?: boolean) => string) | null = null
+let zigProcessSource: ((_source: string, _keepComments: boolean, _isolatedDeclarations?: boolean) => string) | null = null
 try {
   const zigMod = await import('../packages/zig-dtsx/src/index')
   if (zigMod.ZIG_AVAILABLE) {

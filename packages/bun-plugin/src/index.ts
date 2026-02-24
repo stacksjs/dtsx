@@ -74,7 +74,7 @@ export type BuildEventData =
 /**
  * Event listener function
  */
-export type BuildEventListener = (event: BuildEvent) => void | Promise<void>
+export type BuildEventListener = (_event: BuildEvent) => void | Promise<void>
 
 /**
  * Incremental cache entry
@@ -311,7 +311,7 @@ export function dts(options: PluginConfig = {}): BunPlugin {
     async setup(build) {
       const startTime = Date.now()
       let cache: IncrementalCache | null = null
-      let fromCache = 0
+      const fromCache = 0
 
       try {
         const config = normalizeConfig(dtsOptions, build)

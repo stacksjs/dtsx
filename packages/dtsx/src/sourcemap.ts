@@ -620,8 +620,8 @@ export async function extractSourceMap(
  * Build source mappings from declaration info
  */
 export function buildDeclarationMappings(
-  generatedContent: string,
-  declarationInfos: Array<{
+  _generatedContent: string,
+  _declarationInfos: Array<{
     name: string
     generatedStart: number
     originalLine: number

@@ -228,7 +228,7 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
     }
 
     try {
-      state.watcher = fsWatch(root, { recursive: true }, (eventType, filename) => {
+      state.watcher = fsWatch(root, { recursive: true }, (_eventType, filename) => {
         if (filename && filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
           handleFileChange(join(root, filename))
         }
@@ -363,7 +363,7 @@ function normalizeConfig(options: DtsGenerationOption, viteConfig: ResolvedConfi
  */
 function shouldProcessFile(
   filePath: string,
-  include?: string[],
+  _include?: string[],
   exclude?: string[],
 ): boolean {
   // Skip declaration files
@@ -411,7 +411,7 @@ function notifyTypeChanges(server: ViteDevServer, outdir: string): void {
 /**
  * Create a minimal Vite plugin for just type checking
  */
-export function dtsCheck(options: Partial<DtsPluginOptions> = {}): Plugin {
+export function dtsCheck(_options: Partial<DtsPluginOptions> = {}): Plugin {
   return {
     name: 'vite-plugin-dtsx-check',
     enforce: 'pre',
@@ -427,7 +427,7 @@ export function dtsCheck(options: Partial<DtsPluginOptions> = {}): Plugin {
  * Create a Vite plugin that bundles all declarations into one file
  */
 export function dtsBundled(options: DtsPluginOptions & { bundleOutput?: string } = {}): Plugin {
-  const { bundleOutput = 'types.d.ts', ...dtsOptions } = options
+  const { bundleOutput: _bundleOutput = 'types.d.ts', ...dtsOptions } = options
 
   return {
     ...dts({

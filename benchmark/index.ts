@@ -307,7 +307,7 @@ for (const { name, filename } of inputs) {
 //   it's a purpose-built .d.ts generator, not just a single-file transformer.
 // ---------------------------------------------------------------------------
 
-const concurrency = Math.max(1, cpus().length - 1)
+const _concurrency = Math.max(1, cpus().length - 1)
 const projectSizes = [50, 100, 500]
 const templates = inputs.map(i => i.source)
 
