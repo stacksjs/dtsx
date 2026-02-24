@@ -243,13 +243,14 @@ fn workerFn(ctx: WorkerCtx) void {
                 _ = arena.reset(.retain_capacity);
                 continue;
             }
-            var st: c.struct_stat = undefined;
-            if (c.fstat(fd, &st) < 0) {
+            const end_off = c.lseek(fd, 0, 2); // SEEK_END
+            if (end_off < 0) {
                 _ = c.close(fd);
                 _ = arena.reset(.retain_capacity);
                 continue;
             }
-            const size: usize = @intCast(st.st_size);
+            _ = c.lseek(fd, 0, 0); // SEEK_SET
+            const size: usize = @intCast(end_off);
             const buf = alloc.alloc(u8, size) catch {
                 _ = c.close(fd);
                 _ = arena.reset(.retain_capacity);
