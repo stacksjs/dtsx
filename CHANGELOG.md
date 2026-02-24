@@ -1,4 +1,27 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.11...v0.9.12)
+
+### 🧹 Chores
+
+- release v0.9.12 ([2dbed94](https://github.com/stacksjs/dtsx/commit/2dbed94)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([a26228f](https://github.com/stacksjs/dtsx/commit/a26228f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([13de35b](https://github.com/stacksjs/dtsx/commit/13de35b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.11...HEAD)
+
+### 🧹 Chores
+
+- wip ([a26228f](https://github.com/stacksjs/dtsx/commit/a26228f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([13de35b](https://github.com/stacksjs/dtsx/commit/13de35b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.10...v0.9.11)
 
 ### 🧹 Chores
