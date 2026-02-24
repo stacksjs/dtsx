@@ -89,7 +89,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  mixedArrays: (Date | Promise<string> | (() => unknown) | (() => Generator<any, any, any>))[]
+  mixedArrays: (Date | Promise<string> | (() => Promise<string>) | (() => Generator<any, any, any>))[]
 };
 /**
  * Nested Object Types with Methods
@@ -104,7 +104,7 @@ export declare const complexArrays: {
  *   utils: {
  *     formatters: {
  *       date: (input: Date) => unknown,
- *       currency: (amount: number, currency?) => unknown
+ *       currency: (amount: number, currency?: string) => unknown
  *     }
  *   }
  * }
@@ -112,7 +112,7 @@ export declare const complexArrays: {
  */
 export declare const complexObject: {
   handlers: { onSuccess<T>: (data: T) => unknown; onError: (error: Error & { code?: number }) => unknown; someOtherMethod: () => unknown };
-  utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
+  utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
 export declare const methodDecorator: (

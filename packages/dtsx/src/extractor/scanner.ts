@@ -782,6 +782,50 @@ export function scanDeclarations(source: string, filename: string, keepComments:
     return source.slice(blockStart, pos)
   }
 
+  /** Clean default values from method parameters in an interface/body member line.
+   *  e.g. `doSomething(config: SomeType = {}): void` -> `doSomething(config?: SomeType): void`
+   *  Only processes if the line contains `= ` inside parentheses (fast bail-out). */
+  function cleanMemberLineDefaults(line: string): string {
+    // Quick check: does the line have a `(` and contain `=` inside parens?
+    const parenOpen = line.indexOf('(')
+    if (parenOpen === -1) return line
+    const parenSection = line.slice(parenOpen)
+    if (parenSection.indexOf('=') === -1) return line
+    // Also skip if the only `=` is `=>` (arrow in return type)
+    // Check if there's a real assignment `=` (not `=>`, `==`, `>=`, `<=`)
+    let hasRealEqual = false
+    for (let i = 0; i < parenSection.length; i++) {
+      const ch = parenSection.charCodeAt(i)
+      if (ch === 61 /* = */) {
+        const prev = i > 0 ? parenSection.charCodeAt(i - 1) : 0
+        const next = i + 1 < parenSection.length ? parenSection.charCodeAt(i + 1) : 0
+        if (prev !== 61 && prev !== 33 && prev !== 60 && prev !== 62 && next !== 61 && next !== 62) {
+          hasRealEqual = true
+          break
+        }
+      }
+    }
+    if (!hasRealEqual) return line
+
+    // Find the matching closing paren for the parameter list
+    let depth = 0
+    let parenClose = -1
+    for (let i = parenOpen; i < line.length; i++) {
+      const ch = line.charCodeAt(i)
+      if (ch === 40 /* ( */) depth++
+      else if (ch === 41 /* ) */) {
+        depth--
+        if (depth === 0) { parenClose = i; break }
+      }
+    }
+    if (parenClose === -1) return line
+
+    // Extract and rebuild the parameter list using buildDtsParams
+    const rawParams = line.slice(parenOpen, parenClose + 1)
+    const cleanedParams = buildDtsParams(rawParams)
+    return line.slice(0, parenOpen) + cleanedParams + line.slice(parenClose + 1)
+  }
+
   /** Strip inline comments from a brace block and normalize indentation */
   function cleanBraceBlock(raw: string): string {
     // Fast path: if no comment markers (// or /*), skip comment detection logic
@@ -827,6 +871,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         // Strip trailing semicolons from member lines (DTS convention for interfaces)
         if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
           cleaned = cleaned.slice(0, -1)
+        // Strip default values from method parameters in interface members
+        cleaned = cleanMemberLineDefaults(cleaned)
         const ct = cleaned.trim()
         if (!ct) continue
 
@@ -851,6 +897,8 @@ export function scanDeclarations(source: string, filename: string, keepComments:
         // Strip trailing semicolons
         if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
           cleaned = cleaned.slice(0, -1)
+        // Strip default values from method parameters in interface members
+        cleaned = cleanMemberLineDefaults(cleaned)
         const ct = cleaned.trim()
         if (!ct) continue
 

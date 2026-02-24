@@ -692,82 +692,82 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
  * Clean method signatures for declaration files
  */
 function cleanMethodSignature(signature: string): string {
-  // Single-pass: remove 'async' keywords, replace param defaults with '?',
-  // and collapse whitespace — all in one loop.
+  // 1. Strip 'async' keyword at word boundaries
+  let cleaned = signature
+  const asyncIdx = cleaned.indexOf('async')
+  if (asyncIdx !== -1) {
+    const before = asyncIdx > 0 ? cleaned.charCodeAt(asyncIdx - 1) : 32
+    const after = asyncIdx + 5 < cleaned.length ? cleaned.charCodeAt(asyncIdx + 5) : 32
+    if (!isWordChar(before) && !isWordChar(after)) {
+      cleaned = (cleaned.slice(0, asyncIdx) + cleaned.slice(asyncIdx + 5)).trim()
+    }
+  }
+
+  // 2. Clean parameter defaults using the proper cleanParameterDefaults
+  // Find the outermost parameter list (...) and clean it
+  const parenStart = cleaned.indexOf('(')
+  if (parenStart !== -1) {
+    const parenEnd = findMatchingBracket(cleaned, parenStart, '(', ')')
+    if (parenEnd !== -1) {
+      const rawParams = cleaned.slice(parenStart, parenEnd + 1)
+      const cleanedParams = cleanParameterDefaults(rawParams)
+      cleaned = cleaned.slice(0, parenStart) + cleanedParams + cleaned.slice(parenEnd + 1)
+    }
+  }
+
+  // 3. Collapse whitespace, but when the immediately surrounding context is {} (object type
+  //    literal), replace newlines with '; ' to preserve member separation on a single line.
+  //    Use a nesting stack to track whether { or ( is the innermost context.
+  const len = cleaned.length
   let result = ''
-  const len = signature.length
-  let i = 0
+  const nestStack: number[] = [] // stack of char codes: 123 for {, 40 for (
   let lastWasWs = false
-  let depth = 0 // track paren depth for param defaults
+  let wsHadNewline = false
 
-  while (i < len) {
-    const c = signature.charCodeAt(i)
+  for (let i = 0; i < len; i++) {
+    const c = cleaned.charCodeAt(i)
 
-    // Skip 'async ' at word boundaries
-    if (c === 97 /* a */ && signature.startsWith('async', i)) {
-      const after = i + 5
-      if (after < len && signature.charCodeAt(after) <= 32) {
-        // Check word boundary before 'async'
-        if (i === 0 || !(isWordChar(signature.charCodeAt(i - 1)))) {
-          i = after
-          while (i < len && signature.charCodeAt(i) <= 32) i++
-          continue
-        }
-      }
-    }
+    if (c === 123 /* { */ || c === 40 /* ( */) nestStack.push(c)
+    else if (c === 125 /* } */ || c === 41 /* ) */) nestStack.pop()
 
-    // Track parentheses
-    if (c === 40 /* ( */) depth++
-    else if (c === 41 /* ) */) depth--
-
-    // Inside params: check for 'word =' pattern for defaults
-    if (depth > 0 && isWordChar(c)) {
-      const wordStart = i
-      while (i < len && isWordChar(signature.charCodeAt(i))) i++
-      const word = signature.slice(wordStart, i)
-      // Skip whitespace
-      let j = i
-      while (j < len && signature.charCodeAt(j) <= 32) j++
-      if (j < len && signature.charCodeAt(j) === 61 /* = */ && (j + 1 >= len || signature.charCodeAt(j + 1) !== 62 /* > */)) {
-        // This is a default value — skip it, emit 'word?'
-        if (lastWasWs && result.length > 0) result += ' '
-        result += word + '?'
-        lastWasWs = false
-        j++ // skip '='
-        // Skip the default value until ',' or ')' at same depth
-        let d = 0
-        while (j < len) {
-          const dc = signature.charCodeAt(j)
-          if (dc === 40 || dc === 91 || dc === 123) d++
-          else if (dc === 41 || dc === 93 || dc === 125) {
-            if (d === 0) break
-            d--
-          }
-          else if (dc === 44 && d === 0) break // comma
-          j++
-        }
-        i = j
-        continue
-      }
-      // Not a default — emit the word
-      if (lastWasWs && result.length > 0) result += ' '
-      lastWasWs = false
-      result += word
-      i = wordStart + word.length
-      continue
-    }
-
-    // Collapse whitespace
     if (c <= 32) {
       lastWasWs = true
-      i++
+      if (c === 10 || c === 13) wsHadNewline = true
       continue
     }
 
-    if (lastWasWs && result.length > 0) result += ' '
+    if (lastWasWs && result.length > 0) {
+      // When the innermost nesting context is {}, newline-separated members need semicolons
+      const innermost = nestStack.length > 0 ? nestStack[nestStack.length - 1] : 0
+      const insideBrace = innermost === 123 /* { */
+
+      if (wsHadNewline && insideBrace) {
+        // Check if the previous non-whitespace char already has a separator or is a comment end
+        const lastChar = result.charCodeAt(result.length - 1)
+        const isAlreadySeparated = lastChar === 59 /* ; */
+          || lastChar === 44 /* , */
+          || lastChar === 123 /* { */
+          || c === 125 /* } */
+        // Also don't add semicolons after JSDoc comment closings (*/)
+        const isAfterComment = result.length >= 2
+          && result.charCodeAt(result.length - 1) === 47 /* / */
+          && result.charCodeAt(result.length - 2) === 42 /* * */
+
+        if (!isAlreadySeparated && !isAfterComment) {
+          result += '; '
+        }
+        else {
+          result += ' '
+        }
+      }
+      else {
+        result += ' '
+      }
+    }
+
     lastWasWs = false
-    result += signature[i]
-    i++
+    wsHadNewline = false
+    result += cleaned[i]
   }
 
   return result.trim()
@@ -781,47 +781,162 @@ function isWordChar(c: number): boolean {
  * Clean parameter defaults from function parameters
  */
 export function cleanParameterDefaults(params: string): string {
-  // Remove parameter default values and make them optional — no regex
-  const len = params.length
-  let result = ''
-  let i = 0
-  while (i < len) {
-    const c = params.charCodeAt(i)
-    // Look for word char sequences
-    if (isWordChar(c)) {
-      const wStart = i
-      while (i < len && isWordChar(params.charCodeAt(i))) i++
-      const word = params.slice(wStart, i)
-      // Skip whitespace
-      let j = i
-      while (j < len && params.charCodeAt(j) <= 32) j++
-      if (j < len && params.charCodeAt(j) === 61 /* = */ && (j + 1 >= len || params.charCodeAt(j + 1) !== 62 /* > */)) {
-        // Default value: emit 'word?' and skip the value
-        result += word + '?'
-        j++ // skip '='
-        let d = 0
-        while (j < len) {
-          const dc = params.charCodeAt(j)
-          if (dc === 40 || dc === 91 || dc === 123) d++
-          else if (dc === 41 || dc === 93 || dc === 125) {
-            if (d === 0) break
-            d--
-          }
-          else if (dc === 44 && d === 0) break
-          j++
+  // Remove parameter default values and make them optional.
+  // Properly handles `name: Type = default` by placing `?` on the name, not the type.
+  // Preserves multiline formatting when the original has newlines.
+  const stripped = params.trim()
+  // Remove outer parentheses if present
+  let inner: string
+  let hadParens = false
+  if (stripped.startsWith('(') && stripped.endsWith(')')) {
+    inner = stripped.slice(1, -1)
+    hadParens = true
+  }
+  else {
+    inner = stripped
+  }
+
+  const trimmedInner = inner.trim()
+  if (!trimmedInner) return hadParens ? '()' : ''
+
+  // Quick check: if there's no '=' (that isn't '=>'), there's nothing to clean
+  let hasRealEqual = false
+  {
+    let d = 0
+    for (let i = 0; i < trimmedInner.length; i++) {
+      const ch = trimmedInner.charCodeAt(i)
+      if (ch === 40 || ch === 60 || ch === 91 || ch === 123) d++
+      else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) d--
+      else if (d === 0 && ch === 61) {
+        const prev = i > 0 ? trimmedInner.charCodeAt(i - 1) : 0
+        const next = i + 1 < trimmedInner.length ? trimmedInner.charCodeAt(i + 1) : 0
+        if (prev !== 61 && prev !== 33 && prev !== 60 && prev !== 62 && next !== 61 && next !== 62) {
+          hasRealEqual = true
+          break
         }
-        i = j
       }
-      else {
-        result += word
-      }
-    }
-    else {
-      result += params[i]
-      i++
     }
   }
-  return result
+  if (!hasRealEqual) return stripped
+
+  // Split parameters by comma at depth 0, preserving whitespace around commas
+  const paramParts: string[] = []
+  const separators: string[] = [] // The commas and surrounding whitespace between params
+  let start = 0
+  let depth = 0
+  let inStr = false
+  let strCh = 0
+  for (let i = 0; i <= trimmedInner.length; i++) {
+    if (i === trimmedInner.length) {
+      paramParts.push(trimmedInner.slice(start))
+      break
+    }
+    const ch = trimmedInner.charCodeAt(i)
+    if (inStr) {
+      if (ch === 92 /* \\ */) { i++; continue }
+      if (ch === strCh) inStr = false
+      continue
+    }
+    if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
+    if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++
+    else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) depth--
+    else if (ch === 44 && depth === 0) {
+      paramParts.push(trimmedInner.slice(start, i))
+      // Capture the comma + whitespace after it as separator
+      let sep = ','
+      let j = i + 1
+      while (j < trimmedInner.length && (trimmedInner.charCodeAt(j) <= 32)) {
+        sep += trimmedInner[j]
+        j++
+      }
+      separators.push(sep)
+      start = j
+    }
+  }
+
+  // Process each parameter
+  const cleaned: string[] = []
+  for (const param of paramParts) {
+    const trimmed = param.trim()
+    if (!trimmed) { cleaned.push(param); continue }
+    // Preserve leading whitespace from original param
+    const leadingWs = param.slice(0, param.length - param.trimStart().length)
+    cleaned.push(leadingWs + cleanSingleParam(trimmed))
+  }
+
+  // Rejoin with original separators
+  let result = cleaned[0] || ''
+  for (let i = 1; i < cleaned.length; i++) {
+    result += (separators[i - 1] || ', ') + cleaned[i]
+  }
+
+  return hadParens ? `(${result})` : result
+}
+
+/** Clean a single parameter: strip default value, add ? to name if needed */
+function cleanSingleParam(param: string): string {
+  // Handle rest parameters
+  if (param.startsWith('...')) {
+    return param // rest params don't have defaults in meaningful way
+  }
+
+  // Find colon and equals at depth 0 to parse: name[?]: type [= default]
+  let colonIdx = -1
+  let equalIdx = -1
+  let depth = 0
+  let inStr = false
+  let strCh = 0
+
+  for (let i = 0; i < param.length; i++) {
+    const ch = param.charCodeAt(i)
+    if (inStr) {
+      if (ch === 92 /* \\ */) { i++; continue }
+      if (ch === strCh) inStr = false
+      continue
+    }
+    if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
+    if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++
+    else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) depth--
+    else if (depth === 0) {
+      if (ch === 58 /* : */ && colonIdx === -1) colonIdx = i
+      else if (ch === 61 /* = */ && equalIdx === -1
+        && (i === 0 || param.charCodeAt(i - 1) !== 61)
+        && (i + 1 >= param.length || (param.charCodeAt(i + 1) !== 61 && param.charCodeAt(i + 1) !== 62))) {
+        equalIdx = i
+      }
+    }
+  }
+
+  const hasDefault = equalIdx !== -1
+
+  if (colonIdx !== -1 && (equalIdx === -1 || colonIdx < equalIdx)) {
+    // Has type annotation: name[?]: type [= default]
+    const name = param.slice(0, colonIdx).trim()
+    const type = equalIdx !== -1
+      ? param.slice(colonIdx + 1, equalIdx).trim()
+      : param.slice(colonIdx + 1).trim()
+
+    // Add ? to the name if it has a default and doesn't already have ?
+    const optionalMarker = hasDefault && !name.endsWith('?') ? '?' : ''
+    return `${name}${optionalMarker}: ${type}`
+  }
+  else if (equalIdx !== -1) {
+    // No type annotation, just name = default
+    const name = param.slice(0, equalIdx).trim()
+    const optionalMarker = !name.endsWith('?') ? '?' : ''
+    // Try to infer type from default value
+    const defaultVal = param.slice(equalIdx + 1).trim()
+    let type = 'unknown'
+    if (defaultVal === 'true' || defaultVal === 'false') type = 'boolean'
+    else if (/^-?\d+(\.\d+)?$/.test(defaultVal)) type = 'number'
+    else if ((defaultVal.startsWith('\'') && defaultVal.endsWith('\'')) || (defaultVal.startsWith('"') && defaultVal.endsWith('"'))) type = 'string'
+    else if (defaultVal.startsWith('[')) type = 'unknown[]'
+    else if (defaultVal.startsWith('{')) type = 'Record<string, unknown>'
+    return `${name}${optionalMarker}: ${type}`
+  }
+
+  // No default, return as-is
+  return param
 }
 
 /**
