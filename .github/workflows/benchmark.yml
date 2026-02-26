@@ -87,7 +87,7 @@ jobs:
         run: bun benchmark/ci-summary.ts --results packages/dtsx/benchmark-results.json --base base-benchmark/benchmark-results.json
 
       - name: Upload Benchmark Results
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: benchmark-results-${{ github.sha }}
           path: packages/dtsx/benchmark-results.json
