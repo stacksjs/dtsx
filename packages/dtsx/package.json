@@ -106,7 +106,7 @@
   },
   "devDependencies": {
     "bunfig": "^0.15.6",
-    "oxc-parser": "^0.112.0",
+    "oxc-parser": "^0.115.0",
     "typescript": "^5.9.3"
   },
   "git-hooks": {
