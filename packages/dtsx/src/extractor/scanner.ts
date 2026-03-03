@@ -505,9 +505,11 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
   }
 
   /** Skip to statement end (semicolon at depth 0, matching brace, or ASI) */
-  const STMT_DELIM_RE = /[{};'"`\/\n\r]/g
+  const STMT_DELIM_RE = /[{};'"`\/\n\r()[\]]/g
   function skipToStatementEnd(): void {
     let braceDepth = 0
+    let parenDepth = 0
+    let bracketDepth = 0
     STMT_DELIM_RE.lastIndex = pos
     let match
     while ((match = STMT_DELIM_RE.exec(source)) !== null) {
@@ -536,6 +538,26 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         continue
       }
 
+      if (ch === CH_LPAREN) {
+        parenDepth++
+        STMT_DELIM_RE.lastIndex = idx + 1
+        continue
+      }
+      if (ch === CH_RPAREN) {
+        parenDepth--
+        STMT_DELIM_RE.lastIndex = idx + 1
+        continue
+      }
+      if (ch === CH_LBRACKET) {
+        bracketDepth++
+        STMT_DELIM_RE.lastIndex = idx + 1
+        continue
+      }
+      if (ch === CH_RBRACKET) {
+        bracketDepth--
+        STMT_DELIM_RE.lastIndex = idx + 1
+        continue
+      }
       if (ch === CH_LBRACE) {
         braceDepth++
         STMT_DELIM_RE.lastIndex = idx + 1
@@ -543,13 +565,13 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       }
       if (ch === CH_RBRACE) {
         braceDepth--
-        if (braceDepth <= 0) { pos = idx + 1; return }
+        if (braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) { pos = idx + 1; return }
         STMT_DELIM_RE.lastIndex = idx + 1
         continue
       }
-      if (ch === CH_SEMI && braceDepth === 0) { pos = idx + 1; return }
-      // ASI: newline at brace depth 0 + keyword = end of statement
-      if ((ch === CH_LF || ch === CH_CR) && braceDepth === 0) {
+      if (ch === CH_SEMI && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) { pos = idx + 1; return }
+      // ASI: newline at depth 0 + keyword = end of statement
+      if ((ch === CH_LF || ch === CH_CR) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
         pos = idx
         if (checkASITopLevel()) return
       }
@@ -1220,7 +1242,12 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       strippedMod = false
       for (const mod of PARAM_MODIFIERS) {
         if (p.startsWith(mod) && p.length > mod.length && !isIdentChar(p.charCodeAt(mod.length))) {
-          p = p.slice(mod.length).trim()
+          const rest = p.slice(mod.length).trim()
+          // If the remainder starts with ':' or '?:', the "modifier" was actually the parameter name
+          if (rest.charCodeAt(0) === CH_COLON || (rest.charCodeAt(0) === CH_QUESTION && rest.length > 1 && rest.charCodeAt(1) === CH_COLON)) {
+            break
+          }
+          p = rest
           strippedMod = true
           break
         }
