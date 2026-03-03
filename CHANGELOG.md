@@ -1,4 +1,31 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.12...v0.9.13)
+
+### 🧹 Chores
+
+- release v0.9.13 ([0925560](https://github.com/stacksjs/dtsx/commit/0925560)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4b2dbbe](https://github.com/stacksjs/dtsx/commit/4b2dbbe)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([e9a7432](https://github.com/stacksjs/dtsx/commit/e9a7432)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bda0f38](https://github.com/stacksjs/dtsx/commit/bda0f38)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([526615b](https://github.com/stacksjs/dtsx/commit/526615b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.12...HEAD)
+
+### 🧹 Chores
+
+- wip ([4b2dbbe](https://github.com/stacksjs/dtsx/commit/4b2dbbe)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([e9a7432](https://github.com/stacksjs/dtsx/commit/e9a7432)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bda0f38](https://github.com/stacksjs/dtsx/commit/bda0f38)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([526615b](https://github.com/stacksjs/dtsx/commit/526615b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.11...v0.9.12)
 
 ### 🧹 Chores
