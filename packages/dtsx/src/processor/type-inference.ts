@@ -605,7 +605,7 @@ function isSimpleArrayDefault(val: string): boolean {
       if (c === strCh) inStr = false
       continue
     }
-    if (c === 34 || c === 39 || c === 96) { // " ' `
+    if (c === 34 || c === 39 || c === 96) { // ' " `
       inStr = true
       strCh = c
       continue
@@ -1131,9 +1131,9 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 /**
  * Convert method definition to function type signature
  */
-function convertMethodToFunctionType(_methodName: string, methodDef: string): string {
+function convertMethodToFunctionType(_methodName: string, _methodDef: string): string {
   // Remove async modifier if present — no regex
-  let cleaned = methodDef
+  let cleaned = _methodDef
   let ci = 0
   while (ci < cleaned.length && cleaned.charCodeAt(ci) <= 32) ci++
   if (cleaned.startsWith('async', ci) && ci + 5 < cleaned.length && cleaned.charCodeAt(ci + 5) <= 32) {
@@ -1174,7 +1174,7 @@ function convertMethodToFunctionType(_methodName: string, methodDef: string): st
     // Must track paren/bracket depth to avoid matching '{' inside nested expressions like => ({...})
     let scanDepth = 0
     let bodyStartIdx = -1
-    let bodyIsArrow = false
+    let _bodyIsArrow = false
     for (let si = 0; si < typeContent.length; si++) {
       const sc = typeContent.charCodeAt(si)
       if (sc === 40 /* ( */ || sc === 91 /* [ */) scanDepth++
@@ -1185,7 +1185,7 @@ function convertMethodToFunctionType(_methodName: string, methodDef: string): st
       }
       else if (sc === 61 /* = */ && si + 1 < typeContent.length && typeContent.charCodeAt(si + 1) === 62 /* > */ && scanDepth === 0) {
         bodyStartIdx = si
-        bodyIsArrow = true
+        _bodyIsArrow = true
         break
       }
     }
