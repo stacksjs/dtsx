@@ -1169,13 +1169,31 @@ function convertMethodToFunctionType(_methodName: string, methodDef: string): st
   // Check for explicit return type annotation
   const afterParams = cleaned.slice(paramEnd + 1).trimStart()
   if (afterParams.charCodeAt(0) === 58 /* : */) {
-    // Extract return type until '{' (body start)
-    const braceIdx = afterParams.indexOf('{')
-    if (braceIdx !== -1) {
-      returnType = afterParams.slice(1, braceIdx).trim()
+    const typeContent = afterParams.slice(1) // skip ':'
+    // Find the body start: either '{' at depth 0 (block body) or '=>' at depth 0 (arrow body)
+    // Must track paren/bracket depth to avoid matching '{' inside nested expressions like => ({...})
+    let scanDepth = 0
+    let bodyStartIdx = -1
+    let bodyIsArrow = false
+    for (let si = 0; si < typeContent.length; si++) {
+      const sc = typeContent.charCodeAt(si)
+      if (sc === 40 /* ( */ || sc === 91 /* [ */) scanDepth++
+      else if (sc === 41 /* ) */ || sc === 93 /* ] */) scanDepth--
+      else if (sc === 123 /* { */ && scanDepth === 0) {
+        bodyStartIdx = si
+        break
+      }
+      else if (sc === 61 /* = */ && si + 1 < typeContent.length && typeContent.charCodeAt(si + 1) === 62 /* > */ && scanDepth === 0) {
+        bodyStartIdx = si
+        bodyIsArrow = true
+        break
+      }
+    }
+    if (bodyStartIdx !== -1) {
+      returnType = typeContent.slice(0, bodyStartIdx).trim()
     }
     else {
-      returnType = afterParams.slice(1).trim()
+      returnType = typeContent.trim()
     }
   }
 

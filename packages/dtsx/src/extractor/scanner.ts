@@ -1615,18 +1615,31 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         skipWhitespaceAndComments()
         const initStart = pos
         // Read initializer until ; or , at depth 0, or ASI
+        // Track <> separately from (){}[] because < and > are overloaded
+        // in value expressions (comparisons like <=, >=, and plain < >)
         let depth = 0
+        let angleDepth = 0
         while (pos < len) {
           if (skipNonCode())
             continue
           const ic = source.charCodeAt(pos)
-          if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET || ic === CH_LANGLE)
+          if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
             depth++
-          else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET || (ic === CH_RANGLE && !isArrowGT()))
+          else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
             depth--
-          else if (depth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
+          else if (ic === CH_LANGLE) {
+            // Don't count <= as opening angle bracket
+            if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL)
+              angleDepth++
+          }
+          else if (ic === CH_RANGLE && !isArrowGT()) {
+            // Don't count >= as closing angle bracket, and prevent going negative
+            if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
+              angleDepth--
+          }
+          else if (depth === 0 && angleDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
             break
-          if (depth === 0 && checkASITopLevel())
+          if (depth === 0 && angleDepth === 0 && checkASITopLevel())
             break
           pos++
         }
