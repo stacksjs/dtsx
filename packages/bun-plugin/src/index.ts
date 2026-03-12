@@ -2,7 +2,7 @@ import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import process from 'node:process'
 import { generate } from '@stacksjs/dtsx'
 
@@ -102,6 +102,7 @@ export interface PluginConfig extends DtsGenerationOption {
     config: {
       root?: string
       outdir?: string
+      entrypoints?: string[]
     }
   }
 
@@ -468,11 +469,32 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
     )
   }
 
+  // Derive entrypoints from Bun's build config if not explicitly provided.
+  // Using '**/*.ts' as default causes dtsx to process every .ts file individually,
+  // which hangs on large codebases. Instead, derive from Bun's entrypoints
+  // or fall back to 'index.ts'.
+  let entrypoints = options.entrypoints
+  if (!entrypoints) {
+    const bunEntrypoints = build?.config?.entrypoints
+    if (bunEntrypoints?.length) {
+      const resolvedRoot = resolve(options.cwd || process.cwd(), root)
+      entrypoints = bunEntrypoints.map((ep: string) => {
+        const resolved = resolve(ep)
+        return resolved.startsWith(resolvedRoot)
+          ? resolved.slice(resolvedRoot.length + 1)
+          : basename(resolved)
+      })
+    }
+    else {
+      entrypoints = ['index.ts']
+    }
+  }
+
   return {
     ...options,
     cwd: options.cwd || process.cwd(),
     root,
-    entrypoints: options.entrypoints || ['**/*.ts'],
+    entrypoints,
     outdir,
     clean: options.clean,
     tsconfigPath: options.tsconfigPath,

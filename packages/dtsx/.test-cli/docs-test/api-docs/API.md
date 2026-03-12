@@ -1,6 +1,6 @@
 # API Documentation
 
-> Generated on 2026-03-03T16:13:54.773Z
+> Generated on 2026-03-11T12:43:22.438Z
 
 ## Table of Contents
 
