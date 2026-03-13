@@ -2,7 +2,7 @@
 
 ## About
 
-A modern, fast .d.ts generation tool, powered by Bun.
+An extremely fast `.d.ts` declaration file generator with sound type inference and `@defaultValue` preservation. Unlike tsc and oxc, dtsx infers narrow types directly from source values without requiring `isolatedDeclarations`, and preserves original default values as JSDoc annotations so they appear in IDE tooltips. It ships as both a cross-platform Zig native binary and a Bun library, with support for parallel processing, watch mode, stdin/stdout piping, and validation of generated declarations.
 
 ## Linting
 
