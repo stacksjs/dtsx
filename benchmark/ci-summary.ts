@@ -241,7 +241,8 @@ function tsgoGenerate(source: string, filename: string): string {
   writeFileSync(tmpFile, source)
   spawnSync(tsgoBin, [...tsgoFlags, tmpFile], { stdio: 'pipe', timeout: 30000 })
   const dtsFile = join(tsgoOutDir, safeFilename.replace(/\.ts$/, '.d.ts'))
-  try { return readFileSync(dtsFile, 'utf8') } catch { return '' }
+  try { return readFileSync(dtsFile, 'utf8') }
+catch { return '' }
 }
 
 // Benchmark runner

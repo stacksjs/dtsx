@@ -181,18 +181,21 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
       }
 
       return stats
-    } catch (error) {
+    }
+catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
 
       if (onError) {
         await onError(err)
-      } else {
+      }
+else {
         console.error('[vite-plugin-dtsx] Error generating declarations:', err.message)
         throw err
       }
 
       return null
-    } finally {
+    }
+finally {
       state.isGenerating = false
     }
   }
@@ -235,7 +238,8 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
       })
 
       console.log('[vite-plugin-dtsx] Watching for file changes...')
-    } catch (error) {
+    }
+catch (error) {
       console.error('[vite-plugin-dtsx] Failed to start watcher:', error)
     }
   }

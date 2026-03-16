@@ -252,13 +252,15 @@ export class DtsxWebpackPlugin {
       await onSuccess?.(stats)
 
       console.log(`[${PLUGIN_NAME}] Generated ${this.state.generatedFiles.size} declaration file(s)`)
-    } catch (error) {
+    }
+catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
       this.state.errors.push(err)
 
       if (onError) {
         await onError(err)
-      } else {
+      }
+else {
         console.error(`[${PLUGIN_NAME}] Error generating declarations:`, err.message)
       }
     }
@@ -280,17 +282,20 @@ export class DtsxWebpackPlugin {
 
       if (typeof entries === 'string') {
         files.push(resolve(entries))
-      } else if (Array.isArray(entries)) {
+      }
+else if (Array.isArray(entries)) {
         for (const entry of entries) {
           if (typeof entry === 'string') {
             files.push(resolve(entry))
           }
         }
-      } else if (typeof entries === 'object') {
+      }
+else if (typeof entries === 'object') {
         for (const [, entry] of Object.entries(entries)) {
           if (typeof entry === 'string') {
             files.push(resolve(entry))
-          } else if (typeof entry === 'object' && entry.import) {
+          }
+else if (typeof entry === 'object' && entry.import) {
             const imports = Array.isArray(entry.import) ? entry.import : [entry.import]
             for (const imp of imports) {
               if (typeof imp === 'string') {
@@ -300,7 +305,8 @@ export class DtsxWebpackPlugin {
           }
         }
       }
-    } else {
+    }
+else {
       // Get all TypeScript files from compilation
       for (const module of compilation.modules) {
         const resource = (module as any).resource as string | undefined
@@ -335,7 +341,8 @@ export class DtsxWebpackPlugin {
       for (const pattern of exclude) {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return false
-        } else if (pattern.test(file)) {
+        }
+else if (pattern.test(file)) {
           return false
         }
       }
@@ -345,7 +352,8 @@ export class DtsxWebpackPlugin {
         for (const pattern of include) {
           if (typeof pattern === 'string') {
             if (file.includes(pattern)) return true
-          } else if (pattern.test(file)) {
+          }
+else if (pattern.test(file)) {
             return true
           }
         }

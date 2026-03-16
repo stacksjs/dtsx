@@ -261,8 +261,10 @@ function generateLarge(lines: number): string {
 // Load real fixtures
 let reactLike = ''
 let lodashLike = ''
-try { reactLike = readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8') } catch {}
-try { lodashLike = readFileSync(join(fixtureDir, 'real-world', 'lodash-like.ts'), 'utf-8') } catch {}
+try { reactLike = readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8') }
+catch {}
+try { lodashLike = readFileSync(join(fixtureDir, 'real-world', 'lodash-like.ts'), 'utf-8') }
+catch {}
 
 const MEDIUM = generateLarge(500)
 const LARGE = generateLarge(1000)

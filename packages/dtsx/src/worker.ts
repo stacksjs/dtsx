@@ -211,9 +211,11 @@ export class WorkerPool {
                 const filePath = filePaths ? filePaths[i] : file.filePath;
                 if (sourceCode != null) {
                   readPromises[i] = Promise.resolve(sourceCode);
-                } else if (bun) {
+                }
+else if (bun) {
                   readPromises[i] = bun.file(filePath).text();
-                } else {
+                }
+else {
                   readPromises[i] = Promise.resolve(fs.readFileSync(filePath, 'utf-8'));
                 }
               }
@@ -242,10 +244,12 @@ export class WorkerPool {
                   }
                   if (bun) {
                     writePromises[i] = bun.write(outPath, content);
-                  } else {
+                  }
+else {
                     fs.writeFileSync(outPath, content);
                   }
-                } else if (results) {
+                }
+else if (results) {
                   results[i] = {
                     filePath,
                     success: true,
@@ -253,7 +257,8 @@ export class WorkerPool {
                     declarations,
                   };
                 }
-              } catch (error) {
+              }
+catch (error) {
                 const message = error && error.message ? error.message : String(error);
                 if (writeOutput) {
                   if (!errorResults) {
@@ -264,7 +269,8 @@ export class WorkerPool {
                     success: false,
                     error: message,
                   });
-                } else if (results) {
+                }
+else if (results) {
                   results[i] = {
                     filePath,
                     success: false,
@@ -323,7 +329,8 @@ export class WorkerPool {
           }
 
           throw new Error('Unknown task type: ' + task.type);
-        } catch (error) {
+        }
+catch (error) {
           return {
             id: task.id,
             success: false,

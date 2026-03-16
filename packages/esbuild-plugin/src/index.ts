@@ -183,7 +183,8 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
 
           if (entryPointsOnly) {
             filesToProcess = getEntryPoints(state.buildOptions!)
-          } else {
+          }
+else {
             // Get all TypeScript files from the build
             filesToProcess = getTypeScriptFiles(result, state.buildOptions!)
           }
@@ -217,13 +218,15 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
           await onSuccess?.(stats)
 
           console.log(`[dtsx] Generated ${state.generatedFiles.size} declaration file(s)`)
-        } catch (error) {
+        }
+catch (error) {
           const err = error instanceof Error ? error : new Error(String(error))
           state.errors.push(err)
 
           if (onError) {
             await onError(err)
-          } else {
+          }
+else {
             console.error('[dtsx] Error generating declarations:', err.message)
           }
         }
@@ -325,7 +328,8 @@ function filterFiles(
     for (const pattern of exclude) {
       if (typeof pattern === 'string') {
         if (file.includes(pattern)) return false
-      } else if (pattern.test(file)) {
+      }
+else if (pattern.test(file)) {
         return false
       }
     }
@@ -335,7 +339,8 @@ function filterFiles(
       for (const pattern of include) {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return true
-        } else if (pattern.test(file)) {
+        }
+else if (pattern.test(file)) {
           return true
         }
       }

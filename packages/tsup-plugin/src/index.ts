@@ -206,13 +206,15 @@ export function dtsxPlugin(options: DtsxTsupOptions = {}): any {
       await onSuccess?.(stats)
 
       console.log(`[${PLUGIN_NAME}] Generated ${state.generatedFiles.size} declaration file(s)`)
-    } catch (error) {
+    }
+catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
       state.errors.push(err)
 
       if (onError) {
         await onError(err)
-      } else {
+      }
+else {
         console.error(`[${PLUGIN_NAME}] Error generating declarations:`, err.message)
       }
     }
@@ -265,7 +267,8 @@ function filterFiles(
     for (const pattern of exclude) {
       if (typeof pattern === 'string') {
         if (file.includes(pattern)) return false
-      } else if (pattern.test(file)) {
+      }
+else if (pattern.test(file)) {
         return false
       }
     }
@@ -275,7 +278,8 @@ function filterFiles(
       for (const pattern of include) {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return true
-        } else if (pattern.test(file)) {
+        }
+else if (pattern.test(file)) {
           return true
         }
       }

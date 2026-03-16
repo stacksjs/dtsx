@@ -233,7 +233,8 @@ function profileProcessor(label: string, source: string, filename: string) {
 
 const fixtureDir = join(import.meta.dir, 'test', 'fixtures', 'input')
 let reactLike = ''
-try { reactLike = readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8') } catch {}
+try { reactLike = readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8') }
+catch {}
 
 function generateLarge(lines: number): string {
   const content: string[] = []

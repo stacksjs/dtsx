@@ -20,7 +20,8 @@ export namespace Utils {
       try {
         new URL(value)
         return true
-      } catch {
+      }
+catch {
         return false
       }
     }
