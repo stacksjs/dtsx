@@ -117,6 +117,7 @@ export const DEFAULT_GROUP_ORDER: ImportGroup[] = [
 export function parseImport(statement: string): ParsedImport | null {
   // Match: import ... from '...'
   const importMatch = statement.match(
+    // eslint-disable-next-line quotes -- regex needs both quote types
     /^(import\s+)(type\s+)?(.+?)\s+from\s+['"]([^'"]+)['"]/,
   )
 

@@ -240,7 +240,7 @@ else {
 
                 if (writeOutput) {
                   if (!outPath) {
-                    throw new Error('Missing outPath for ' + filePath);
+                    throw new Error(`Missing outPath for ${filePath}`);
                   }
                   if (bun) {
                     writePromises[i] = bun.write(outPath, content);
@@ -286,7 +286,7 @@ else if (results) {
             }
 
             const errorMessage = errorResults?.length
-              ? errorResults[0].filePath + ': ' + (errorResults[0].error || 'Worker batch failed')
+              ? `${errorResults[0].filePath}: ${errorResults[0].error || 'Worker batch failed'}`
               : undefined;
 
             return {
@@ -328,7 +328,7 @@ else if (results) {
             };
           }
 
-          throw new Error('Unknown task type: ' + task.type);
+          throw new Error(`Unknown task type: ${task.type}`);
         }
 catch (error) {
           return {
