@@ -222,10 +222,11 @@ fn workerFn(ctx: WorkerCtx) void {
             const fd = c.openat(ctx.input_dir_fd, task.input_name_z, c.O_RDONLY);
             if (fd < 0) continue;
 
-            // fstat for file size (1 syscall vs 2 lseeks)
-            var stat_buf: c.struct_stat = undefined;
-            if (c.fstat(fd, &stat_buf) < 0) { _ = c.close(fd); continue; }
-            const size: usize = @intCast(stat_buf.st_size);
+            // Use lseek to get file size (avoids opaque cimport struct_stat)
+            const end_off = c.lseek(fd, 0, 2); // SEEK_END
+            if (end_off < 0) { _ = c.close(fd); continue; }
+            _ = c.lseek(fd, 0, 0); // SEEK_SET
+            const size: usize = @intCast(end_off);
 
             const buf = alloc.alloc(u8, size) catch { _ = c.close(fd); continue; };
             var total: usize = 0;

@@ -25,7 +25,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0-dev.2565+684032671
+          version: 0.16.0-dev.2471+e9eadee00
 
       - name: Install Dependencies
         run: bun install

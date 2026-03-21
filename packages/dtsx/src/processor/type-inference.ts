@@ -1405,12 +1405,10 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         const outerParams = bodyTrimmed.substring(outerParenOpen + 1, outerParenClose).trim()
         // For functions like pipe that transform T => T, infer the return type from generics
         if (generics.includes('T') && outerParams.includes('T')) {
-          // eslint-disable-next-line
-          returnType = `(${outerParams}) => T`
+          returnType = '(' + outerParams + ') => T'
         }
         else {
-          // eslint-disable-next-line
-          returnType = `(${outerParams}) => any`
+          returnType = '(' + outerParams + ') => any'
         }
       }
       else {
