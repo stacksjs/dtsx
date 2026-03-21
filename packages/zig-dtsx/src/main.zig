@@ -185,77 +185,49 @@ const WorkerCtx = struct {
 
 /// Worker: read + process + write each file using thread-local arena.
 /// Uses POSIX openat for directory-relative I/O (no path resolution overhead).
+/// Arena is reset every N files to batch allocations and reduce overhead.
 fn workerFn(ctx: WorkerCtx) void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const default_import_order = [_][]const u8{"bun"};
+    var files_since_reset: usize = 0;
 
     for (ctx.tasks) |task| {
         const alloc = arena.allocator();
 
         if (builtin.os.tag == .windows) {
-            // Windows: C stdio with full paths
-            const fp = c.fopen(task.input_name_z, "rb") orelse {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            const fp = c.fopen(task.input_name_z, "rb") orelse continue;
             _ = c.fseek(fp, 0, c.SEEK_END);
             const tell_result = c.ftell(fp);
-            if (tell_result < 0) {
-                _ = c.fclose(fp);
-                _ = arena.reset(.retain_capacity);
-                continue;
-            }
+            if (tell_result < 0) { _ = c.fclose(fp); continue; }
             const size: usize = @intCast(tell_result);
             _ = c.fseek(fp, 0, c.SEEK_SET);
-            const buf = alloc.alloc(u8, size) catch {
-                _ = c.fclose(fp);
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            const buf = alloc.alloc(u8, size) catch { _ = c.fclose(fp); continue; };
             const nread = c.fread(buf.ptr, 1, size, fp);
             _ = c.fclose(fp);
 
             var scanner = Scanner.init(alloc, buf[0..nread], task.keep_comments, false);
-            _ = scanner.scan() catch {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            _ = scanner.scan() catch continue;
             const output = emitter.processDeclarations(
                 alloc, alloc, scanner.declarations.items, buf[0..nread],
                 task.keep_comments, &default_import_order,
-            ) catch {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            ) catch continue;
 
-            const out_fp = c.fopen(task.output_name_z, "wb") orelse {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            const out_fp = c.fopen(task.output_name_z, "wb") orelse continue;
             _ = c.fwrite(output.ptr, 1, output.len, out_fp);
             _ = c.fwrite("\n", 1, 1, out_fp);
             _ = c.fclose(out_fp);
         } else {
-            // POSIX: openat + read/write (no path resolution overhead)
+            // POSIX: openat + fstat + read (fewer syscalls than lseek+lseek+read)
             const fd = c.openat(ctx.input_dir_fd, task.input_name_z, c.O_RDONLY);
-            if (fd < 0) {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            }
-            const end_off = c.lseek(fd, 0, 2); // SEEK_END
-            if (end_off < 0) {
-                _ = c.close(fd);
-                _ = arena.reset(.retain_capacity);
-                continue;
-            }
-            _ = c.lseek(fd, 0, 0); // SEEK_SET
-            const size: usize = @intCast(end_off);
-            const buf = alloc.alloc(u8, size) catch {
-                _ = c.close(fd);
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            if (fd < 0) continue;
+
+            // fstat for file size (1 syscall vs 2 lseeks)
+            var stat_buf: c.struct_stat = undefined;
+            if (c.fstat(fd, &stat_buf) < 0) { _ = c.close(fd); continue; }
+            const size: usize = @intCast(stat_buf.st_size);
+
+            const buf = alloc.alloc(u8, size) catch { _ = c.close(fd); continue; };
             var total: usize = 0;
             while (total < size) {
                 const n = c.read(fd, @ptrCast(buf.ptr + total), size - total);
@@ -266,29 +238,32 @@ fn workerFn(ctx: WorkerCtx) void {
             const source = buf[0..total];
 
             var scanner = Scanner.init(alloc, source, task.keep_comments, false);
-            _ = scanner.scan() catch {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            _ = scanner.scan() catch continue;
             const output = emitter.processDeclarations(
                 alloc, alloc, scanner.declarations.items, source,
                 task.keep_comments, &default_import_order,
-            ) catch {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
+            ) catch continue;
 
-            // Write output + newline (two small writes, avoids memcpy allocation)
+            // Single-syscall write: overwrite the null terminator with '\n'.
+            // The emitter appends '\0' after content, so output.ptr[output.len] == 0.
+            // Since output is arena-allocated, the byte is writable.
+            @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
+
             const out_fd = c.openat(ctx.output_dir_fd, task.output_name_z,
                 c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
             if (out_fd >= 0) {
-                _ = c.write(out_fd, @ptrCast(output.ptr), output.len);
-                _ = c.write(out_fd, "\n", 1);
+                _ = c.write(out_fd, @ptrCast(output.ptr), output.len + 1);
                 _ = c.close(out_fd);
             }
         }
 
-        _ = arena.reset(.retain_capacity);
+        files_since_reset += 1;
+        // Batch arena reset: every 4 files to amortize reset overhead.
+        // Typical file processing uses ~50-200KB; 4 files fits comfortably.
+        if (files_since_reset >= 4) {
+            _ = arena.reset(.retain_capacity);
+            files_since_reset = 0;
+        }
     }
 }
 
@@ -360,9 +335,10 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
         }
     }
 
-    // Thread pool — use all CPU cores for mixed I/O + compute workload
+    // Thread pool — cap threads to avoid spawn/join overhead dominating for small projects.
+    // Each thread needs ~8 files minimum to amortize ~100µs spawn+join cost.
     const cpu_count = std.Thread.getCpuCount() catch 4;
-    const max_threads = @min(cpu_count, filenames.len);
+    const max_threads = @min(cpu_count, @max(filenames.len / 8, 1));
 
     if (max_threads <= 1) {
         workerFn(.{ .input_dir_fd = input_dir_fd, .output_dir_fd = output_dir_fd, .tasks = tasks });
