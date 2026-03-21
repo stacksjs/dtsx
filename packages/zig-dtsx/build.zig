@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    // Enable LTO on Linux release builds (LLD required; macOS Mach-O doesn't support LLD)
+    // Enable LTO on Linux release builds (requires LLD; macOS Mach-O doesn't support LLD yet)
     if (target.result.os.tag == .linux and optimize != .Debug) {
         lib.use_lld = true;
         lib.lto = .full;

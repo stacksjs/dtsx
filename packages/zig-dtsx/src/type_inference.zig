@@ -83,6 +83,9 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
 /// Parse array elements handling nested structures.
 /// Returns slices into the original content string.
 pub fn parseArrayElements(alloc: std.mem.Allocator, content: []const u8) InferError![][]const u8 {
+    // Fast path: empty content
+    if (content.len == 0) return &.{};
+
     var elements = std.array_list.Managed([]const u8).init(alloc);
     // Pre-size: estimate element count from top-level commas
     var est: usize = 1;
@@ -622,14 +625,34 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     const trimmed = trim(value);
     if (trimmed.len == 0) return "unknown";
 
+    // Fast path: if first char is a digit, it's almost certainly a number or BigInt literal
+    if (trimmed[0] >= '0' and trimmed[0] <= '9') {
+        if (isNumericLiteral(trimmed)) {
+            return if (!is_const) "number" else trimmed;
+        }
+        // BigInt literal: digits followed by 'n'
+        if (trimmed.len > 1 and trimmed[trimmed.len - 1] == 'n' and isBigIntDigits(trimmed)) {
+            return if (is_const) trimmed else "bigint";
+        }
+        return "unknown";
+    }
+
+    // Fast path: negative numbers
+    if (trimmed[0] == '-' and trimmed.len > 1 and trimmed[1] >= '0' and trimmed[1] <= '9') {
+        if (isNumericLiteral(trimmed)) {
+            return if (!is_const) "number" else trimmed;
+        }
+        return "unknown";
+    }
+
     // BigInt expressions
     if (ch.startsWith(trimmed, "BigInt(")) return "bigint";
 
     // Symbol.for
     if (ch.startsWith(trimmed, "Symbol.for(")) return "symbol";
 
-    // Single-pass scan for substring hints (replaces 5 separate ch.contains calls)
-    const hints = ValueHints.scan(trimmed);
+    // Single-pass scan for substring hints — skip for short values where hints can't appear
+    const hints = if (trimmed.len >= 4) ValueHints.scan(trimmed) else ValueHints{};
 
     // Tagged template literals
     if (hints.has_raw_template) return "string";
@@ -653,15 +676,17 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         return trimmed;
     }
 
-    // Boolean literals
-    if (std.mem.eql(u8, trimmed, "true") or std.mem.eql(u8, trimmed, "false")) {
-        if (!is_const) return "boolean";
-        return trimmed;
+    // Boolean literals (length-first to skip most comparisons)
+    if (trimmed.len == 4 and std.mem.eql(u8, trimmed, "true")) {
+        return if (!is_const) "boolean" else trimmed;
+    }
+    if (trimmed.len == 5 and std.mem.eql(u8, trimmed, "false")) {
+        return if (!is_const) "boolean" else trimmed;
     }
 
-    // Null and undefined
-    if (std.mem.eql(u8, trimmed, "null")) return "null";
-    if (std.mem.eql(u8, trimmed, "undefined")) return "undefined";
+    // Null and undefined (length-first)
+    if (trimmed.len == 4 and std.mem.eql(u8, trimmed, "null")) return "null";
+    if (trimmed.len == 9 and std.mem.eql(u8, trimmed, "undefined")) return "undefined";
 
     // Array literals
     if (trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
@@ -1514,28 +1539,16 @@ pub fn extractSatisfiesType(value: []const u8) ?[]const u8 {
 
 /// Check if a type annotation is a generic/broad type that should be replaced with narrow inference
 pub fn isGenericType(type_annotation: []const u8) bool {
-    const trimmed = trim(type_annotation);
-    if (std.mem.eql(u8, trimmed, "any") or std.mem.eql(u8, trimmed, "object") or std.mem.eql(u8, trimmed, "unknown")) return true;
-    if (ch.startsWith(trimmed, "Record<") and ch.endsWith(trimmed, ">")) return true;
-    if (ch.startsWith(trimmed, "Array<") and ch.endsWith(trimmed, ">")) return true;
-    // Object types like { [key: string]: any|string|number|unknown }
-    if (trimmed.len > 4 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
-        if (ch.indexOfChar(trimmed, '[', 0)) |bracket_start| {
-            if (ch.indexOfChar(trimmed, ']', bracket_start)) |bracket_end| {
-                var vi = bracket_end + 1;
-                while (vi < trimmed.len and (trimmed[vi] == ':' or trimmed[vi] == ' ')) vi += 1;
-                const value_type_start = vi;
-                while (vi < trimmed.len and trimmed[vi] != ' ' and trimmed[vi] != '}') vi += 1;
-                const value_type = trim(trimmed[value_type_start..vi]);
-                if (std.mem.eql(u8, value_type, "any") or std.mem.eql(u8, value_type, "string") or
-                    std.mem.eql(u8, value_type, "number") or std.mem.eql(u8, value_type, "unknown"))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    if (type_annotation.len < 3) return false;
+    return switch (type_annotation[0]) {
+        'R' => ch.startsWith(type_annotation, "Record<"),
+        'A' => ch.startsWith(type_annotation, "Array<"),
+        '{' => ch.contains(type_annotation, "[") and ch.contains(type_annotation, "]:"),
+        'a' => std.mem.eql(u8, type_annotation, "any"),
+        'o' => std.mem.eql(u8, type_annotation, "object"),
+        'u' => std.mem.eql(u8, type_annotation, "unknown"),
+        else => false,
+    };
 }
 
 // --- Tests ---

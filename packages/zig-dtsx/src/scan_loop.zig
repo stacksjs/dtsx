@@ -27,10 +27,10 @@ pub fn scanMainLoop(s: *Scanner) !void {
             ext.handleDeclare(s, stmt_start, false);
         } else if (ch0 == 'i' and s.matchWord("interface")) {
             const decl = ext.extractInterface(s, stmt_start, false);
-            s.non_exported_types.put(decl.name, decl) catch {};
+            s.putNonExportedType(decl.name, decl);
         } else if (ch0 == 't' and s.matchWord("type")) {
             const decl = ext.extractTypeAlias(s, stmt_start, false);
-            s.non_exported_types.put(decl.name, decl) catch {};
+            s.putNonExportedType(decl.name, decl);
             try s.declarations.append(decl);
         } else if (ch0 == 'f' and s.matchWord("function")) {
             s.skipToStatementEnd();
@@ -42,7 +42,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
                 s.skipWhitespaceAndComments();
                 if (s.matchWord("class")) {
                     const decl = ext.extractClass(s, stmt_start, false, false);
-                    s.non_exported_types.put(decl.name, decl) catch {};
+                    s.putNonExportedType(decl.name, decl);
                     try s.declarations.append(decl);
                 } else {
                     s.skipToStatementEnd();
@@ -54,7 +54,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
         } else if (ch0 == 'c') {
             if (s.matchWord("class")) {
                 const decl = ext.extractClass(s, stmt_start, false, false);
-                s.non_exported_types.put(decl.name, decl) catch {};
+                s.putNonExportedType(decl.name, decl);
                 try s.declarations.append(decl);
             } else if (s.matchWord("const")) {
                 const saved_pos = s.pos;
@@ -64,7 +64,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
                     s.pos = saved_pos + 5;
                     s.skipWhitespaceAndComments();
                     const decl = ext.extractEnum(s, stmt_start, false, true);
-                    s.non_exported_types.put(decl.name, decl) catch {};
+                    s.putNonExportedType(decl.name, decl);
                     try s.declarations.append(decl);
                 } else {
                     s.pos = saved_pos;
@@ -76,7 +76,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
             }
         } else if (ch0 == 'e' and s.matchWord("enum")) {
             const decl = ext.extractEnum(s, stmt_start, false, false);
-            s.non_exported_types.put(decl.name, decl) catch {};
+            s.putNonExportedType(decl.name, decl);
             try s.declarations.append(decl);
         } else if (ch0 == 'l' and s.matchWord("let")) {
             s.skipToStatementEnd();

@@ -904,7 +904,7 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     const comments = extractLeadingComments(s, decl_start);
 
     if (has_body) {
-        s.func_body_indices.put(s.declarations.items.len, {}) catch {};
+        s.putFuncBodyIndex(s.declarations.items.len);
     }
 
     return .{
@@ -987,6 +987,55 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
             const init_start = s.pos;
             var depth: isize = 0;
             while (s.pos < s.len) {
+                // SIMD fast-skip: bulk-skip bytes that can't be structural
+                if (depth > 0) {
+                    while (s.pos + 16 <= s.len) {
+                        const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                        const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH)));
+                        if (!@reduce(.Or, interesting)) {
+                            s.pos += 16;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    while (s.pos + 16 <= s.len) {
+                        const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                        const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_COMMA))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
+                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
+                        if (!@reduce(.Or, interesting)) {
+                            s.pos += 16;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if (s.pos >= s.len) break;
                 if (s.skipNonCode()) continue;
                 const ic = s.source[s.pos];
                 if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET or ic == ch.CH_LANGLE) {

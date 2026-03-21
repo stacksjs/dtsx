@@ -22,7 +22,7 @@ import { isolatedDeclarationSync } from 'oxc-transform'
 import ts from 'typescript'
 import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
 import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
-import { processSource } from '../packages/dtsx/src/generator'
+import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
 
@@ -246,6 +246,7 @@ for (const { name, filename, source } of inputs) {
 for (const { name, filename, source } of inputs) {
   summary(() => {
     bench(`dtsx (no-cache) — ${name}`, () => {
+      clearResultCache()
       clearSourceFileCache()
       clearDeclarationCache()
       clearProcessorCaches()

@@ -68,10 +68,27 @@ pub inline fn indexOf(haystack: []const u8, needle: []const u8, start: usize) ?u
     return std.mem.indexOfPos(u8, haystack, start, needle);
 }
 
-/// Find a single byte in haystack starting from start position
+/// Find a single byte in haystack starting from start position.
+/// Uses SIMD to scan 16 bytes at a time for the target character.
 pub inline fn indexOfChar(haystack: []const u8, needle: u8, start: usize) ?usize {
     if (start >= haystack.len) return null;
-    return std.mem.indexOfScalarPos(u8, haystack, start, needle);
+    const search = haystack[start..];
+    // SIMD fast path: scan 16 bytes at a time
+    var i: usize = 0;
+    while (i + 16 <= search.len) {
+        const chunk: @Vector(16, u8) = search[i..][0..16].*;
+        const match_mask = chunk == @as(@Vector(16, u8), @splat(needle));
+        if (@reduce(.Or, match_mask)) {
+            const bits: u16 = @bitCast(match_mask);
+            return start + i + @ctz(bits);
+        }
+        i += 16;
+    }
+    // Scalar fallback for remaining bytes
+    while (i < search.len) : (i += 1) {
+        if (search[i] == needle) return start + i;
+    }
+    return null;
 }
 
 /// Slice source[start..end) with leading/trailing whitespace trimmed

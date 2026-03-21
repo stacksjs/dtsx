@@ -74,7 +74,7 @@ fn extractTripleSlashDirectives(alloc: std.mem.Allocator, source: []const u8) ![
     return directives.toOwnedSlice();
 }
 
-/// Format leading comments — direct alloc, output ≤ total comment length + newlines
+/// Format leading comments — avoids allocation for the most common case (single comment).
 fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_comments: bool) ![]const u8 {
     if (!keep_comments) return "";
     const cmts = comments orelse return "";
@@ -82,14 +82,25 @@ fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_
 
     // Fast path: single comment (very common)
     if (cmts.len == 1) {
-        const t = ch.sliceTrimmed(cmts[0], 0, cmts[0].len);
+        const raw = cmts[0];
+        const t = ch.sliceTrimmed(raw, 0, raw.len);
+        // Zero-alloc fast path: if the trimmed comment is the full slice AND
+        // there's a '\n' right after it in memory, return a slice that includes
+        // the newline. This works because comments point into the source buffer.
+        if (t.len == raw.len and t.len > 0) {
+            // Check if the byte after the comment in the source buffer is '\n'
+            const end_ptr = t.ptr + t.len;
+            if (@intFromPtr(end_ptr) > 0 and end_ptr[0] == '\n') {
+                return t.ptr[0 .. t.len + 1];
+            }
+        }
         const buf = try alloc.alloc(u8, t.len + 1);
         @memcpy(buf[0..t.len], t);
         buf[t.len] = '\n';
         return buf;
     }
 
-    // Pre-compute exact size
+    // Pre-compute exact size for multiple comments
     var total_len: usize = cmts.len; // newlines between + trailing
     for (cmts) |c| {
         const t = ch.sliceTrimmed(c, 0, c.len);
@@ -569,58 +580,99 @@ pub fn processDeclarations(
         }
     }
 
-    // Group declarations by type (pre-size to avoid incremental reallocation)
-    const group_cap: usize = @max(declarations.len / 4, 4);
-    var imports = std.array_list.Managed(Declaration).init(alloc);
-    try imports.ensureTotalCapacity(group_cap);
-    var functions = std.array_list.Managed(Declaration).init(alloc);
-    try functions.ensureTotalCapacity(group_cap);
-    var variables = std.array_list.Managed(Declaration).init(alloc);
-    try variables.ensureTotalCapacity(group_cap);
-    var interfaces = std.array_list.Managed(Declaration).init(alloc);
-    try interfaces.ensureTotalCapacity(group_cap);
-    var type_decls = std.array_list.Managed(Declaration).init(alloc);
-    try type_decls.ensureTotalCapacity(group_cap);
-    var classes = std.array_list.Managed(Declaration).init(alloc);
-    try classes.ensureTotalCapacity(group_cap);
-    var enums = std.array_list.Managed(Declaration).init(alloc);
-    try enums.ensureTotalCapacity(group_cap);
-    var modules = std.array_list.Managed(Declaration).init(alloc);
-    try modules.ensureTotalCapacity(group_cap);
-    var exports = std.array_list.Managed(Declaration).init(alloc);
-    try exports.ensureTotalCapacity(group_cap);
+    // Index-based grouping: store indices into the declarations array instead of
+    // copying Declaration structs. A single allocation for the index array replaces
+    // 9 separate ArrayList allocations, dramatically reducing overhead for small files.
+    const GROUP_COUNT = 9;
+    // Group order: imports(0), functions(1), variables(2), interfaces(3), types(4),
+    //              classes(5), enums(6), modules(7), exports(8)
+    var group_counts = [_]u32{0} ** GROUP_COUNT;
 
+    // First pass: count declarations per group
     for (declarations) |d| {
-        switch (d.kind) {
-            .import_decl => try imports.append(d),
-            .function_decl => try functions.append(d),
-            .variable_decl => try variables.append(d),
-            .interface_decl => try interfaces.append(d),
-            .type_decl => try type_decls.append(d),
-            .class_decl => try classes.append(d),
-            .enum_decl => try enums.append(d),
-            .module_decl, .namespace_decl => try modules.append(d),
-            .export_decl => try exports.append(d),
-            .unknown_decl => {},
+        const g: usize = switch (d.kind) {
+            .import_decl => 0,
+            .function_decl => 1,
+            .variable_decl => 2,
+            .interface_decl => 3,
+            .type_decl => 4,
+            .class_decl => 5,
+            .enum_decl => 6,
+            .module_decl, .namespace_decl => 7,
+            .export_decl => 8,
+            .unknown_decl => continue,
+        };
+        group_counts[g] += 1;
+    }
+
+    // Compute offsets for each group in the flat index array
+    var group_offsets = [_]u32{0} ** GROUP_COUNT;
+    {
+        var cumulative: u32 = 0;
+        for (0..GROUP_COUNT) |g| {
+            group_offsets[g] = cumulative;
+            cumulative += group_counts[g];
         }
     }
 
+    // Single allocation for all group indices
+    const total_indexed = blk: {
+        var sum: u32 = 0;
+        for (group_counts) |c| sum += c;
+        break :blk sum;
+    };
+    const group_indices = try alloc.alloc(u32, total_indexed);
+    var write_pos = [_]u32{0} ** GROUP_COUNT;
+    @memcpy(&write_pos, &group_offsets);
+
+    // Second pass: fill indices
+    for (declarations, 0..) |d, di| {
+        const g: usize = switch (d.kind) {
+            .import_decl => 0,
+            .function_decl => 1,
+            .variable_decl => 2,
+            .interface_decl => 3,
+            .type_decl => 4,
+            .class_decl => 5,
+            .enum_decl => 6,
+            .module_decl, .namespace_decl => 7,
+            .export_decl => 8,
+            .unknown_decl => continue,
+        };
+        group_indices[write_pos[g]] = @intCast(di);
+        write_pos[g] += 1;
+    }
+
+    // Helper to get a group's slice of declaration indices
+    const imports_idx = group_indices[group_offsets[0]..write_pos[0]];
+    const functions_idx = group_indices[group_offsets[1]..write_pos[1]];
+    const variables_idx = group_indices[group_offsets[2]..write_pos[2]];
+    const interfaces_idx = group_indices[group_offsets[3]..write_pos[3]];
+    const type_decls_idx = group_indices[group_offsets[4]..write_pos[4]];
+    const classes_idx = group_indices[group_offsets[5]..write_pos[5]];
+    const enums_idx = group_indices[group_offsets[6]..write_pos[6]];
+    const modules_idx = group_indices[group_offsets[7]..write_pos[7]];
+    const exports_idx = group_indices[group_offsets[8]..write_pos[8]];
+
     // Parse exports to track exported items
+    const exports_len = exports_idx.len;
     var exported_items = std.StringHashMap(void).init(alloc);
-    try exported_items.ensureTotalCapacity(@intCast(@max(exports.items.len * 4, 8)));
+    try exported_items.ensureTotalCapacity(@intCast(@max(exports_len * 4, 8)));
     var type_export_stmts = std.array_list.Managed([]const u8).init(alloc);
-    try type_export_stmts.ensureTotalCapacity(@max(exports.items.len / 2, 2));
+    try type_export_stmts.ensureTotalCapacity(@max(exports_len / 2, 2));
     var value_export_stmts = std.array_list.Managed([]const u8).init(alloc);
-    try value_export_stmts.ensureTotalCapacity(@max(exports.items.len / 2, 2));
+    try value_export_stmts.ensureTotalCapacity(@max(exports_len / 2, 2));
     var default_exports = std.array_list.Managed([]const u8).init(alloc);
-    var seen_exports = std.StringHashMap(void).init(alloc);
-    try seen_exports.ensureTotalCapacity(@intCast(@max(exports.items.len, 4)));
+    // Use linear array for small export counts (faster than HashMap for <32 entries)
+    var seen_exports_arr = std.array_list.Managed([]const u8).init(alloc);
+    try seen_exports_arr.ensureTotalCapacity(@max(exports_len, 4));
 
     // Reusable buffer for building export statements (avoids per-iteration alloc)
     var stmt_buf = std.array_list.Managed(u8).init(alloc);
     try stmt_buf.ensureTotalCapacity(256);
 
-    for (exports.items) |decl| {
+    for (exports_idx) |eidx| {
+        const decl = declarations[eidx];
         const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
 
         if (ch.startsWith(decl.text, "export default")) {
@@ -659,8 +711,16 @@ pub fn processDeclarations(
             try stmt_buf.appendSlice(export_text);
             const full_text = try stmt_buf.toOwnedSlice();
 
-            const gop = try seen_exports.getOrPut(full_text);
-            if (!gop.found_existing) {
+            // Linear dedup: faster than HashMap for typical export counts (<32)
+            var is_dup = false;
+            for (seen_exports_arr.items) |seen| {
+                if (std.mem.eql(u8, seen, full_text)) {
+                    is_dup = true;
+                    break;
+                }
+            }
+            if (!is_dup) {
+                try seen_exports_arr.append(full_text);
                 if (ch.contains(full_text, "export type")) {
                     try type_export_stmts.append(full_text);
                 } else {
@@ -673,15 +733,18 @@ pub fn processDeclarations(
     // Short-circuit: skip combined_words building and import map when there are no imports.
     // For import-free code (e.g. synthetic benchmarks), this avoids O(n) word
     // extraction across all declarations — a significant saving on large inputs.
+    // Lazy-init: only allocate when there are interfaces to check
     var interface_references = std.StringHashMap(void).init(alloc);
+    _ = &interface_references; // prevent unused warning in no-imports path
     var processed_imports = std.array_list.Managed([]const u8).init(alloc);
 
-    if (imports.items.len > 0) {
+    if (imports_idx.len > 0) {
         // Build import-item-to-declaration map (only when imports exist)
         const ImportDeclMap = std.StringHashMap(Declaration);
         var all_imported_items_map = ImportDeclMap.init(alloc);
-        try all_imported_items_map.ensureTotalCapacity(@intCast(@max(imports.items.len * 4, 8)));
-        for (imports.items) |imp| {
+        try all_imported_items_map.ensureTotalCapacity(@intCast(@max(imports_idx.len * 4, 8)));
+        for (imports_idx) |iidx| {
+            const imp = declarations[iidx];
             const items = extractAllImportedItems(imp);
             for (items) |item| {
                 try all_imported_items_map.put(item, imp);
@@ -711,9 +774,10 @@ pub fn processDeclarations(
         }
 
         // Interface reference detection
-        try interface_references.ensureTotalCapacity(@intCast(@max(interfaces.items.len, 4)));
-        if (interfaces.items.len > 0 and combined_words.count() > 0) {
-            for (interfaces.items) |iface| {
+        try interface_references.ensureTotalCapacity(@intCast(@max(interfaces_idx.len, 4)));
+        if (interfaces_idx.len > 0 and combined_words.count() > 0) {
+            for (interfaces_idx) |iidx| {
+                const iface = declarations[iidx];
                 if (combined_words.contains(iface.name)) {
                     try interface_references.put(iface.name, {});
                 }
@@ -721,13 +785,14 @@ pub fn processDeclarations(
         }
 
         // Add interface text to combined_words (after ref detection, before import filtering)
-        for (interfaces.items) |iface| {
+        for (interfaces_idx) |iidx| {
+            const iface = declarations[iidx];
             if (iface.is_exported or interface_references.contains(iface.name)) {
                 extractWords(&combined_words, iface.text);
             }
         }
         var used_import_items = std.StringHashMap(void).init(alloc);
-        try used_import_items.ensureTotalCapacity(@intCast(@max(imports.items.len * 4, 8)));
+        try used_import_items.ensureTotalCapacity(@intCast(@max(imports_idx.len * 4, 8)));
 
         if (combined_words.count() > 0) {
             var map_iter = all_imported_items_map.keyIterator();
@@ -747,14 +812,15 @@ pub fn processDeclarations(
         }
 
         // Filter and rebuild imports
-        try processed_imports.ensureTotalCapacity(imports.items.len);
+        try processed_imports.ensureTotalCapacity(imports_idx.len);
         // Reusable buffer for building import statements
         var import_buf = std.array_list.Managed(u8).init(alloc);
         try import_buf.ensureTotalCapacity(256);
         var used_named = std.array_list.Managed([]const u8).init(alloc);
         try used_named.ensureTotalCapacity(16);
 
-        for (imports.items) |imp| {
+        for (imports_idx) |iidx| {
+            const imp = declarations[iidx];
             // Preserve side-effect imports
             if (imp.is_side_effect) {
                 const trimmed_imp = ch.sliceTrimmed(imp.text, 0, imp.text.len);
@@ -889,18 +955,19 @@ pub fn processDeclarations(
     }
 
     // Emit declaration groups: functions, variables, interfaces, types, classes, enums, modules
-    const decl_groups = [_]struct { items: []const Declaration, kind_tag: u8 }{
-        .{ .items = functions.items, .kind_tag = 'f' },
-        .{ .items = variables.items, .kind_tag = 'v' },
-        .{ .items = interfaces.items, .kind_tag = 'i' },
-        .{ .items = type_decls.items, .kind_tag = 't' },
-        .{ .items = classes.items, .kind_tag = 'c' },
-        .{ .items = enums.items, .kind_tag = 'e' },
-        .{ .items = modules.items, .kind_tag = 'm' },
+    const decl_group_indices = [_][]const u32{
+        functions_idx,
+        variables_idx,
+        interfaces_idx,
+        type_decls_idx,
+        classes_idx,
+        enums_idx,
+        modules_idx,
     };
 
-    for (decl_groups) |group| {
-        for (group.items) |decl| {
+    for (decl_group_indices) |group_idx| {
+        for (group_idx) |didx| {
+            const decl = declarations[didx];
             switch (decl.kind) {
                 .function_decl, .class_decl => {
                     // Direct emit: write comments + text straight to result buffer

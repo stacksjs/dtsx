@@ -569,7 +569,7 @@ export async function processFile(
  * Process TypeScript source code from a string (for stdin support)
  * Re-exported from process-source.ts for backward compatibility
  */
-export { processSource } from './process-source'
+export { clearResultCache, processSource } from './process-source'
 
 /**
  * Process a single TypeScript file and return DTS with statistics

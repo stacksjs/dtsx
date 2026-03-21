@@ -1,7 +1,16 @@
 import type { ProcessingContext } from './types'
 import { extractDeclarations } from './extractor/extract'
+import { hashContent } from './extractor/hash'
 import { scanDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
+
+// ---------------------------------------------------------------------------
+// Result-level cache: caches the FINAL DTS output string, not just declarations.
+// This eliminates processDeclarations entirely on repeated calls (the #1 bottleneck).
+// ---------------------------------------------------------------------------
+const MAX_RESULT_CACHE_SIZE = 100
+let _resultAccessCounter = 0
+const resultCache = new Map<string, { result: string, contentHash: number | bigint, lastAccess: number }>()
 
 /**
  * Process TypeScript source code from a string (for stdin support)
@@ -15,7 +24,17 @@ export function processSource(
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
 ): string {
-  // Extract declarations
+  // Check result cache first — avoids both extraction AND processing on hit
+  const contentHash = hashContent(sourceCode)
+  const cacheKey = `${filename}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
+  const cached = resultCache.get(cacheKey)
+
+  if (cached && cached.contentHash === contentHash) {
+    cached.lastAccess = ++_resultAccessCounter
+    return cached.result
+  }
+
+  // Extract declarations (has its own cache layer too)
   const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
 
   // Create processing context
@@ -26,7 +45,30 @@ export function processSource(
   }
 
   // Process declarations to generate DTS
-  return processDeclarations(declarations, context, keepComments, importOrder)
+  const result = processDeclarations(declarations, context, keepComments, importOrder)
+
+  // Store in result cache
+  resultCache.set(cacheKey, { result, contentHash, lastAccess: ++_resultAccessCounter })
+
+  if (resultCache.size > MAX_RESULT_CACHE_SIZE) {
+    let oldestKey: string | null = null
+    let oldestTime = Infinity
+    for (const [key, entry] of resultCache) {
+      if (entry.lastAccess < oldestTime) {
+        oldestTime = entry.lastAccess
+        oldestKey = key
+      }
+    }
+    if (oldestKey) {
+      resultCache.delete(oldestKey)
+    }
+  }
+
+  return result
+}
+
+export function clearResultCache(): void {
+  resultCache.clear()
 }
 
 /**

@@ -8,6 +8,24 @@ const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
 
+/// Comptime-optimized word comparison: matches N bytes via integer casts when possible.
+inline fn comptime_match(comptime N: usize, src: *const [N]u8, comptime word: []const u8) bool {
+    if (N <= 8) {
+        // Pack the expected word into an integer at comptime
+        const T = std.meta.Int(.unsigned, N * 8);
+        const expected: T = comptime blk: {
+            var val: T = 0;
+            for (word, 0..) |b, i| {
+                val |= @as(T, b) << @intCast(i * 8);
+            }
+            break :blk val;
+        };
+        return @as(*align(1) const T, @ptrCast(src)).* == expected;
+    } else {
+        return std.mem.eql(u8, src, word);
+    }
+}
+
 /// Result of scanning: declarations + non-exported types
 pub const ScanResult = struct {
     declarations: std.array_list.Managed(Declaration),
@@ -21,8 +39,12 @@ pub const Scanner = struct {
     len: usize,
     allocator: Allocator,
     declarations: std.array_list.Managed(Declaration),
+    /// Lazy-initialized: only allocated on first insertion to avoid overhead for
+    /// files that have no non-exported types or overloaded functions.
     non_exported_types: std.StringHashMap(Declaration),
     func_body_indices: std.AutoHashMap(usize, void),
+    non_exported_types_inited: bool,
+    func_body_indices_inited: bool,
     keep_comments: bool,
     isolated_declarations: bool,
 
@@ -38,6 +60,8 @@ pub const Scanner = struct {
             .declarations = declarations,
             .non_exported_types = std.StringHashMap(Declaration).init(allocator),
             .func_body_indices = std.AutoHashMap(usize, void).init(allocator),
+            .non_exported_types_inited = false,
+            .func_body_indices_inited = false,
             .keep_comments = keep_comments,
             .isolated_declarations = isolated_declarations,
         };
@@ -45,8 +69,24 @@ pub const Scanner = struct {
 
     pub fn deinit(self: *Scanner) void {
         self.declarations.deinit();
-        self.non_exported_types.deinit();
-        self.func_body_indices.deinit();
+        if (self.non_exported_types_inited) self.non_exported_types.deinit();
+        if (self.func_body_indices_inited) self.func_body_indices.deinit();
+    }
+
+    /// Lazy-put into non_exported_types (initializes the map on first use)
+    pub fn putNonExportedType(self: *Scanner, name: []const u8, decl: Declaration) void {
+        if (!self.non_exported_types_inited) {
+            self.non_exported_types_inited = true;
+        }
+        self.non_exported_types.put(name, decl) catch {};
+    }
+
+    /// Lazy-put into func_body_indices (initializes on first use)
+    pub fn putFuncBodyIndex(self: *Scanner, idx: usize) void {
+        if (!self.func_body_indices_inited) {
+            self.func_body_indices_inited = true;
+        }
+        self.func_body_indices.put(idx, {}) catch {};
     }
 
     // ========================================================================
@@ -78,9 +118,17 @@ pub const Scanner = struct {
             }
             if (self.pos >= self.len) break;
 
+            // Scalar: consume single whitespace bytes
             const c = self.source[self.pos];
             if (c == ch.CH_SPACE or c == ch.CH_TAB or c == ch.CH_LF or c == ch.CH_CR) {
                 self.pos += 1;
+                // Fast scalar drain: consume consecutive whitespace without re-entering the outer loop
+                while (self.pos < self.len) {
+                    const c2 = self.source[self.pos];
+                    if (c2 == ch.CH_SPACE or c2 == ch.CH_TAB or c2 == ch.CH_LF or c2 == ch.CH_CR) {
+                        self.pos += 1;
+                    } else break;
+                }
                 continue;
             }
             if (c == ch.CH_SLASH and self.pos + 1 < self.len) {
@@ -143,33 +191,70 @@ pub const Scanner = struct {
         self.pos = len;
     }
 
-    /// Skip past a template literal (backtick string with ${} interpolation)
+    /// Skip past a template literal (backtick string with ${} interpolation).
+    /// Uses SIMD to scan 16 bytes at a time for structural characters.
     pub fn skipTemplateLiteral(self: *Scanner) void {
         self.pos += 1; // skip opening backtick
+        const src = self.source;
+        const len = self.len;
+        var pos = self.pos;
         var depth: usize = 0;
-        while (self.pos < self.len) {
-            const c = self.source[self.pos];
+
+        while (pos < len) {
+            // SIMD fast-skip when at depth 0: scan for backtick, backslash, or $
+            // At depth > 0: also scan for }
+            if (depth == 0) {
+                while (pos + 16 <= len) {
+                    const chunk: @Vector(16, u8) = src[pos..][0..16].*;
+                    const match_mask = (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKSLASH))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_DOLLAR)));
+                    if (@reduce(.Or, match_mask)) {
+                        const bits: u16 = @bitCast(match_mask);
+                        pos += @ctz(bits);
+                        break;
+                    }
+                    pos += 16;
+                }
+            } else {
+                while (pos + 16 <= len) {
+                    const chunk: @Vector(16, u8) = src[pos..][0..16].*;
+                    const match_mask = (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKSLASH))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_DOLLAR))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE)));
+                    if (@reduce(.Or, match_mask)) {
+                        const bits: u16 = @bitCast(match_mask);
+                        pos += @ctz(bits);
+                        break;
+                    }
+                    pos += 16;
+                }
+            }
+
+            if (pos >= len) break;
+            const c = src[pos];
             if (c == ch.CH_BACKSLASH) {
-                self.pos += 1;
-                if (self.pos < self.len) self.pos += 1;
+                pos += 2; // skip escaped char
                 continue;
             }
             if (c == ch.CH_BACKTICK and depth == 0) {
-                self.pos += 1;
+                self.pos = pos + 1;
                 return;
             }
-            if (c == ch.CH_DOLLAR and self.pos + 1 < self.len and self.source[self.pos + 1] == ch.CH_LBRACE) {
-                self.pos += 2;
+            if (c == ch.CH_DOLLAR and pos + 1 < len and src[pos + 1] == ch.CH_LBRACE) {
+                pos += 2;
                 depth += 1;
                 continue;
             }
             if (c == ch.CH_RBRACE and depth > 0) {
                 depth -= 1;
-                self.pos += 1;
+                pos += 1;
                 continue;
             }
-            self.pos += 1;
+            pos += 1;
         }
+        self.pos = len;
     }
 
     /// Check if `/` at current pos starts a regex literal (not division)
@@ -268,18 +353,21 @@ pub const Scanner = struct {
     }
 
     /// Read an identifier at current position
-    pub fn readIdent(self: *Scanner) []const u8 {
+    pub inline fn readIdent(self: *Scanner) []const u8 {
         const start = self.pos;
         while (self.pos < self.len and ch.isIdentChar(self.source[self.pos])) self.pos += 1;
         return self.source[start..self.pos];
     }
 
-    /// Check if source matches a word at pos (followed by non-ident char)
-    pub fn matchWord(self: *const Scanner, word: []const u8) bool {
+    /// Check if source matches a word at pos (followed by non-ident char).
+    /// Uses integer comparison for short words to avoid byte-by-byte loop.
+    pub fn matchWord(self: *const Scanner, comptime word: []const u8) bool {
         if (self.pos + word.len > self.len) return false;
-        if (!std.mem.eql(u8, self.source[self.pos .. self.pos + word.len], word)) return false;
+        // Boundary check: word must not be followed by an identifier char
         if (self.pos + word.len < self.len and ch.isIdentChar(self.source[self.pos + word.len])) return false;
-        return true;
+        // Integer comparison: compare 1-8 bytes as a single integer (comptime-optimized)
+        const src_slice = self.source[self.pos..][0..word.len];
+        return comptime_match(word.len, src_slice, word);
     }
 
     /// Check if current position is at a top-level statement-starting keyword
@@ -662,13 +750,13 @@ pub const Scanner = struct {
         // Main scan loop — delegate to scan_loop module
         try @import("scan_loop.zig").scanMainLoop(self);
 
-        // Post-process: resolve referenced non-exported types
-        if (self.non_exported_types.count() > 0) {
+        // Post-process: resolve referenced non-exported types (only if map was used)
+        if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {
             resolveReferencedTypes(&self.declarations, &self.non_exported_types);
         }
 
-        // Post-process: remove implementation signatures of overloaded functions
-        if (self.func_body_indices.count() > 0) {
+        // Post-process: remove implementation signatures of overloaded functions (only if map was used)
+        if (self.func_body_indices_inited and self.func_body_indices.count() > 0) {
             removeOverloadImplementations(self);
         }
 
