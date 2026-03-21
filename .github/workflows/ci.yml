@@ -20,8 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -43,8 +43,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -66,8 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -89,8 +89,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
 
       - name: Build Zig
         working-directory: packages/zig-dtsx
@@ -121,8 +124,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
 
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
