@@ -69,6 +69,11 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0-dev.2471+e9eadee00
+
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
         with:
@@ -83,20 +88,6 @@ jobs:
       - name: Unit Test
         run: bun test
 
-  zig-test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6.0.2
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0-dev.2471+e9eadee00
-
       - name: Build Zig
         working-directory: packages/zig-dtsx
         run: zig build
@@ -105,31 +96,9 @@ jobs:
         working-directory: packages/zig-dtsx
         run: zig build test
 
-      - name: Use cached node_modules
-        uses: actions/cache@v5.0.3
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            node-modules-
-
-      - name: Install Dependencies
-        run: bun install
-
       - name: Run Zig Fixture Tests
         working-directory: packages/zig-dtsx
         run: bun test test/zig-dtsx.test.ts
-
-  zig-build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6.0.2
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0-dev.2471+e9eadee00
 
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
