@@ -386,17 +386,6 @@ dtsx produces **sound** types (correctly widened for mutable containers) while p
 
 Benchmarked on Apple M3 Pro, macOS _(bun 1.3.11, arm64-darwin)_. Run `bun benchmark/index.ts` to reproduce.
 
-### In-Process API — Cached
-
-_Smart caching (hash check + cache hit) for watch mode, incremental builds, and CI._
-
-| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **dtsx (cached)** | **97.81 ns** | **162.55 ns** | **376.39 ns** | **1.43 µs** |
-| zig-dtsx | 3.43 µs _(35.0x)_ | 7.16 µs _(44.0x)_ | 22.00 µs _(58.5x)_ | 147.21 µs _(103.0x)_ |
-| oxc-transform | 7.35 µs _(75.1x)_ | 22.66 µs _(139.4x)_ | 85.77 µs _(227.9x)_ | 558.72 µs _(390.7x)_ |
-| tsc | 236.82 µs _(2421x)_ | 463.06 µs _(2849x)_ | 1.53 ms _(4065x)_ | 4.66 ms _(3259x)_ |
-
 ### In-Process API — No Cache
 
 _Raw single-transform comparison (cache cleared every iteration)._
@@ -405,8 +394,19 @@ _Raw single-transform comparison (cache cleared every iteration)._
 |------|-------------------|---------------------|--------------------|--------------------|
 | **zig-dtsx** | **3.37 µs** | **7.05 µs** | **21.89 µs** | **144.89 µs** |
 | oxc-transform | 7.36 µs _(2.2x)_ | 21.91 µs _(3.1x)_ | 89.66 µs _(4.1x)_ | 560.86 µs _(3.9x)_ |
-| dtsx (no-cache) | 15.52 µs _(4.6x)_ | 34.06 µs _(4.8x)_ | 81.96 µs _(3.7x)_ | 573.92 µs _(4.0x)_ |
+| dtsx | 15.52 µs _(4.6x)_ | 34.06 µs _(4.8x)_ | 81.96 µs _(3.7x)_ | 573.92 µs _(4.0x)_ |
 | tsc | 169.69 µs _(50.4x)_ | 410.31 µs _(58.2x)_ | 1.03 ms _(47.1x)_ | 4.02 ms _(27.7x)_ |
+
+### In-Process API — Cached
+
+_Smart caching (hash check + cache hit) for watch mode, incremental builds, and CI._
+
+| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
+|------|-------------------|---------------------|--------------------|--------------------|
+| **dtsx** | **97.81 ns** | **162.55 ns** | **376.39 ns** | **1.43 µs** |
+| zig-dtsx | 3.43 µs _(35.0x)_ | 7.16 µs _(44.0x)_ | 22.00 µs _(58.5x)_ | 147.21 µs _(103.0x)_ |
+| oxc-transform | 7.35 µs _(75.1x)_ | 22.66 µs _(139.4x)_ | 85.77 µs _(227.9x)_ | 558.72 µs _(390.7x)_ |
+| tsc | 236.82 µs _(2421x)_ | 463.06 µs _(2849x)_ | 1.53 ms _(4065x)_ | 4.66 ms _(3259x)_ |
 
 ### CLI — Single File
 
@@ -416,7 +416,6 @@ _Compiled native binaries via subprocess._
 |------|-------------------|---------------------|--------------------|--------------------|
 | **zig-dtsx** | **2.69 ms** | **2.35 ms** | **2.28 ms** | **3.14 ms** |
 | oxc | 17.08 ms _(6.3x)_ | 17.12 ms _(7.3x)_ | 17.95 ms _(7.9x)_ | 17.69 ms _(5.6x)_ |
-| dtsx | 33.42 ms _(12.4x)_ | 34.09 ms _(14.5x)_ | 34.41 ms _(15.1x)_ | 36.34 ms _(11.6x)_ |
 | tsgo | 40.53 ms _(15.1x)_ | 44.10 ms _(18.8x)_ | 44.39 ms _(19.5x)_ | 57.77 ms _(18.4x)_ |
 | tsc | 384.25 ms _(142.8x)_ | 407.51 ms _(173.4x)_ | 418.81 ms _(183.7x)_ | 454.74 ms _(144.8x)_ |
 
@@ -426,20 +425,19 @@ _Compiled native binaries via subprocess._
 |------|----------|-----------|-----------|
 | **zig-dtsx** | **18.10 ms** | **31.46 ms** | **~140 ms** |
 | oxc | 48.27 ms _(2.7x)_ | 79.00 ms _(2.5x)_ | ~365 ms _(2.6x)_ |
-| dtsx | 70.86 ms _(3.9x)_ | 360.34 ms _(11.5x)_ | ~540 ms _(3.9x)_ |
 | tsgo | 244.68 ms _(13.5x)_ | 419.65 ms _(13.3x)_ | - |
 | tsc | 871.48 ms _(48.1x)_ | - | - |
 
 ### Binary Size
 
-| Platform | Zig Binary | Bun Binary | Reduction |
-|----------|-----------|------------|-----------|
-| macOS arm64 | 659 KB | 61 MB | **95x smaller** |
-| macOS x64 | 716 KB | 67 MB | **96x smaller** |
-| Linux x64 | 6.2 MB | 108 MB | **17x smaller** |
-| Linux arm64 | 6.3 MB | 103 MB | **16x smaller** |
-| Windows x64 | 1.0 MB | 101 MB | **101x smaller** |
-| FreeBSD x64 | 5.5 MB | — | — |
+| Platform | dtsx | oxc | tsgo | tsc |
+|----------|------|-----|------|-----|
+| macOS arm64 | **479 KB** | 3.7 MB _(8x)_ | 27.7 MB _(59x)_ | 22.5 MB _(48x)_ |
+| macOS x64 | **515 KB** | 4.0 MB _(8x)_ | 28.6 MB _(57x)_ | 22.5 MB _(45x)_ |
+| Linux x64 | **613 KB** | 4.6 MB _(8x)_ | 28.1 MB _(47x)_ | 22.5 MB _(38x)_ |
+| Linux arm64 | **524 KB** | 4.1 MB _(8x)_ | 27.1 MB _(53x)_ | 22.5 MB _(44x)_ |
+| Windows x64 | **757 KB** | 3.7 MB _(5x)_ | 28.7 MB _(39x)_ | 22.5 MB _(30x)_ |
+| FreeBSD x64 | **502 KB** | 4.3 MB _(9x)_ | — | 22.5 MB _(46x)_ |
 
 ## Testing
 
