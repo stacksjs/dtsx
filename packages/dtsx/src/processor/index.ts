@@ -91,6 +91,11 @@ export {
 
 const EXPORT_ITEMS_PATTERN = /export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/
 
+// Module-level cache for import priority patterns
+let _cachedImportOrder: string[] | null = null
+let _cachedPrioritySingle: string[] = []
+let _cachedPriorityDouble: string[] = []
+
 /**
  * Process declarations and convert them to narrow DTS format
  */
@@ -176,9 +181,17 @@ export function processDeclarations(
       // Extract exported items for tracking (using cached pattern)
       const match = exportText.match(EXPORT_ITEMS_PATTERN)
       if (match) {
-        const items = match[1].split(',').map(item => item.trim())
-        for (const item of items) {
-          exportedItems.add(item)
+        // Single-pass parsing: avoid split().map() allocation
+        const rawItems = match[1]
+        let itemStart = 0
+        for (let i = 0; i <= rawItems.length; i++) {
+          if (i === rawItems.length || rawItems.charCodeAt(i) === 44) {
+            let s = itemStart, e = i
+            while (s < e && rawItems.charCodeAt(s) <= 32) s++
+            while (e > s && rawItems.charCodeAt(e - 1) <= 32) e--
+            if (s < e) exportedItems.add(rawItems.slice(s, e))
+            itemStart = i + 1
+          }
         }
       }
 
@@ -324,8 +337,13 @@ export function processDeclarations(
     // Pre-compute priority for each import into a Map (avoids re-scanning in O(n log n) comparator)
     const defaultPriority = importOrder.length
     if (processedImports.length > 1) {
-      const prioritySingle = importOrder.map(p => `from '${p}`)
-      const priorityDouble = importOrder.map(p => `from "${p}`)
+      if (_cachedImportOrder !== importOrder) {
+        _cachedImportOrder = importOrder
+        _cachedPrioritySingle = importOrder.map(p => `from '${p}`)
+        _cachedPriorityDouble = importOrder.map(p => `from "${p}`)
+      }
+      const prioritySingle = _cachedPrioritySingle
+      const priorityDouble = _cachedPriorityDouble
       const priorityMap = new Map<string, number>()
       for (const imp of processedImports) {
         let p = defaultPriority

@@ -12,19 +12,8 @@ inline fn isIdentChar(c: u8) bool {
     return (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '_' or c == '$' or c > 127;
 }
 
-/// Check if `name` appears as a whole word in `text` (fast indexOf + boundary check)
-pub fn isWordInText(name: []const u8, text: []const u8) bool {
-    if (name.len == 0) return false;
-    var search_from: usize = 0;
-    while (search_from < text.len) {
-        const idx = ch.indexOf(text, name, search_from) orelse return false;
-        const before: u8 = if (idx > 0) text[idx - 1] else ' ';
-        const after: u8 = if (idx + name.len < text.len) text[idx + name.len] else ' ';
-        if (!isIdentChar(before) and !isIdentChar(after)) return true;
-        search_from = idx + 1;
-    }
-    return false;
-}
+/// Check if `name` appears as a whole word in `text` — delegated to scanner.zig (single source of truth)
+pub const isWordInText = @import("scanner.zig").isWordInText;
 
 /// Extract all identifier words from text into an existing HashMap (single pass, O(n))
 fn extractWords(words: *std.StringHashMap(void), text: []const u8) void {
@@ -507,29 +496,22 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
         (decl.name.len > 0 and (decl.name[0] == '"' or decl.name[0] == '\'' or decl.name[0] == '`'));
 
     if (is_ambient) {
-        var result = std.array_list.Managed(u8).init(alloc);
-        try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
-        try result.appendSlice(comments);
-        try result.appendSlice("declare module ");
-        try result.appendSlice(decl.name);
-
-        if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| {
-            try result.append(' ');
-            try result.appendSlice(decl.text[brace_idx..]);
-        } else {
-            try result.appendSlice(" {}");
-        }
-        return result.toOwnedSlice();
+        // Direct alloc (no ArrayList overhead)
+        const dm = "declare module ";
+        const body_ambient = if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| decl.text[brace_idx..] else "{}";
+        const total_ambient = comments.len + dm.len + decl.name.len + 1 + body_ambient.len;
+        const buf_ambient = try alloc.alloc(u8, total_ambient);
+        var ap: usize = 0;
+        if (comments.len > 0) { @memcpy(buf_ambient[ap..][0..comments.len], comments); ap += comments.len; }
+        @memcpy(buf_ambient[ap..][0..dm.len], dm); ap += dm.len;
+        @memcpy(buf_ambient[ap..][0..decl.name.len], decl.name); ap += decl.name.len;
+        buf_ambient[ap] = ' '; ap += 1;
+        @memcpy(buf_ambient[ap..][0..body_ambient.len], body_ambient); ap += body_ambient.len;
+        return buf_ambient[0..ap];
     }
 
-    // Regular namespace
-    var result = std.array_list.Managed(u8).init(alloc);
-    try result.ensureTotalCapacity(comments.len + decl.text.len + 32);
-    try result.appendSlice(comments);
-
-    if (decl.is_exported) try result.appendSlice("export ");
-
-    // Check if declare is already in modifiers
+    // Regular namespace — direct alloc (no ArrayList overhead)
+    const export_prefix: []const u8 = if (decl.is_exported) "export " else "";
     var has_declare = false;
     if (decl.modifiers) |mods| {
         for (mods) |m| {
@@ -539,19 +521,20 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
             }
         }
     }
-    if (!has_declare) try result.appendSlice("declare ");
-
-    try result.appendSlice("namespace ");
-    try result.appendSlice(decl.name);
-
-    if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| {
-        try result.append(' ');
-        try result.appendSlice(decl.text[brace_idx..]);
-    } else {
-        try result.appendSlice(" {}");
-    }
-
-    return result.toOwnedSlice();
+    const declare_kw: []const u8 = if (!has_declare) "declare " else "";
+    const body = if (ch.indexOfChar(decl.text, '{', 0)) |brace_idx| decl.text[brace_idx..] else "{}";
+    const ns = "namespace ";
+    const total = comments.len + export_prefix.len + declare_kw.len + ns.len + decl.name.len + 1 + body.len;
+    const buf = try alloc.alloc(u8, total);
+    var pos: usize = 0;
+    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len;
+    @memcpy(buf[pos..][0..declare_kw.len], declare_kw); pos += declare_kw.len;
+    @memcpy(buf[pos..][0..ns.len], ns); pos += ns.len;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name); pos += decl.name.len;
+    buf[pos] = ' '; pos += 1;
+    @memcpy(buf[pos..][0..body.len], body); pos += body.len;
+    return buf[0..pos];
 }
 
 /// Main entry point: process declarations array into final .d.ts output.

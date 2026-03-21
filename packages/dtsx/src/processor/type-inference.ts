@@ -237,7 +237,10 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
       if (!content)
         return 'readonly []'
       const elements = parseArrayElements(content)
-      const elementTypes = elements.map(el => inferNarrowType(el.trim(), true, false, _depth + 1))
+      const elementTypes: string[] = []
+      for (let i = 0; i < elements.length; i++) {
+        elementTypes.push(inferNarrowType(elements[i].trim(), true, false, _depth + 1))
+      }
       return `readonly [${elementTypes.join(', ')}]`
     }
     return inferNarrowType(withoutAsConst, true, inUnion, _depth + 1)
@@ -385,17 +388,20 @@ function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): 
     if (bracketStart !== -1 && bracketEnd > bracketStart) {
       const arrayContent = value.slice(bracketStart + 1, bracketEnd).trim()
       const elements = parseArrayElements(arrayContent)
-      const elementTypes = elements.map((el) => {
-        const trimmed = el.trim()
+      const elementTypes: string[] = []
+      for (let i = 0; i < elements.length; i++) {
+        const trimmed = elements[i].trim()
         if (trimmed.startsWith('Promise.resolve(')) {
           const promiseType = inferPromiseType(trimmed, isConst, _depth + 1)
           // Extract inner type from Promise<T> using indexOf
           const ltIdx = promiseType.indexOf('<')
           const gtIdx = promiseType.lastIndexOf('>')
-          return (ltIdx !== -1 && gtIdx > ltIdx) ? promiseType.slice(ltIdx + 1, gtIdx) : 'unknown'
+          elementTypes.push((ltIdx !== -1 && gtIdx > ltIdx) ? promiseType.slice(ltIdx + 1, gtIdx) : 'unknown')
         }
-        return inferNarrowType(trimmed, isConst, false, _depth + 1)
-      })
+        else {
+          elementTypes.push(inferNarrowType(trimmed, isConst, false, _depth + 1))
+        }
+      }
       return `Promise<[${elementTypes.join(', ')}]>`
     }
     return 'Promise<unknown[]>'
@@ -431,24 +437,32 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
 
   if (hasAsConst) {
     // Create readonly tuple with union types for each element
-    const elementTypes = elements.map((el) => {
-      const trimmedEl = el.trim()
+    const elementTypes: string[] = []
+    for (let ei = 0; ei < elements.length; ei++) {
+      const trimmedEl = elements[ei].trim()
       if (trimmedEl.endsWith('as const')) {
         const withoutAsConst = trimmedEl.slice(0, -8).trim()
         // For arrays with 'as const', create readonly tuple
         if (withoutAsConst.startsWith('[') && withoutAsConst.endsWith(']')) {
           const innerContent = withoutAsConst.slice(1, -1).trim()
           const innerElements = parseArrayElements(innerContent)
-          const innerTypes = innerElements.map(innerEl => inferNarrowType(innerEl.trim(), true, false, _depth + 1))
-          return `readonly [${innerTypes.join(', ')}]`
+          const innerTypes: string[] = []
+          for (let j = 0; j < innerElements.length; j++) {
+            innerTypes.push(inferNarrowType(innerElements[j].trim(), true, false, _depth + 1))
+          }
+          elementTypes.push(`readonly [${innerTypes.join(', ')}]`)
         }
-        return inferNarrowType(withoutAsConst, true, false, _depth + 1)
+        else {
+          elementTypes.push(inferNarrowType(withoutAsConst, true, false, _depth + 1))
+        }
       }
-      if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-        return inferArrayType(trimmedEl, true, _depth + 1)
+      else if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
+        elementTypes.push(inferArrayType(trimmedEl, true, _depth + 1))
       }
-      return inferNarrowType(trimmedEl, true, false, _depth + 1)
-    })
+      else {
+        elementTypes.push(inferNarrowType(trimmedEl, true, false, _depth + 1))
+      }
+    }
     return `readonly [\n    ${elementTypes.join(' |\n    ')}\n  ]`
   }
 
@@ -506,16 +520,16 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
     return `readonly [${elementTypes.join(', ')}]`
   }
 
-  // Single-pass: deduplicate types AND check if all are literals
+  // Single-pass: deduplicate types with Set (O(1) lookup) AND check if all are literals
+  const seenTypes = new Set<string>()
   const uniqueTypes: string[] = []
   let allLiterals = true
   for (const t of elementTypes) {
-    // Dedup check
-    let found = false
-    for (const u of uniqueTypes) {
-      if (t === u) { found = true; break }
+    // O(1) dedup check via Set
+    if (!seenTypes.has(t)) {
+      seenTypes.add(t)
+      uniqueTypes.push(t)
     }
-    if (!found) uniqueTypes.push(t)
     // Literal check
     if (allLiterals) {
       const isLit = isNumericLiteral(t)
@@ -1005,20 +1019,20 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   let commentDepth = 0
 
   for (let i = 0; i < content.length; i++) {
-    const char = content[i]
-    const prevChar = i > 0 ? content[i - 1] : ''
-    const nextChar = i < content.length - 1 ? content[i + 1] : ''
+    const cc = content.charCodeAt(i)
+    const prevCode = i > 0 ? content.charCodeAt(i - 1) : 0
+    const nextCode = i < content.length - 1 ? content.charCodeAt(i + 1) : 0
 
     // Track single-line comments — skip to end of line
-    if (!inString && !inComment && char === '/' && nextChar === '/') {
+    if (!inString && !inComment && cc === 47 /* / */ && nextCode === 47 /* / */) {
       // Skip the entire single-line comment (don't include in key/value parsing)
       i += 2 // Skip '//'
-      while (i < content.length && content[i] !== '\n') i++
+      while (i < content.length && content.charCodeAt(i) !== 10 /* \n */) i++
       continue
     }
 
     // Track JSDoc/block comments to avoid parsing colons inside them
-    if (!inString && !inComment && char === '/' && nextChar === '*') {
+    if (!inString && !inComment && cc === 47 /* / */ && nextCode === 42 /* * */) {
       // Enter block/JSDoc comment, preserve opening delimiter
       inComment = true
       commentDepth = 1
@@ -1026,7 +1040,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       i++ // Skip '*'
       continue
     }
-    else if (inComment && char === '*' && nextChar === '/') {
+    else if (inComment && cc === 42 /* * */ && nextCode === 47 /* / */) {
       // Closing a block/JSDoc comment, preserve closing delimiter
       commentDepth--
       current += '*/'
@@ -1036,7 +1050,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       }
       continue
     }
-    else if (inComment && char === '/' && nextChar === '*') {
+    else if (inComment && cc === 47 /* / */ && nextCode === 42 /* * */) {
       // Nested comment start, preserve and increase depth
       commentDepth++
       current += '/*'
@@ -1044,17 +1058,18 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       continue
     }
 
-    if (!inString && (char === '"' || char === '\'' || char === '`')) {
+    const char = content[i]
+    if (!inString && (cc === 34 /* " */ || cc === 39 /* ' */ || cc === 96 /* ` */)) {
       inString = true
       stringChar = char
       current += char
     }
-    else if (inString && char === stringChar && prevChar !== '\\') {
+    else if (inString && char === stringChar && prevCode !== 92 /* \\ */) {
       inString = false
       current += char
     }
     else if (!inString && !inComment) {
-      if (char === '(' && depth === 0 && inKey) {
+      if (cc === 40 /* ( */ && depth === 0 && inKey) {
         // Method definition like: methodName(params) or async methodName<T>(params)
         // Must be checked BEFORE general bracket tracking so ( isn't swallowed
         currentKey = current.trim()
@@ -1066,20 +1081,20 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         inKey = false
         depth = 1 // We're now inside the method definition
       }
-      else if (char === '{' || char === '[' || char === '(') {
+      else if (cc === 123 /* { */ || cc === 91 /* [ */ || cc === 40 /* ( */) {
         depth++
         current += char
       }
-      else if (char === '}' || char === ']' || char === ')') {
+      else if (cc === 125 /* } */ || cc === 93 /* ] */ || cc === 41 /* ) */) {
         depth--
         current += char
       }
-      else if (char === ':' && depth === 0 && inKey) {
+      else if (cc === 58 /* : */ && depth === 0 && inKey) {
         currentKey = current.trim()
         current = ''
         inKey = false
       }
-      else if (char === ',' && depth === 0) {
+      else if (cc === 44 /* , */ && depth === 0) {
         if (currentKey && current.trim()) {
           // Clean method signatures before storing
           let value = current.trim()
