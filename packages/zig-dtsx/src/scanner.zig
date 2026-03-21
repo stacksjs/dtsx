@@ -8,8 +8,20 @@ const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
 
-/// Comptime-optimized word comparison using std.mem.eql (compiler optimizes small sizes).
+/// Comptime-optimized word comparison: uses integer casts for power-of-2 sizes (1/2/4/8 bytes).
 inline fn comptime_match(comptime N: usize, src: *const [N]u8, comptime word: []const u8) bool {
+    // Use integer comparison for power-of-2 sizes (u8, u16, u32, u64)
+    if (N == 1 or N == 2 or N == 4 or N == 8) {
+        const T = std.meta.Int(.unsigned, N * 8);
+        const expected: T = comptime blk: {
+            var val: T = 0;
+            for (word, 0..) |b, i| {
+                val |= @as(T, b) << @intCast(i * 8);
+            }
+            break :blk val;
+        };
+        return @as(*align(1) const T, @ptrCast(src)).* == expected;
+    }
     return std.mem.eql(u8, src, word);
 }
 
