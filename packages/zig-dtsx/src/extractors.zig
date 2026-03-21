@@ -695,14 +695,17 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     }
     const opt_marker: []const u8 = if (is_optional and !is_rest) "?" else "";
 
-    // Build result
-    var result = std.array_list.Managed(u8).init(s.allocator);
-    if (is_rest) result.appendSlice("...") catch {};
-    result.appendSlice(name) catch {};
-    result.appendSlice(opt_marker) catch {};
-    result.appendSlice(": ") catch {};
-    result.appendSlice(param_type) catch {};
-    return result.toOwnedSlice() catch "unknown: unknown";
+    // Build result — direct alloc (no ArrayList overhead)
+    const rest_prefix: []const u8 = if (is_rest) "..." else "";
+    const total = rest_prefix.len + name.len + opt_marker.len + 2 + param_type.len;
+    const result_buf = s.allocator.alloc(u8, total) catch return "unknown: unknown";
+    var rp: usize = 0;
+    if (is_rest) { @memcpy(result_buf[rp..][0..3], "..."); rp += 3; }
+    @memcpy(result_buf[rp..][0..name.len], name); rp += name.len;
+    @memcpy(result_buf[rp..][0..opt_marker.len], opt_marker); rp += opt_marker.len;
+    @memcpy(result_buf[rp..][0..2], ": "); rp += 2;
+    @memcpy(result_buf[rp..][0..param_type.len], param_type); rp += param_type.len;
+    return result_buf[0..rp];
 }
 
 /// Clean a destructured pattern by stripping default values and rest operators.

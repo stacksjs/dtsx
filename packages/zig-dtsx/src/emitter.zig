@@ -15,15 +15,37 @@ inline fn isIdentChar(c: u8) bool {
 /// Check if `name` appears as a whole word in `text` — delegated to scanner.zig (single source of truth)
 pub const isWordInText = @import("scanner.zig").isWordInText;
 
-/// Extract all identifier words from text into an existing HashMap (single pass, O(n))
+/// Extract all identifier words from text into an existing HashMap (single pass, O(n)).
+/// Uses SIMD to skip 16 non-identifier bytes at a time.
 fn extractWords(words: *std.StringHashMap(void), text: []const u8) void {
     var i: usize = 0;
     while (i < text.len) {
+        // SIMD fast-skip: skip 16 bytes when none are identifier-start chars.
+        // Identifier-start chars: A-Z (65-90), a-z (97-122), _ (95), $ (36), >127.
+        // Non-identifier bytes (digits, punctuation, whitespace) are the majority.
+        while (i + 16 <= text.len) {
+            const chunk: @Vector(16, u8) = text[i..][0..16].*;
+            // Check for any byte that could start an identifier:
+            // letters (>= 'A' except digits/punctuation), underscore, dollar, high bytes
+            const ge_A = chunk >= @as(@Vector(16, u8), @splat(65)); // >= 'A'
+            const is_dollar = chunk == @as(@Vector(16, u8), @splat(36)); // '$'
+            const is_under = chunk == @as(@Vector(16, u8), @splat(95)); // '_'
+            const is_high = chunk > @as(@Vector(16, u8), @splat(127));
+            const interesting = ge_A | is_dollar | is_under | is_high;
+            if (@reduce(.Or, interesting)) {
+                const bits: u16 = @bitCast(interesting);
+                i += @ctz(bits);
+                break;
+            }
+            i += 16;
+        }
+        if (i >= text.len) break;
+
         const c = text[i];
-        if ((c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or c == '_' or c == '$' or c > 127) {
+        if (ch.isIdentStart(c)) {
             const start = i;
             i += 1;
-            while (i < text.len and isIdentChar(text[i])) i += 1;
+            while (i < text.len and ch.isIdentChar(text[i])) i += 1;
             words.put(text[start..i], {}) catch {};
         } else {
             i += 1;
@@ -549,7 +571,8 @@ pub fn processDeclarations(
     import_order: []const []const u8,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(result_alloc);
-    try result.ensureTotalCapacity(source_code.len);
+    // DTS output is typically 30-60% of source size (bodies stripped, types added)
+    try result.ensureTotalCapacity(source_code.len / 2);
 
     // Extract triple-slash directives
     // Fast check: skip whitespace
@@ -867,61 +890,64 @@ pub fn processDeclarations(
             }
         }
 
-        // Sort imports by priority then locale-aware alphabetical
+        // Sort imports by priority then locale-aware alphabetical.
+        // Pre-compute priorities once (avoids re-scanning during O(n log n) sort).
         if (processed_imports.items.len > 1) {
-            const SortCtx = struct {
-                import_order_items: []const []const u8,
-                default_priority: usize,
-
-                pub fn priority(self: @This(), imp: []const u8) usize {
-                    for (self.import_order_items, 0..) |p, idx| {
-                        var found = false;
-                        if (ch.indexOf(imp, "from '", 0)) |fi| {
+            const default_priority = import_order.len;
+            const priorities = try alloc.alloc(usize, processed_imports.items.len);
+            for (processed_imports.items, 0..) |imp, pi| {
+                var prio = default_priority;
+                for (import_order, 0..) |p, idx| {
+                    var found = false;
+                    if (ch.indexOf(imp, "from '", 0)) |fi| {
+                        if (ch.indexOf(imp, p, fi + 6) != null) found = true;
+                    }
+                    if (!found) {
+                        if (ch.indexOf(imp, "from \"", 0)) |fi| {
                             if (ch.indexOf(imp, p, fi + 6) != null) found = true;
                         }
-                        if (!found) {
-                            if (ch.indexOf(imp, "from \"", 0)) |fi| {
-                                if (ch.indexOf(imp, p, fi + 6) != null) found = true;
-                            }
-                        }
-                        if (found) return idx;
                     }
-                    return self.default_priority;
+                    if (found) { prio = idx; break; }
                 }
+                priorities[pi] = prio;
+            }
 
-                /// Locale-aware char sort key: symbols < digits < letters
-                /// Matches JavaScript's localeCompare behavior
+            // Sort import indices by (priority, locale-order)
+            const indices = try alloc.alloc(usize, processed_imports.items.len);
+            for (0..indices.len) |ii| indices[ii] = ii;
+
+            const SortCtx2 = struct {
+                prios: []const usize,
+                items: []const []const u8,
+
                 fn charSortKey(c_val: u8) u32 {
                     if (c_val >= 'a' and c_val <= 'z') return @as(u32, c_val - 'a') * 4 + 1000;
                     if (c_val >= 'A' and c_val <= 'Z') return @as(u32, c_val - 'A') * 4 + 1001;
                     if (c_val >= '0' and c_val <= '9') return @as(u32, c_val - '0') + 500;
                     return @as(u32, c_val);
                 }
+            };
 
-                pub fn localeCompare(_: @This(), a: []const u8, b: []const u8) bool {
+            const sort_ctx = SortCtx2{ .prios = priorities, .items = processed_imports.items };
+            std.mem.sort(usize, indices, sort_ctx, struct {
+                fn lessThan(ctx: SortCtx2, ai: usize, bi: usize) bool {
+                    if (ctx.prios[ai] != ctx.prios[bi]) return ctx.prios[ai] < ctx.prios[bi];
+                    const a = ctx.items[ai];
+                    const b = ctx.items[bi];
                     const min_len = @min(a.len, b.len);
                     for (0..min_len) |i| {
-                        const ak = charSortKey(a[i]);
-                        const bk = charSortKey(b[i]);
+                        const ak = SortCtx2.charSortKey(a[i]);
+                        const bk = SortCtx2.charSortKey(b[i]);
                         if (ak != bk) return ak < bk;
                     }
                     return a.len < b.len;
                 }
-            };
-
-            const ctx = SortCtx{
-                .import_order_items = import_order,
-                .default_priority = import_order.len,
-            };
-
-            std.mem.sort([]const u8, processed_imports.items, ctx, struct {
-                fn lessThan(c_ctx: SortCtx, a: []const u8, b: []const u8) bool {
-                    const ap = c_ctx.priority(a);
-                    const bp = c_ctx.priority(b);
-                    if (ap != bp) return ap < bp;
-                    return c_ctx.localeCompare(a, b);
-                }
             }.lessThan);
+
+            // Reorder in-place using sorted indices
+            const sorted = try alloc.alloc([]const u8, processed_imports.items.len);
+            for (indices, 0..) |idx_val, di| sorted[di] = processed_imports.items[idx_val];
+            @memcpy(processed_imports.items, sorted);
         }
     }
 

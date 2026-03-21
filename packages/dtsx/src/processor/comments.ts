@@ -11,8 +11,13 @@ export function formatComments(comments: string[] | undefined, keepComments: boo
   }
 
   // Fast path: single comment (most common case)
-  if (comments.length === 1)
-    return comments[0].trim() + '\n'
+  if (comments.length === 1) {
+    const c = comments[0]
+    // Fast path: if first and last chars aren't whitespace, skip trim
+    if (c.length > 0 && c.charCodeAt(0) > 32 && c.charCodeAt(c.length - 1) > 32)
+      return c + '\n'
+    return c.trim() + '\n'
+  }
 
   // Multiple comments: join with newlines
   let result = ''

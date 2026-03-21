@@ -36,16 +36,15 @@ export function extractDeclarations(
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
 
   if (declarationCache.size > MAX_DECLARATION_CACHE_SIZE) {
-    let oldestKey: string | null = null
-    let oldestTime = Infinity
+    // Batch evict ~10% to amortize O(n) scan cost
+    const toEvict = Math.max(1, Math.ceil(declarationCache.size * 0.1))
+    const entries: [string, number][] = []
     for (const [key, entry] of declarationCache) {
-      if (entry.lastAccess < oldestTime) {
-        oldestTime = entry.lastAccess
-        oldestKey = key
-      }
+      entries.push([key, entry.lastAccess])
     }
-    if (oldestKey) {
-      declarationCache.delete(oldestKey)
+    entries.sort((a, b) => a[1] - b[1])
+    for (let i = 0; i < toEvict && i < entries.length; i++) {
+      declarationCache.delete(entries[i][0])
     }
   }
 

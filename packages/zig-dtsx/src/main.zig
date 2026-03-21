@@ -278,18 +278,12 @@ fn workerFn(ctx: WorkerCtx) void {
                 continue;
             };
 
-            // Combined write: data + "\n" in single syscall
-            const combined = alloc.alloc(u8, output.len + 1) catch {
-                _ = arena.reset(.retain_capacity);
-                continue;
-            };
-            @memcpy(combined[0..output.len], output);
-            combined[output.len] = '\n';
-
+            // Write output + newline (two small writes, avoids memcpy allocation)
             const out_fd = c.openat(ctx.output_dir_fd, task.output_name_z,
                 c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
             if (out_fd >= 0) {
-                _ = c.write(out_fd, @ptrCast(combined.ptr), combined.len);
+                _ = c.write(out_fd, @ptrCast(output.ptr), output.len);
+                _ = c.write(out_fd, "\n", 1);
                 _ = c.close(out_fd);
             }
         }

@@ -831,6 +831,15 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     // Track how far we've extracted words — only process new text_parts each iteration
     var words_extracted_up_to: usize = 0;
 
+    // Move outside loop — reuse across iterations
+    var to_insert = std.array_list.Managed(Declaration).init(declarations.allocator);
+    to_insert.ensureTotalCapacity(non_exported_types.count()) catch {};
+    defer to_insert.deinit();
+
+    var merged = std.array_list.Managed(Declaration).init(declarations.allocator);
+    merged.ensureTotalCapacity(declarations.items.len + non_exported_types.count()) catch {};
+    defer merged.deinit();
+
     while (true) {
         // Incrementally extract words from only the NEW text parts
         for (text_parts.items[words_extracted_up_to..]) |part| {
@@ -848,9 +857,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
         }
         words_extracted_up_to = text_parts.items.len;
 
-        var to_insert = std.array_list.Managed(Declaration).init(declarations.allocator);
-        to_insert.ensureTotalCapacity(non_exported_types.count()) catch {};
-        defer to_insert.deinit();
+        to_insert.clearRetainingCapacity();
 
         var it = non_exported_types.iterator();
         while (it.next()) |entry| {
@@ -877,7 +884,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
         }.cmp);
 
         // Merge at correct source positions
-        var merged = std.array_list.Managed(Declaration).init(declarations.allocator);
+        merged.clearRetainingCapacity();
         merged.ensureTotalCapacity(declarations.items.len + to_insert.items.len) catch {};
         var ti: usize = 0;
         for (declarations.items) |d| {
@@ -894,7 +901,6 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
         declarations.clearRetainingCapacity();
         declarations.appendSlice(merged.items) catch {};
-        merged.deinit();
 
         // Add new texts to search
         for (to_insert.items) |d| {
@@ -906,14 +912,17 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 }
 
 /// Remove implementation signatures of overloaded functions
+/// Remove implementation signatures of overloaded functions.
+/// Single-HashMap approach: count function names, then find and remove body-bearing
+/// implementations in one backward pass.
 fn removeOverloadImplementations(scanner: *Scanner) void {
-    // Count function names
-    var func_name_counts = std.StringHashMap(usize).init(scanner.allocator);
-    defer func_name_counts.deinit();
+    // Single HashMap: count function declarations by name
+    var func_counts = std.StringHashMap(usize).init(scanner.allocator);
+    defer func_counts.deinit();
 
     for (scanner.declarations.items) |d| {
         if (d.kind == .function_decl) {
-            const entry = func_name_counts.getOrPut(d.name) catch continue;
+            const entry = func_counts.getOrPut(d.name) catch continue;
             if (!entry.found_existing) {
                 entry.value_ptr.* = 1;
             } else {
@@ -922,43 +931,56 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
         }
     }
 
-    // Find overloaded names (count > 1)
-    var overloaded = std.StringHashMap(void).init(scanner.allocator);
-    defer overloaded.deinit();
-    var it = func_name_counts.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* > 1) {
-            overloaded.put(entry.key_ptr.*, {}) catch {};
+    // Single backward pass: for each overloaded name (count > 1),
+    // find and mark the last body-bearing declaration for removal.
+    // Use a bitset (array of bools) instead of a HashMap for to_remove.
+    const len = scanner.declarations.items.len;
+    const remove_flags = scanner.allocator.alloc(bool, len) catch return;
+    defer scanner.allocator.free(remove_flags);
+    @memset(remove_flags, false);
+
+    var found_count: usize = 0;
+    var overload_count: usize = 0;
+
+    // Count how many overloaded names exist
+    var count_it = func_counts.iterator();
+    while (count_it.next()) |entry| {
+        if (entry.value_ptr.* > 1) overload_count += 1;
+    }
+    if (overload_count == 0) return;
+
+    // Walk backward: for each overloaded function, mark its last body-bearing impl
+    var names_found = std.StringHashMap(void).init(scanner.allocator);
+    defer names_found.deinit();
+
+    var i: usize = len;
+    while (i > 0) {
+        i -= 1;
+        const d = scanner.declarations.items[i];
+        if (d.kind != .function_decl) continue;
+
+        // Check if this function is overloaded
+        const count_entry = func_counts.get(d.name) orelse continue;
+        if (count_entry <= 1) continue;
+
+        // Already found the impl for this name?
+        if (names_found.contains(d.name)) continue;
+
+        // Is this the implementation (has body)?
+        if (scanner.func_body_indices.contains(i)) {
+            remove_flags[i] = true;
+            found_count += 1;
+            names_found.put(d.name, {}) catch {};
+            if (found_count == overload_count) break; // All found
         }
     }
 
-    if (overloaded.count() == 0) return;
+    if (found_count == 0) return;
 
-    // Find last body-bearing index for each overloaded name and remove them
-    var to_remove = std.AutoHashMap(usize, void).init(scanner.allocator);
-    defer to_remove.deinit();
-
-    var oit = overloaded.iterator();
-    while (oit.next()) |entry| {
-        const name = entry.key_ptr.*;
-        // Walk backwards
-        var i: usize = scanner.declarations.items.len;
-        while (i > 0) {
-            i -= 1;
-            const d = scanner.declarations.items[i];
-            if (d.kind == .function_decl and std.mem.eql(u8, d.name, name) and scanner.func_body_indices.contains(i)) {
-                to_remove.put(i, {}) catch {};
-                break;
-            }
-        }
-    }
-
-    if (to_remove.count() == 0) return;
-
-    // Filter in single pass — O(n) instead of O(k*n)
+    // Filter in single pass
     var write: usize = 0;
-    for (scanner.declarations.items, 0..) |d, i| {
-        if (!to_remove.contains(i)) {
+    for (scanner.declarations.items, 0..) |d, fi| {
+        if (!remove_flags[fi]) {
             scanner.declarations.items[write] = d;
             write += 1;
         }

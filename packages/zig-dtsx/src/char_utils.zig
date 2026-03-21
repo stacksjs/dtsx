@@ -61,11 +61,37 @@ pub inline fn isDigit(ch: u8) bool {
     return ch >= '0' and ch <= '9';
 }
 
-/// Find needle in haystack starting from start position
+/// Find needle in haystack starting from start position.
+/// For single-byte needles, uses SIMD. For multi-byte, uses SIMD first-byte scan + verify.
 pub inline fn indexOf(haystack: []const u8, needle: []const u8, start: usize) ?usize {
     if (needle.len == 0) return start;
     if (start + needle.len > haystack.len) return null;
-    return std.mem.indexOfPos(u8, haystack, start, needle);
+    if (needle.len == 1) return indexOfChar(haystack, needle[0], start);
+    // SIMD first-byte scan: find positions where needle[0] matches, then verify rest
+    const first = needle[0];
+    const search = haystack[start..];
+    var i: usize = 0;
+    while (i + needle.len <= search.len) {
+        // SIMD: scan for first byte of needle
+        while (i + 16 <= search.len) {
+            const chunk: @Vector(16, u8) = search[i..][0..16].*;
+            const match_mask = chunk == @as(@Vector(16, u8), @splat(first));
+            if (@reduce(.Or, match_mask)) {
+                const bits: u16 = @bitCast(match_mask);
+                const offset = @ctz(bits);
+                i += offset;
+                break;
+            }
+            i += 16;
+        }
+        if (i + needle.len > search.len) return null;
+        // Verify full needle match
+        if (search[i] == first and std.mem.eql(u8, search[i..][0..needle.len], needle)) {
+            return start + i;
+        }
+        i += 1;
+    }
+    return null;
 }
 
 /// Find a single byte in haystack starting from start position.

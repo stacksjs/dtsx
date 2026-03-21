@@ -51,16 +51,15 @@ export function processSource(
   resultCache.set(cacheKey, { result, contentHash, lastAccess: ++_resultAccessCounter })
 
   if (resultCache.size > MAX_RESULT_CACHE_SIZE) {
-    let oldestKey: string | null = null
-    let oldestTime = Infinity
+    // Batch evict ~10% to amortize O(n) scan cost
+    const toEvict = Math.max(1, Math.ceil(resultCache.size * 0.1))
+    const entries: [string, number][] = []
     for (const [key, entry] of resultCache) {
-      if (entry.lastAccess < oldestTime) {
-        oldestTime = entry.lastAccess
-        oldestKey = key
-      }
+      entries.push([key, entry.lastAccess])
     }
-    if (oldestKey) {
-      resultCache.delete(oldestKey)
+    entries.sort((a, b) => a[1] - b[1])
+    for (let i = 0; i < toEvict && i < entries.length; i++) {
+      resultCache.delete(entries[i][0])
     }
   }
 
