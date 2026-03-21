@@ -20,8 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
+      - name: Setup Pantry
+        uses: home-lang/pantry/packages/action@main
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -43,8 +43,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
+      - name: Setup Pantry
+        uses: home-lang/pantry/packages/action@main
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -66,8 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
+      - name: Setup Pantry
+        uses: home-lang/pantry/packages/action@main
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
@@ -89,10 +89,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0-dev.2565+684032671
+      - name: Setup Pantry
+        uses: home-lang/pantry/packages/action@main
 
       - name: Build Zig
         working-directory: packages/zig-dtsx
@@ -102,11 +100,8 @@ jobs:
         working-directory: packages/zig-dtsx
         run: zig build test
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
-
       - name: Use cached node_modules
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v5.0.3
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
@@ -126,10 +121,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0-dev.2565+684032671
+      - name: Setup Pantry
+        uses: home-lang/pantry/packages/action@main
 
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
@@ -183,6 +176,6 @@ jobs:
 
       - name: Publish Commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: pantry publish:commit './packages/dtsx' './packages/bun-plugin' './packages/vite-plugin'
+        run: pantry publish:commit './packages/*'
         env:
           PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
