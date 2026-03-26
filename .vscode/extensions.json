@@ -2,7 +2,7 @@
   // See https://go.microsoft.com/fwlink/?LinkId=827846
   // for the documentation about the extensions.json format
   "recommendations": [
-    "dbaeumer.vscode-eslint",
+    "pickier.pickier-vscode",
     "streetsidesoftware.code-spell-checker",
     "davidanson.vscode-markdownlint"
   ]
