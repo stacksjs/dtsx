@@ -10,6 +10,24 @@
     "source.organizeImports": "never"
   },
 
+  "[stx]": {
+    "editor.defaultFormatter": "pickier.pickier-vscode"
+  },
+  "markdownlint.config": {
+    "default": true,
+    "MD033": {
+      "allowed_elements": [
+        "details",
+        "summary",
+        "VPTeamPage",
+        "VPTeamPageTitle",
+        "VPTeamMembers",
+        "script"
+      ]
+    },
+    "MD041": false
+  },
+
   "typescript.tsdk": "${workspaceFolder}/node_modules/typescript/lib",
 
   "[shellscript]": {
