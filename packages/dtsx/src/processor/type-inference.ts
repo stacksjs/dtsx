@@ -219,6 +219,11 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return inferObjectType(trimmed, isConst, _depth + 1)
   }
 
+  // Class expressions — extract the class name and use typeof
+  if (trimmed.startsWith('class ') || trimmed.startsWith('class{')) {
+    return inferClassExpressionType(trimmed)
+  }
+
   // New expressions (check before function expressions since `new X(() => {})` contains `=>`)
   if (trimmed.startsWith('new ')) {
     return inferNewExpressionType(trimmed)
@@ -312,33 +317,63 @@ function inferTemplateLiteralType(value: string, isConst: boolean): string {
  */
 function inferNewExpressionType(value: string): string {
   // Extract class name after 'new ' — must start with uppercase A-Z
+  // Supports dotted names like Intl.NumberFormat
   let i = 4 // skip 'new '
   while (i < value.length && value.charCodeAt(i) <= 32) i++ // skip whitespace
   const nameStart = i
   const firstChar = value.charCodeAt(i)
   if (firstChar < 65 || firstChar > 90) return 'unknown' // must start with A-Z
-  while (i < value.length && isWordChar(value.charCodeAt(i))) i++
+  while (i < value.length && (isWordChar(value.charCodeAt(i)) || value.charCodeAt(i) === 46 /* . */)) i++
   if (i === nameStart) return 'unknown'
   const className = value.slice(nameStart, i)
 
   {
     const afterClass = value.slice(i)
+
+    // Check for generic type parameters
+    let afterGenerics = afterClass
     if (afterClass.startsWith('<')) {
       // Extract the generic params by finding the matching '>'
       let depth = 0
       let end = -1
-      for (let i = 0; i < afterClass.length; i++) {
-        if (afterClass[i] === '<') {
-          depth++
-        }
-        else if (afterClass[i] === '>') {
-          depth--
-          if (depth === 0) { end = i; break }
-        }
+      for (let j = 0; j < afterClass.length; j++) {
+        if (afterClass[j] === '<') depth++
+        else if (afterClass[j] === '>') { depth--; if (depth === 0) { end = j; break } }
       }
       if (end !== -1) {
         const generics = afterClass.slice(0, end + 1)
+        afterGenerics = afterClass.slice(end + 1)
+        // Check for method chain after constructor (e.g., new Foo<T>(...).method())
+        // Find closing paren of constructor, then check for '.'
+        const parenStart = afterGenerics.indexOf('(')
+        if (parenStart !== -1) {
+          let pDepth = 0
+          let pEnd = -1
+          for (let j = parenStart; j < afterGenerics.length; j++) {
+            if (afterGenerics[j] === '(') pDepth++
+            else if (afterGenerics[j] === ')') { pDepth--; if (pDepth === 0) { pEnd = j; break } }
+          }
+          if (pEnd !== -1) {
+            const rest = afterGenerics.slice(pEnd + 1).trimStart()
+            if (rest.startsWith('.')) return 'unknown' // method chain — can't infer
+          }
+        }
         return `${className}${generics}`
+      }
+    }
+
+    // Check for method chain after constructor (e.g., new Foo(...).method())
+    const parenStart = afterGenerics.indexOf('(')
+    if (parenStart !== -1) {
+      let pDepth = 0
+      let pEnd = -1
+      for (let j = parenStart; j < afterGenerics.length; j++) {
+        if (afterGenerics[j] === '(') pDepth++
+        else if (afterGenerics[j] === ')') { pDepth--; if (pDepth === 0) { pEnd = j; break } }
+      }
+      if (pEnd !== -1) {
+        const rest = afterGenerics.slice(pEnd + 1).trimStart()
+        if (rest.startsWith('.')) return 'unknown' // method chain — can't infer
       }
     }
 
@@ -359,6 +394,31 @@ function inferNewExpressionType(value: string): string {
     }
   }
   return 'unknown'
+}
+
+/**
+ * Infer type from class expression used as a value.
+ * For `class Foo { ... }`, extracts the class name and returns `typeof Foo`.
+ * For anonymous classes, returns a basic constructor type.
+ */
+function inferClassExpressionType(value: string): string {
+  // Extract class name: class Name or class Name extends ...
+  const trimmed = value.trimStart()
+  let i = 5 // skip 'class'
+  // Skip whitespace
+  while (i < trimmed.length && trimmed.charCodeAt(i) <= 32) i++
+
+  // Check if there's a name (identifier starting char)
+  const nameStart = i
+  if (i < trimmed.length && isWordChar(trimmed.charCodeAt(i))) {
+    while (i < trimmed.length && isWordChar(trimmed.charCodeAt(i))) i++
+    const className = trimmed.slice(nameStart, i)
+    // Named class expression — use typeof ClassName
+    return `typeof ${className}`
+  }
+
+  // Anonymous class expression
+  return '{ new (...args: any[]): any }'
 }
 
 /**
@@ -669,15 +729,25 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     const saved = _cleanDefaultResult
     _cleanDefaultResult = null
 
-    let valueType = inferNarrowType(val, isConst, false, _depth + 1)
+    let valueType: string
+    const trimVal = val.trim()
+
+    // Method definitions (method shorthand syntax) — convert directly to function type
+    // to avoid double-processing through inferNarrowType which loses return type info
+    if (isMethodDefinition(trimVal)) {
+      valueType = convertMethodToFunctionType(key, trimVal)
+    }
+    else {
+      valueType = inferNarrowType(val, isConst, false, _depth + 1)
+
+      // Handle method signatures - clean up async and parameter defaults
+      if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
+        valueType = cleanMethodSignature(valueType)
+      }
+    }
 
     const nestedDefault = _cleanDefaultResult
     _cleanDefaultResult = saved
-
-    // Handle method signatures - clean up async and parameter defaults
-    if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
-      valueType = cleanMethodSignature(valueType)
-    }
 
     // Add inline @defaultValue for widened primitive properties
     const rawVal = val.trim()
@@ -1073,11 +1143,18 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         // Method definition like: methodName(params) or async methodName<T>(params)
         // Must be checked BEFORE general bracket tracking so ( isn't swallowed
         currentKey = current.trim()
-        // Remove 'async' from the key if present
+        // Remove 'async' from the key if present, prefix value with 'async ' marker
+        let methodPrefix = ''
         if (currentKey.startsWith('async ')) {
           currentKey = currentKey.slice(6).trim()
+          methodPrefix = 'async '
         }
-        current = char // Start with the opening parenthesis
+        // Remove generator '*' prefix from key, prefix value with '*' marker
+        if (currentKey.startsWith('*')) {
+          currentKey = currentKey.slice(1).trim()
+          methodPrefix += '*'
+        }
+        current = methodPrefix + char // Start with any prefix + opening parenthesis
         inKey = false
         depth = 1 // We're now inside the method definition
       }
@@ -1096,18 +1173,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       }
       else if (cc === 44 /* , */ && depth === 0) {
         if (currentKey && current.trim()) {
-          // Clean method signatures before storing
-          let value = current.trim()
-
-          // Check if this is a method definition (starts with parentheses)
-          if (value.startsWith('(')) {
-            // This is a method definition like: (params): ReturnType { ... }
-            value = convertMethodToFunctionType(currentKey, value)
-          }
-          else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
-            value = cleanMethodSignature(value)
-          }
-
+          const value = current.trim()
           properties.push([currentKey, value])
         }
         current = ''
@@ -1126,33 +1192,83 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 
   // Don't forget the last property
   if (currentKey && current.trim()) {
-    let value = current.trim()
-
-    // Check if this is a method definition (starts with parentheses)
-    if (value.startsWith('(')) {
-      // This is a method definition like: (params): ReturnType { ... }
-      value = convertMethodToFunctionType(currentKey, value)
-    }
-    else if (value.includes('=>') || value.includes('function') || value.includes('async')) {
-      value = cleanMethodSignature(value)
-    }
-
+    const value = current.trim()
     properties.push([currentKey, value])
   }
 
   return properties
 }
 
+/** Check if value looks like a method definition (not an arrow function).
+ *  Method definitions: (params): ReturnType { body }
+ *  Arrow functions: (params): ReturnType => body
+ *  Key difference: method definitions have no '=>' at top level. */
+function isMethodDefinition(value: string): boolean {
+  let stripped = value
+  // Strip async/generator prefixes to check what follows
+  if (stripped.startsWith('async ') || stripped.startsWith('async\t')) {
+    stripped = stripped.slice(5).trimStart()
+  }
+  if (stripped.startsWith('*')) {
+    stripped = stripped.slice(1).trimStart()
+  }
+  // Must start with '(' to be a method definition
+  if (!stripped.startsWith('(')) return false
+
+  // Find the matching ')' for the parameter list
+  let depth = 0
+  for (let i = 0; i < stripped.length; i++) {
+    const c = stripped.charCodeAt(i)
+    if (c === 40 /* ( */) depth++
+    else if (c === 41 /* ) */) {
+      depth--
+      if (depth === 0) {
+        // After the closing paren, check if there's '=>' (arrow function) or not (method def)
+        const after = stripped.slice(i + 1).trimStart()
+        // Method definitions have ':' then return type then '{', or just '{'
+        // Arrow functions have '=>' (possibly after ': ReturnType')
+        if (after.startsWith('{')) return true // (params) { body }
+        if (after.startsWith(':')) {
+          // Could be (params): ReturnType { body } or (params): ReturnType => body
+          // Check if '=>' appears before '{' at depth 0
+          let scanDepth = 0
+          for (let j = 0; j < after.length; j++) {
+            const sc = after.charCodeAt(j)
+            if (sc === 40 || sc === 91) scanDepth++
+            else if (sc === 41 || sc === 93) scanDepth--
+            else if (sc === 60) scanDepth++ // < for generics in return type
+            else if (sc === 62) { if (scanDepth > 0) scanDepth-- } // >
+            else if (scanDepth === 0 && sc === 61 /* = */ && j + 1 < after.length && after.charCodeAt(j + 1) === 62 /* > */) {
+              return false // Found '=>' — this is an arrow function
+            }
+            else if (scanDepth === 0 && sc === 123 /* { */) {
+              return true // Found '{' before any '=>' — this is a method definition
+            }
+          }
+        }
+        return false
+      }
+    }
+  }
+  return false
+}
+
 /**
  * Convert method definition to function type signature
  */
 function convertMethodToFunctionType(_methodName: string, _methodDef: string): string {
-  // Remove async modifier if present — no regex
-  let cleaned = _methodDef
-  let ci = 0
-  while (ci < cleaned.length && cleaned.charCodeAt(ci) <= 32) ci++
-  if (cleaned.startsWith('async', ci) && ci + 5 < cleaned.length && cleaned.charCodeAt(ci + 5) <= 32) {
-    cleaned = cleaned.slice(ci + 5).trimStart()
+  // Detect and remove async/generator prefixes
+  let cleaned = _methodDef.trimStart()
+  let isAsync = false
+  let isGenerator = false
+
+  if (cleaned.startsWith('async ') || cleaned.startsWith('async\t')) {
+    isAsync = true
+    cleaned = cleaned.slice(5).trimStart()
+  }
+  if (cleaned.startsWith('*')) {
+    isGenerator = true
+    cleaned = cleaned.slice(1).trimStart()
   }
 
   // Extract generics: starts with '<', find matching '>'
@@ -1210,6 +1326,23 @@ function convertMethodToFunctionType(_methodName: string, _methodDef: string): s
     else {
       returnType = typeContent.trim()
     }
+  }
+
+  // Apply async/generator defaults when no explicit return type was provided
+  if (returnType === 'unknown') {
+    if (isAsync && isGenerator) {
+      returnType = 'AsyncGenerator<unknown, void, unknown>'
+    }
+    else if (isGenerator) {
+      returnType = 'Generator<unknown, void, unknown>'
+    }
+    else if (isAsync) {
+      returnType = 'Promise<void>'
+    }
+  }
+  else if (isAsync && !returnType.startsWith('Promise<') && !returnType.startsWith('AsyncGenerator<')) {
+    // If async method has explicit non-Promise return type, wrap it
+    returnType = `Promise<${returnType}>`
   }
 
   // Clean parameter defaults

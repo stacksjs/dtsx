@@ -1627,12 +1627,14 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
             depth++
           else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
             depth--
-          else if (ic === CH_LANGLE) {
+          else if (ic === CH_LANGLE && depth === 0) {
+            // Only track angle brackets at depth 0 (top-level generics like Map<K,V>).
+            // Inside braces (function bodies), < and > are comparison operators.
             // Don't count <= as opening angle bracket
             if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL)
               angleDepth++
           }
-          else if (ic === CH_RANGLE && !isArrowGT()) {
+          else if (ic === CH_RANGLE && depth === 0 && !isArrowGT()) {
             // Don't count >= as closing angle bracket, and prevent going negative
             if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
               angleDepth--

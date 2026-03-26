@@ -96,11 +96,7 @@ export declare const complexArrays: {
  * @defaultValue
  * ```ts
  * {
- *   handlers: {
- *     onSuccess<T>: (data: T) => unknown,
- *     onError: (error: Error & { code?: number }) => unknown,
- *     someOtherMethod: () => unknown
- *   },
+ *   handlers: { onSuccess<T>: () => unknown },
  *   utils: {
  *     formatters: {
  *       date: (input: Date) => unknown,
@@ -111,7 +107,7 @@ export declare const complexArrays: {
  * ```
  */
 export declare const complexObject: {
-  handlers: { onSuccess<T>: (data: T) => unknown; onError: (error: Error & { code?: number }) => unknown; someOtherMethod: () => unknown };
+  handlers: { onSuccess<T>: (data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => unknown };
   utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
@@ -151,7 +147,8 @@ export declare const CONFIG_MAP: {
 }
 }
 };
+/** @defaultValue `{ run: () => unknown, runSync: () => unknown }` */
 export declare const command: {
-  run: unknown;
-  runSync: unknown
+  run: () => unknown;
+  runSync: () => unknown
 };
