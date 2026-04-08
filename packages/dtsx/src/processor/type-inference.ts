@@ -1203,6 +1203,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
  *  Method definitions: (params): ReturnType { body }
  *  Arrow functions: (params): ReturnType => body
  *  Key difference: method definitions have no '=>' at top level. */
+// eslint-disable-next-line pickier/no-unused-vars
 function isMethodDefinition(value: string): boolean {
   let stripped = value
   // Strip async/generator prefixes to check what follows
@@ -1538,10 +1539,12 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         const outerParams = bodyTrimmed.substring(outerParenOpen + 1, outerParenClose).trim()
         // For functions like pipe that transform T => T, infer the return type from generics
         if (generics.includes('T') && outerParams.includes('T')) {
-          returnType = '(' + outerParams + ') => T'
+          // eslint-disable-next-line pickier/no-unused-vars
+          returnType = `(${outerParams}) => T`
         }
         else {
-          returnType = '(' + outerParams + ') => any'
+          // eslint-disable-next-line pickier/no-unused-vars
+          returnType = `(${outerParams}) => any`
         }
       }
       else {
