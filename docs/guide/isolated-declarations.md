@@ -3,24 +3,6 @@ title: Isolated Declarations
 description: Understanding TypeScript's isolated declarations and how dtsx optionally leverages them.
 ---
 
-### Explicit Return Types
-
-Functions should have explicit return types:
-
-```ts
-
-// Recommended
-export function greet(name: string): string {
-  return `Hello, ${name}!`
-}
-
-// Also works with dtsx (but tsc would error with isolatedDeclarations)
-export function greet(name: string) {
-  return `Hello, ${name}!`
-}
-
-```
-
 ### Variable Types
 
 dtsx infers types from values automatically — explicit annotations are optional:

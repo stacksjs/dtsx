@@ -2,23 +2,6 @@
 title: Getting Started
 description: Learn how to install and use dtsx for TypeScript declaration file generation.
 ---
-// export declare const greeting: string;
-// export declare function greet(name: string): string;
-
-```
-
-## Basic Configuration
-
-Create a `dts.config.ts` file in your project root:
-
-```ts
-
-// dts.config.ts
-export default {
-  cwd: './',
-  root: './src',
-  entrypoints: ['**/*.ts'],
-  outdir: './dist',
   keepComments: true,
   clean: true,
   verbose: true,

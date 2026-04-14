@@ -3,26 +3,6 @@ title: CLI Commands
 description: Complete reference for dtsx command-line interface.
 ---
 
-# Parallel processing for large projects
-
-dtsx generate --parallel --concurrency 8
-
-# Preview changes without writing
-
-dtsx generate --dry-run --stats
-
-# Validate generated files
-
-dtsx generate --validate
-
-# Exclude test files
-
-dtsx generate --exclude "**/*.test.ts,**/**tests**/**"
-
-# Custom import ordering
-
-dtsx generate --import-order "node:,bun,@myorg/"
-
 # Full verbose output
 
 dtsx generate --verbose --stats --progress

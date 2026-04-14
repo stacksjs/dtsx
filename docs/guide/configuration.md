@@ -2,22 +2,6 @@
 title: Configuration
 description: Configure dtsx for your project with dts.config.ts options.
 ---
-| `diff` | `boolean` | `false` | Show diff of changes |
-
-### Validation Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `validate` | `boolean` | `false` | Validate generated .d.ts files |
-| `continueOnError` | `boolean` | `false` | Continue processing on errors |
-| `dryRun` | `boolean` | `false` | Preview without writing files |
-
-### Filtering Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `exclude` | `string[]` | `[]` | Glob patterns to exclude |
-| `importOrder` | `string[]` | `[]` | Import order priority patterns |
 
 ## Programmatic Configuration
 
