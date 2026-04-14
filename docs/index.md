@@ -35,5 +35,3 @@ features:
     icon: "🧠"
     details: "Sound type inference with @defaultValue preservation — values visible in IDE tooltips."
 ---
-
-<Home />

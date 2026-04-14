@@ -30,6 +30,7 @@ dtsx is designed as a modular, pipeline-based system that processes TypeScript s
 ### Entry Points
 
 #### `src/generator.ts`
+
 The main entry point that orchestrates the entire generation process.
 
 ```typescript
@@ -44,6 +45,7 @@ await generate({
 ```
 
 **Key Functions:**
+
 - `generate()` - Main generation function
 - `generateFromSource()` - Generate from raw source string
 - `processFile()` - Process a single file
@@ -51,20 +53,24 @@ await generate({
 ### Extraction Layer
 
 #### `src/extractor.ts`
+
 Extracts declarations from TypeScript source code.
 
 **Pipeline:**
+
 ```
 Source Code → Tokenization → Declaration Detection → AST Analysis → Declaration Objects
 ```
 
 **Key Functions:**
+
 - `extractDeclarations()` - Extract all declarations from source
 - `extractFunctionDeclaration()` - Parse function signatures
 - `extractClassDeclaration()` - Parse class definitions
 - `extractTypeDeclaration()` - Parse type aliases and interfaces
 
 **Declaration Types:**
+
 ```typescript
 type DeclarationType =
   | 'function'
@@ -80,23 +86,28 @@ type DeclarationType =
 ### Processing Layer
 
 #### `src/processor.ts`
+
 Transforms and optimizes extracted declarations.
 
 **Pipeline:**
+
 ```
 Raw Declarations → Deduplication → Resolution → Optimization → Processed Declarations
 ```
 
 **Key Operations:**
+
 1. Import resolution
 2. Type reference tracking
 3. Generic constraint handling
 4. Overload merging
 
 #### `src/transformers.ts`
+
 Applies transformations to declarations.
 
 **Built-in Transformers:**
+
 - `removePrivateMembers` - Strip private/internal
 - `expandTypeAliases` - Inline type aliases
 - `simplifyGenerics` - Simplify generic constraints
@@ -114,18 +125,22 @@ const pipeline = createTransformerPipeline([
 ### Output Layer
 
 #### `src/formatter.ts`
+
 Formats the final declaration output.
 
 **Features:**
+
 - Consistent indentation
 - Line length management
 - Comment preservation
 - JSDoc formatting
 
 #### `src/bundler.ts`
+
 Bundles multiple declarations into a single file.
 
 **Modes:**
+
 - Single file bundle
 - Per-entry-point bundles
 - Namespace-wrapped bundles
@@ -133,6 +148,7 @@ Bundles multiple declarations into a single file.
 ### Optimization Modules
 
 #### `src/tree-shaker.ts`
+
 Removes unused type declarations.
 
 ```
@@ -140,23 +156,28 @@ Build Dependency Graph → Mark Used Types → Remove Unused → Output
 ```
 
 **Algorithm:**
+
 1. Start with entry point exports
 2. Traverse type references
 3. Mark all reachable types
 4. Remove unreachable declarations
 
 #### `src/merger.ts`
+
 Merges compatible declarations.
 
 **Mergeable Types:**
+
 - Interface declarations (same name)
 - Namespace declarations
 - Enum declarations (with care)
 
 #### `src/import-sorter.ts`
+
 Organizes and deduplicates imports.
 
 **Sort Order:**
+
 1. Built-in modules (`node:*`)
 2. External packages
 3. Internal aliases
@@ -166,9 +187,11 @@ Organizes and deduplicates imports.
 ### Caching & Performance
 
 #### `src/cache.ts`
+
 File-based caching for incremental builds.
 
 **Cache Keys:**
+
 - File content hash
 - Config hash
 - Dependency hashes
@@ -185,23 +208,28 @@ interface CacheEntry {
 ```
 
 #### `src/incremental.ts`
+
 Incremental build support with dependency tracking.
 
 **Features:**
+
 - Content-based invalidation
 - Dependency graph tracking
 - Partial regeneration
 
 #### `src/memory.ts`
+
 Memory optimization utilities.
 
 **Components:**
+
 - `StreamingProcessor` - Large file handling
 - `DeclarationPool` - WeakRef-based pooling
 - `StringInterner` - String deduplication
 - `ObjectPool` - Reusable object instances
 
 #### `src/worker.ts`
+
 Worker thread parallelization.
 
 ```typescript
@@ -216,17 +244,21 @@ const results = await pool.processFiles(files, config)
 ### Tooling Integration
 
 #### `src/watcher.ts`
+
 File watching for development mode.
 
 **Features:**
+
 - Debounced regeneration
 - Change detection
 - Selective rebuilds
 
 #### `src/lsp.ts`
+
 Language Server Protocol support.
 
 **Capabilities:**
+
 - Hover information
 - Go to definition
 - Find references
@@ -235,9 +267,11 @@ Language Server Protocol support.
 - Formatting
 
 #### `src/sourcemap.ts`
+
 Source map generation.
 
 **Features:**
+
 - VLQ encoding
 - Source content embedding
 - Bi-directional mapping
@@ -245,26 +279,32 @@ Source map generation.
 ### Analysis & Diagnostics
 
 #### `src/checker.ts`
+
 Type checking and validation.
 
 **Checks:**
+
 - Missing type references
 - Circular dependencies
 - Invalid generics
 - Export consistency
 
 #### `src/diff.ts`
+
 Declaration diff generation.
 
 **Use Cases:**
+
 - API change detection
 - Breaking change analysis
 - Version comparison
 
 #### `src/docs.ts`
+
 Documentation generation.
 
 **Formats:**
+
 - Markdown
 - JSON
 - TypeDoc-compatible
@@ -272,6 +312,7 @@ Documentation generation.
 ### Plugin System
 
 #### `src/plugins.ts`
+
 Extensibility through plugins.
 
 ```typescript
@@ -290,6 +331,7 @@ interface DtsxPlugin {
 ```
 
 **Plugin Example:**
+
 ```typescript
 const myPlugin: DtsxPlugin = {
   name: 'my-plugin',
@@ -444,16 +486,19 @@ class ValidationError extends DtsxError { code = 'VALIDATION_ERROR' }
 ## Testing Strategy
 
 ### Unit Tests
+
 - Individual function testing
 - Parser edge cases
 - Transformer correctness
 
 ### Integration Tests
+
 - Full pipeline testing
 - Fixture-based comparison
 - Snapshot testing
 
 ### Performance Tests
+
 - Benchmark suite
 - Memory profiling
 - Regression detection

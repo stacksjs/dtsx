@@ -41,6 +41,7 @@ export interface User<T = string> {
 ```
 
 **Supported Interface Features:**
+
 - Generic type parameters with constraints and defaults
 - Optional properties (`?`)
 - Readonly properties
@@ -76,6 +77,7 @@ export type EventHandler<T extends Event = Event> = (event: T) => void
 ```
 
 **Supported Type Features:**
+
 - Union and intersection types
 - Generic type parameters
 - Conditional types
@@ -90,12 +92,14 @@ Comprehensive function declaration support:
 ```typescript
 // Source
 /**
+
  * Processes user data with validation
  * @param user - The user object to process
  * @param options - Processing options
  * @returns Promise resolving to processed user
  * @example
  * const result = await processUser(user, { validate: true })
+
  */
 export async function processUser<T extends User>(
   user: T,
@@ -106,12 +110,14 @@ export async function processUser<T extends User>(
 
 // Generated .d.ts
 /**
+
  * Processes user data with validation
  * @param user - The user object to process
  * @param options - Processing options
  * @returns Promise resolving to processed user
  * @example
  * const result = await processUser(user, { validate: true })
+
  */
 export declare function processUser<T extends User>(
   user: T,
@@ -120,6 +126,7 @@ export declare function processUser<T extends User>(
 ```
 
 **Supported Function Features:**
+
 - Generic type parameters with constraints
 - Optional parameters
 - Default parameter values
@@ -136,21 +143,27 @@ Full class declaration support with all TypeScript features:
 ```typescript
 // Source
 /**
+
  * Base user management class
+
  */
 export abstract class BaseUserManager<T extends User = User> {
   protected users: Map<string, T> = new Map()
 
   /**
+
    * Adds a user to the manager
    * @param user - User to add
+
    */
   abstract addUser(user: T): Promise<void>
 
   /**
+
    * Gets a user by ID
    * @param id - User ID
    * @returns User or undefined
+
    */
   getUser(id: string): T | undefined {
     return this.users.get(id)
@@ -159,25 +172,32 @@ export abstract class BaseUserManager<T extends User = User> {
 
 // Generated .d.ts
 /**
+
  * Base user management class
+
  */
 export declare abstract class BaseUserManager<T extends User = User> {
   protected users: Map<string, T>
   /**
+
    * Adds a user to the manager
    * @param user - User to add
+
    */
   abstract addUser(user: T): Promise<void>
   /**
+
    * Gets a user by ID
    * @param id - User ID
    * @returns User or undefined
+
    */
   getUser(id: string): T | undefined
 }
 ```
 
 **Supported Class Features:**
+
 - Abstract classes and methods
 - Access modifiers (public, private, protected)
 - Static members
@@ -195,7 +215,9 @@ Support for both numeric and string enums:
 ```typescript
 // Source
 /**
+
  * User role enumeration
+
  */
 export enum UserRole {
   /** Standard user */
@@ -203,18 +225,20 @@ export enum UserRole {
   /** Administrator */
   ADMIN = 'admin',
   /** Super administrator */
-  SUPER_ADMIN = 'super_admin'
+  SUPER*ADMIN = 'super*admin'
 }
 
 export enum HttpStatus {
   OK = 200,
-  NOT_FOUND = 404,
-  SERVER_ERROR = 500
+  NOT*FOUND = 404,
+  SERVER*ERROR = 500
 }
 
 // Generated .d.ts
 /**
+
  * User role enumeration
+
  */
 export declare enum UserRole {
   /** Standard user */
@@ -222,12 +246,12 @@ export declare enum UserRole {
   /** Administrator */
   ADMIN = 'admin',
   /** Super administrator */
-  SUPER_ADMIN = 'super_admin'
+  SUPER*ADMIN = 'super*admin'
 }
 export declare enum HttpStatus {
   OK = 200,
-  NOT_FOUND = 404,
-  SERVER_ERROR = 500
+  NOT*FOUND = 404,
+  SERVER*ERROR = 500
 }
 ```
 
@@ -237,8 +261,8 @@ Smart type inference for variable declarations:
 
 ```typescript
 // Source
-export const API_BASE_URL = 'https://api.example.com' as const
-export const DEFAULT_CONFIG = {
+export const API*BASE*URL = 'https://api.example.com' as const
+export const DEFAULT*CONFIG = {
   timeout: 5000,
   retries: 3,
   debug: false
@@ -247,8 +271,8 @@ export const DEFAULT_CONFIG = {
 export let globalState: { user?: User } = {}
 
 // Generated .d.ts
-export declare const API_BASE_URL: "https://api.example.com"
-export declare const DEFAULT_CONFIG: {
+export declare const API*BASE*URL: "https://api.example.com"
+export declare const DEFAULT*CONFIG: {
   readonly timeout: 5000
   readonly retries: 3
   readonly debug: false
@@ -257,6 +281,7 @@ export declare let globalState: { user?: User }
 ```
 
 **Variable Features:**
+
 - Const assertions for literal types
 - Readonly type inference
 - Complex object type inference

@@ -85,7 +85,7 @@ _You may also run:_
 ```bash
 ./dtsx generate
 
-# if the package is installed, you can also run:
+# if the package is installed, you can also run
 # bunx dtsx generate
 ```
 
@@ -112,19 +112,19 @@ dtsx
 Use custom options to override defaults:
 
 ```bash
-# Generate declarations for specific entry points:
+# Generate declarations for specific entry points
 dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types
 
-# Generate declarations with custom configuration:
+# Generate declarations with custom configuration
 dtsx generate --root ./lib --outdir ./types --clean
 
-# Disable comment preservation:
+# Disable comment preservation
 dtsx generate --keep-comments=false
 
-# Enable verbose logging:
+# Enable verbose logging
 dtsx generate --verbose
 
-# Use flat output structure:
+# Use flat output structure
 dtsx generate --output-structure flat
 ```
 
@@ -190,7 +190,7 @@ await generate({
     'src/index.ts',
     'src/components/**/*.ts',
     'src/utils/**/*.ts',
-    '!src/**/*.test.ts', // Exclude test files
+    '!src/**/_.test.ts', // Exclude test files
   ],
 })
 ```
@@ -230,8 +230,9 @@ await generate({
 ```
 
 When `keepComments` is enabled, the following are preserved:
+
 - JSDoc comments with tags (`@param`, `@returns`, `@example`, etc.)
-- Block comments (`/* ... */`)
+- Block comments (`/_ ... */`)
 - Single-line comments (`//`)
 
 ### Error Handling

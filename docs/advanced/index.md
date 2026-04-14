@@ -47,6 +47,7 @@ Solve common issues and debug complex scenarios:
 Advanced configuration techniques:
 
 ### Multi-Package Monorepos
+
 ```typescript
 // dts.config.ts
 export default {
@@ -60,6 +61,7 @@ export default {
 ```
 
 ### Selective Type Generation
+
 ```typescript
 // Generate only specific modules
 export default {
@@ -71,6 +73,7 @@ export default {
 ```
 
 ### Custom Output Structures
+
 ```typescript
 // Flat structure for libraries
 export default {
@@ -82,24 +85,28 @@ export default {
 ## Best Practices
 
 ### Type Design
+
 - Use explicit type annotations for public APIs
 - Leverage JSDoc comments for comprehensive documentation
 - dtsx infers narrow types automatically — explicit annotations are optional
 - Avoid complex type computations in public interfaces
 
 ### Project Structure
+
 - Organize types in dedicated files when appropriate
 - Use barrel exports for clean public APIs
 - Separate internal types from public interfaces
 - Maintain consistent naming conventions
 
 ### Performance
+
 - Use type-only imports when possible
 - Minimize circular dependencies
 - Consider output structure impact on bundle size
 - Enable verbose logging only for debugging
 
 ### Documentation
+
 - Include comprehensive JSDoc comments
 - Use `@example` tags for usage examples
 - Document complex type relationships
@@ -108,14 +115,17 @@ export default {
 ## Advanced Use Cases
 
 ### Library Development
+
 Creating type-safe libraries with comprehensive declaration files:
 
 ```typescript
 // src/index.ts
 /**
+
  * Main library interface
  * @example
  * const lib = new MyLibrary({ config: true })
+
  */
 export class MyLibrary {
   constructor(options: LibraryOptions) {}
@@ -125,6 +135,7 @@ export type { LibraryOptions } from './types'
 ```
 
 ### API Client Generation
+
 Generating types for API clients and SDKs:
 
 ```typescript

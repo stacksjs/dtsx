@@ -21,6 +21,7 @@ This guide covers common issues and their solutions when using dtsx.
 **Error**: `bun: command not found`
 
 **Solution**: Install Bun first:
+
 ```bash
 curl -fsSL https://bun.sh/install | bash
 ```
@@ -30,6 +31,7 @@ curl -fsSL https://bun.sh/install | bash
 **Warning**: `WARN unmet peer dependency`
 
 **Solution**: These are usually optional. For build tool plugins, install the required peer:
+
 ```bash
 # For Vite plugin
 bun add vite -d
@@ -46,6 +48,7 @@ bun add tsup -d
 **Error**: `Cannot find module 'typescript'`
 
 **Solution**: Ensure TypeScript is installed:
+
 ```bash
 bun add typescript -d
 ```
@@ -57,6 +60,7 @@ bun add typescript -d
 **Error**: `Could not find dtsx.config.ts`
 
 **Solution**: Create the config file or use CLI flags:
+
 ```bash
 # Use CLI flags instead
 dtsx generate --root ./src --outdir ./dist
@@ -70,6 +74,7 @@ touch dtsx.config.ts
 **Error**: `Invalid configuration option`
 
 **Solution**: Check the config schema:
+
 ```typescript
 // dtsx.config.ts
 import { defineConfig } from '@stacksjs/dtsx'
@@ -91,12 +96,15 @@ export default defineConfig({
 **Error**: `Cannot find tsconfig.json`
 
 **Solution**:
+
 1. Create a tsconfig.json:
+
 ```bash
 bunx tsc --init
 ```
 
 2. Or specify path explicitly:
+
 ```typescript
 export default defineConfig({
   tsconfigPath: './config/tsconfig.build.json',
@@ -108,6 +116,7 @@ export default defineConfig({
 **Error**: `Cannot resolve module '@/utils'`
 
 **Solution**: Ensure paths are in tsconfig:
+
 ```json
 // tsconfig.json
 {
@@ -121,6 +130,7 @@ export default defineConfig({
 ```
 
 Then reference the tsconfig:
+
 ```typescript
 export default defineConfig({
   tsconfigPath: 'tsconfig.json',
@@ -136,6 +146,7 @@ export default defineConfig({
 **Solutions**:
 
 1. Check entrypoints exist:
+
 ```typescript
 export default defineConfig({
   entrypoints: ['src/index.ts'], // Make sure this file exists
@@ -143,6 +154,7 @@ export default defineConfig({
 ```
 
 2. Check for glob pattern issues:
+
 ```typescript
 // Wrong - file extension missing
 entrypoints: ['src/index']
@@ -152,6 +164,7 @@ entrypoints: ['src/index.ts']
 ```
 
 3. Enable verbose mode:
+
 ```bash
 dtsx generate --verbose
 ```
@@ -163,17 +176,20 @@ dtsx generate --verbose
 **Solutions**:
 
 1. Ensure exports exist:
+
 ```typescript
 // src/index.ts
 export function myFunction() {} // Must have 'export'
 ```
 
 2. Check for export errors:
+
 ```bash
 dtsx generate --validate
 ```
 
 3. Verify the file is being processed:
+
 ```bash
 dtsx generate --verbose --stats
 ```
@@ -185,6 +201,7 @@ dtsx generate --verbose --stats
 **Solutions**:
 
 1. Check export syntax:
+
 ```typescript
 // These all work:
 export function foo() {}
@@ -195,11 +212,13 @@ export * from './module'
 ```
 
 2. Check for circular dependencies:
+
 ```bash
 dtsx check --circular
 ```
 
 3. Ensure re-exports are included:
+
 ```typescript
 // src/index.ts
 export * from './utils'  // Make sure this is present
@@ -211,6 +230,7 @@ export * from './types'
 **Problem**: Same declaration appears multiple times
 
 **Solution**: Use the merger:
+
 ```typescript
 import { mergeDeclarations } from '@stacksjs/dtsx'
 
@@ -232,6 +252,7 @@ export default defineConfig({
 **Problem**: Files generated in wrong location
 
 **Solution**: Check outdir is absolute or relative to cwd:
+
 ```typescript
 export default defineConfig({
   cwd: process.cwd(),
@@ -248,11 +269,13 @@ export default defineConfig({
 **Solutions**:
 
 1. Add triple-slash references:
+
 ```typescript
 /// <reference types="node" />
 ```
 
 2. Include ambient declarations:
+
 ```typescript
 export default defineConfig({
   entrypoints: [
@@ -267,6 +290,7 @@ export default defineConfig({
 **Problem**: Imports in `.d.ts` have wrong paths
 
 **Solution**: Check module resolution:
+
 ```json
 // tsconfig.json
 {
@@ -281,6 +305,7 @@ export default defineConfig({
 **Problem**: JSDoc comments missing from output
 
 **Solution**: Enable comment preservation:
+
 ```typescript
 export default defineConfig({
   keepComments: true, // Default is true
@@ -292,6 +317,7 @@ export default defineConfig({
 **Problem**: Output has inconsistent formatting
 
 **Solution**: Use the formatter:
+
 ```bash
 dtsx generate --format
 
@@ -308,6 +334,7 @@ dtsx generate --indent-style spaces --indent-size 2
 **Solutions**:
 
 1. Use entry points only:
+
 ```typescript
 export default defineConfig({
   entrypoints: ['src/index.ts'], // Not ['src/**/*.ts']
@@ -315,11 +342,13 @@ export default defineConfig({
 ```
 
 2. Enable incremental builds:
+
 ```bash
 dtsx generate --incremental
 ```
 
 3. Exclude test files:
+
 ```typescript
 export default defineConfig({
   exclude: ['**/*.test.ts', '**/*.spec.ts'],
@@ -327,6 +356,7 @@ export default defineConfig({
 ```
 
 4. Use parallel processing:
+
 ```bash
 dtsx generate --parallel --concurrency 4
 ```
@@ -340,11 +370,13 @@ See [PERFORMANCE.md](./PERFORMANCE.md) for detailed optimization tips.
 **Solutions**:
 
 1. Increase Node memory:
+
 ```bash
 NODE_OPTIONS="--max-old-space-size=4096" dtsx generate
 ```
 
 2. Use streaming for large files:
+
 ```typescript
 import { StreamingProcessor } from '@stacksjs/dtsx'
 
@@ -354,6 +386,7 @@ const processor = new StreamingProcessor({
 ```
 
 3. Process in batches:
+
 ```typescript
 export default defineConfig({
   batchSize: 50, // Process 50 files at a time
@@ -367,17 +400,20 @@ export default defineConfig({
 **Solutions**:
 
 1. Check cache directory exists and is writable:
+
 ```bash
 ls -la .dtsx-cache
 ```
 
 2. Verify cache is being used:
+
 ```bash
 dtsx generate --incremental --verbose
 # Look for "Cache hit" messages
 ```
 
 3. Clear corrupted cache:
+
 ```bash
 dtsx generate --clear-cache
 ```
@@ -391,6 +427,7 @@ dtsx generate --clear-cache
 **Solutions**:
 
 1. Check trigger setting:
+
 ```typescript
 // vite.config.ts
 dts({
@@ -400,6 +437,7 @@ dts({
 ```
 
 2. Verify plugin is loaded:
+
 ```typescript
 // vite.config.ts
 export default {
@@ -416,6 +454,7 @@ export default {
 **Solutions**:
 
 1. Check webpack version compatibility:
+
 ```json
 // package.json - requires webpack 4 or 5
 "peerDependencies": {
@@ -424,6 +463,7 @@ export default {
 ```
 
 2. Verify entry points:
+
 ```javascript
 // webpack.config.js
 module.exports = {
@@ -436,6 +476,7 @@ module.exports = {
 **Problem**: Both tsup dts and dtsx running
 
 **Solution**: Disable tsup's built-in dts:
+
 ```typescript
 // tsup.config.ts
 export default {
@@ -449,6 +490,7 @@ export default {
 **Problem**: esbuild-plugin-dtsx produces no output
 
 **Solution**: Check trigger and entry points:
+
 ```typescript
 dtsx({
   trigger: 'build', // or 'both' for watch mode
@@ -463,6 +505,7 @@ dtsx({
 **Problem**: Generic types lose type parameters
 
 **Example**:
+
 ```typescript
 // Input
 export function identity<T>(value: T): T { return value }
@@ -475,6 +518,7 @@ export declare function identity<T>(value: T): T
 ```
 
 **Solution**: Ensure generics are explicitly typed:
+
 ```typescript
 // Add explicit type annotations
 export function identity<T>(value: T): T {
@@ -487,6 +531,7 @@ export function identity<T>(value: T): T {
 **Problem**: Complex conditional types become `any`
 
 **Solution**: Use explicit type aliases:
+
 ```typescript
 // Instead of inline conditional
 export function foo(): T extends string ? number : boolean
@@ -501,6 +546,7 @@ export function foo<T>(): FooReturn<T>
 **Problem**: Mapped types not preserved correctly
 
 **Solution**: Check for modifier preservation:
+
 ```typescript
 // These should be preserved:
 type Readonly<T> = { readonly [K in keyof T]: T[K] }
@@ -513,6 +559,7 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 **Problem**: Decorated classes have wrong types
 
 **Solution**: Enable experimental decorators:
+
 ```json
 // tsconfig.json
 {
@@ -528,6 +575,7 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 **Problem**: Const enums not emitted correctly
 
 **Solution**: Check tsconfig settings:
+
 ```json
 // tsconfig.json
 {
@@ -546,16 +594,19 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 **Solutions**:
 
 1. Install globally:
+
 ```bash
 bun add -g @stacksjs/dtsx
 ```
 
 2. Or use npx/bunx:
+
 ```bash
 bunx dtsx generate
 ```
 
 3. Or add to package.json scripts:
+
 ```json
 {
   "scripts": {
@@ -569,6 +620,7 @@ bunx dtsx generate
 **Error**: `Unknown option: --foo`
 
 **Solution**: Check available options:
+
 ```bash
 dtsx generate --help
 ```
@@ -582,6 +634,7 @@ dtsx generate --help
 | 2 | Partial failure |
 
 Check exit code:
+
 ```bash
 dtsx generate
 echo $?
@@ -592,6 +645,7 @@ echo $?
 **Problem**: Piping to dtsx doesn't work
 
 **Solution**: Use the stdin command:
+
 ```bash
 cat src/index.ts | dtsx stdin
 ```
@@ -601,6 +655,7 @@ cat src/index.ts | dtsx stdin
 ### Debug Mode
 
 Enable verbose output:
+
 ```bash
 dtsx generate --verbose --debug
 ```
@@ -628,7 +683,7 @@ When reporting issues, include:
 5. Expected vs actual output
 6. Config file contents
 
-Open issues at: https://github.com/stacksjs/dtsx/issues
+Open issues at: <https://github.com/stacksjs/dtsx/issues>
 
 ### Community Support
 

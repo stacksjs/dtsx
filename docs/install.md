@@ -158,22 +158,25 @@ For optimal performance, you can optionally enable `isolatedDeclarations` in `ts
 ### Common Issues
 
 1. **Permission Denied (Binary Installation)**
+
    ```bash
-   # Make sure the binary is executable
+# Make sure the binary is executable
    chmod +x dtsx
    ```
 
 2. **Command Not Found**
+
    ```bash
-   # Ensure the binary is in your PATH
+# Ensure the binary is in your PATH
    echo $PATH
    which dtsx
    ```
 
 3. **TypeScript Errors**
+
    ```bash
-   # dtsx works without isolatedDeclarations
-   # Check your source files for syntax errors
+# dtsx works without isolatedDeclarations
+# Check your source files for syntax errors
    ```
 
 ### Getting Help

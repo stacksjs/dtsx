@@ -8,79 +8,96 @@ import type { DtsGenerationConfig } from '@stacksjs/dtsx'
 
 const config: DtsGenerationConfig = {
   /**
+
    * The current working directory for the operation.
    * @default process.cwd()
    * @type {string}
    * @example
    * cwd: './'
+
    */
   cwd: './',
 
   /**
+
    * The root directory of the source files.
    * @default './src'
    * @type {string}
    * @example
    * root: './src'
+
    */
   root: './src',
 
   /**
+
    * The entry points for generating the declaration files.
    * Supports glob patterns for flexible selection.
    * @default ['**/*.ts']
    * @type {string[]}
    * @example
    * entrypoints: ['**/*.ts']
+
    */
   entrypoints: ['**/*.ts'],
 
   /**
+
    * The output directory for the generated declaration files.
    * @default './dist'
    * @type {string}
    * @example
    * outdir: './dist'
+
    */
   outdir: './dist',
 
   /**
+
    * Whether to preserve comments in the generated files.
    * @default true
    * @type {boolean}
    * @example
    * keepComments: true
+
    */
   keepComments: true,
 
   /**
+
    * Whether to clean the output directory before generating new files.
    * @default true
    * @type {boolean}
    * @example
    * clean: true
+
    */
   clean: true,
 
   /**
+
    * Path to the TypeScript configuration file.
    * @default './tsconfig.json'
    * @type {string}
    * @example
    * tsconfigPath: './tsconfig.json'
+
    */
   tsconfigPath: './tsconfig.json',
 
   /**
+
    * Output structure: 'mirror' to mirror source folder structure, 'flat' for flat output.
    * @default 'mirror'
    * @type {'mirror' | 'flat'}
    * @example
    * outputStructure: 'mirror'
+
    */
   outputStructure: 'mirror',
 
   /**
+
    * Whether to print detailed logs to the console.
    * Can be a boolean or array of specific log types.
    * @default false
@@ -89,6 +106,7 @@ const config: DtsGenerationConfig = {
    * verbose: true
    * // or
    * verbose: ['generation', 'processing']
+
    */
   verbose: false,
 }
@@ -236,10 +254,11 @@ keepComments: false
 ```
 
 When `keepComments` is enabled, the following comment types are preserved:
-- JSDoc comments (`/** ... */`)
-- Block comments (`/* ... */`)
-- Single-line comments (`//`)
-- Documentation tags (`@param`, `@returns`, `@example`, etc.)
+
+* JSDoc comments (`/** ... */`)
+* Block comments (`/* ... */`)
+* Single-line comments (`//`)
+* Documentation tags (`@param`, `@returns`, `@example`, etc.)
 
 ## Environment Variables
 
@@ -247,10 +266,10 @@ Some options can be controlled via environment variables:
 
 ```bash
 # Set verbose logging
-DTSX_VERBOSE=true
+DTSX*VERBOSE=true
 
 # Set output directory
-DTSX_OUTDIR=./types
+DTSX*OUTDIR=./types
 
 # Set root directory
 DTSX_ROOT=./lib

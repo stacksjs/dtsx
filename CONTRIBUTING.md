@@ -222,6 +222,7 @@ export function extractType(source: string) {
 Brief description of changes
 
 ## Changes
+
 - Change 1
 - Change 2
 
@@ -255,7 +256,9 @@ Create a new module in `src/`:
 // src/my-feature.ts
 
 /**
+
  * Configuration for my feature
+
  */
 export interface MyFeatureConfig {
   option1: string
@@ -263,10 +266,12 @@ export interface MyFeatureConfig {
 }
 
 /**
+
  * Main function description
  * @param input - Input description
  * @param config - Configuration options
  * @returns Output description
+
  */
 export function myFeature(input: string, config: MyFeatureConfig): string {
   // Implementation
@@ -414,7 +419,7 @@ ts.forEachChild(sourceFile, (node) => {
 2. Call hook at appropriate point in pipeline
 3. Document in README
 
-## Questions?
+## Questions
 
 - Open a [GitHub Issue](https://github.com/stacksjs/dtsx/issues)
 - Check existing issues for answers

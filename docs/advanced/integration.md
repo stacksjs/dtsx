@@ -72,13 +72,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+
       - uses: actions/checkout@v2
       - uses: actions/setup-node@v2
+
         with:
           node-version: '18'
+
       - run: npm install
       - run: npm run build
       - run: npm run generate-dts
+
 ```
 
 ### GitLab CI
@@ -88,9 +92,11 @@ jobs:
 build:
   image: node:18
   script:
+
     - npm install
     - npm run build
     - npm run generate-dts
+
 ```
 
 ## Custom Transformers

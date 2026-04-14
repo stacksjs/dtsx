@@ -77,16 +77,18 @@ export const config = {
 ```ts
 // Generated .d.ts — sound types with @defaultValue
 /**
- * @defaultValue
- * ```ts
- * {
- *   apiUrl: 'https://api.stacksjs.org',
- *   timeout: 5000,
- *   retries: 3,
- *   features: { darkMode: true, notifications: false },
- *   routes: ['/', '/about', '/contact']
- * }
- * ```
+
+ _ @defaultValue
+ _ ```ts
+ _ {
+ _ apiUrl: 'https://api.stacksjs.org',
+ _ timeout: 5000,
+ _ retries: 3,
+ _ features: { darkMode: true, notifications: false },
+ _ routes: ['/', '/about', '/contact']
+ _ }
+ _ ```
+
  */
 export declare const config: {
   /** @defaultValue 'https://api.stacksjs.org' */
@@ -212,7 +214,7 @@ All three tools correctly widen mutable container properties. The difference is 
 
 | Tool | Widened type | Original value preserved? |
 |---|---|---|
-| **dtsx** | `/** @defaultValue 5000 */ timeout: number` | **Yes** — via `@defaultValue` JSDoc |
+| **dtsx**| `/** @defaultValue 5000 */ timeout: number` | **Yes** — via `@defaultValue` JSDoc |
 | tsc | `timeout: number` | No — value lost entirely |
 | oxc | `timeout: number` | No — value lost entirely |
 
@@ -286,8 +288,8 @@ export const promiseVal = Promise.resolve(42)
 | `config.routes` | `string[]` | `string[]` | `unknown` (error) |
 | `conf` _(generic annotation)_ | exact properties | `{ [key]: string }` | `{ [key]: string }` |
 | `Promise.resolve(42)` | `Promise<42>` | `Promise<number>` | `unknown` (error) |
-| **Value info preserved?** | **Yes** | **No** | **No** |
-| **Errors** | **0** | **0** | **3** |
+| **Value info preserved?**|**Yes**|**No**|**No** |
+| **Errors**|**0**|**0**|**3** |
 
 - **tsc** compiles fine but widens object properties to `string`/`number`/`boolean` and arrays to `type[]`. Original values are lost.
 - **oxc** uses `isolatedDeclarations` mode which requires explicit type annotations or `as const` — without them it errors and emits `unknown`.

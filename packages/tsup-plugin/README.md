@@ -200,7 +200,7 @@ export default defineConfig({
 })
 ```
 
-## Why Use dtsx Instead of tsup's Built-in dts?
+## Why Use dtsx Instead of tsup's Built-in dts
 
 1. **Faster**: dtsx is optimized for speed and can be significantly faster for large projects
 2. **More Options**: Bundling, filtering, callbacks, and more

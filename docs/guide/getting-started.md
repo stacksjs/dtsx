@@ -2,91 +2,9 @@
 title: Getting Started
 description: Learn how to install and use dtsx for TypeScript declaration file generation.
 ---
-
-# Getting Started
-
-dtsx is an extremely fast TypeScript declaration file (`.d.ts`) generator that infers sound types from your source values, preserving original values via `@defaultValue` JSDoc.
-
-## Prerequisites
-
-- [Bun](https://bun.sh) v1.0.0 or higher
-- TypeScript 5.0 or higher
-
-## Installation
-
-```bash
-# Using Bun (recommended)
-bun add -d @stacksjs/dtsx
-
-# Using npm
-npm install -D @stacksjs/dtsx
-
-# Using pnpm
-pnpm add -D @stacksjs/dtsx
-```
-
-## Isolated Declarations (Optional)
-
-dtsx works out of the box without `isolatedDeclarations`. If you enable it, dtsx uses it as a fast path to skip initializer parsing when explicit type annotations are present:
-
-```json
-{
-  "compilerOptions": {
-    "isolatedDeclarations": true // optional — dtsx works great without it
-  }
-}
-```
-
-## Quick Start
-
-### CLI Usage
-
-Generate declaration files for your project:
-
-```bash
-# Generate with default options
-bunx dtsx generate
-
-# Generate with custom options
-bunx dtsx generate --root ./src --outdir ./dist
-```
-
-### Library Usage
-
-Use dtsx programmatically in your build scripts:
-
-```ts
-import { generate, processSource } from '@stacksjs/dtsx'
-
-// Generate declarations for your project
-const stats = await generate({
-  root: './src',
-  outdir: './dist',
-  clean: true,
-})
-
-console.log(`Generated ${stats.filesGenerated} files in ${stats.durationMs}ms`)
-```
-
-### Process Source Directly
-
-Transform TypeScript source code to declarations:
-
-```ts
-import { processSource } from '@stacksjs/dtsx'
-
-const source = `
-  export const greeting: string = "Hello";
-  export function greet(name: string): string {
-    return greeting + " " + name;
-  }
-`
-
-const dts = processSource(source)
-console.log(dts)
-// Output:
 // export declare const greeting: string;
 // export declare function greet(name: string): string;
+
 ```
 
 ## Basic Configuration
@@ -94,6 +12,7 @@ console.log(dts)
 Create a `dts.config.ts` file in your project root:
 
 ```ts
+
 // dts.config.ts
 export default {
   cwd: './',
@@ -104,6 +23,7 @@ export default {
   clean: true,
   verbose: true,
 }
+
 ```
 
 ## Watch Mode
@@ -111,7 +31,9 @@ export default {
 Watch for changes and regenerate automatically:
 
 ```bash
+
 bunx dtsx watch
+
 ```
 
 ## Stdin/Stdout Processing
@@ -119,7 +41,9 @@ bunx dtsx watch
 Process TypeScript from stdin:
 
 ```bash
+
 echo "export const foo: string = 'bar'" | bunx dtsx stdin
+
 ```
 
 ## Next Steps

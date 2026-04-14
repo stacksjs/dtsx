@@ -116,7 +116,7 @@ _You may also run:_
 ```bash
 ./dtsx generate
 
-# if the package is installed, you can also run:
+# if the package is installed, you can also run
 # bunx dtsx generate
 ```
 

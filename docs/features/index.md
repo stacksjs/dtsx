@@ -16,6 +16,7 @@ dtsx provides a comprehensive set of features for generating TypeScript declarat
 dtsx supports all TypeScript declaration types:
 
 ### Basic Types
+
 - **Interfaces and Type Aliases**: Full support with generics, extends, and complex inheritance
 - **Functions and Methods**: Including overloads, generics, async functions, and generators
 - **Classes**: With constructors, methods, properties, inheritance, and access modifiers
@@ -23,6 +24,7 @@ dtsx supports all TypeScript declaration types:
 - **Variables**: const, let, var declarations with proper type inference
 
 ### Advanced Types
+
 - **Modules and Namespaces**: Nested declarations and proper scoping
 - **Generics**: Type parameters, constraints, and default types
 - **Union/Intersection Types**: Complex type combinations
@@ -32,6 +34,7 @@ dtsx supports all TypeScript declaration types:
 - **Utility Types**: Built-in and custom utility type support
 
 ### Import/Export Handling
+
 - **ES6 Imports/Exports**: Named, default, and namespace imports
 - **Type-only Imports**: Proper handling of `import type` statements
 - **Re-exports**: Export forwarding and barrel exports
@@ -40,18 +43,21 @@ dtsx supports all TypeScript declaration types:
 ## Configuration Options
 
 ### Core Configuration
+
 - **Source Root Directory**: Configurable source directory (`root`)
 - **Entry Point Specification**: Glob patterns for flexible file selection (`entrypoints`)
 - **Output Directory Control**: Customizable output location (`outdir`)
 - **Working Directory**: Configurable current working directory (`cwd`)
 
 ### Generation Options
+
 - **Comment Preservation**: Toggle JSDoc and comment preservation (`keepComments`)
 - **Clean Output**: Automatic cleanup of output directory (`clean`)
 - **Output Structure**: Mirror source structure or flat output (`outputStructure`)
 - **TypeScript Configuration**: Custom tsconfig.json path (`tsconfigPath`)
 
 ### Development Options
+
 - **Verbose Logging**: Detailed generation logs for debugging (`verbose`)
 - **Isolated Declarations**: Optional fast path — dtsx works great without it
 - **Error Handling**: Comprehensive error reporting and validation
@@ -61,11 +67,14 @@ dtsx supports all TypeScript declaration types:
 When `keepComments: true` (default), dtsx preserves:
 
 ### JSDoc Comments
+
 ```typescript
 /**
+
  * User interface with comprehensive documentation
  * @example
  * const user: User = { name: "John", age: 30 }
+
  */
 export interface User {
   /** User's full name */
@@ -76,6 +85,7 @@ export interface User {
 ```
 
 ### Documentation Tags
+
 - `@param` - Parameter descriptions
 - `@returns` - Return value documentation
 - `@example` - Usage examples
@@ -87,6 +97,7 @@ export interface User {
 - `@template` - Generic type documentation
 
 ### Comment Types
+
 - **Block Comments**: `/* ... */`
 - **Single-line Comments**: `//`
 - **Multi-line Documentation**: Proper formatting preservation
@@ -94,12 +105,14 @@ export interface User {
 ## Performance Features
 
 ### Optimized Processing
+
 - **Bun Runtime**: Leverages Bun's fast JavaScript runtime
 - **TypeScript AST**: Direct TypeScript compiler API usage
 - **Minimal Dependencies**: Lightweight with focused functionality
 - **Efficient File I/O**: Optimized file reading and writing
 
 ### Smart Analysis
+
 - **Selective Processing**: Only processes exported declarations
 - **Dependency Tracking**: Tracks type dependencies and relationships
 - **Circular Reference Handling**: Proper handling of circular type dependencies
@@ -108,12 +121,14 @@ export interface User {
 ## CLI Features
 
 ### Command Structure
+
 - **Default Command**: Simple `dtsx` for quick generation
 - **Explicit Commands**: `dtsx generate` for clarity
 - **Version Command**: `dtsx version` for version info
 - **Help System**: Comprehensive help with examples
 
 ### Option Handling
+
 - **Boolean Flags**: `--clean`, `--verbose`, `--keep-comments`
 - **Value Options**: `--root`, `--outdir`, `--entrypoints`
 - **Path Resolution**: Automatic path resolution and validation
@@ -122,12 +137,14 @@ export interface User {
 ## Integration Features
 
 ### Build Tool Integration
+
 - **Package.json Scripts**: Easy integration with npm scripts
 - **CI/CD Support**: Suitable for automated build pipelines
 - **Watch Mode**: File watching capabilities (future feature)
 - **Incremental Builds**: Smart rebuilding (future feature)
 
 ### Configuration Management
+
 - **Config Files**: `dts.config.ts` and `dts.config.js` support
 - **Environment Variables**: Environment-based configuration
 - **Default Values**: Sensible defaults for all options
@@ -136,12 +153,14 @@ export interface User {
 ## Quality Features
 
 ### Type Safety
+
 - **Sound Type Inference**: Generates correct widened types with `@defaultValue` preservation for mutable containers
 - **Type Validation**: Ensures type correctness in output
 - **Import Resolution**: Proper import path resolution
 - **Export Tracking**: Tracks all exports and their usage
 
 ### Error Handling
+
 - **Graceful Failures**: Continues processing on individual file errors
 - **Detailed Errors**: Comprehensive error messages with context
 - **Validation**: Input validation and early error detection
@@ -150,6 +169,7 @@ export interface User {
 ## Future Features
 
 ### Planned Enhancements
+
 - **Watch Mode**: File watching for development
 - **Incremental Builds**: Only rebuild changed files
 - **Plugin System**: Extensible plugin architecture
@@ -158,6 +178,7 @@ export interface User {
 - **Source Maps**: Source map generation for debugging
 
 ### Community Features
+
 - **VS Code Extension**: Editor integration
 - **Language Server**: Enhanced IDE support
 - **Documentation Generation**: Automatic docs from types
