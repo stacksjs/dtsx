@@ -72,7 +72,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0-dev.2962+08416b44f
+          version: 0.17.0-dev.56+a8226cd53
 
       - name: Use cached node_modules
         uses: actions/cache@v5.0.3
