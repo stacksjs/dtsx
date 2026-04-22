@@ -162,6 +162,65 @@ describe('Class features', () => {
     const result = processSource(source)
     expect(result).toContain('export declare class Converter')
   })
+
+  // Regression: optional class fields whose type is a function/arrow type used
+  // to be truncated to `() => ` -> `()` — the `=> ReturnType` was dropped,
+  // producing invalid `.d.ts` output like `foo?: ();`. See ts-maps TsMap regression.
+  it('should preserve arrow return type on optional function-type class fields', () => {
+    const source = `
+      export class Foo {
+        closePopup?: () => void
+        onEvent?: (e: Event) => void
+        compute?: (a: number, b: number) => string | null
+        required: () => number
+        method(): boolean { return true }
+        optMethod?(): string
+        readonly roOpt?: () => void
+        restFn?: (...args: any[]) => void
+        genericFn?: <T>(x: T) => T
+        unionFn?: (() => void) | null
+        promiseFn?: () => Promise<void>
+      }
+    `
+    const result = processSource(source)
+    expect(result).toContain('closePopup?: () => void')
+    expect(result).toContain('onEvent?: (e: Event) => void')
+    expect(result).toContain('compute?: (a: number, b: number) => string | null')
+    expect(result).toContain('required: () => number')
+    expect(result).toContain('method(): boolean')
+    expect(result).toContain('optMethod?(): string')
+    expect(result).toContain('readonly roOpt?: () => void')
+    expect(result).toContain('restFn?: (...args: any[]) => void')
+    expect(result).toContain('genericFn?: <T>(x: T) => T')
+    expect(result).toContain('unionFn?: (() => void) | null')
+    expect(result).toContain('promiseFn?: () => Promise<void>')
+
+    // Explicitly guard against the previous bug shape: bare `()` with no arrow.
+    expect(result).not.toMatch(/closePopup\?: \(\);/)
+    expect(result).not.toMatch(/onEvent\?: \(e: Event\);/)
+    expect(result).not.toMatch(/required: \(\);/)
+  })
+
+  // Regression: the exact shape reported from ts-maps' TsMap class.
+  it('should emit optional arrow-type fields on extended class (ts-maps TsMap shape)', () => {
+    const source = `
+      export class Evented {}
+
+      export class TsMap extends Evented {
+        _initControlPos?: () => void
+        _clearControlPos?: () => void
+        closePopup?: () => void
+      }
+    `
+    const result = processSource(source)
+    expect(result).toContain('declare class TsMap extends Evented')
+    expect(result).toContain('_initControlPos?: () => void')
+    expect(result).toContain('_clearControlPos?: () => void')
+    expect(result).toContain('closePopup?: () => void')
+    expect(result).not.toMatch(/_initControlPos\?: \(\);/)
+    expect(result).not.toMatch(/_clearControlPos\?: \(\);/)
+    expect(result).not.toMatch(/closePopup\?: \(\);/)
+  })
 })
 
 // ============================================================

@@ -504,6 +504,11 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
     return pos > 0 && source.charCodeAt(pos - 1) === CH_EQUAL
   }
 
+  /** Check if = at current pos is part of => (arrow function) */
+  function isArrowEq(): boolean {
+    return pos + 1 < len && source.charCodeAt(pos + 1) === CH_RANGLE
+  }
+
   /** Skip to statement end (semicolon at depth 0, matching brace, or ASI) */
   const STMT_DELIM_RE = /[{};'"`\/\n\r()[\]]/g
   function skipToStatementEnd(): void {
@@ -1593,7 +1598,9 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
             depth++
           else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
             depth--
-          else if (depth === 0 && (tc === CH_EQUAL || tc === CH_SEMI || tc === CH_COMMA))
+          else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
+            break
+          else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
             break
           if (depth === 0 && checkASITopLevel())
             break
@@ -2237,7 +2244,10 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
               break
             depth--
           }
-          else if (depth === 0 && (tc === CH_SEMI || tc === CH_EQUAL || tc === CH_COMMA)) {
+          else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA)) {
+            break
+          }
+          else if (depth === 0 && tc === CH_EQUAL && !isArrowEq()) {
             break
           }
           if (depth === 0 && checkASIMember())
@@ -2493,7 +2503,9 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
               depth++
             else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
               depth--
-            else if (depth === 0 && (tc === CH_EQUAL || tc === CH_SEMI || tc === CH_COMMA))
+            else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
+              break
+            else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
               break
             if (depth === 0 && checkASITopLevel())
               break
