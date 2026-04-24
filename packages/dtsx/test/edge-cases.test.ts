@@ -279,6 +279,33 @@ describe('Edge Cases', () => {
       expect(decls.filter(d => d.kind === 'type').length).toBe(3)
     })
 
+    test('handles nested template literals and strings inside ${} expressions', () => {
+      // Regression test for infinite loop: skipTemplateLiteral did not properly
+      // handle nested backticks / string literals / balanced braces inside
+      // ${...} expressions, causing the scanner to desynchronize and loop.
+      // Previously this input hung scanDeclarations indefinitely.
+      const code = `
+        export class Foo {
+          createPane(name?: string): string {
+            const className = \`tsmap-pane\${name ? \` tsmap-\${name.replace('Pane', '')}-pane\` : ''}\`
+            return className
+          }
+
+          /**
+           * Bearing in degrees, wrapped to \`[0, 360)\`. \`0\` = north is up.
+           */
+          getBearing(): number {
+            return 0
+          }
+        }
+      `
+      const decls = extractDeclarations(code, 'nested-template.ts')
+      const cls = decls.find(d => d.name === 'Foo')
+      expect(cls).toBeDefined()
+      expect(cls!.text).toContain('createPane')
+      expect(cls!.text).toContain('getBearing')
+    })
+
     test('handles regex in type positions', () => {
       const code = `
         export interface Patterns {

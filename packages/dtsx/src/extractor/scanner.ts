@@ -197,24 +197,74 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
 
   function skipTemplateLiteral(): void {
     pos++ // skip opening backtick
-    let depth = 0
+    // Stack of brace depths for nested ${...} expressions. Each entry is the
+    // paren depth at which that ${ was opened; when we return to that depth
+    // and see a matching '}' we pop back to template-string mode.
+    // We use a simple counter per ${ of how many inner { we've seen so we can
+    // match them and only close the expression on the final '}'.
+    const exprBraceDepths: number[] = []
     while (pos < len) {
       const ch = source.charCodeAt(pos)
-      if (ch === CH_BACKSLASH) {
-        pos += 2
-        continue
-      }
-      if (ch === CH_BACKTICK && depth === 0) {
+
+      if (exprBraceDepths.length === 0) {
+        // Inside raw template string portion
+        if (ch === CH_BACKSLASH) {
+          pos += 2
+          continue
+        }
+        if (ch === CH_BACKTICK) {
+          pos++
+          return
+        }
+        if (ch === CH_DOLLAR && pos + 1 < len && source.charCodeAt(pos + 1) === CH_LBRACE) {
+          pos += 2
+          exprBraceDepths.push(0)
+          continue
+        }
         pos++
-        return
-      }
-      if (ch === CH_DOLLAR && pos + 1 < len && source.charCodeAt(pos + 1) === CH_LBRACE) {
-        pos += 2
-        depth++
         continue
       }
-      if (ch === CH_RBRACE && depth > 0) {
-        depth--
+
+      // Inside a ${...} expression: skip strings, templates, comments,
+      // and track balanced braces so we only close on the matching '}'.
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+        skipString(ch)
+        continue
+      }
+      if (ch === CH_BACKTICK) {
+        skipTemplateLiteral() // nested template literal
+        continue
+      }
+      if (ch === CH_SLASH && pos + 1 < len) {
+        const next = source.charCodeAt(pos + 1)
+        if (next === CH_SLASH) {
+          const nl = source.indexOf('\n', pos + 2)
+          pos = nl === -1 ? len : nl + 1
+          continue
+        }
+        if (next === CH_STAR) {
+          const end = source.indexOf('*/', pos + 2)
+          pos = end === -1 ? len : end + 2
+          continue
+        }
+        // Not a comment; treat as normal char
+        pos++
+        continue
+      }
+      if (ch === CH_LBRACE) {
+        exprBraceDepths[exprBraceDepths.length - 1]++
+        pos++
+        continue
+      }
+      if (ch === CH_RBRACE) {
+        const top = exprBraceDepths[exprBraceDepths.length - 1]
+        if (top === 0) {
+          // End of this ${...} expression
+          exprBraceDepths.pop()
+          pos++
+          continue
+        }
+        exprBraceDepths[exprBraceDepths.length - 1] = top - 1
         pos++
         continue
       }
