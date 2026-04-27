@@ -19,6 +19,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
       - name: Setup Pantry
         uses: home-lang/pantry/packages/action@main
 
