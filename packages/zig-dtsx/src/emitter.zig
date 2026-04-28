@@ -20,18 +20,18 @@ pub const isWordInText = @import("scanner.zig").isWordInText;
 fn extractWords(words: *std.StringHashMap(void), text: []const u8) void {
     var i: usize = 0;
     while (i < text.len) {
-        // SIMD fast-skip: skip 16 bytes when none are identifier-start chars.
-        // Identifier-start chars: A-Z (65-90), a-z (97-122), _ (95), $ (36), >127.
-        // Non-identifier bytes (digits, punctuation, whitespace) are the majority.
+        // SIMD fast-skip: tighten the "interesting byte" predicate to actual
+        // identifier-start chars. Previously the `>= 'A'` check accepted brace
+        // and bracket characters too (all in 91..96, 123..126), causing
+        // unnecessary scalar fall-throughs for type-heavy declarations.
         while (i + 16 <= text.len) {
             const chunk: @Vector(16, u8) = text[i..][0..16].*;
-            // Check for any byte that could start an identifier:
-            // letters (>= 'A' except digits/punctuation), underscore, dollar, high bytes
-            const ge_A = chunk >= @as(@Vector(16, u8), @splat(65)); // >= 'A'
-            const is_dollar = chunk == @as(@Vector(16, u8), @splat(36)); // '$'
-            const is_under = chunk == @as(@Vector(16, u8), @splat(95)); // '_'
+            const upper = (chunk >= @as(@Vector(16, u8), @splat('A'))) & (chunk <= @as(@Vector(16, u8), @splat('Z')));
+            const lower = (chunk >= @as(@Vector(16, u8), @splat('a'))) & (chunk <= @as(@Vector(16, u8), @splat('z')));
+            const is_dollar = chunk == @as(@Vector(16, u8), @splat('$'));
+            const is_under = chunk == @as(@Vector(16, u8), @splat('_'));
             const is_high = chunk > @as(@Vector(16, u8), @splat(127));
-            const interesting = ge_A | is_dollar | is_under | is_high;
+            const interesting = upper | lower | is_dollar | is_under | is_high;
             if (@reduce(.Or, interesting)) {
                 const bits: u16 = @bitCast(interesting);
                 i += @ctz(bits);
@@ -119,21 +119,31 @@ fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_
         return buf;
     }
 
-    // Pre-compute exact size for multiple comments
+    // Two-pass approach: cache trimmed slices in a small stack-allocated array
+    // when the count is reasonable, or a heap-allocated array otherwise. This
+    // avoids running sliceTrimmed twice for each comment.
+    var inline_buf: [8][]const u8 = undefined;
+    const trimmed_slices = if (cmts.len <= inline_buf.len)
+        inline_buf[0..cmts.len]
+    else
+        try alloc.alloc([]const u8, cmts.len);
+    defer if (cmts.len > inline_buf.len) alloc.free(trimmed_slices);
+
     var total_len: usize = cmts.len; // newlines between + trailing
-    for (cmts) |c| {
+    for (cmts, 0..) |c, i| {
         const t = ch.sliceTrimmed(c, 0, c.len);
+        trimmed_slices[i] = t;
         total_len += t.len;
     }
 
     const buf = try alloc.alloc(u8, total_len);
-    var pos: usize = 0;
-    for (cmts, 0..) |c, idx| {
-        if (idx > 0) {
-            buf[pos] = '\n';
-            pos += 1;
-        }
-        const t = ch.sliceTrimmed(c, 0, c.len);
+    // First slice — write without leading newline.
+    @memcpy(buf[0..trimmed_slices[0].len], trimmed_slices[0]);
+    var pos: usize = trimmed_slices[0].len;
+    // Subsequent slices — newline-separated.
+    for (trimmed_slices[1..]) |t| {
+        buf[pos] = '\n';
+        pos += 1;
         @memcpy(buf[pos..][0..t.len], t);
         pos += t.len;
     }
@@ -233,18 +243,24 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     if (type_annotation.len == 0) type_annotation = "unknown";
 
     // Add @defaultValue JSDoc for widened declarations
-    // Skip when value uses 'as const' — types are already narrow/self-documenting
+    // Skip when value uses 'as const' — types are already narrow/self-documenting.
+    // Cache the trimmed value so we don't trim a second time below.
     const val_trimmed_for_check = std.mem.trim(u8, decl.value, " \t\n\r");
     const has_as_const = ch.endsWith(val_trimmed_for_check, "as const");
     if (decl.value.len > 0 and decl.type_annotation.len == 0 and !has_as_const) {
         var default_val: ?[]const u8 = null;
         var is_container = false;
-        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
+        const trimmed_val = val_trimmed_for_check;
 
         if (!std.mem.eql(u8, kind, "const")) {
-            const is_widened = std.mem.eql(u8, type_annotation, "string") or
-                std.mem.eql(u8, type_annotation, "number") or
-                std.mem.eql(u8, type_annotation, "boolean");
+            // Length-first dispatch — three primitive types have distinct lengths
+            // (string=6, number=6, boolean=7) so we can short-circuit before
+            // running std.mem.eql on a non-matching annotation.
+            const is_widened = switch (type_annotation.len) {
+                6 => std.mem.eql(u8, type_annotation, "string") or std.mem.eql(u8, type_annotation, "number"),
+                7 => std.mem.eql(u8, type_annotation, "boolean"),
+                else => false,
+            };
             if (is_widened and trimmed_val.len > 0) {
                 default_val = trimmed_val;
             }
@@ -264,7 +280,7 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
             const tag_mem = try alloc.alloc(u8, tag_max);
             var tp: usize = 0;
 
-            if (std.mem.indexOf(u8, dv, "\n")) |_| {
+            if (std.mem.indexOfScalar(u8, dv, '\n')) |_| {
                 const hdr = "@defaultValue\n * ```ts\n";
                 @memcpy(tag_mem[tp..][0..hdr.len], hdr); tp += hdr.len;
                 var line_iter = std.mem.splitScalar(u8, dv, '\n');
@@ -298,7 +314,7 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 var end = before_raw.len;
                 while (end > 0 and (before_raw[end - 1] == ' ' or before_raw[end - 1] == '\t' or before_raw[end - 1] == '\n' or before_raw[end - 1] == '\r')) : (end -= 1) {}
                 const before = before_raw[0..end];
-                if (before.len > 4 and ch.startsWith(before, "/** ") and std.mem.indexOf(u8, before, "\n") == null) {
+                if (before.len > 4 and ch.startsWith(before, "/** ") and std.mem.indexOfScalar(u8, before, '\n') == null) {
                     @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
                     @memcpy(rbuf[rp..][0..before.len - 4], before[4..]); rp += before.len - 4;
                 } else {
@@ -321,7 +337,7 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
                 @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
             } else {
-                if (std.mem.indexOf(u8, default_tag, "\n") != null) {
+                if (std.mem.indexOfScalar(u8, default_tag, '\n') != null) {
                     @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
                     @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
                     @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
@@ -623,22 +639,17 @@ pub fn processDeclarations(
         group_counts[g] += 1;
     }
 
-    // Compute offsets for each group in the flat index array
+    // Compute offsets for each group in the flat index array. Reuse the
+    // cumulative running total as the final size — saves one O(GROUP_COUNT)
+    // pass over the counts.
     var group_offsets = [_]u32{0} ** GROUP_COUNT;
-    {
-        var cumulative: u32 = 0;
-        for (0..GROUP_COUNT) |g| {
-            group_offsets[g] = cumulative;
-            cumulative += group_counts[g];
-        }
+    var total_indexed: u32 = 0;
+    for (0..GROUP_COUNT) |g| {
+        group_offsets[g] = total_indexed;
+        total_indexed += group_counts[g];
     }
 
     // Single allocation for all group indices
-    const total_indexed = blk: {
-        var sum: u32 = 0;
-        for (group_counts) |c| sum += c;
-        break :blk sum;
-    };
     const group_indices = try alloc.alloc(u32, total_indexed);
     var write_pos = [_]u32{0} ** GROUP_COUNT;
     @memcpy(&write_pos, &group_offsets);
@@ -735,10 +746,13 @@ pub fn processDeclarations(
             try stmt_buf.appendSlice(export_text);
             const full_text = try stmt_buf.toOwnedSlice();
 
-            // Linear dedup: faster than HashMap for typical export counts (<32)
+            // Linear dedup: faster than HashMap for typical export counts (<32).
+            // Length pre-check rejects most non-matches without invoking
+            // std.mem.eql, which compares byte-by-byte even on length mismatch.
             var is_dup = false;
+            const ft_len = full_text.len;
             for (seen_exports_arr.items) |seen| {
-                if (std.mem.eql(u8, seen, full_text)) {
+                if (seen.len == ft_len and std.mem.eql(u8, seen, full_text)) {
                     is_dup = true;
                     break;
                 }
@@ -885,16 +899,20 @@ pub fn processDeclarations(
                     if (parsed.default_name) |dn| try import_buf.appendSlice(dn);
                     if (used_named.items.len > 0) {
                         try import_buf.appendSlice(", { ");
-                        for (used_named.items, 0..) |ni, idx| {
-                            if (idx > 0) try import_buf.appendSlice(", ");
+                        // Emit first item, then comma-prefixed subsequent items —
+                        // skips the per-iteration `if (idx > 0)` branch.
+                        try import_buf.appendSlice(used_named.items[0]);
+                        for (used_named.items[1..]) |ni| {
+                            try import_buf.appendSlice(", ");
                             try import_buf.appendSlice(ni);
                         }
                         try import_buf.appendSlice(" }");
                     }
                 } else if (used_named.items.len > 0) {
                     try import_buf.appendSlice("{ ");
-                    for (used_named.items, 0..) |ni, idx| {
-                        if (idx > 0) try import_buf.appendSlice(", ");
+                    try import_buf.appendSlice(used_named.items[0]);
+                    for (used_named.items[1..]) |ni| {
+                        try import_buf.appendSlice(", ");
                         try import_buf.appendSlice(ni);
                     }
                     try import_buf.appendSlice(" }");

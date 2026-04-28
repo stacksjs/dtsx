@@ -399,10 +399,11 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         const prev = if (i > 0) content[i - 1] else @as(u8, 0);
         const next = if (i + 1 < content.len) content[i + 1] else @as(u8, 0);
 
-        // Track single-line comments — skip to end of line
+        // Track single-line comments — SIMD scan to end of line via indexOfChar
+        // instead of a byte-by-byte loop.
         if (!in_string and !in_comment and c == '/' and next == '/') {
-            i += 2; // Skip '//'
-            while (i < content.len and content[i] != '\n') : (i += 1) {}
+            const nl = ch.indexOfChar(content, '\n', i + 2);
+            i = if (nl) |n| n else content.len;
             // Update current_start if in key mode so the key slice doesn't include comment text
             if (in_key and i < content.len) {
                 current_start = i + 1;
@@ -551,7 +552,6 @@ fn findMainArrowIndex(str: []const u8) ?usize {
     var i: usize = 0;
     while (i + 1 < str.len) : (i += 1) {
         const c = str[i];
-        const prev = if (i > 0) str[i - 1] else @as(u8, 0);
 
         if (in_string) {
             if (c == '\\') {
@@ -565,7 +565,6 @@ fn findMainArrowIndex(str: []const u8) ?usize {
         if (c == '"' or c == '\'' or c == '`') {
             in_string = true;
             string_char = c;
-            _ = prev;
             continue;
         }
 
@@ -905,14 +904,9 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
             try unique_set.put(t, {});
             try unique.append(t);
         }
-        // Literal check
-        if (all_literals) {
-            const is_literal = isNumericLiteral(t) or
-                std.mem.eql(u8, t, "true") or std.mem.eql(u8, t, "false") or
-                (t.len >= 2 and t[0] == '"' and t[t.len - 1] == '"') or
-                (t.len >= 2 and t[0] == '\'' and t[t.len - 1] == '\'');
-            if (!is_literal) all_literals = false;
-        }
+        // Literal check — reuse isPrimitiveLiteral, which first-byte-dispatches
+        // through string/boolean/numeric branches without retesting other kinds.
+        if (all_literals and !isPrimitiveLiteral(t)) all_literals = false;
     }
 
     if (all_literals and types.len <= 10) {
@@ -945,16 +939,28 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
 
 /// Check if a value string is a primitive literal (number, string, boolean)
 fn isPrimitiveLiteral(val: []const u8) bool {
-    if (isNumericLiteral(val)) return true;
-    if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "false")) return true;
-    if (val.len >= 2 and ((val[0] == '"' and val[val.len - 1] == '"') or
-        (val[0] == '\'' and val[val.len - 1] == '\''))) return true;
-    return false;
+    if (val.len == 0) return false;
+    // First-byte dispatch: each kind of literal has a distinct prefix byte —
+    // saves running every check on every value.
+    return switch (val[0]) {
+        '"' => val.len >= 2 and val[val.len - 1] == '"',
+        '\'' => val.len >= 2 and val[val.len - 1] == '\'',
+        't' => val.len == 4 and std.mem.eql(u8, val, "true"),
+        'f' => val.len == 5 and std.mem.eql(u8, val, "false"),
+        '-', '0'...'9' => isNumericLiteral(val),
+        else => false,
+    };
 }
 
 /// Check if a type is a base/widened type
 fn isBaseType(t: []const u8) bool {
-    return std.mem.eql(u8, t, "number") or std.mem.eql(u8, t, "string") or std.mem.eql(u8, t, "boolean");
+    // Length-first dispatch: number=6, string=6, boolean=7. Reject all other
+    // lengths in O(1) without invoking std.mem.eql.
+    return switch (t.len) {
+        6 => std.mem.eql(u8, t, "number") or std.mem.eql(u8, t, "string"),
+        7 => std.mem.eql(u8, t, "boolean"),
+        else => false,
+    };
 }
 
 /// Check if an array literal only contains primitives/nested arrays/objects (no runtime expressions)
@@ -994,20 +1000,19 @@ fn isSimpleArrayDefault(val: []const u8) bool {
                 continue;
             }
             if (j < val.len and val[j] == '(') return false; // function call
-            if (std.mem.eql(u8, word, "new") or
-                std.mem.eql(u8, word, "console") or
-                std.mem.eql(u8, word, "process") or
-                std.mem.eql(u8, word, "async") or
-                std.mem.eql(u8, word, "await") or
-                std.mem.eql(u8, word, "function") or
-                std.mem.eql(u8, word, "yield")) return false;
-            // Bare identifiers that aren't true/false are also runtime refs
-            if (!std.mem.eql(u8, word, "true") and
-                !std.mem.eql(u8, word, "false") and
-                !std.mem.eql(u8, word, "null") and
-                !std.mem.eql(u8, word, "undefined") and
-                !std.mem.eql(u8, word, "const") and
-                !std.mem.eql(u8, word, "as")) return false;
+            // Identifier classification dispatched on first byte — replaces 13
+            // sequential std.mem.eql calls. Anything not on the allow-list (true,
+            // false, null, undefined, const, as) is treated as a runtime reference.
+            const word_ok = wo: switch (word[0]) {
+                't' => break :wo std.mem.eql(u8, word, "true"),
+                'f' => break :wo std.mem.eql(u8, word, "false"),
+                'n' => break :wo std.mem.eql(u8, word, "null"),
+                'u' => break :wo std.mem.eql(u8, word, "undefined"),
+                'c' => break :wo std.mem.eql(u8, word, "const"),
+                'a' => break :wo std.mem.eql(u8, word, "as"),
+                else => break :wo false,
+            };
+            if (!word_ok) return false;
             if (i > 0) i -= 1; // back up since outer loop will increment
         }
     }
@@ -1118,11 +1123,18 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         const nested_default = _clean_default_result;
         _clean_default_result = saved_default; // restore parent's
 
-        // Clean method signatures in inferred types
-        if (ch.contains(val_type, "=>")) {
-            val_type = try cleanMethodSignature(alloc, val_type);
-        } else if (ch.contains(val_type, "async")) {
-            val_type = try stripAsyncKeyword(alloc, val_type);
+        // Clean method signatures in inferred types — single scan for the
+        // first interesting byte. Most val_types are bare types like "string"
+        // or "number" that contain neither marker.
+        if (ch.indexOfChar(val_type, '=', 0)) |_| {
+            // Confirm '=>' rather than just '='
+            if (ch.indexOf(val_type, "=>", 0) != null) {
+                val_type = try cleanMethodSignature(alloc, val_type);
+            }
+        } else if (ch.indexOfChar(val_type, 'a', 0)) |_| {
+            if (ch.indexOf(val_type, "async", 0) != null) {
+                val_type = try stripAsyncKeyword(alloc, val_type);
+            }
         }
 
         // Add inline @defaultValue for widened primitive properties
@@ -1193,23 +1205,29 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             const indent = if (depth > 0) (depth - 1) / 2 else 0;
             const pad_size = (indent + 1) * 2;
             const close_pad_size = indent * 2;
-            var ml = std.array_list.Managed(u8).init(alloc);
-            try ml.appendSlice("{\n");
+            // Pre-compute total length so we can do one alloc + memcpy/memset.
+            var total: usize = 2; // "{\n"
+            for (clean_props.items) |item| total += pad_size + item.len + 1; // pad + item + '\n'
+            // Each non-final line gets a comma before its newline.
+            if (clean_props.items.len > 0) total += clean_props.items.len - 1;
+            total += close_pad_size + 1; // close pad + '}'
+
+            const ml_buf = try alloc.alloc(u8, total);
+            var mp: usize = 0;
+            ml_buf[mp] = '{'; mp += 1;
+            ml_buf[mp] = '\n'; mp += 1;
             for (clean_props.items, 0..) |item, ci| {
-                {
-                    var p: usize = 0;
-                    while (p < pad_size) : (p += 1) try ml.append(' ');
-                }
-                try ml.appendSlice(item);
-                if (ci < clean_props.items.len - 1) try ml.append(',');
-                try ml.append('\n');
+                @memset(ml_buf[mp..][0..pad_size], ' ');
+                mp += pad_size;
+                @memcpy(ml_buf[mp..][0..item.len], item);
+                mp += item.len;
+                if (ci < clean_props.items.len - 1) { ml_buf[mp] = ','; mp += 1; }
+                ml_buf[mp] = '\n'; mp += 1;
             }
-            {
-                var p: usize = 0;
-                while (p < close_pad_size) : (p += 1) try ml.append(' ');
-            }
-            try ml.append('}');
-            _clean_default_result = try ml.toOwnedSlice();
+            @memset(ml_buf[mp..][0..close_pad_size], ' ');
+            mp += close_pad_size;
+            ml_buf[mp] = '}'; mp += 1;
+            _clean_default_result = ml_buf[0..mp];
         }
     }
 
@@ -1238,28 +1256,35 @@ fn inferNewExpressionType(alloc: std.mem.Allocator, value: []const u8) InferErro
         }
     }
 
-    // Fallback for known built-in types
-    if (std.mem.eql(u8, class_name, "Date")) return "Date";
-    if (std.mem.eql(u8, class_name, "Map")) return "Map<any, any>";
-    if (std.mem.eql(u8, class_name, "Set")) return "Set<any>";
-    if (std.mem.eql(u8, class_name, "WeakMap")) return "WeakMap<any, any>";
-    if (std.mem.eql(u8, class_name, "WeakSet")) return "WeakSet<any>";
-    if (std.mem.eql(u8, class_name, "RegExp")) return "RegExp";
-    if (std.mem.eql(u8, class_name, "Error")) return "Error";
-    if (std.mem.eql(u8, class_name, "Array")) return "any[]";
-    if (std.mem.eql(u8, class_name, "Object")) return "object";
-    if (std.mem.eql(u8, class_name, "Function")) return "Function";
-    if (std.mem.eql(u8, class_name, "Promise")) return "Promise<any>";
-
-    return class_name;
+    // Fallback for known built-in types — first-byte dispatch avoids 11 sequential
+    // std.mem.eql calls. For unknown class names we fall through to returning
+    // the original identifier directly.
+    if (class_name.len == 0) return class_name;
+    return switch (class_name[0]) {
+        'A' => if (std.mem.eql(u8, class_name, "Array")) "any[]" else class_name,
+        'D' => if (std.mem.eql(u8, class_name, "Date")) "Date" else class_name,
+        'E' => if (std.mem.eql(u8, class_name, "Error")) "Error" else class_name,
+        'F' => if (std.mem.eql(u8, class_name, "Function")) "Function" else class_name,
+        'M' => if (std.mem.eql(u8, class_name, "Map")) "Map<any, any>" else class_name,
+        'O' => if (std.mem.eql(u8, class_name, "Object")) "object" else class_name,
+        'P' => if (std.mem.eql(u8, class_name, "Promise")) "Promise<any>" else class_name,
+        'R' => if (std.mem.eql(u8, class_name, "RegExp")) "RegExp" else class_name,
+        'S' => if (std.mem.eql(u8, class_name, "Set")) "Set<any>" else class_name,
+        'W' => blk: {
+            if (std.mem.eql(u8, class_name, "WeakMap")) break :blk "WeakMap<any, any>";
+            if (std.mem.eql(u8, class_name, "WeakSet")) break :blk "WeakSet<any>";
+            break :blk class_name;
+        },
+        else => class_name,
+    };
 }
 
 /// Infer type from Promise expression
 fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
     if (ch.startsWith(value, "Promise.resolve(")) {
-        // Extract argument
-        const paren_start = std.mem.indexOf(u8, value, "(") orelse return "Promise<unknown>";
-        const paren_end = std.mem.lastIndexOf(u8, value, ")") orelse return "Promise<unknown>";
+        // Extract argument — single-byte searches use the SIMD scalar paths.
+        const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown>";
+        const paren_end = std.mem.lastIndexOfScalar(u8, value, ')') orelse return "Promise<unknown>";
         if (paren_end > paren_start + 1) {
             const arg = trim(value[paren_start + 1 .. paren_end]);
             // Promise resolved values are immutable, so preserve is_const from context
@@ -1275,8 +1300,8 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
     if (ch.startsWith(value, "Promise.reject(")) return "Promise<never>";
     if (ch.startsWith(value, "Promise.all(")) {
         // Extract the array argument and infer element types
-        const paren_start = std.mem.indexOf(u8, value, "(") orelse return "Promise<unknown[]>";
-        const paren_end = std.mem.lastIndexOf(u8, value, ")") orelse return "Promise<unknown[]>";
+        const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown[]>";
+        const paren_end = std.mem.lastIndexOfScalar(u8, value, ')') orelse return "Promise<unknown[]>";
         if (paren_end > paren_start + 1) {
             const arg = trim(value[paren_start + 1 .. paren_end]);
             if (arg.len > 1 and arg[0] == '[' and arg[arg.len - 1] == ']') {
@@ -1289,11 +1314,11 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
                         if (idx > 0) try result.appendSlice(", ");
                         // For Promise.resolve(x), extract x's type
                         if (ch.startsWith(elem, "Promise.resolve(")) {
-                            const ps = std.mem.indexOf(u8, elem, "(") orelse {
+                            const ps = std.mem.indexOfScalar(u8, elem, '(') orelse {
                                 try result.appendSlice("unknown");
                                 continue;
                             };
-                            const pe = std.mem.lastIndexOf(u8, elem, ")") orelse {
+                            const pe = std.mem.lastIndexOfScalar(u8, elem, ')') orelse {
                                 try result.appendSlice("unknown");
                                 continue;
                             };

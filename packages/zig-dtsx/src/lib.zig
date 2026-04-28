@@ -10,8 +10,14 @@ const ProcessResult = struct {
 };
 
 fn emptyResult() ProcessResult {
-    const empty = std.heap.c_allocator.alloc(u8, 1) catch @panic("OOM");
-    empty[0] = 0;
+    // Allocate 16 zero bytes so the SIMD result_length scan can read a full
+    // 16-byte vector without touching memory past the allocation. The caller
+    // sees `len == 0` and `ptr[0] == 0`, but free_result will receive `len + 1
+    // = 1` so the freed range matches the slice length the allocator tracks.
+    // Pre-fix this allocated 1 byte and the SIMD loop in result_length would
+    // read 15 bytes of unrelated heap state.
+    const empty = std.heap.c_allocator.alloc(u8, 16) catch @panic("OOM");
+    @memset(empty, 0);
     return .{ .ptr = empty.ptr, .len = 0 };
 }
 
@@ -214,7 +220,12 @@ export fn process_batch(
         @intCast(thread_count)
     else
         @intCast(std.Thread.getCpuCount() catch 4);
-    const num_threads = @min(max_threads, n);
+    // Cap the thread count so each thread gets at least ~4 files. Spawn+join
+    // overhead (~100µs per thread) dominates if a thread has only 1-2 small
+    // files to process. Mirrors the heuristic in main.zig:processProject.
+    const min_files_per_thread = 4;
+    const desired_threads = @max(n / min_files_per_thread, 1);
+    const num_threads = @min(@min(max_threads, desired_threads), n);
 
     if (num_threads <= 1) {
         // Single-threaded: process all sequentially
