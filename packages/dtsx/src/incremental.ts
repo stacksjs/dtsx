@@ -4,6 +4,7 @@
  */
 
 import type { Declaration, DtsGenerationConfig } from './types'
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { hashContent as fastHash } from './extractor/cache'
