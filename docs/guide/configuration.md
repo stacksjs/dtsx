@@ -2,24 +2,6 @@
 title: Configuration
 description: Configure dtsx for your project with dts.config.ts options.
 ---
-
-## Programmatic Configuration
-
-Pass options directly to the `generate` function:
-
-```ts
-
-import { generate } from '@stacksjs/dtsx'
-
-const stats = await generate({
-  cwd: './',
-  root: './src',
-  entrypoints: ['**/*.ts'],
-  outdir: './dist',
-  clean: true,
-  verbose: true,
-  parallel: true,
-  concurrency: 8,
   stats: true,
   validate: true,
   exclude: ['**/*.test.ts', '**/**tests**/**'],

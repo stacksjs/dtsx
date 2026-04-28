@@ -2,24 +2,6 @@
 title: Getting Started
 description: Learn how to install and use dtsx for TypeScript declaration file generation.
 ---
-  keepComments: true,
-  clean: true,
-  verbose: true,
-}
-
-```
-
-## Watch Mode
-
-Watch for changes and regenerate automatically:
-
-```bash
-
-bunx dtsx watch
-
-```
-
-## Stdin/Stdout Processing
 
 Process TypeScript from stdin:
 

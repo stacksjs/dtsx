@@ -11,6 +11,7 @@ import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
+import { collectReachableViaReExports, resolveRelativeSpecifier, scanReExportSpecifiers } from './module-graph'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
@@ -91,7 +92,34 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   logger.debug('Config:', config)
 
   // Find all TypeScript files based on entrypoints
-  const files = await findFiles(config)
+  const entryFiles = await findFiles(config)
+  let files = entryFiles.slice()
+
+  // Auto-expand the file set through relative re-exports so a barrel
+  // `export * from './x'` pulls in `./x.ts`. Otherwise the emitted
+  // `.d.ts` re-exports siblings dtsx never wrote, producing types that
+  // resolve to nothing for consumers (stacksjs/dtsx#3090).
+  let reExportReachability: Awaited<ReturnType<typeof collectReachableViaReExports>> | null = null
+  if (config.autoIncludeReExports !== false && files.length > 0) {
+    reExportReachability = await collectReachableViaReExports(files)
+
+    const rootPath = resolve(config.cwd, config.root)
+    const excludePatterns = config.exclude || []
+
+    const additions: string[] = []
+    for (const f of reExportReachability.reachable) {
+      if (files.includes(f)) continue
+      if (f.endsWith('.d.ts')) continue
+      if (f.includes('node_modules')) continue
+      if (isExcluded(f, excludePatterns, rootPath)) continue
+      additions.push(f)
+    }
+
+    if (additions.length > 0) {
+      files = [...files, ...additions]
+      logger.debug(`Auto-included ${additions.length} file(s) reached via relative re-exports`)
+    }
+  }
 
   // Prune cache of deleted files
   if (buildCache) {
@@ -355,29 +383,124 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     logger.debug('Saved build cache')
   }
 
-  // Bundle output if enabled
-  if (config.bundle && (stats.filesGenerated > 0 || cacheHits > 0)) {
+  // Warn about re-exports that point at siblings dtsx didn't emit.
+  // Two cases produce broken consumer types:
+  //   1. The relative path doesn't exist on disk at all.
+  //   2. The path exists, but auto-include was disabled and the user's
+  //      entrypoint config didn't pull it into the build.
+  // We skip this entirely for `bundle: true`, where re-exports get inlined.
+  if (!config.bundle) {
+    const broken: Array<{ from: string, specifier: string, reason: 'missing' | 'not-emitted' }> = []
+
+    if (reExportReachability) {
+      for (const u of reExportReachability.unresolved) {
+        broken.push({ from: u.from, specifier: u.specifier, reason: 'missing' })
+      }
+    }
+
+    if (config.autoIncludeReExports === false && files.length > 0) {
+      const fileSet = new Set(files)
+      for (const f of files) {
+        let src: string
+        try { src = await readTextFile(f) }
+        catch { continue }
+        for (const ref of scanReExportSpecifiers(src)) {
+          if (!ref.specifier.startsWith('.')) continue
+          const r = resolveRelativeSpecifier(ref.specifier, f)
+          if (!r.resolved) {
+            broken.push({ from: f, specifier: ref.specifier, reason: 'missing' })
+          }
+          else if (!fileSet.has(r.resolved)) {
+            broken.push({ from: f, specifier: ref.specifier, reason: 'not-emitted' })
+          }
+        }
+      }
+    }
+
+    if (broken.length > 0) {
+      const lines: string[] = []
+      lines.push(`Found ${broken.length} re-export(s) pointing at siblings that won't be in the output:`)
+      for (const b of broken) {
+        const rel = relative(config.cwd, b.from)
+        if (b.reason === 'missing') {
+          lines.push(`  ${rel} → '${b.specifier}' (path not found on disk)`)
+        }
+        else {
+          lines.push(`  ${rel} → '${b.specifier}' (resolved but not in entrypoints; set autoIncludeReExports: true or add to entrypoints)`)
+        }
+      }
+      const message = lines.join('\n')
+      if (config.failOnUnresolvedReExport) {
+        throw new Error(message)
+      }
+      logger.warn(message)
+      logger.warn('Generated .d.ts files reference modules that were not emitted — consumers will see "has no exported member" errors.')
+    }
+  }
+
+  // Bundle output if enabled.
+  //
+  // Each user-declared entrypoint becomes one self-contained `.d.ts`:
+  // we walk imports + re-exports from that entry, bundle just the
+  // reachable files, and inline their declarations. Relative
+  // `export … from './x'` lines are dropped (their content is now
+  // inlined), which is what fixes the silent breakage from #3090.
+  if (config.bundle && (stats.filesGenerated > 0 || cacheHits > 0) && entryFiles.length > 0) {
     try {
       logger.debug('Bundling declarations...')
 
-      // Read all source files
+      // Cache source reads across all entrypoints
       const sourceContents = new Map<string, string>()
-      for (const file of files) {
-        const content = await readTextFile(file)
-        sourceContents.set(file, content)
+      const readSource = async (f: string): Promise<string> => {
+        let s = sourceContents.get(f)
+        if (s !== undefined) return s
+        s = await readTextFile(f)
+        sourceContents.set(f, s)
+        return s
+      }
+      for (const f of files) {
+        await readSource(f)
       }
 
-      // Bundle all declarations
-      const bundleResult = await bundleDeclarations(files, sourceContents, config)
+      // Single-entry + explicit bundleOutput keeps the legacy semantic
+      // (one combined file at outdir/<bundleOutput>).
+      const useLegacyOutput = entryFiles.length === 1 && !!config.bundleOutput
 
-      // Write bundled output
-      const bundleFilename = config.bundleOutput || 'index.d.ts'
-      const bundlePath = resolve(config.cwd, config.outdir, bundleFilename)
+      for (const entry of entryFiles) {
+        // Reachable file set for this entry: follow re-exports AND imports.
+        // Imports matter for bundling because exported declarations may
+        // reference imported types.
+        const reachability = await collectReachableViaReExports([entry], { includeImports: true })
+        const reachable = new Set<string>()
+        for (const r of reachability.reachable) {
+          if (r.endsWith('.d.ts')) continue
+          if (r.includes('node_modules')) continue
+          reachable.add(r)
+        }
+        // Constrain to files we're actually processing — anything else
+        // would be unreachable from the project's source tree.
+        const filesForEntry = files.filter(f => reachable.has(f))
+        if (!filesForEntry.includes(entry)) filesForEntry.push(entry)
 
-      await mkdir(dirname(bundlePath), { recursive: true })
-      await writeToFile(bundlePath, bundleResult.content)
+        const entrySources = new Map<string, string>()
+        for (const f of filesForEntry) {
+          const s = sourceContents.get(f) ?? await readSource(f)
+          entrySources.set(f, s)
+        }
 
-      logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+        const bundleResult = await bundleDeclarations(filesForEntry, entrySources, config)
+
+        const bundlePath = useLegacyOutput
+          ? resolve(config.cwd, config.outdir, config.bundleOutput!)
+          : getOutputPath(entry, config)
+
+        await mkdir(dirname(bundlePath), { recursive: true })
+        await writeToFile(bundlePath, bundleResult.content)
+
+        logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+
+        if (useLegacyOutput) break
+      }
     }
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)

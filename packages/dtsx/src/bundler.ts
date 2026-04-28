@@ -141,6 +141,16 @@ export async function bundleDeclarations(
       }
       else if (decl.isExported || decl.kind === 'export') {
         totalExports++
+
+        // Drop relative re-exports — `export * from './x'` and
+        // `export { y } from './x'`. Their referenced declarations are
+        // already inlined since the target file is in the bundle's file
+        // set. Leaving them in produces dead `from './x'` lines that
+        // refer to siblings dtsx never emits — the bug from #3090.
+        if (decl.kind === 'export' && decl.source && (decl.source.startsWith('.') || decl.source.startsWith('/'))) {
+          continue
+        }
+
         // Skip if already exported
         if (decl.name && exportedNames.has(decl.name)) {
           continue

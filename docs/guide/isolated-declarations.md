@@ -2,23 +2,6 @@
 title: Isolated Declarations
 description: Understanding TypeScript's isolated declarations and how dtsx optionally leverages them.
 ---
-
-### Variable Types
-
-dtsx infers types from values automatically — explicit annotations are optional:
-
-```ts
-
-// dtsx infers sound types from all of these:
-export const port = 3000            // → 3000 (scalar const — immutable)
-export const name = 'Stacks'        // → 'Stacks' (scalar const — immutable)
-export const items = [1, 2, 3]      // → number[] + @defaultValue
-export const config = {
-  timeout: 5000,                    // → number + @defaultValue 5000
-  debug: true,                      // → boolean + @defaultValue true
-}
-
-// Explicit annotations also work:
 export const port: number = 3000    // → number (uses annotation)
 
 ```

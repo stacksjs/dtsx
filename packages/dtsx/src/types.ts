@@ -102,6 +102,27 @@ export interface DtsGenerationConfig {
    */
   bundleOutput?: string
   /**
+   * Auto-include files reached through relative re-exports
+   * (`export * from './x'`, `export { y } from './x'`).
+   *
+   * Without this, a barrel entrypoint generates a `.d.ts` whose re-exports
+   * point at sibling modules dtsx never emits, producing a published
+   * package whose types resolve to nothing. See stacksjs/dtsx#3090.
+   *
+   * @default true
+   */
+  autoIncludeReExports?: boolean
+  /**
+   * Fail the build when an emitted `.d.ts` re-exports from a relative path
+   * that can't be resolved on disk (typo, missing file, deleted module).
+   *
+   * When `false` (the default) dtsx logs a warning and continues, mirroring
+   * `tsc`'s behavior. When `true` the build throws.
+   *
+   * @default false
+   */
+  failOnUnresolvedReExport?: boolean
+  /**
    * Enable incremental builds - only regenerate changed files
    * @default false
    */

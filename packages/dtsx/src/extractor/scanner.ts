@@ -684,6 +684,23 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       pos++
   }
 
+  /**
+   * Pull the module specifier out of a `…from '…'` clause.
+   * Returns undefined for re-exports without a source (e.g. `export { foo }`).
+   */
+  function extractFromSpecifier(text: string): string | undefined {
+    const fromIdx = text.indexOf('from ')
+    if (fromIdx === -1) return undefined
+    let qi = fromIdx + 5
+    while (qi < text.length && (text.charCodeAt(qi) === 32 || text.charCodeAt(qi) === 9)) qi++
+    if (qi >= text.length) return undefined
+    const qch = text.charCodeAt(qi)
+    if (qch !== 39 && qch !== 34) return undefined
+    const qend = text.indexOf(text[qi], qi + 1)
+    if (qend === -1) return undefined
+    return text.slice(qi + 1, qend)
+  }
+
   /** Extract leading JSDoc/block/single-line comments before position */
   function extractLeadingComments(declStart: number): string[] | undefined {
     if (!keepComments)
@@ -2902,6 +2919,7 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
             text,
             isExported: true,
             isTypeOnly: true,
+            source: extractFromSpecifier(text),
             leadingComments: comments,
             start: stmtStart,
             end: pos,
@@ -2917,6 +2935,7 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
             text,
             isExported: true,
             isTypeOnly: true,
+            source: extractFromSpecifier(text),
             start: stmtStart,
             end: pos,
           })
@@ -3021,37 +3040,24 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
           text,
           isExported: true,
           isTypeOnly,
+          source: extractFromSpecifier(text),
           leadingComments: comments,
           start: stmtStart,
           end: pos,
         })
       }
       else if (ech === CH_STAR) {
-        // export * from '...'
+        // export * from '...'  (also covers `export * as ns from '...'`)
         skipExportStar()
         const text = sliceTrimmed(stmtStart, pos)
         const comments = extractLeadingComments(stmtStart)
-        // Extract source from 'from "..."' or "from '...'" without regex
-        let _exportSource: string | undefined
-        const _fromIdx = text.indexOf('from ')
-        if (_fromIdx !== -1) {
-          let _qi = _fromIdx + 5
-          while (_qi < text.length && (text.charCodeAt(_qi) === 32 || text.charCodeAt(_qi) === 9)) _qi++
-          if (_qi < text.length) {
-            const _qch = text.charCodeAt(_qi)
-            if (_qch === 39 || _qch === 34) { // ' or "
-              const _qend = text.indexOf(text[_qi], _qi + 1)
-              if (_qend !== -1) _exportSource = text.slice(_qi + 1, _qend)
-            }
-          }
-        }
         declarations.push({
           kind: 'export',
           name: '',
           text,
           isExported: true,
           isTypeOnly: false,
-          source: _exportSource,
+          source: extractFromSpecifier(text),
           leadingComments: comments,
           start: stmtStart,
           end: pos,

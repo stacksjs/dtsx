@@ -3,26 +3,6 @@ title: CLI Commands
 description: Complete reference for dtsx command-line interface.
 ---
 
-# Full verbose output
-
-dtsx generate --verbose --stats --progress
-
-```
-
-### watch
-
-Watch for file changes and regenerate automatically.
-
-```bash
-
-dtsx watch [options]
-
-```
-
-#### Options
-
-All options from `generate` are supported, plus:
-
 | Option | Description |
 |--------|-------------|
 | `--debounce <ms>` | Debounce delay in milliseconds |
