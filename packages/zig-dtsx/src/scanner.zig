@@ -467,10 +467,17 @@ pub const Scanner = struct {
             self.pos = saved;
             return false;
         }
-        // Type continuation keywords
-        if (self.matchWord("extends") or self.matchWord("keyof") or self.matchWord("typeof") or
-            self.matchWord("infer") or self.matchWord("is") or self.matchWord("as") or self.matchWord("in"))
-        {
+        // Type continuation keywords — first-byte dispatch avoids running 7
+        // sequential matchWord calls on every newline at member depth 0.
+        const is_type_kw = switch (nc) {
+            'e' => self.matchWord("extends"),
+            'k' => self.matchWord("keyof"),
+            't' => self.matchWord("typeof"),
+            'i' => self.matchWord("infer") or self.matchWord("is") or self.matchWord("in"),
+            'a' => self.matchWord("as"),
+            else => false,
+        };
+        if (is_type_kw) {
             self.pos = saved;
             return false;
         }
@@ -681,8 +688,11 @@ pub const Scanner = struct {
         if (self.pos < self.len and self.source[self.pos] == ch.CH_SEMI) self.pos += 1;
     }
 
-    /// Peek at what char comes after a word (skipping whitespace)
-    pub fn peekAfterWord(self: *const Scanner, word: []const u8) u8 {
+    /// Peek at what char comes after a word (skipping whitespace).
+    /// Defensive bounds check on pos+word.len handles the edge where the
+    /// caller positions at end-of-source.
+    pub inline fn peekAfterWord(self: *const Scanner, word: []const u8) u8 {
+        if (self.pos + word.len > self.len) return 0;
         var p = self.pos + word.len;
         while (p < self.len and ch.isWhitespace(self.source[p])) p += 1;
         return if (p < self.len) self.source[p] else 0;

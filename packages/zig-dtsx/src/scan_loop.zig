@@ -16,18 +16,35 @@ pub fn scanMainLoop(s: *Scanner) !void {
         const stmt_start = s.pos;
         const ch0 = s.source[s.pos];
 
-        if (ch0 == 'i' and s.matchWord("import")) {
-            const decl = ext.extractImport(s, stmt_start);
-            try s.declarations.append(decl);
-        } else if (ch0 == 'e' and s.matchWord("export")) {
-            try handleExport(s, stmt_start);
+        if (ch0 == 'i') {
+            // Combined dispatch for both 'i'-keywords ("import" / "interface") —
+            // saves an extra first-char check vs the previous separate branches.
+            if (s.matchWord("import")) {
+                const decl = ext.extractImport(s, stmt_start);
+                try s.declarations.append(decl);
+            } else if (s.matchWord("interface")) {
+                const decl = ext.extractInterface(s, stmt_start, false);
+                s.putNonExportedType(decl.name, decl);
+            } else {
+                s.pos += 1;
+                s.skipToStatementEnd();
+            }
+        } else if (ch0 == 'e') {
+            // Combined dispatch for "export" / "enum".
+            if (s.matchWord("export")) {
+                try handleExport(s, stmt_start);
+            } else if (s.matchWord("enum")) {
+                const decl = ext.extractEnum(s, stmt_start, false, false);
+                s.putNonExportedType(decl.name, decl);
+                try s.declarations.append(decl);
+            } else {
+                s.pos += 1;
+                s.skipToStatementEnd();
+            }
         } else if (ch0 == 'd' and s.matchWord("declare")) {
             s.pos += 7;
             s.skipWhitespaceAndComments();
             ext.handleDeclare(s, stmt_start, false);
-        } else if (ch0 == 'i' and s.matchWord("interface")) {
-            const decl = ext.extractInterface(s, stmt_start, false);
-            s.putNonExportedType(decl.name, decl);
         } else if (ch0 == 't' and s.matchWord("type")) {
             const decl = ext.extractTypeAlias(s, stmt_start, false);
             s.putNonExportedType(decl.name, decl);
@@ -74,19 +91,14 @@ pub fn scanMainLoop(s: *Scanner) !void {
                 s.pos += 1;
                 s.skipToStatementEnd();
             }
-        } else if (ch0 == 'e' and s.matchWord("enum")) {
-            const decl = ext.extractEnum(s, stmt_start, false, false);
-            s.putNonExportedType(decl.name, decl);
-            try s.declarations.append(decl);
-        } else if (ch0 == 'l' and s.matchWord("let")) {
+        } else if ((ch0 == 'l' and s.matchWord("let")) or (ch0 == 'v' and s.matchWord("var"))) {
+            // Top-level let/var without `export` are skipped — same handling for both.
             s.skipToStatementEnd();
-        } else if (ch0 == 'v' and s.matchWord("var")) {
-            s.skipToStatementEnd();
-        } else if (ch0 == 'm' and s.matchWord("module")) {
-            const decl = ext.extractModule(s, stmt_start, false, "module");
-            try s.declarations.append(decl);
-        } else if (ch0 == 'n' and s.matchWord("namespace")) {
-            const decl = ext.extractModule(s, stmt_start, false, "namespace");
+        } else if ((ch0 == 'm' and s.matchWord("module")) or (ch0 == 'n' and s.matchWord("namespace"))) {
+            // Both module/namespace dispatch to the same extractor; share the
+            // append step and pick the keyword from the first byte.
+            const kw: []const u8 = if (ch0 == 'm') "module" else "namespace";
+            const decl = ext.extractModule(s, stmt_start, false, kw);
             try s.declarations.append(decl);
         } else {
             // Skip unknown top-level content
@@ -289,16 +301,17 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         s.pos += 7;
         s.skipWhitespaceAndComments();
         ext.handleDeclare(s, stmt_start, true);
-    } else if (ech == 'n' and s.matchWord("namespace")) {
-        const decl = ext.extractModule(s, stmt_start, true, "namespace");
-        try s.declarations.append(decl);
-    } else if (ech == 'm' and s.matchWord("module")) {
-        const decl = ext.extractModule(s, stmt_start, true, "module");
+    } else if ((ech == 'n' and s.matchWord("namespace")) or (ech == 'm' and s.matchWord("module"))) {
+        // Same extractor for both — pick the keyword from the first byte.
+        const kw: []const u8 = if (ech == 'n') "namespace" else "module";
+        const decl = ext.extractModule(s, stmt_start, true, kw);
         try s.declarations.append(decl);
     } else if (ech == ch.CH_LBRACE) {
         s.skipExportBraces();
         const text = s.sliceTrimmed(stmt_start, s.pos);
-        const is_type_only = ch.contains(text, "export type");
+        // type-only exports start with "export type {…} " — use startsWith
+        // instead of scanning the entire text with ch.contains.
+        const is_type_only = ch.startsWith(text, "export type");
         const comments = ext.extractLeadingComments(s, stmt_start);
         try s.declarations.append(.{
             .kind = .export_decl,

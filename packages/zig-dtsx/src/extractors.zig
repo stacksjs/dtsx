@@ -629,10 +629,15 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
         p = std.mem.trim(u8, p[di..], " \t\r\n");
     }
 
-    // Strip parameter modifiers
+    // Strip parameter modifiers — fast-fail by first byte. The 5 PARAM_MODIFIERS
+    // ("public", "protected", "private", "readonly", "override") all start with
+    // 'p', 'r', or 'o', so we can reject most bytes in O(1) without iterating
+    // the full list.
     var stripped = true;
-    while (stripped) {
+    while (stripped and p.len > 0) {
         stripped = false;
+        const c0 = p[0];
+        if (c0 != 'p' and c0 != 'r' and c0 != 'o') break;
         for (types.PARAM_MODIFIERS) |mod| {
             if (p.len > mod.len and ch.startsWith(p, mod) and !ch.isIdentChar(p[mod.len])) {
                 p = std.mem.trim(u8, p[mod.len..], " \t\r\n");
@@ -740,6 +745,14 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
 /// Also handles multiline patterns like:
 /// "{\n  name,\n  headers = { ... },\n}" → "{\n  name,\n  headers,\n}"
 fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []const u8 {
+    // Fast path: if there's nothing to clean (no defaults, no rest operators,
+    // no newlines), the pattern is already in DTS-friendly form. The previous
+    // code always allocated and walked the entire pattern.
+    const has_eq = ch.indexOfChar(pattern, '=', 0) != null;
+    const has_dots = ch.indexOf(pattern, "...", 0) != null;
+    const has_nl = ch.indexOfChar(pattern, '\n', 0) != null;
+    if (!has_eq and !has_dots and !has_nl) return pattern;
+
     var result = std.array_list.Managed(u8).init(alloc);
     result.ensureTotalCapacity(pattern.len) catch {};
     var i: usize = 0;
@@ -821,8 +834,9 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
 
     const cleaned = result.toOwnedSlice() catch return pattern;
 
-    // If the pattern contains newlines, try to collapse to single line if short enough
-    if (ch.indexOf(cleaned, "\n", 0) != null) {
+    // If the pattern contains newlines, try to collapse to single line if short enough.
+    // indexOfChar is the SIMD-optimized single-byte search.
+    if (ch.indexOfChar(cleaned, '\n', 0) != null) {
         // Collapse newlines and extra whitespace to single spaces
         var collapsed = std.array_list.Managed(u8).init(alloc);
         collapsed.ensureTotalCapacity(cleaned.len) catch {};
@@ -918,19 +932,26 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     const dts_params = buildDtsParams(s, raw_params);
     const func_name = if (name.len > 0) name else "default";
 
-    // Build DTS text
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("declare function ") catch {};
-    text.appendSlice(func_name) catch {};
-    text.appendSlice(generics) catch {};
-    text.appendSlice(dts_params) catch {};
-    text.appendSlice(": ") catch {};
-    text.appendSlice(return_type) catch {};
-    text.append(';') catch {};
-
-    const dts_text = text.toOwnedSlice() catch "";
+    // Build DTS text — single alloc + memcpy is cheaper than ArrayList init +
+    // multiple appendSlice + toOwnedSlice for the fixed-shape function header.
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const declare_kw = "declare function ";
+    const colon_sep = ": ";
+    const total = export_prefix.len + declare_kw.len + func_name.len + generics.len +
+        dts_params.len + colon_sep.len + return_type.len + 1; // +1 for ';'
+    const dts_text = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
+        @memcpy(buf[tp..][0..func_name.len], func_name); tp += func_name.len;
+        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
+        @memcpy(buf[tp..][0..dts_params.len], dts_params); tp += dts_params.len;
+        @memcpy(buf[tp..][0..colon_sep.len], colon_sep); tp += colon_sep.len;
+        @memcpy(buf[tp..][0..return_type.len], return_type); tp += return_type.len;
+        buf[tp] = ';';
+        break :blk @as([]const u8, buf);
+    };
     const comments = extractLeadingComments(s, decl_start);
 
     if (has_body) {
@@ -1107,17 +1128,23 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
     const comments = extractLeadingComments(s, decl_start);
     const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
 
-    // Build DTS text
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("declare ") catch {};
-    text.appendSlice(kind) catch {};
-    text.append(' ') catch {};
-    text.appendSlice(name) catch {};
-    text.appendSlice(": ") catch {};
-    text.appendSlice(final_type) catch {};
-    text.append(';') catch {};
+    // Build DTS text — direct alloc (no ArrayList overhead).
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const declare_kw = "declare ";
+    const total = export_prefix.len + declare_kw.len + kind.len + 1 + name.len + 2 + final_type.len + 1;
+    const text_buf = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
+        @memcpy(buf[tp..][0..kind.len], kind); tp += kind.len;
+        buf[tp] = ' '; tp += 1;
+        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
+        @memcpy(buf[tp..][0..2], ": "); tp += 2;
+        @memcpy(buf[tp..][0..final_type.len], final_type); tp += final_type.len;
+        buf[tp] = ';';
+        break :blk @as([]const u8, buf);
+    };
 
     // Store the variable kind in modifiers
     const mods = s.allocator.alloc([]const u8, 1) catch null;
@@ -1128,7 +1155,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
     results.append(.{
         .kind = .variable_decl,
         .name = name,
-        .text = text.toOwnedSlice() catch "",
+        .text = text_buf,
         .is_exported = is_exported,
         .modifiers = mods,
         .type_annotation = type_annotation,
@@ -1181,26 +1208,33 @@ pub fn extractInterface(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     const raw_body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) s.extractBraceBlock() else "{}";
     const body = cleanBraceBlock(s, raw_body);
 
-    // Build DTS text
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("declare interface ") catch {};
-    text.appendSlice(name) catch {};
-    text.appendSlice(generics) catch {};
-    if (extends_clause.len > 0) {
-        text.appendSlice(" extends ") catch {};
-        text.appendSlice(extends_clause) catch {};
-    }
-    text.append(' ') catch {};
-    text.appendSlice(body) catch {};
+    // Build DTS text — direct alloc + memcpy for better cache behavior on the
+    // many-interfaces hot path.
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const declare_kw = "declare interface ";
+    const extends_kw: []const u8 = if (extends_clause.len > 0) " extends " else "";
+    const total = export_prefix.len + declare_kw.len + name.len + generics.len +
+        extends_kw.len + extends_clause.len + 1 + body.len;
+    const text = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
+        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
+        @memcpy(buf[tp..][0..extends_kw.len], extends_kw); tp += extends_kw.len;
+        @memcpy(buf[tp..][0..extends_clause.len], extends_clause); tp += extends_clause.len;
+        buf[tp] = ' '; tp += 1;
+        @memcpy(buf[tp..][0..body.len], body); tp += body.len;
+        break :blk @as([]const u8, buf);
+    };
 
     const comments = extractLeadingComments(s, decl_start);
 
     return .{
         .kind = .interface_decl,
         .name = name,
-        .text = text.toOwnedSlice() catch "",
+        .text = text,
         .is_exported = is_exported,
         .extends_clause = extends_clause,
         .generics = generics,
@@ -1246,21 +1280,29 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     const type_body = s.sliceTrimmed(type_start, s.pos);
     if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
 
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("type ") catch {};
-    text.appendSlice(name) catch {};
-    text.appendSlice(generics) catch {};
-    text.appendSlice(" = ") catch {};
-    text.appendSlice(type_body) catch {};
+    // Direct alloc — fixed-shape "[export ]type name<G> = body".
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const type_kw = "type ";
+    const eq_sep = " = ";
+    const total = export_prefix.len + type_kw.len + name.len + generics.len + eq_sep.len + type_body.len;
+    const text = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..type_kw.len], type_kw); tp += type_kw.len;
+        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
+        @memcpy(buf[tp..][0..eq_sep.len], eq_sep); tp += eq_sep.len;
+        @memcpy(buf[tp..][0..type_body.len], type_body); tp += type_body.len;
+        break :blk @as([]const u8, buf);
+    };
 
     const comments = extractLeadingComments(s, decl_start);
 
     return .{
         .kind = .type_decl,
         .name = name,
-        .text = text.toOwnedSlice() catch "",
+        .text = text,
         .is_exported = is_exported,
         .generics = generics,
         .leading_comments = comments,
@@ -1368,32 +1410,40 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
     s.skipWhitespaceAndComments();
     const class_body = buildClassBodyDts(s);
 
-    // Build DTS text
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("declare ") catch {};
-    if (is_abstract) text.appendSlice("abstract ") catch {};
-    text.appendSlice("class ") catch {};
-    text.appendSlice(name) catch {};
-    text.appendSlice(generics) catch {};
-    if (extends_clause.len > 0) {
-        text.appendSlice(" extends ") catch {};
-        text.appendSlice(extends_clause) catch {};
-    }
-    if (implements_text.len > 0) {
-        text.appendSlice(" implements ") catch {};
-        text.appendSlice(implements_text) catch {};
-    }
-    text.append(' ') catch {};
-    text.appendSlice(class_body) catch {};
+    // Build DTS text — direct alloc + memcpy.
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const declare_kw = "declare ";
+    const abstract_kw: []const u8 = if (is_abstract) "abstract " else "";
+    const class_kw = "class ";
+    const extends_sep: []const u8 = if (extends_clause.len > 0) " extends " else "";
+    const implements_sep: []const u8 = if (implements_text.len > 0) " implements " else "";
+    const total = export_prefix.len + declare_kw.len + abstract_kw.len + class_kw.len +
+        name.len + generics.len + extends_sep.len + extends_clause.len +
+        implements_sep.len + implements_text.len + 1 + class_body.len;
+    const text = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
+        @memcpy(buf[tp..][0..abstract_kw.len], abstract_kw); tp += abstract_kw.len;
+        @memcpy(buf[tp..][0..class_kw.len], class_kw); tp += class_kw.len;
+        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
+        @memcpy(buf[tp..][0..extends_sep.len], extends_sep); tp += extends_sep.len;
+        @memcpy(buf[tp..][0..extends_clause.len], extends_clause); tp += extends_clause.len;
+        @memcpy(buf[tp..][0..implements_sep.len], implements_sep); tp += implements_sep.len;
+        @memcpy(buf[tp..][0..implements_text.len], implements_text); tp += implements_text.len;
+        buf[tp] = ' '; tp += 1;
+        @memcpy(buf[tp..][0..class_body.len], class_body); tp += class_body.len;
+        break :blk @as([]const u8, buf);
+    };
 
     const comments = extractLeadingComments(s, decl_start);
 
     return .{
         .kind = .class_decl,
         .name = name,
-        .text = text.toOwnedSlice() catch "",
+        .text = text,
         .is_exported = is_exported,
         .extends_clause = extends_clause,
         .generics = generics,
@@ -1441,33 +1491,42 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
 
         while (true) {
             s.skipWhitespaceAndComments();
-            if (s.matchWord("private")) {
-                is_private = true;
-                s.pos += 7;
-            } else if (s.matchWord("protected")) {
-                is_protected = true;
-                s.pos += 9;
-            } else if (s.matchWord("public")) {
-                s.pos += 6;
-            } else if (s.matchWord("static")) {
-                is_static = true;
-                s.pos += 6;
-            } else if (s.matchWord("abstract")) {
-                is_abstract = true;
-                s.pos += 8;
-            } else if (s.matchWord("readonly")) {
-                is_readonly = true;
-                s.pos += 8;
-            } else if (s.matchWord("override")) {
-                s.pos += 8;
-            } else if (s.matchWord("accessor")) {
-                s.pos += 8;
-            } else if (s.matchWord("async")) {
-                is_async = true;
-                s.pos += 5;
-            } else if (s.matchWord("declare")) {
-                s.pos += 7;
-            } else break;
+            if (s.pos >= s.len) break;
+            // First-byte dispatch — most class members have at most one or two
+            // modifiers. The previous code ran up to 10 matchWord calls per
+            // member iteration; this lets us reject most bytes immediately.
+            const mc = s.source[s.pos];
+            switch (mc) {
+                'p' => {
+                    if (s.matchWord("private")) { is_private = true; s.pos += 7; }
+                    else if (s.matchWord("protected")) { is_protected = true; s.pos += 9; }
+                    else if (s.matchWord("public")) { s.pos += 6; }
+                    else break;
+                },
+                's' => {
+                    if (s.matchWord("static")) { is_static = true; s.pos += 6; }
+                    else break;
+                },
+                'a' => {
+                    if (s.matchWord("abstract")) { is_abstract = true; s.pos += 8; }
+                    else if (s.matchWord("accessor")) { s.pos += 8; }
+                    else if (s.matchWord("async")) { is_async = true; s.pos += 5; }
+                    else break;
+                },
+                'r' => {
+                    if (s.matchWord("readonly")) { is_readonly = true; s.pos += 8; }
+                    else break;
+                },
+                'o' => {
+                    if (s.matchWord("override")) { s.pos += 8; }
+                    else break;
+                },
+                'd' => {
+                    if (s.matchWord("declare")) { s.pos += 7; }
+                    else break;
+                },
+                else => break,
+            }
         }
 
         s.skipWhitespaceAndComments();
@@ -1481,14 +1540,24 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             continue;
         }
 
-        // Build modifier prefix
-        var mod_prefix = std.array_list.Managed(u8).init(s.allocator);
-        mod_prefix.appendSlice("  ") catch {};
-        if (is_protected) mod_prefix.appendSlice("protected ") catch {};
-        if (is_static) mod_prefix.appendSlice("static ") catch {};
-        if (is_abstract) mod_prefix.appendSlice("abstract ") catch {};
-        if (is_readonly) mod_prefix.appendSlice("readonly ") catch {};
-        const prefix = mod_prefix.toOwnedSlice() catch "  ";
+        // Build modifier prefix — direct alloc + memcpy beats ArrayList for the
+        // ≤4 known fixed-length tokens. Saves an ArrayList init + toOwnedSlice
+        // shrink per class member.
+        const proto_len: usize = 2 +
+            @as(usize, if (is_protected) "protected ".len else 0) +
+            @as(usize, if (is_static) "static ".len else 0) +
+            @as(usize, if (is_abstract) "abstract ".len else 0) +
+            @as(usize, if (is_readonly) "readonly ".len else 0);
+        const prefix = blk: {
+            const pbuf = s.allocator.alloc(u8, proto_len) catch break :blk @as([]const u8, "  ");
+            pbuf[0] = ' '; pbuf[1] = ' ';
+            var pp: usize = 2;
+            if (is_protected) { @memcpy(pbuf[pp..][0.."protected ".len], "protected "); pp += "protected ".len; }
+            if (is_static) { @memcpy(pbuf[pp..][0.."static ".len], "static "); pp += "static ".len; }
+            if (is_abstract) { @memcpy(pbuf[pp..][0.."abstract ".len], "abstract "); pp += "abstract ".len; }
+            if (is_readonly) { @memcpy(pbuf[pp..][0.."readonly ".len], "readonly "); pp += "readonly ".len; }
+            break :blk @as([]const u8, pbuf);
+        };
 
         // Detect member type
         if (s.matchWord("constructor")) {
@@ -1508,11 +1577,14 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             }
 
             const dts_params = buildDtsParams(s, raw_params);
-            var member = std.array_list.Managed(u8).init(s.allocator);
-            member.appendSlice("  constructor") catch {};
-            member.appendSlice(dts_params) catch {};
-            member.append(';') catch {};
-            members.append(member.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed-shape "  constructor<params>;".
+            const ctor_prefix = "  constructor";
+            const ctor_total = ctor_prefix.len + dts_params.len + 1;
+            const ctor_buf = s.allocator.alloc(u8, ctor_total) catch break;
+            @memcpy(ctor_buf[0..ctor_prefix.len], ctor_prefix);
+            @memcpy(ctor_buf[ctor_prefix.len..][0..dts_params.len], dts_params);
+            ctor_buf[ctor_total - 1] = ';';
+            members.append(ctor_buf) catch {};
         } else if (s.matchWord("get") and isAccessorFollowed(s)) {
             s.pos += 3;
             s.skipWhitespaceAndComments();
@@ -1532,14 +1604,19 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
                 s.pos += 1;
             }
-            var member = std.array_list.Managed(u8).init(s.allocator);
-            member.appendSlice(prefix) catch {};
-            member.appendSlice("get ") catch {};
-            member.appendSlice(member_name) catch {};
-            member.appendSlice("(): ") catch {};
-            member.appendSlice(ret_type) catch {};
-            member.append(';') catch {};
-            members.append(member.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<prefix>get <name>(): <ret>;".
+            const get_kw = "get ";
+            const get_sep = "(): ";
+            const get_total = prefix.len + get_kw.len + member_name.len + get_sep.len + ret_type.len + 1;
+            const get_buf = s.allocator.alloc(u8, get_total) catch break;
+            var gp: usize = 0;
+            @memcpy(get_buf[gp..][0..prefix.len], prefix); gp += prefix.len;
+            @memcpy(get_buf[gp..][0..get_kw.len], get_kw); gp += get_kw.len;
+            @memcpy(get_buf[gp..][0..member_name.len], member_name); gp += member_name.len;
+            @memcpy(get_buf[gp..][0..get_sep.len], get_sep); gp += get_sep.len;
+            @memcpy(get_buf[gp..][0..ret_type.len], ret_type); gp += ret_type.len;
+            get_buf[gp] = ';';
+            members.append(get_buf) catch {};
         } else if (s.matchWord("set") and isAccessorFollowed(s)) {
             s.pos += 3;
             s.skipWhitespaceAndComments();
@@ -1557,13 +1634,17 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
                 s.pos += 1;
             }
             const dts_params = buildDtsParams(s, raw_params);
-            var member = std.array_list.Managed(u8).init(s.allocator);
-            member.appendSlice(prefix) catch {};
-            member.appendSlice("set ") catch {};
-            member.appendSlice(member_name) catch {};
-            member.appendSlice(dts_params) catch {};
-            member.append(';') catch {};
-            members.append(member.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<prefix>set <name><params>;".
+            const set_kw = "set ";
+            const set_total = prefix.len + set_kw.len + member_name.len + dts_params.len + 1;
+            const set_buf = s.allocator.alloc(u8, set_total) catch break;
+            var sp: usize = 0;
+            @memcpy(set_buf[sp..][0..prefix.len], prefix); sp += prefix.len;
+            @memcpy(set_buf[sp..][0..set_kw.len], set_kw); sp += set_kw.len;
+            @memcpy(set_buf[sp..][0..member_name.len], member_name); sp += member_name.len;
+            @memcpy(set_buf[sp..][0..dts_params.len], dts_params); sp += dts_params.len;
+            set_buf[sp] = ';';
+            members.append(set_buf) catch {};
         } else {
             // Regular method or property
             const is_generator = s.source[s.pos] == ch.CH_STAR;
@@ -1582,18 +1663,25 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
 
     if (members.items.len == 0) return "{}";
 
-    // Join members — pre-calculate total length
-    var total_len: usize = 4; // "{\n" + "\n}"
-    for (members.items) |m| total_len += m.len + 1;
-    var result = std.array_list.Managed(u8).init(s.allocator);
-    result.ensureTotalCapacity(total_len) catch {};
-    result.appendSlice("{\n") catch {};
-    for (members.items, 0..) |m, i| {
-        result.appendSlice(m) catch {};
-        if (i < members.items.len - 1) result.append('\n') catch {};
+    // Join members — direct alloc + memcpy. Total = "{\n" + members joined by
+    // '\n' + "\n}". Previously used ArrayList with per-member appendSlice + a
+    // boundary conditional inside the loop.
+    var total_len: usize = 4; // "{\n" (2) + "\n}" (2)
+    for (members.items) |m| total_len += m.len;
+    total_len += members.items.len - 1; // newlines between
+    const buf = s.allocator.alloc(u8, total_len) catch return "{}";
+    buf[0] = '{'; buf[1] = '\n';
+    var rp: usize = 2;
+    @memcpy(buf[rp..][0..members.items[0].len], members.items[0]);
+    rp += members.items[0].len;
+    for (members.items[1..]) |m| {
+        buf[rp] = '\n'; rp += 1;
+        @memcpy(buf[rp..][0..m.len], m);
+        rp += m.len;
     }
-    result.appendSlice("\n}") catch {};
-    return result.toOwnedSlice() catch "{}";
+    buf[rp] = '\n'; rp += 1;
+    buf[rp] = '}'; rp += 1;
+    return buf[0..rp];
 }
 
 fn isAccessorFollowed(s: *const Scanner) bool {
@@ -1665,17 +1753,23 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         const opt_mark: []const u8 = if (is_optional) "?" else "";
         const gen_text: []const u8 = if (is_generator) "*" else "";
 
-        var member = std.array_list.Managed(u8).init(s.allocator);
-        member.appendSlice(mod_prefix) catch {};
-        member.appendSlice(gen_text) catch {};
-        member.appendSlice(member_name) catch {};
-        member.appendSlice(opt_mark) catch {};
-        member.appendSlice(generics) catch {};
-        member.appendSlice(dts_params) catch {};
-        member.appendSlice(": ") catch {};
-        member.appendSlice(ret_type) catch {};
-        member.append(';') catch {};
-        members.append(member.toOwnedSlice() catch "") catch {};
+        // Direct alloc — class methods are emitted in tight loops, so the
+        // ArrayList overhead added up to a non-trivial fraction of class
+        // emission time on member-heavy classes.
+        const meth_total = mod_prefix.len + gen_text.len + member_name.len + opt_mark.len +
+            generics.len + dts_params.len + 2 + ret_type.len + 1;
+        const meth_buf = s.allocator.alloc(u8, meth_total) catch return;
+        var mp: usize = 0;
+        @memcpy(meth_buf[mp..][0..mod_prefix.len], mod_prefix); mp += mod_prefix.len;
+        @memcpy(meth_buf[mp..][0..gen_text.len], gen_text); mp += gen_text.len;
+        @memcpy(meth_buf[mp..][0..member_name.len], member_name); mp += member_name.len;
+        @memcpy(meth_buf[mp..][0..opt_mark.len], opt_mark); mp += opt_mark.len;
+        @memcpy(meth_buf[mp..][0..generics.len], generics); mp += generics.len;
+        @memcpy(meth_buf[mp..][0..dts_params.len], dts_params); mp += dts_params.len;
+        @memcpy(meth_buf[mp..][0..2], ": "); mp += 2;
+        @memcpy(meth_buf[mp..][0..ret_type.len], ret_type); mp += ret_type.len;
+        meth_buf[mp] = ';';
+        members.append(meth_buf) catch {};
     } else if (next_ch == ch.CH_COLON or next_ch == ch.CH_EQUAL or next_ch == ch.CH_SEMI or next_ch == ch.CH_RBRACE or next_ch == ch.CH_LF or next_ch == ch.CH_CR) {
         // Property
         var prop_type: []const u8 = "";
@@ -1742,14 +1836,17 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         }
 
         const opt_mark: []const u8 = if (is_optional) "?" else "";
-        var member = std.array_list.Managed(u8).init(s.allocator);
-        member.appendSlice(mod_prefix) catch {};
-        member.appendSlice(member_name) catch {};
-        member.appendSlice(opt_mark) catch {};
-        member.appendSlice(": ") catch {};
-        member.appendSlice(prop_type) catch {};
-        member.append(';') catch {};
-        members.append(member.toOwnedSlice() catch "") catch {};
+        // Direct alloc — fixed shape "<prefix><name>[?]: <type>;".
+        const prop_total = mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;
+        const prop_buf = s.allocator.alloc(u8, prop_total) catch return;
+        var pp: usize = 0;
+        @memcpy(prop_buf[pp..][0..mod_prefix.len], mod_prefix); pp += mod_prefix.len;
+        @memcpy(prop_buf[pp..][0..member_name.len], member_name); pp += member_name.len;
+        @memcpy(prop_buf[pp..][0..opt_mark.len], opt_mark); pp += opt_mark.len;
+        @memcpy(prop_buf[pp..][0..2], ": "); pp += 2;
+        @memcpy(prop_buf[pp..][0..prop_type.len], prop_type); pp += prop_type.len;
+        prop_buf[pp] = ';';
+        members.append(prop_buf) catch {};
     } else {
         s.skipClassMember();
     }
@@ -1798,27 +1895,31 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
     params.append(std.mem.trim(u8, inner[start..], " \t\r\n")) catch {};
 
     for (params.items) |param| {
-        const has_public = ch.startsWith(param, "public ") or ch.startsWith(param, "public\t");
-        const has_protected = ch.startsWith(param, "protected ") or ch.startsWith(param, "protected\t");
-        const has_private = ch.startsWith(param, "private ") or ch.startsWith(param, "private\t");
-        const has_readonly = ch.contains(param, "readonly ");
+        if (param.len == 0) continue;
+        // First-byte fast-fail — only constructor params starting with 'p' or
+        // 'r' can carry an access modifier, so reject everything else without
+        // running the four startsWith / contains scans.
+        const first = param[0];
+        if (first != 'p' and first != 'r') continue;
+
+        const has_public = first == 'p' and (ch.startsWith(param, "public ") or ch.startsWith(param, "public\t"));
+        const has_protected = first == 'p' and (ch.startsWith(param, "protected ") or ch.startsWith(param, "protected\t"));
+        const has_private = first == 'p' and (ch.startsWith(param, "private ") or ch.startsWith(param, "private\t"));
+        const has_readonly = (first == 'r' and (ch.startsWith(param, "readonly ") or ch.startsWith(param, "readonly\t"))) or ch.contains(param, " readonly ");
 
         if (!has_public and !has_protected and !has_private and !has_readonly) continue;
         if (has_private) continue;
 
         var p = param;
-        var mods = std.array_list.Managed([]const u8).init(s.allocator);
         if (has_public) {
             var si: usize = 6;
             while (si < p.len and ch.isWhitespace(p[si])) si += 1;
             p = p[si..];
-            mods.append("public") catch {};
         }
         if (has_protected) {
             var si: usize = 9;
             while (si < p.len and ch.isWhitespace(p[si])) si += 1;
             p = p[si..];
-            mods.append("protected") catch {};
         }
         if (has_readonly) {
             if (ch.indexOf(p, "readonly ", 0)) |ri| {
@@ -1832,24 +1933,45 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
                 @memcpy(new_p[before.len..], after);
                 p = new_p;
             }
-            mods.append("readonly") catch {};
         }
 
-        // Build mod text
-        var mod_text = std.array_list.Managed(u8).init(s.allocator);
-        for (mods.items, 0..) |m, i| {
-            mod_text.appendSlice(m) catch {};
-            if (i < mods.items.len - 1) mod_text.append(' ') catch {};
-        }
-        if (mods.items.len > 0) mod_text.append(' ') catch {};
-
+        // Compute total mod_text length up front — at most 3 modifier tokens
+        // are possible (public/protected, readonly) plus separators. Direct
+        // alloc avoids the ArrayList init + per-modifier append + toOwnedSlice
+        // cost the previous code paid for every parameter property.
         const dts_param = buildSingleDtsParam(s, p);
-        var member = std.array_list.Managed(u8).init(s.allocator);
-        member.appendSlice("  ") catch {};
-        member.appendSlice(mod_text.toOwnedSlice() catch "") catch {};
-        member.appendSlice(dts_param) catch {};
-        member.append(';') catch {};
-        members.append(member.toOwnedSlice() catch "") catch {};
+        const pub_token: []const u8 = if (has_public) "public" else "";
+        const prot_token: []const u8 = if (has_protected) "protected" else "";
+        const ro_token: []const u8 = if (has_readonly) "readonly" else "";
+        const num_mods: usize = @as(usize, if (has_public) 1 else 0) +
+            @as(usize, if (has_protected) 1 else 0) +
+            @as(usize, if (has_readonly) 1 else 0);
+        const mod_text_len = pub_token.len + prot_token.len + ro_token.len +
+            (if (num_mods > 0) num_mods else 0); // separators + trailing space when any modifier present
+
+        const m_total = 2 + mod_text_len + dts_param.len + 1;
+        const mbuf = s.allocator.alloc(u8, m_total) catch continue;
+        var mp: usize = 0;
+        mbuf[mp] = ' '; mp += 1;
+        mbuf[mp] = ' '; mp += 1;
+        var first_mod = true;
+        if (has_public) {
+            @memcpy(mbuf[mp..][0..pub_token.len], pub_token); mp += pub_token.len;
+            first_mod = false;
+        }
+        if (has_protected) {
+            if (!first_mod) { mbuf[mp] = ' '; mp += 1; }
+            @memcpy(mbuf[mp..][0..prot_token.len], prot_token); mp += prot_token.len;
+            first_mod = false;
+        }
+        if (has_readonly) {
+            if (!first_mod) { mbuf[mp] = ' '; mp += 1; }
+            @memcpy(mbuf[mp..][0..ro_token.len], ro_token); mp += ro_token.len;
+        }
+        if (num_mods > 0) { mbuf[mp] = ' '; mp += 1; }
+        @memcpy(mbuf[mp..][0..dts_param.len], dts_param); mp += dts_param.len;
+        mbuf[mp] = ';'; mp += 1;
+        members.append(mbuf[0..mp]) catch {};
     }
 }
 
@@ -1895,15 +2017,22 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
     else
         "{}";
 
-    var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(256) catch {};
-    if (is_exported) text.appendSlice("export ") catch {};
-    text.appendSlice("declare ") catch {};
-    text.appendSlice(keyword) catch {};
-    text.append(' ') catch {};
-    text.appendSlice(name) catch {};
-    text.append(' ') catch {};
-    text.appendSlice(body) catch {};
+    // Direct alloc — fixed-shape "[export ]declare <keyword> <name> <body>".
+    const export_prefix: []const u8 = if (is_exported) "export " else "";
+    const declare_kw = "declare ";
+    const total = export_prefix.len + declare_kw.len + keyword.len + 1 + name.len + 1 + body.len;
+    const text = blk: {
+        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        var tp: usize = 0;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
+        @memcpy(buf[tp..][0..keyword.len], keyword); tp += keyword.len;
+        buf[tp] = ' '; tp += 1;
+        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
+        buf[tp] = ' '; tp += 1;
+        @memcpy(buf[tp..][0..body.len], body); tp += body.len;
+        break :blk @as([]const u8, buf);
+    };
 
     const comments = extractLeadingComments(s, decl_start);
     const is_ambient = name.len > 0 and (name[0] == '\'' or name[0] == '"');
@@ -1911,7 +2040,7 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
     return .{
         .kind = .module_decl,
         .name = name,
-        .text = text.toOwnedSlice() catch "",
+        .text = text,
         .is_exported = is_exported,
         .source_module = if (is_ambient and name.len > 2) name[1 .. name.len - 1] else "",
         .leading_comments = comments,
@@ -1940,22 +2069,28 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             continue;
         }
 
+        // First-byte gate for "export"/"declare" — avoids running matchWord on
+        // every byte that can't possibly start either keyword.
         var has_export = false;
-        if (s.matchWord("export")) {
+        if (s.pos < s.len and s.source[s.pos] == 'e' and s.matchWord("export")) {
             has_export = true;
             s.pos += 6;
             s.skipWhitespaceAndComments();
         }
-        if (s.matchWord("declare")) {
+        if (s.pos < s.len and s.source[s.pos] == 'd' and s.matchWord("declare")) {
             s.pos += 7;
             s.skipWhitespaceAndComments();
         }
 
         const prefix: []const u8 = if (has_export) "export " else "";
 
-        if (s.matchWord("function") or (s.matchWord("async") and s.peekAfterKeyword("async", "function"))) {
+        // First-byte gate: only check `function`/`async function` when the next
+        // byte could start either. Saves matchWord on every other dispatch path.
+        const dispatch_byte: u8 = if (s.pos < s.len) s.source[s.pos] else 0;
+        if ((dispatch_byte == 'f' and s.matchWord("function")) or
+            (dispatch_byte == 'a' and s.matchWord("async") and s.peekAfterKeyword("async", "function"))) {
             var is_async = false;
-            if (s.matchWord("async")) {
+            if (dispatch_byte == 'a' and s.matchWord("async")) {
                 is_async = true;
                 s.pos += 5;
                 s.skipWhitespaceAndComments();
@@ -1982,17 +2117,23 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 s.pos += 1;
             }
             const dts_params = buildDtsParams(s, raw_params);
-            var line = std.array_list.Managed(u8).init(s.allocator);
-            line.appendSlice(indent) catch {};
-            line.appendSlice(prefix) catch {};
-            line.appendSlice("function ") catch {};
-            line.appendSlice(fname) catch {};
-            line.appendSlice(generics) catch {};
-            line.appendSlice(dts_params) catch {};
-            line.appendSlice(": ") catch {};
-            line.appendSlice(ret_type) catch {};
-            line.append(';') catch {};
-            lines.append(line.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<indent><prefix>function <name><generics><params>: <ret>;".
+            const fn_kw = "function ";
+            const colon_sep = ": ";
+            const fn_total = indent.len + prefix.len + fn_kw.len + fname.len +
+                generics.len + dts_params.len + colon_sep.len + ret_type.len + 1;
+            const fn_buf = s.allocator.alloc(u8, fn_total) catch continue;
+            var fp: usize = 0;
+            @memcpy(fn_buf[fp..][0..indent.len], indent); fp += indent.len;
+            @memcpy(fn_buf[fp..][0..prefix.len], prefix); fp += prefix.len;
+            @memcpy(fn_buf[fp..][0..fn_kw.len], fn_kw); fp += fn_kw.len;
+            @memcpy(fn_buf[fp..][0..fname.len], fname); fp += fname.len;
+            @memcpy(fn_buf[fp..][0..generics.len], generics); fp += generics.len;
+            @memcpy(fn_buf[fp..][0..dts_params.len], dts_params); fp += dts_params.len;
+            @memcpy(fn_buf[fp..][0..colon_sep.len], colon_sep); fp += colon_sep.len;
+            @memcpy(fn_buf[fp..][0..ret_type.len], ret_type); fp += ret_type.len;
+            fn_buf[fp] = ';';
+            lines.append(fn_buf) catch {};
         } else if (s.matchWord("const") or s.matchWord("let") or s.matchWord("var")) {
             // First-char dispatch — previously matchWord ran twice more here.
             const kw: []const u8 = switch (s.source[s.pos]) {
@@ -2004,20 +2145,25 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             s.skipWhitespaceAndComments();
 
             // Check for const enum
-            if (std.mem.eql(u8, kw, "const") and s.matchWord("enum")) {
+            // kw is one of "const", "let", "var" — check by first byte instead of mem.eql.
+            if (kw[0] == 'c' and s.matchWord("enum")) {
                 s.pos += 4;
                 s.skipWhitespaceAndComments();
                 const ce_name = s.readIdent();
                 s.skipWhitespaceAndComments();
                 const ce_body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) s.extractBraceBlock() else "{}";
-                var line = std.array_list.Managed(u8).init(s.allocator);
-                line.appendSlice(indent) catch {};
-                line.appendSlice(prefix) catch {};
-                line.appendSlice("const enum ") catch {};
-                line.appendSlice(ce_name) catch {};
-                line.append(' ') catch {};
-                line.appendSlice(ce_body) catch {};
-                lines.append(line.toOwnedSlice() catch "") catch {};
+                // Direct alloc — fixed shape "<indent><prefix>const enum <name> <body>".
+                const ce_kw = "const enum ";
+                const ce_total = indent.len + prefix.len + ce_kw.len + ce_name.len + 1 + ce_body.len;
+                const ce_buf = s.allocator.alloc(u8, ce_total) catch continue;
+                var cp: usize = 0;
+                @memcpy(ce_buf[cp..][0..indent.len], indent); cp += indent.len;
+                @memcpy(ce_buf[cp..][0..prefix.len], prefix); cp += prefix.len;
+                @memcpy(ce_buf[cp..][0..ce_kw.len], ce_kw); cp += ce_kw.len;
+                @memcpy(ce_buf[cp..][0..ce_name.len], ce_name); cp += ce_name.len;
+                ce_buf[cp] = ' '; cp += 1;
+                @memcpy(ce_buf[cp..][0..ce_body.len], ce_body); cp += ce_body.len;
+                lines.append(ce_buf) catch {};
                 continue;
             }
 
@@ -2075,7 +2221,9 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 const as_type = extractAssertion(init_text);
                 if (as_type) |t| {
                     vtype = t;
-                } else if (std.mem.eql(u8, kw, "const")) {
+                } else if (kw[0] == 'c') {
+                    // kw is "const" — first-byte check is sufficient since it's
+                    // one of "const" / "let" / "var".
                     vtype = inferLiteralType(init_text);
                 } else {
                     vtype = inferTypeFromDefault(init_text);
@@ -2083,16 +2231,19 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             }
             if (vtype.len == 0) vtype = "unknown";
 
-            var line = std.array_list.Managed(u8).init(s.allocator);
-            line.appendSlice(indent) catch {};
-            line.appendSlice(prefix) catch {};
-            line.appendSlice(kw) catch {};
-            line.append(' ') catch {};
-            line.appendSlice(vname) catch {};
-            line.appendSlice(": ") catch {};
-            line.appendSlice(vtype) catch {};
-            line.append(';') catch {};
-            lines.append(line.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<indent><prefix><kw> <name>: <type>;".
+            const var_total = indent.len + prefix.len + kw.len + 1 + vname.len + 2 + vtype.len + 1;
+            const var_buf = s.allocator.alloc(u8, var_total) catch continue;
+            var vp: usize = 0;
+            @memcpy(var_buf[vp..][0..indent.len], indent); vp += indent.len;
+            @memcpy(var_buf[vp..][0..prefix.len], prefix); vp += prefix.len;
+            @memcpy(var_buf[vp..][0..kw.len], kw); vp += kw.len;
+            var_buf[vp] = ' '; vp += 1;
+            @memcpy(var_buf[vp..][0..vname.len], vname); vp += vname.len;
+            @memcpy(var_buf[vp..][0..2], ": "); vp += 2;
+            @memcpy(var_buf[vp..][0..vtype.len], vtype); vp += vtype.len;
+            var_buf[vp] = ';';
+            lines.append(var_buf) catch {};
         } else if (s.matchWord("interface")) {
             s.pos += 9;
             s.skipWhitespaceAndComments();
@@ -2110,16 +2261,21 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 ext = s.source[ext_start..s.pos];
             }
             const body = cleanBraceBlock(s, s.extractBraceBlock());
-            var line = std.array_list.Managed(u8).init(s.allocator);
-            line.appendSlice(indent) catch {};
-            line.appendSlice(prefix) catch {};
-            line.appendSlice("interface ") catch {};
-            line.appendSlice(iname) catch {};
-            line.appendSlice(generics) catch {};
-            line.appendSlice(ext) catch {};
-            line.append(' ') catch {};
-            line.appendSlice(body) catch {};
-            lines.append(line.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<indent><prefix>interface <name><gen><ext> <body>".
+            const if_kw = "interface ";
+            const if_total = indent.len + prefix.len + if_kw.len + iname.len +
+                generics.len + ext.len + 1 + body.len;
+            const if_buf = s.allocator.alloc(u8, if_total) catch continue;
+            var ifp: usize = 0;
+            @memcpy(if_buf[ifp..][0..indent.len], indent); ifp += indent.len;
+            @memcpy(if_buf[ifp..][0..prefix.len], prefix); ifp += prefix.len;
+            @memcpy(if_buf[ifp..][0..if_kw.len], if_kw); ifp += if_kw.len;
+            @memcpy(if_buf[ifp..][0..iname.len], iname); ifp += iname.len;
+            @memcpy(if_buf[ifp..][0..generics.len], generics); ifp += generics.len;
+            @memcpy(if_buf[ifp..][0..ext.len], ext); ifp += ext.len;
+            if_buf[ifp] = ' '; ifp += 1;
+            @memcpy(if_buf[ifp..][0..body.len], body); ifp += body.len;
+            lines.append(if_buf) catch {};
         } else if (s.matchWord("type")) {
             s.pos += 4;
             s.skipWhitespaceAndComments();
@@ -2147,15 +2303,21 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 }
                 const type_body = s.sliceTrimmed(ts, s.pos);
                 if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
-                var line = std.array_list.Managed(u8).init(s.allocator);
-                line.appendSlice(indent) catch {};
-                line.appendSlice(prefix) catch {};
-                line.appendSlice("type ") catch {};
-                line.appendSlice(tname) catch {};
-                line.appendSlice(generics) catch {};
-                line.appendSlice(" = ") catch {};
-                line.appendSlice(type_body) catch {};
-                lines.append(line.toOwnedSlice() catch "") catch {};
+                // Direct alloc — fixed shape "<indent><prefix>type <name><gen> = <body>".
+                const ty_kw = "type ";
+                const eq_sep = " = ";
+                const ty_total = indent.len + prefix.len + ty_kw.len + tname.len +
+                    generics.len + eq_sep.len + type_body.len;
+                const ty_buf = s.allocator.alloc(u8, ty_total) catch continue;
+                var typ: usize = 0;
+                @memcpy(ty_buf[typ..][0..indent.len], indent); typ += indent.len;
+                @memcpy(ty_buf[typ..][0..prefix.len], prefix); typ += prefix.len;
+                @memcpy(ty_buf[typ..][0..ty_kw.len], ty_kw); typ += ty_kw.len;
+                @memcpy(ty_buf[typ..][0..tname.len], tname); typ += tname.len;
+                @memcpy(ty_buf[typ..][0..generics.len], generics); typ += generics.len;
+                @memcpy(ty_buf[typ..][0..eq_sep.len], eq_sep); typ += eq_sep.len;
+                @memcpy(ty_buf[typ..][0..type_body.len], type_body); typ += type_body.len;
+                lines.append(ty_buf) catch {};
             }
         } else if (s.matchWord("enum")) {
             // Handle enum inside namespace
@@ -2164,14 +2326,18 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             const ename = s.readIdent();
             s.skipWhitespaceAndComments();
             const ebody = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) s.extractBraceBlock() else "{}";
-            var line = std.array_list.Managed(u8).init(s.allocator);
-            line.appendSlice(indent) catch {};
-            line.appendSlice(prefix) catch {};
-            line.appendSlice("enum ") catch {};
-            line.appendSlice(ename) catch {};
-            line.append(' ') catch {};
-            line.appendSlice(ebody) catch {};
-            lines.append(line.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<indent><prefix>enum <name> <body>".
+            const en_kw = "enum ";
+            const en_total = indent.len + prefix.len + en_kw.len + ename.len + 1 + ebody.len;
+            const en_buf = s.allocator.alloc(u8, en_total) catch continue;
+            var ep: usize = 0;
+            @memcpy(en_buf[ep..][0..indent.len], indent); ep += indent.len;
+            @memcpy(en_buf[ep..][0..prefix.len], prefix); ep += prefix.len;
+            @memcpy(en_buf[ep..][0..en_kw.len], en_kw); ep += en_kw.len;
+            @memcpy(en_buf[ep..][0..ename.len], ename); ep += ename.len;
+            en_buf[ep] = ' '; ep += 1;
+            @memcpy(en_buf[ep..][0..ebody.len], ebody); ep += ebody.len;
+            lines.append(en_buf) catch {};
         } else if (s.matchWord("namespace") or s.matchWord("module")) {
             // First-char dispatch — previously matchWord ran twice more.
             const ns_kw: []const u8 = if (s.source[s.pos] == 'n') "namespace" else "module";
@@ -2181,15 +2347,18 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             s.skipWhitespaceAndComments();
             // Use same indent level for nested namespace body (matches TS behavior)
             const ns_body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, indent) else "{}";
-            var line = std.array_list.Managed(u8).init(s.allocator);
-            line.appendSlice(indent) catch {};
-            line.appendSlice(prefix) catch {};
-            line.appendSlice(ns_kw) catch {};
-            line.append(' ') catch {};
-            line.appendSlice(ns_name) catch {};
-            line.append(' ') catch {};
-            line.appendSlice(ns_body) catch {};
-            lines.append(line.toOwnedSlice() catch "") catch {};
+            // Direct alloc — fixed shape "<indent><prefix><ns_kw> <name> <body>".
+            const ns_total = indent.len + prefix.len + ns_kw.len + 1 + ns_name.len + 1 + ns_body.len;
+            const ns_buf = s.allocator.alloc(u8, ns_total) catch continue;
+            var nsp: usize = 0;
+            @memcpy(ns_buf[nsp..][0..indent.len], indent); nsp += indent.len;
+            @memcpy(ns_buf[nsp..][0..prefix.len], prefix); nsp += prefix.len;
+            @memcpy(ns_buf[nsp..][0..ns_kw.len], ns_kw); nsp += ns_kw.len;
+            ns_buf[nsp] = ' '; nsp += 1;
+            @memcpy(ns_buf[nsp..][0..ns_name.len], ns_name); nsp += ns_name.len;
+            ns_buf[nsp] = ' '; nsp += 1;
+            @memcpy(ns_buf[nsp..][0..ns_body.len], ns_body); nsp += ns_body.len;
+            lines.append(ns_buf) catch {};
         } else if (s.matchWord("class") or s.matchWord("abstract")) {
             // Handle class inside namespace
             var is_abs = false;
@@ -2205,31 +2374,46 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 s.skipWhitespaceAndComments();
                 const cgen = extractGenerics(s);
                 s.skipWhitespaceAndComments();
-                // Skip extends/implements
-                while (s.matchWord("extends") or s.matchWord("implements")) {
-                    const kw_len: usize = if (s.matchWord("extends")) 7 else 10;
+                // Skip extends/implements — first-byte dispatch saves redundant
+                // matchWord calls (the previous code ran matchWord up to 4× per
+                // outer iteration just to determine the keyword length).
+                while (true) {
+                    if (s.pos >= s.len) break;
+                    const c0 = s.source[s.pos];
+                    var kw_len: usize = 0;
+                    if (c0 == 'e' and s.matchWord("extends")) kw_len = 7
+                    else if (c0 == 'i' and s.matchWord("implements")) kw_len = 10
+                    else break;
                     s.pos += kw_len;
                     s.skipWhitespaceAndComments();
                     var depth: isize = 0;
                     while (s.pos < s.len) {
                         if (s.skipNonCode()) continue;
                         const tc = s.source[s.pos];
-                        if (tc == ch.CH_LANGLE) depth += 1 else if (tc == ch.CH_RANGLE and !s.isArrowGT()) depth -= 1 else if (depth == 0 and (tc == ch.CH_LBRACE or s.matchWord("implements"))) break;
+                        if (tc == ch.CH_LANGLE) depth += 1
+                        else if (tc == ch.CH_RANGLE and !s.isArrowGT()) depth -= 1
+                        else if (depth == 0 and (tc == ch.CH_LBRACE or (tc == 'i' and s.matchWord("implements")))) break;
                         s.pos += 1;
                     }
                 }
                 s.skipWhitespaceAndComments();
                 const cbody = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildClassBodyDts(s) else "{}";
-                var line = std.array_list.Managed(u8).init(s.allocator);
-                line.appendSlice(indent) catch {};
-                line.appendSlice(prefix) catch {};
-                if (is_abs) line.appendSlice("abstract ") catch {};
-                line.appendSlice("class ") catch {};
-                line.appendSlice(cname) catch {};
-                line.appendSlice(cgen) catch {};
-                line.append(' ') catch {};
-                line.appendSlice(cbody) catch {};
-                lines.append(line.toOwnedSlice() catch "") catch {};
+                // Direct alloc — "<indent><prefix>[abstract ]class <name><gen> <body>".
+                const abs_kw: []const u8 = if (is_abs) "abstract " else "";
+                const cl_kw = "class ";
+                const cl_total = indent.len + prefix.len + abs_kw.len + cl_kw.len +
+                    cname.len + cgen.len + 1 + cbody.len;
+                const cl_buf = s.allocator.alloc(u8, cl_total) catch continue;
+                var cp: usize = 0;
+                @memcpy(cl_buf[cp..][0..indent.len], indent); cp += indent.len;
+                @memcpy(cl_buf[cp..][0..prefix.len], prefix); cp += prefix.len;
+                @memcpy(cl_buf[cp..][0..abs_kw.len], abs_kw); cp += abs_kw.len;
+                @memcpy(cl_buf[cp..][0..cl_kw.len], cl_kw); cp += cl_kw.len;
+                @memcpy(cl_buf[cp..][0..cname.len], cname); cp += cname.len;
+                @memcpy(cl_buf[cp..][0..cgen.len], cgen); cp += cgen.len;
+                cl_buf[cp] = ' '; cp += 1;
+                @memcpy(cl_buf[cp..][0..cbody.len], cbody); cp += cbody.len;
+                lines.append(cl_buf) catch {};
             } else {
                 s.skipToStatementEnd();
             }
@@ -2241,12 +2425,16 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             var def_text = s.sliceTrimmed(def_start, s.pos);
             if (def_text.len > 0 and def_text[def_text.len - 1] == ';') def_text = def_text[0 .. def_text.len - 1];
             if (def_text.len > 0) {
-                var line = std.array_list.Managed(u8).init(s.allocator);
-                line.appendSlice(indent) catch {};
-                line.appendSlice("export default ") catch {};
-                line.appendSlice(def_text) catch {};
-                line.append(';') catch {};
-                lines.append(line.toOwnedSlice() catch "") catch {};
+                // Direct alloc — fixed shape "<indent>export default <text>;".
+                const def_kw = "export default ";
+                const def_total = indent.len + def_kw.len + def_text.len + 1;
+                const def_buf = s.allocator.alloc(u8, def_total) catch continue;
+                var dp: usize = 0;
+                @memcpy(def_buf[dp..][0..indent.len], indent); dp += indent.len;
+                @memcpy(def_buf[dp..][0..def_kw.len], def_kw); dp += def_kw.len;
+                @memcpy(def_buf[dp..][0..def_text.len], def_text); dp += def_text.len;
+                def_buf[dp] = ';';
+                lines.append(def_buf) catch {};
             }
         } else {
             s.skipToStatementEnd();
@@ -2254,14 +2442,23 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
     }
 
     if (lines.items.len == 0) return "{}";
-    var result = std.array_list.Managed(u8).init(s.allocator);
-    result.appendSlice("{\n") catch {};
-    for (lines.items, 0..) |line, i| {
-        result.appendSlice(line) catch {};
-        if (i < lines.items.len - 1) result.append('\n') catch {};
+    // Direct alloc — pre-compute total and emit in one pass.
+    var total_len: usize = 4; // "{\n" + "\n}"
+    for (lines.items) |line| total_len += line.len;
+    total_len += lines.items.len - 1; // newlines between
+    const buf = s.allocator.alloc(u8, total_len) catch return "{}";
+    buf[0] = '{'; buf[1] = '\n';
+    var rp: usize = 2;
+    @memcpy(buf[rp..][0..lines.items[0].len], lines.items[0]);
+    rp += lines.items[0].len;
+    for (lines.items[1..]) |line| {
+        buf[rp] = '\n'; rp += 1;
+        @memcpy(buf[rp..][0..line.len], line);
+        rp += line.len;
     }
-    result.appendSlice("\n}") catch {};
-    return result.toOwnedSlice() catch "{}";
+    buf[rp] = '\n'; rp += 1;
+    buf[rp] = '}'; rp += 1;
+    return buf[0..rp];
 }
 
 // ========================================================================
@@ -2270,6 +2467,17 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
 
 /// Strip trailing inline comments from a line (respecting strings)
 fn stripTrailingInlineComment(line: []const u8) []const u8 {
+    // Fast path: most lines have no `/` at all — `indexOfChar` SIMD-scans for it
+    // in a single pass. If absent, we know there's no inline comment and can
+    // skip the string-state walking entirely.
+    const slash_idx = ch.indexOfChar(line, '/', 0);
+    if (slash_idx == null) {
+        // Trim trailing whitespace.
+        var end = line.len;
+        while (end > 0 and (line[end - 1] == ' ' or line[end - 1] == '\t' or line[end - 1] == '\r')) end -= 1;
+        return line[0..end];
+    }
+
     var in_string: u8 = 0;
     var i: usize = 0;
     while (i < line.len) {
@@ -2479,79 +2687,92 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
 
 /// Handle `declare ...` after `declare` keyword
 pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
-    if (s.matchWord("function")) {
+    // First-byte dispatch — most declare keywords are uniquely identified by
+    // their first byte, so we avoid running the full matchWord scan against
+    // unrelated keywords (each matchWord costs a length+boundary check).
+    if (s.pos >= s.len) return;
+    const c0 = s.source[s.pos];
+    if (c0 == 'f' and s.matchWord("function")) {
         const decl = extractFunction(s, stmt_start, is_exported, false, false);
         if (decl) |d| s.declarations.append(d) catch {};
-    } else if (s.matchWord("async")) {
-        s.pos += 5;
-        s.skipWhitespaceAndComments();
-        if (s.matchWord("function")) {
-            const decl = extractFunction(s, stmt_start, is_exported, true, false);
-            if (decl) |d| s.declarations.append(d) catch {};
+    } else if (c0 == 'a') {
+        if (s.matchWord("async")) {
+            s.pos += 5;
+            s.skipWhitespaceAndComments();
+            if (s.matchWord("function")) {
+                const decl = extractFunction(s, stmt_start, is_exported, true, false);
+                if (decl) |d| s.declarations.append(d) catch {};
+            }
+        } else if (s.matchWord("abstract")) {
+            s.pos += 8;
+            s.skipWhitespaceAndComments();
+            if (s.matchWord("class")) {
+                const decl = extractClass(s, stmt_start, is_exported, true);
+                s.declarations.append(decl) catch {};
+            }
         }
-    } else if (s.matchWord("class")) {
-        const decl = extractClass(s, stmt_start, is_exported, false);
-        s.declarations.append(decl) catch {};
-    } else if (s.matchWord("abstract")) {
-        s.pos += 8;
-        s.skipWhitespaceAndComments();
+    } else if (c0 == 'c') {
         if (s.matchWord("class")) {
-            const decl = extractClass(s, stmt_start, is_exported, true);
+            const decl = extractClass(s, stmt_start, is_exported, false);
             s.declarations.append(decl) catch {};
+        } else if (s.matchWord("const")) {
+            const saved_pos = s.pos;
+            s.pos += 5;
+            s.skipWhitespaceAndComments();
+            if (s.matchWord("enum")) {
+                s.pos = saved_pos + 5;
+                s.skipWhitespaceAndComments();
+                const decl = extractEnum(s, stmt_start, is_exported, true);
+                s.declarations.append(decl) catch {};
+            } else if (is_exported) {
+                s.pos = saved_pos;
+                const decls = extractVariable(s, stmt_start, "const", true);
+                for (decls) |d| s.declarations.append(d) catch {};
+            } else {
+                s.skipToStatementEnd();
+            }
         }
-    } else if (s.matchWord("interface")) {
+    } else if (c0 == 'i' and s.matchWord("interface")) {
         const decl = extractInterface(s, stmt_start, is_exported);
         s.declarations.append(decl) catch {};
-    } else if (s.matchWord("type")) {
+    } else if (c0 == 't' and s.matchWord("type")) {
         const decl = extractTypeAlias(s, stmt_start, is_exported);
         s.declarations.append(decl) catch {};
-    } else if (s.matchWord("enum")) {
+    } else if (c0 == 'e' and s.matchWord("enum")) {
         const decl = extractEnum(s, stmt_start, is_exported, false);
         s.declarations.append(decl) catch {};
-    } else if (s.matchWord("const")) {
-        const saved_pos = s.pos;
-        s.pos += 5;
-        s.skipWhitespaceAndComments();
-        if (s.matchWord("enum")) {
-            s.pos = saved_pos + 5;
-            s.skipWhitespaceAndComments();
-            const decl = extractEnum(s, stmt_start, is_exported, true);
-            s.declarations.append(decl) catch {};
-        } else if (is_exported) {
-            s.pos = saved_pos;
-            const decls = extractVariable(s, stmt_start, "const", true);
-            for (decls) |d| s.declarations.append(d) catch {};
-        } else {
-            s.skipToStatementEnd();
-        }
-    } else if (s.matchWord("let") or s.matchWord("var")) {
+    } else if ((c0 == 'l' and s.matchWord("let")) or (c0 == 'v' and s.matchWord("var"))) {
         if (is_exported) {
             // First-char dispatch — saves a redundant matchWord call.
-            const kind: []const u8 = if (s.source[s.pos] == 'l') "let" else "var";
+            const kind: []const u8 = if (c0 == 'l') "let" else "var";
             const decls = extractVariable(s, stmt_start, kind, true);
             for (decls) |d| s.declarations.append(d) catch {};
         } else {
             s.skipToStatementEnd();
         }
-    } else if (s.matchWord("module")) {
+    } else if (c0 == 'm' and s.matchWord("module")) {
         const decl = extractModule(s, stmt_start, is_exported, "module");
         s.declarations.append(decl) catch {};
-    } else if (s.matchWord("namespace")) {
+    } else if (c0 == 'n' and s.matchWord("namespace")) {
         const decl = extractModule(s, stmt_start, is_exported, "namespace");
         s.declarations.append(decl) catch {};
-    } else if (s.matchWord("global")) {
+    } else if (c0 == 'g' and s.matchWord("global")) {
         s.pos += 6;
         s.skipWhitespaceAndComments();
         const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, "  ") else "{}";
-        var text = std.array_list.Managed(u8).init(s.allocator);
-        text.ensureTotalCapacity(256) catch {};
-        text.appendSlice("declare global ") catch {};
-        text.appendSlice(body) catch {};
+        // Direct alloc — fixed prefix + body slice.
+        const prefix = "declare global ";
+        const text_buf = blk: {
+            const buf = s.allocator.alloc(u8, prefix.len + body.len) catch break :blk @as([]const u8, "");
+            @memcpy(buf[0..prefix.len], prefix);
+            @memcpy(buf[prefix.len..][0..body.len], body);
+            break :blk @as([]const u8, buf);
+        };
         const comments = extractLeadingComments(s, stmt_start);
         s.declarations.append(.{
             .kind = .module_decl,
             .name = "global",
-            .text = text.toOwnedSlice() catch "",
+            .text = text_buf,
             .is_exported = false,
             .leading_comments = comments,
             .start = stmt_start,
