@@ -7,8 +7,11 @@ const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
 
 // Platform-aware C stdio bindings.
-// On Windows, @cImport fails because stdin/stdout are runtime function calls
-// that Zig can't evaluate at comptime. We declare the extern functions manually.
+// On Windows, translate-c can't lower stdin/stdout (they're runtime function
+// calls Zig can't fold at comptime), so we declare the extern functions
+// manually. On POSIX targets we use a translate-c module wired up in
+// build.zig and imported as "c". (Zig 0.17 removed @cImport as a language
+// builtin, so this can no longer be done inline.)
 const c = if (builtin.os.tag == .windows) struct {
     pub const FILE = opaque {};
     pub extern "c" fn __acrt_iob_func(index: c_int) *FILE;
@@ -34,14 +37,7 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn _findnext(handle: isize, fileinfo: *_finddata_t) c_int;
     pub extern "c" fn _findclose(handle: isize) c_int;
     pub extern "c" fn _mkdir(path: [*:0]const u8) c_int;
-} else @cImport({
-    @cInclude("stdio.h");
-    @cInclude("stdlib.h");
-    @cInclude("dirent.h");
-    @cInclude("sys/stat.h");
-    @cInclude("fcntl.h");
-    @cInclude("unistd.h");
-});
+} else @import("c");
 
 fn getStdout() *c.FILE {
     if (builtin.os.tag == .windows) return c.__acrt_iob_func(1);
