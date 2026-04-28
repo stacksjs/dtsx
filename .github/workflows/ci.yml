@@ -32,10 +32,10 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: pantry install
 
       - name: Lint
-        run: bun run lint
+        run: pantry run lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -55,10 +55,10 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: pantry install
 
       - name: Typecheck
-        run: bun --bun run typecheck
+        run: pantry run typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -83,10 +83,10 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: pantry install
 
       - name: Unit Test
-        run: bun test
+        run: pantry test
 
       - name: Build Zig
         working-directory: packages/zig-dtsx
@@ -98,7 +98,7 @@ jobs:
 
       - name: Run Zig Fixture Tests
         working-directory: packages/zig-dtsx
-        run: bun test test/zig-dtsx.test.ts
+        run: pantry test test/zig-dtsx.test.ts
 
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
@@ -145,10 +145,10 @@ jobs:
         uses: home-lang/pantry/packages/action@main
 
       - name: Install Dependencies
-        run: bun install
+        run: pantry install
 
       - name: Build
-        run: bun run build
+        run: pantry run build
 
       - name: Publish Commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
