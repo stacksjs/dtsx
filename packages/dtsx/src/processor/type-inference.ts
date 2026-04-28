@@ -760,6 +760,22 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
 
     // Add inline @defaultValue for widened primitive properties
     const rawVal = val.trim()
+
+    // Getter/setter shorthand — `{ get X() {…} }` parses with a key of
+    // "get X" and a value that converts into `() => T`. Emitted as a
+    // regular property that becomes `get X: () => T`, which is invalid
+    // TS. Reshape into proper accessor signatures (`get X(): T` and
+    // `set X(arg: T): void`). See stacksjs/dtsx#3093.
+    const accessor = matchAccessorKey(key)
+    if (accessor) {
+      const sig = formatAccessor(accessor.kind, accessor.name, valueType)
+      if (sig) {
+        propTypes.push(sig)
+        // Accessors don't carry @defaultValue; skip the trackDefaults block below.
+        continue
+      }
+    }
+
     if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
       propTypes.push(`/** @defaultValue ${rawVal} */\n  ${key}: ${valueType}`)
     }
@@ -1208,6 +1224,57 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   return properties
 }
 
+/**
+ * Detect getter/setter shorthand keys (`get X` / `set X`).
+ *
+ * `parseObjectProperties` doesn't understand accessor syntax — it
+ * splits `get TRACE()` into key `"get TRACE"` and value `"() { … }"`,
+ * just like a regular method. We re-detect that pattern here so the
+ * caller can emit a proper accessor signature.
+ */
+function matchAccessorKey(key: string): { kind: 'get' | 'set', name: string } | null {
+  const trimmed = key.trim()
+  if (trimmed.startsWith('get ') && trimmed.length > 4) {
+    const name = trimmed.slice(4).trim()
+    if (name) return { kind: 'get', name }
+  }
+  if (trimmed.startsWith('set ') && trimmed.length > 4) {
+    const name = trimmed.slice(4).trim()
+    if (name) return { kind: 'set', name }
+  }
+  return null
+}
+
+/**
+ * Reshape an inferred function-type string (`(args) => T`) into the
+ * accessor signature TypeScript expects inside a type literal.
+ *
+ *   getter:  `() => T`            → `get NAME(): T`
+ *   setter:  `(value: T) => any`  → `set NAME(value: T)`
+ *
+ * Returns null if the value doesn't look like an arrow function — the
+ * caller falls back to the regular property form.
+ */
+function formatAccessor(kind: 'get' | 'set', name: string, valueType: string): string | null {
+  // Match `(<params>) => <return>` with proper paren depth tracking
+  const trimmed = valueType.trim()
+  if (trimmed.charCodeAt(0) !== 40 /* ( */) return null
+
+  const paramEnd = findMatchingBracket(trimmed, 0, '(', ')')
+  if (paramEnd === -1) return null
+
+  const params = trimmed.slice(1, paramEnd).trim()
+  const tail = trimmed.slice(paramEnd + 1).trimStart()
+  if (!tail.startsWith('=>')) return null
+  const ret = tail.slice(2).trim()
+
+  if (kind === 'get') {
+    return `get ${name}(): ${ret || 'unknown'}`
+  }
+  // Setter signatures don't have a return type in TS.
+  return `set ${name}(${params})`
+}
+
 /** Check if value looks like a method definition (not an arrow function).
  *  Method definitions: (params): ReturnType { body }
  *  Arrow functions: (params): ReturnType => body
@@ -1540,20 +1607,30 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     else if (body.includes('=>')) {
       // This is a higher-order function returning another function
       // For complex nested functions, try to extract just the outer function signature
+      //
+      // `indexOf(')')` returns the FIRST `)`, which truncates whenever the
+      // outer param type contains its own parens (e.g. `(handler: () => void)`).
+      // Use proper bracket matching, and strip default values so the result
+      // is valid in `.d.ts` output. See stacksjs/dtsx#3093.
       const bodyTrimmed = body.trimStart()
       const outerParenOpen = bodyTrimmed.indexOf('(')
-      const outerParenClose = outerParenOpen !== -1 ? bodyTrimmed.indexOf(')', outerParenOpen) : -1
-      const outerArrow = outerParenClose !== -1 ? bodyTrimmed.indexOf('=>', outerParenClose) : -1
+      const outerParenClose = outerParenOpen !== -1
+        ? findMatchingBracket(bodyTrimmed, outerParenOpen, '(', ')')
+        : -1
+      const outerArrow = outerParenClose !== -1
+        ? bodyTrimmed.indexOf('=>', outerParenClose)
+        : -1
       if (outerParenOpen === 0 && outerParenClose !== -1 && outerArrow !== -1) {
-        const outerParams = bodyTrimmed.substring(outerParenOpen + 1, outerParenClose).trim()
+        const rawOuter = bodyTrimmed.substring(outerParenOpen + 1, outerParenClose).trim()
+        const cleanedOuter = cleanParameterDefaults(rawOuter)
         // For functions like pipe that transform T => T, infer the return type from generics
-        if (generics.includes('T') && outerParams.includes('T')) {
+        if (generics.includes('T') && cleanedOuter.includes('T')) {
           // eslint-disable-next-line pickier/no-unused-vars
-          returnType = `(${outerParams}) => T`
+          returnType = `(${cleanedOuter}) => T`
         }
         else {
           // eslint-disable-next-line pickier/no-unused-vars
-          returnType = `(${outerParams}) => any`
+          returnType = `(${cleanedOuter}) => any`
         }
       }
       else {
@@ -1656,14 +1733,18 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       // Extract just the basic signature pattern
       let generics = ''
       if (trimmed.charCodeAt(0) === 60) { // <
-        const gt = trimmed.indexOf('>')
+        const gt = findMatchingBracket(trimmed, 0, '<', '>')
         if (gt !== -1) generics = trimmed.substring(0, gt + 1)
       }
 
-      // Look for parameter pattern
+      // Look for parameter pattern. Use proper bracket matching — `indexOf(')')`
+      // returns the FIRST `)`, which truncates the param list when the param
+      // type contains its own parens (e.g. `(handler: () => void) => any`).
+      // Also clean default values, which are invalid in `.d.ts`. See #3093.
       const po = trimmed.indexOf('(')
-      const pc = po !== -1 ? trimmed.indexOf(')', po) : -1
-      const params = (po !== -1 && pc !== -1) ? trimmed.substring(po, pc + 1) : '(...args: any[])'
+      const pc = po !== -1 ? findMatchingBracket(trimmed, po, '(', ')') : -1
+      let params = (po !== -1 && pc !== -1) ? trimmed.substring(po, pc + 1) : '(...args: any[])'
+      params = cleanParameterDefaults(params)
 
       const funcType = `${generics}${params} => any`
       return inUnion ? `(${funcType})` : funcType

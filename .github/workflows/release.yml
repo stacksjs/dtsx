@@ -31,7 +31,7 @@ jobs:
           version: 0.17.0-dev.56+a8226cd53
 
       - name: Install Dependencies
-        run: pantry install
+        run: bun install
 
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
