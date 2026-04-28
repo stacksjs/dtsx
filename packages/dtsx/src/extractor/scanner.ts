@@ -468,7 +468,9 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
     if (pos >= len) { pos = saved; return true }
     const nc = source.charCodeAt(pos)
     // Type continuation operators — NOT end of member
-    if (nc === 124 /* | */ || nc === 38 /* & */ || nc === CH_DOT || nc === CH_QUESTION) {
+    // `:` is the back half of a conditional/ternary (`?` is already listed); without it,
+    // multi-branch conditional return types get truncated mid-type.
+    if (nc === 124 /* | */ || nc === 38 /* & */ || nc === CH_DOT || nc === CH_QUESTION || nc === CH_COLON) {
       pos = saved; return false
     }
     // Type continuation keywords
