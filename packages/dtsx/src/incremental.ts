@@ -4,9 +4,9 @@
  */
 
 import type { Declaration, DtsGenerationConfig } from './types'
-import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { hashContent as fastHash } from './extractor/cache'
 
 /**
  * Incremental build configuration
@@ -273,22 +273,23 @@ export class IncrementalCache {
       }
     }
 
-    // Check dependencies haven't changed
-    for (const dep of entry.dependencies) {
-      const depEntry = this.manifest.entries[dep]
-      if (depEntry) {
+    // Check dependencies haven't changed — parallelize the stat() calls so we
+    // don't pay sequential I/O latency for files with many dependencies.
+    if (entry.dependencies.length > 0) {
+      const checks = await Promise.all(entry.dependencies.map(async (dep) => {
+        const depEntry = this.manifest!.entries[dep]
+        if (!depEntry) return true // not tracked → not invalidated by us
         try {
           const depStat = await stat(dep)
-          if (depStat.mtimeMs !== depEntry.mtime) {
-            this.stats.misses++
-            return null
-          }
+          return depStat.mtimeMs === depEntry.mtime
         }
         catch {
-          // Dependency file missing
-          this.stats.misses++
-          return null
+          return false
         }
+      }))
+      if (checks.some(ok => !ok)) {
+        this.stats.misses++
+        return null
       }
     }
 
@@ -334,8 +335,12 @@ export class IncrementalCache {
       configHash,
     }
 
+    // Increment entry count incrementally — Object.keys was O(N) per set(),
+    // making batch ingestion O(N²).
+    if (!(filePath in this.manifest.entries)) {
+      this.stats.totalEntries++
+    }
     this.manifest.entries[filePath] = entry
-    this.stats.totalEntries = Object.keys(this.manifest.entries).length
     this.dirty = true
   }
 
@@ -388,10 +393,11 @@ export class IncrementalCache {
   }
 
   /**
-   * Hash file content
+   * Hash file content. Uses the fast Bun.hash-backed hash from extractor/cache —
+   * SHA-256 was overkill for cache invalidation and ~30× slower for large files.
    */
   private hashContent(content: string): string {
-    return createHash('sha256').update(content).digest('hex').slice(0, 16)
+    return String(fastHash(content))
   }
 
   /**

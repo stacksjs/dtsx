@@ -210,19 +210,32 @@ export function spawnProcess(
 }
 
 /**
- * Read a file as text with cross-runtime compatibility
+ * Read a file as text with cross-runtime compatibility.
+ * On Node.js we skip the FileHandle wrapper allocation and call readFile directly.
  */
 export async function readTextFile(path: string): Promise<string> {
-  const handle = file(path)
-  return handle.text()
+  if (isBun) {
+    return (globalThis as any).Bun.file(path).text()
+  }
+  return readFile(path, 'utf-8')
 }
 
 /**
- * Check if a file exists with cross-runtime compatibility
+ * Check if a file exists with cross-runtime compatibility.
+ * On Node.js we go straight to stat() — the FileHandle indirection only
+ * mattered for Bun's optimized exists() check.
  */
 export async function fileExists(path: string): Promise<boolean> {
-  const handle = file(path)
-  return handle.exists()
+  if (isBun) {
+    return (globalThis as any).Bun.file(path).exists()
+  }
+  try {
+    await stat(path)
+    return true
+  }
+  catch {
+    return false
+  }
 }
 
 /**

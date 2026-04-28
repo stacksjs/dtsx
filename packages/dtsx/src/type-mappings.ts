@@ -189,11 +189,21 @@ export function getPresetMappings(preset: TypeMappingPreset): TypeMappingRule[] 
   }
 }
 
+/** Internal: a TypeMappingRule with its pattern pre-compiled. */
+interface CompiledRule {
+  rule: TypeMappingRule
+  regex: RegExp
+}
+
+const ESCAPE_REGEX = /[.*+?^${}()|[\]\\]/g
+const MAX_TYPE_MAPPER_CACHE = 2048
+
 /**
  * Type mapper class for applying transformations
  */
 export class TypeMapper {
   private rules: TypeMappingRule[]
+  private compiled: CompiledRule[] = []
   private cache: Map<string, string> = new Map()
 
   constructor(config: TypeMappingConfig = { rules: [] }) {
@@ -216,45 +226,67 @@ export class TypeMapper {
 
     // Sort by priority (higher first)
     this.rules.sort((a, b) => (b.priority || 0) - (a.priority || 0))
+
+    // Pre-compile regexes once. The previous implementation rebuilt every
+    // RegExp inside the inner loop on every map() call.
+    this.recompile()
+  }
+
+  private recompile(): void {
+    const compiled: CompiledRule[] = new Array(this.rules.length)
+    for (let i = 0; i < this.rules.length; i++) {
+      const rule = this.rules[i]
+      const regex = typeof rule.pattern === 'string'
+        ? new RegExp(rule.pattern.replace(ESCAPE_REGEX, '\\$&'), rule.global ? 'g' : '')
+        : rule.pattern
+      compiled[i] = { rule, regex }
+    }
+    this.compiled = compiled
   }
 
   /**
    * Apply type mappings to a type string
    */
   map(type: string, context: Partial<TypeMappingContext> = {}): string {
-    // Check cache
-    const cacheKey = `${type}:${JSON.stringify(context)}`
+    // Build cache key cheaply: only include context fields when present.
+    // The previous JSON.stringify path serialised an empty `{}` per call.
+    const ctxIsEmpty = !context.declarationName && !context.declarationKind
+      && !context.filePath && !context.isReturnType && !context.isParameterType
+      && !context.isPropertyType
+    const cacheKey = ctxIsEmpty
+      ? type
+      : `${type}\x00${context.declarationName ?? ''}\x00${context.declarationKind ?? ''}\x00${context.filePath ?? ''}\x00${context.isReturnType ? 'r' : ''}${context.isParameterType ? 'p' : ''}${context.isPropertyType ? 'P' : ''}`
     const cached = this.cache.get(cacheKey)
-    if (cached !== undefined) {
-      return cached
-    }
+    if (cached !== undefined) return cached
 
     let result = type
-    const fullContext: TypeMappingContext = {
-      type,
-      ...context,
-    }
+    let fullContext: TypeMappingContext | null = null
 
-    for (const rule of this.rules) {
-      // Check condition if present
-      if (rule.condition && !rule.condition(fullContext)) {
-        continue
+    for (let i = 0; i < this.compiled.length; i++) {
+      const { rule, regex } = this.compiled[i]
+
+      // Check condition if present (lazy-build context only when actually needed)
+      if (rule.condition) {
+        if (!fullContext) fullContext = { type, ...context }
+        if (!rule.condition(fullContext)) continue
       }
 
-      const pattern = typeof rule.pattern === 'string'
-        ? new RegExp(rule.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), rule.global ? 'g' : '')
-        : rule.pattern
-
-      if (pattern.test(result)) {
-        result = result.replace(pattern, rule.replacement)
-        // If not global, only apply first matching rule
-        if (!rule.global) {
-          break
-        }
+      if (regex.test(result)) {
+        result = result.replace(regex, rule.replacement)
+        if (!rule.global) break
       }
     }
 
-    // Cache result
+    // Cache result with simple FIFO eviction to keep memory bounded.
+    if (this.cache.size >= MAX_TYPE_MAPPER_CACHE) {
+      // Drop ~10% of the oldest entries in one pass.
+      const toEvict = Math.ceil(MAX_TYPE_MAPPER_CACHE * 0.1)
+      let count = 0
+      for (const k of this.cache.keys()) {
+        if (count++ >= toEvict) break
+        this.cache.delete(k)
+      }
+    }
     this.cache.set(cacheKey, result)
     return result
   }
@@ -272,6 +304,7 @@ export class TypeMapper {
   addRule(rule: TypeMappingRule): void {
     this.rules.push(rule)
     this.rules.sort((a, b) => (b.priority || 0) - (a.priority || 0))
+    this.recompile()
     this.cache.clear()
   }
 
@@ -286,6 +319,7 @@ export class TypeMapper {
         ? rulePattern !== pattern
         : !pattern.test(rulePattern)
     })
+    this.recompile()
     this.cache.clear()
     return originalLength - this.rules.length
   }

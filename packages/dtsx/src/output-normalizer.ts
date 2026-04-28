@@ -182,10 +182,17 @@ export function normalizeOutput(
  * Normalize line endings
  */
 export function normalizeLineEndings(content: string, style: LineEnding): string {
-  // First normalize all to LF
-  let result = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // Gate the LF-normalization passes on cheap indexOf checks — most generated
+  // DTS content is already LF-only, and the regex passes on a clean string are
+  // much more expensive than a single indexOf.
+  let result = content
+  const hasCR = content.indexOf('\r') !== -1
+  if (hasCR) {
+    if (content.indexOf('\r\n') !== -1) result = result.replace(/\r\n/g, '\n')
+    if (result.indexOf('\r') !== -1) result = result.replace(/\r/g, '\n')
+  }
 
-  // Convert to target style
+  // Convert to target style — only run this replace when we actually want CRLF.
   if (style === 'crlf') {
     result = result.replace(/\n/g, '\r\n')
   }

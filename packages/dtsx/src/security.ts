@@ -147,13 +147,14 @@ export function isBlockedPath(filePath: string, config: SecurityConfig = {}): bo
   return false
 }
 
-/**
- * Simple glob pattern matching
- * Supports ** (any path), * (any segment), and ? (single char)
- */
-function matchGlobPattern(path: string, pattern: string): boolean {
-  // Normalize the path for comparison
-  const normalizedPath = path.replace(/\\/g, '/')
+// Compiled glob → RegExp cache. The previous implementation recompiled the
+// regex on every call — for the typical N-file × K-pattern check this was
+// N*K regex builds.
+const globPatternCache = new Map<string, RegExp>()
+
+function compileGlobPattern(pattern: string): RegExp {
+  const cached = globPatternCache.get(pattern)
+  if (cached) return cached
 
   // Use placeholder tokens for glob patterns before escaping
   let regexPattern = pattern
@@ -165,22 +166,25 @@ function matchGlobPattern(path: string, pattern: string): boolean {
   regexPattern = regexPattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
 
   // Replace placeholders with regex patterns
-  // <<GLOBSTAR>> at start: matches any prefix including empty
   regexPattern = regexPattern.replace(/^<<GLOBSTAR>>\//, '(.*\\/)?')
-  // <<GLOBSTAR>> at end: matches any suffix including empty
   regexPattern = regexPattern.replace(/\/<<GLOBSTAR>>$/, '(\\/.*)?')
-  // <<GLOBSTAR>> in middle: matches any middle path
   regexPattern = regexPattern.replace(/\/<<GLOBSTAR>>\//g, '(\\/.*)?\\/')
-  // Remaining <<GLOBSTAR>>: matches anything
   regexPattern = regexPattern.replace(/<<GLOBSTAR>>/g, '.*')
-  // <<STAR>>: matches segment without /
   regexPattern = regexPattern.replace(/<<STAR>>/g, '[^/]*')
-  // <<QUESTION>>: single char
   regexPattern = regexPattern.replace(/<<QUESTION>>/g, '[^/]')
 
-  // Create regex that matches the whole path
   const regex = new RegExp(`^${regexPattern}$`)
-  return regex.test(normalizedPath)
+  globPatternCache.set(pattern, regex)
+  return regex
+}
+
+/**
+ * Simple glob pattern matching
+ * Supports ** (any path), * (any segment), and ? (single char)
+ */
+function matchGlobPattern(path: string, pattern: string): boolean {
+  const normalizedPath = path.indexOf('\\') === -1 ? path : path.replace(/\\/g, '/')
+  return compileGlobPattern(pattern).test(normalizedPath)
 }
 
 /**

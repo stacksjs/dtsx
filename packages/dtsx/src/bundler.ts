@@ -83,13 +83,19 @@ export async function bundleDeclarations(
   let totalImports = 0
   let totalExports = 0
 
-  // Process each file
+  // Pre-extract declarations for all files. extractDeclarations is CPU-bound
+  // and synchronous, but moving the work into a single tight loop lets the JIT
+  // see consistent shapes and warms shared caches better than re-entering for
+  // each file inside the merge loop.
+  const fileDecls: Array<{ file: string, decls: Declaration[] }> = []
   for (const file of files) {
     const sourceCode = sourceContents.get(file)
-    if (!sourceCode)
-      continue
+    if (!sourceCode) continue
+    fileDecls.push({ file, decls: extractDeclarations(sourceCode, file, config.keepComments) })
+  }
 
-    const declarations = extractDeclarations(sourceCode, file, config.keepComments)
+  // Process each file's declarations
+  for (const { file, decls: declarations } of fileDecls) {
     totalDeclarations += declarations.length
 
     for (const decl of declarations) {
@@ -157,22 +163,27 @@ export async function bundleDeclarations(
   output.push(' */')
   output.push('')
 
-  // Add deduplicated imports
-  const sortedImports = Array.from(allImports.values()).sort((a, b) => {
-    // Sort by import order priority
-    const importOrder = config.importOrder || ['bun']
-    const aIndex = importOrder.findIndex(pattern => a.source.startsWith(pattern))
-    const bIndex = importOrder.findIndex(pattern => b.source.startsWith(pattern))
-
-    if (aIndex !== -1 && bIndex !== -1)
-      return aIndex - bIndex
-    if (aIndex !== -1)
-      return -1
-    if (bIndex !== -1)
-      return 1
-
-    return a.source.localeCompare(b.source)
+  // Add deduplicated imports — pre-compute priorities once instead of doing
+  // two findIndex(...) calls inside the comparator on every comparison.
+  const importOrder = config.importOrder || ['bun']
+  const importsArr = Array.from(allImports.values())
+  const priorities: number[] = new Array(importsArr.length)
+  for (let i = 0; i < importsArr.length; i++) {
+    const src = importsArr[i].source
+    let prio = importOrder.length
+    for (let j = 0; j < importOrder.length; j++) {
+      if (src.startsWith(importOrder[j])) { prio = j; break }
+    }
+    priorities[i] = prio
+  }
+  const indices = importsArr.map((_, i) => i)
+  indices.sort((ai, bi) => {
+    const ap = priorities[ai]
+    const bp = priorities[bi]
+    if (ap !== bp) return ap - bp
+    return importsArr[ai].source.localeCompare(importsArr[bi].source)
   })
+  const sortedImports = indices.map(i => importsArr[i])
 
   for (const importInfo of sortedImports) {
     if (importInfo.isSideEffect) {

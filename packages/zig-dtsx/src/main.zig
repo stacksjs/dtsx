@@ -350,7 +350,9 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     const remainder = filenames.len % max_threads;
     const threads = try sa.alloc(std.Thread, max_threads);
 
-    var thread_spawned: [256]bool = .{false} ** 256; // max 256 threads
+    // Heap-allocate so >256-core machines don't silently truncate.
+    const thread_spawned = try sa.alloc(bool, max_threads);
+    @memset(thread_spawned, false);
     var offset: usize = 0;
     for (0..max_threads) |t| {
         const count = files_per_thread + @as(usize, if (t < remainder) 1 else 0);

@@ -3,6 +3,11 @@
  * Pure string processing for maximum startup speed.
  */
 
+// Module-level regex literals — compiled once.
+const REFERENCE_DIRECTIVE = /^\/\/\/\s*<reference\s+(?:path|types|lib|no-default-lib)\s*=\s*["'][^"']+["']\s*\/>/
+const AMD_MODULE_DIRECTIVE = /^\/\/\/\s*<amd-module\s+name\s*=\s*["'][^"']+["']\s*\/>/
+const AMD_DEP_DIRECTIVE = /^\/\/\/\s*<amd-dependency\s+path\s*=\s*["'][^"']+["']/
+
 /**
  * Extract triple-slash directives from source code.
  * These are special comments like /// <reference types="..." />
@@ -25,13 +30,13 @@ export function extractTripleSlashDirectives(sourceCode: string): string[] {
       // Triple-slash directives must be at the very beginning of the file
       // (only whitespace and other triple-slash directives can precede them)
       if (trimmed.startsWith('///')) {
-        if (trimmed.match(/^\/\/\/\s*<reference\s+(path|types|lib|no-default-lib)\s*=\s*["'][^"']+["']\s*\/>/)) {
-          directives.push(trimmed)
-        }
-        else if (trimmed.match(/^\/\/\/\s*<amd-module\s+name\s*=\s*["'][^"']+["']\s*\/>/)) {
-          directives.push(trimmed)
-        }
-        else if (trimmed.match(/^\/\/\/\s*<amd-dependency\s+path\s*=\s*["'][^"']+["']/)) {
+        // Cheap pre-filter: directives all contain '<' near the start. Avoid
+        // running three regexes against arbitrary triple-slash comments.
+        const ltIndex = trimmed.indexOf('<')
+        if (ltIndex === -1) continue
+        if (REFERENCE_DIRECTIVE.test(trimmed)
+          || AMD_MODULE_DIRECTIVE.test(trimmed)
+          || AMD_DEP_DIRECTIVE.test(trimmed)) {
           directives.push(trimmed)
         }
       }

@@ -18,26 +18,35 @@ let _cleanDefaultResult: string | null = null
 
 /** Strip block/JSDoc comments from a property key to keep @defaultValue clean */
 function stripBlockComments(s: string): string {
-  let result = ''
+  // Fast path: no `/*` present — return trimmed input directly (zero scan).
+  const firstStart = s.indexOf('/*')
+  if (firstStart === -1) return s.trim()
+
+  // Slice-based assembly is much faster in V8 than `result += s.charAt(i)`,
+  // which both allocates a 1-char string and re-grows the result on every step.
+  const parts: string[] = []
+  let segStart = 0
   let i = 0
-  while (i < s.length) {
-    if (s.charCodeAt(i) === 47 /* / */ && i + 1 < s.length && s.charCodeAt(i + 1) === 42 /* * */) {
-      // Skip until closing */
+  const len = s.length
+  while (i < len) {
+    if (s.charCodeAt(i) === 47 /* / */ && i + 1 < len && s.charCodeAt(i + 1) === 42 /* * */) {
+      if (i > segStart) parts.push(s.substring(segStart, i))
       i += 2
-      while (i < s.length - 1) {
+      while (i < len - 1) {
         if (s.charCodeAt(i) === 42 /* * */ && s.charCodeAt(i + 1) === 47 /* / */) {
           i += 2
           break
         }
         i++
       }
+      segStart = i
     }
     else {
-      result += s.charAt(i)
       i++
     }
   }
-  return result.trim()
+  if (segStart < len) parts.push(s.substring(segStart))
+  return parts.join('').trim()
 }
 
 /**

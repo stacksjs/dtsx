@@ -230,47 +230,17 @@ export function detectGroup(source: string, isTypeOnly = false): ImportGroup {
 /**
  * Check if a module is a Node.js built-in
  */
+const BUILTIN_MODULES: ReadonlySet<string> = new Set([
+  'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
+  'crypto', 'dgram', 'dns', 'domain', 'events', 'fs', 'http', 'https',
+  'module', 'net', 'os', 'path', 'perf_hooks', 'process', 'punycode',
+  'querystring', 'readline', 'repl', 'stream', 'string_decoder', 'sys',
+  'timers', 'tls', 'tty', 'url', 'util', 'v8', 'vm', 'wasi',
+  'worker_threads', 'zlib',
+])
 function isBuiltinModule(name: string): boolean {
-  const builtins = [
-    'assert',
-    'buffer',
-    'child_process',
-    'cluster',
-    'console',
-    'constants',
-    'crypto',
-    'dgram',
-    'dns',
-    'domain',
-    'events',
-    'fs',
-    'http',
-    'https',
-    'module',
-    'net',
-    'os',
-    'path',
-    'perf_hooks',
-    'process',
-    'punycode',
-    'querystring',
-    'readline',
-    'repl',
-    'stream',
-    'string_decoder',
-    'sys',
-    'timers',
-    'tls',
-    'tty',
-    'url',
-    'util',
-    'v8',
-    'vm',
-    'wasi',
-    'worker_threads',
-    'zlib',
-  ]
-  return builtins.includes(name)
+  // Set membership is O(1) — previously a linear array scan.
+  return BUILTIN_MODULES.has(name)
 }
 
 /**
@@ -309,12 +279,53 @@ export function sortImports(
     }
   }
 
+  // Pre-compile order patterns once instead of inside findOrderIndex per-call.
+  // sortFn is invoked O(N log N) times — recompiling regexes each call was a
+  // measurable hot spot for large dependency graphs.
+  type CompiledOrder = { regex?: RegExp, prefix: string }
+  const compiledOrder: CompiledOrder[] = order.length > 0
+    ? order.map((pattern): CompiledOrder => {
+        if (pattern.startsWith('^')) {
+          try {
+            return { regex: new RegExp(pattern), prefix: pattern.slice(1) }
+          }
+          catch {
+            return { prefix: pattern.slice(1) }
+          }
+        }
+        return { prefix: pattern }
+      })
+    : []
+  const orderIndex = (source: string): number => {
+    for (let i = 0; i < compiledOrder.length; i++) {
+      const c = compiledOrder[i]
+      if (c.regex) {
+        if (c.regex.test(source)) return i
+      }
+      else if (source.startsWith(c.prefix) || source.includes(`/${c.prefix}`)) {
+        return i
+      }
+    }
+    return compiledOrder.length
+  }
+
+  // Pre-compute group indices so sortFn doesn't call indexOf O(N log N) times.
+  const aGroupCache = new Map<string, number>()
+  const groupIdxOf = (g: ImportGroup): number => {
+    const cached = aGroupCache.get(g as string)
+    if (cached !== undefined) return cached
+    const idx = groups.indexOf(g)
+    const fallback = idx >= 0 ? idx : groups.length
+    aGroupCache.set(g as string, fallback)
+    return fallback
+  }
+
   // Sort function
   const sortFn = (a: ParsedImport, b: ParsedImport): number => {
     // First, check custom order patterns
-    if (order.length > 0) {
-      const aOrderIdx = findOrderIndex(a.source, order)
-      const bOrderIdx = findOrderIndex(b.source, order)
+    if (compiledOrder.length > 0) {
+      const aOrderIdx = orderIndex(a.source)
+      const bOrderIdx = orderIndex(b.source)
 
       if (aOrderIdx !== bOrderIdx) {
         return aOrderIdx - bOrderIdx
@@ -323,11 +334,8 @@ export function sortImports(
 
     // Group by type
     if (groupByType) {
-      const aGroupIdx = groups.indexOf(a.group as ImportGroup)
-      const bGroupIdx = groups.indexOf(b.group as ImportGroup)
-
-      const aIdx = aGroupIdx >= 0 ? aGroupIdx : groups.length
-      const bIdx = bGroupIdx >= 0 ? bGroupIdx : groups.length
+      const aIdx = groupIdxOf(a.group as ImportGroup)
+      const bIdx = groupIdxOf(b.group as ImportGroup)
 
       if (aIdx !== bIdx) {
         return aIdx - bIdx

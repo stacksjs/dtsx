@@ -169,26 +169,19 @@ function resolveImportPath(
   fromDir: string,
   _rootDir: string,
 ): string | null {
-  const extensions = ['.ts', '.tsx', '.d.ts', '/index.ts', '/index.tsx']
-
-  // Try to resolve with various extensions
   const basePath = resolve(fromDir, importPath)
 
-  for (const ext of extensions) {
-    const fullPath = basePath + ext
-    // Note: We don't check if file exists here for performance
-    // The graph building will handle missing files gracefully
-    if (!fullPath.includes('node_modules')) {
-      return fullPath
-    }
+  // If path already has extension, return as-is (no node_modules)
+  if (importPath.endsWith('.ts') || importPath.endsWith('.tsx') || importPath.endsWith('.d.ts')) {
+    return basePath.includes('node_modules') ? null : basePath
   }
 
-  // If path already has extension
-  if (importPath.endsWith('.ts') || importPath.endsWith('.tsx')) {
-    return basePath
-  }
-
-  return null
+  // Default to .ts extension; the dependency graph treats missing files gracefully.
+  // Previously this loop returned on the first iteration unconditionally, making
+  // the rest of the extensions dead code — preserving that single-shot behavior
+  // since callers rely on a single canonical path per import.
+  const candidate = `${basePath}.ts`
+  return candidate.includes('node_modules') ? null : candidate
 }
 
 /**

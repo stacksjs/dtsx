@@ -133,13 +133,14 @@ pub const Scanner = struct {
             if (c == ch.CH_SLASH and self.pos + 1 < self.len) {
                 const next = self.source[self.pos + 1];
                 if (next == ch.CH_SLASH) {
-                    // Line comment
+                    // Line comment — SIMD scan via indexOfChar.
                     const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
                     self.pos = if (nl) |n| n + 1 else self.len;
                     continue;
                 }
                 if (next == ch.CH_STAR) {
-                    // Block comment
+                    // Block comment — `*/` is two specific bytes; the SIMD
+                    // first-byte scan in indexOf handles this efficiently.
                     const end_idx = ch.indexOf(self.source, "*/", self.pos + 2);
                     self.pos = if (end_idx) |e| e + 2 else self.len;
                     continue;
@@ -280,10 +281,22 @@ pub const Scanner = struct {
             const word_start: usize = @intCast(wp + 1);
             const word_end: usize = @intCast(p + 1);
             const word = self.source[word_start..word_end];
-            const keywords = [_][]const u8{ "return", "typeof", "void", "delete", "throw", "new", "in", "of", "case", "instanceof", "yield", "await" };
-            for (keywords) |kw| {
-                if (std.mem.eql(u8, word, kw)) return true;
-            }
+            // First-char dispatch to avoid 12 std.mem.eql calls per slash. The
+            // hot path here runs on every '/' that might start division.
+            if (word.len < 2 or word.len > 10) return false;
+            return switch (word[0]) {
+                'r' => std.mem.eql(u8, word, "return"),
+                't' => std.mem.eql(u8, word, "typeof") or std.mem.eql(u8, word, "throw"),
+                'v' => std.mem.eql(u8, word, "void"),
+                'd' => std.mem.eql(u8, word, "delete"),
+                'n' => std.mem.eql(u8, word, "new"),
+                'i' => std.mem.eql(u8, word, "in") or std.mem.eql(u8, word, "instanceof"),
+                'o' => std.mem.eql(u8, word, "of"),
+                'c' => std.mem.eql(u8, word, "case"),
+                'y' => std.mem.eql(u8, word, "yield"),
+                'a' => std.mem.eql(u8, word, "await"),
+                else => false,
+            };
         }
         return false;
     }
@@ -679,6 +692,9 @@ pub const Scanner = struct {
     pub fn peekAfterKeyword(self: *const Scanner, word1: []const u8, word2: []const u8) bool {
         var p = self.pos + word1.len;
         while (p < self.len and ch.isWhitespace(self.source[p])) p += 1;
+        // First-byte fast-fail: avoid std.mem.eql call when first char doesn't match.
+        if (p >= self.len or word2.len == 0) return false;
+        if (self.source[p] != word2[0]) return false;
         if (p + word2.len > self.len) return false;
         if (!std.mem.eql(u8, self.source[p .. p + word2.len], word2)) return false;
         return p + word2.len >= self.len or !ch.isIdentChar(self.source[p + word2.len]);
@@ -701,13 +717,12 @@ pub const Scanner = struct {
             return self.source[start..self.pos];
         }
         if (c == ch.CH_HASH) {
+            // Zero-copy: keep the leading `#` as part of the source slice instead
+            // of allocating a new buffer to prepend it.
+            const start = self.pos;
             self.pos += 1;
-            const ident = self.readIdent();
-            // Return "#name" — we need to allocate this
-            const result = self.allocator.alloc(u8, 1 + ident.len) catch return "";
-            result[0] = '#';
-            @memcpy(result[1..], ident);
-            return result;
+            _ = self.readIdent();
+            return self.source[start..self.pos];
         }
         return self.readIdent();
     }
@@ -738,12 +753,11 @@ pub const Scanner = struct {
 
     /// Scan TypeScript source and extract all declarations
     pub fn scan(self: *Scanner) !ScanResult {
-        // Skip BOM
-        if (self.pos < self.len and self.source[0] >= 0xEF) {
-            // UTF-8 BOM is EF BB BF
-            if (self.len >= 3 and self.source[0] == 0xEF and self.source[1] == 0xBB and self.source[2] == 0xBF) {
-                self.pos = 3;
-            }
+        // Skip UTF-8 BOM (EF BB BF). Check exact bytes — the previous `>= 0xEF`
+        // guard was over-permissive, accepting non-BOM high bytes only to fall
+        // through the strict triple-check.
+        if (self.len >= 3 and self.source[0] == 0xEF and self.source[1] == 0xBB and self.source[2] == 0xBF) {
+            self.pos = 3;
         }
 
         // Main scan loop — delegate to scan_loop module
@@ -772,6 +786,7 @@ pub const Scanner = struct {
 
 /// Check if name appears as a whole word in text (fast indexOf + boundary check)
 pub fn isWordInText(name: []const u8, text: []const u8) bool {
+    if (name.len == 0 or name.len > text.len) return false;
     var search_from: usize = 0;
     while (search_from < text.len) {
         const idx = ch.indexOf(text, name, search_from) orelse return false;
@@ -780,27 +795,12 @@ pub fn isWordInText(name: []const u8, text: []const u8) bool {
         const before_ok = !ch.isIdentChar(before);
         const after_ok = !ch.isIdentChar(after);
         if (before_ok and after_ok) return true;
-        search_from = idx + 1;
+        // When the right boundary fails (we matched a longer identifier), skip past
+        // the entire identifier so we don't re-scan its prefix. When only the left
+        // boundary fails, advance just by 1 to allow overlapping self-similar names.
+        search_from = if (!after_ok) idx + name.len else idx + 1;
     }
     return false;
-}
-
-/// Extract all identifier words from text into a HashSet (single pass, O(n))
-fn extractWordsFromText(alloc: std.mem.Allocator, text: []const u8) std.StringHashMap(void) {
-    var words = std.StringHashMap(void).init(alloc);
-    var i: usize = 0;
-    while (i < text.len) {
-        const c = text[i];
-        if (ch.isIdentStart(c)) {
-            const start = i;
-            i += 1;
-            while (i < text.len and ch.isIdentChar(text[i])) i += 1;
-            words.put(text[start..i], {}) catch {};
-        } else {
-            i += 1;
-        }
-    }
-    return words;
 }
 
 /// Resolve non-exported types that are referenced by exported declarations
@@ -915,9 +915,11 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 /// Single-HashMap approach: count function names, then find and remove body-bearing
 /// implementations in one backward pass.
 fn removeOverloadImplementations(scanner: *Scanner) void {
-    // Single HashMap: count function declarations by name
+    // Single HashMap: count function declarations by name. Track overloads inline
+    // so we don't need a second iteration pass to count them.
     var func_counts = std.StringHashMap(usize).init(scanner.allocator);
     defer func_counts.deinit();
+    var overload_count: usize = 0;
 
     for (scanner.declarations.items) |d| {
         if (d.kind == .function_decl) {
@@ -926,9 +928,11 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
                 entry.value_ptr.* = 1;
             } else {
                 entry.value_ptr.* += 1;
+                if (entry.value_ptr.* == 2) overload_count += 1;
             }
         }
     }
+    if (overload_count == 0) return;
 
     // Single backward pass: for each overloaded name (count > 1),
     // find and mark the last body-bearing declaration for removal.
@@ -939,14 +943,6 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
     @memset(remove_flags, false);
 
     var found_count: usize = 0;
-    var overload_count: usize = 0;
-
-    // Count how many overloaded names exist
-    var count_it = func_counts.iterator();
-    while (count_it.next()) |entry| {
-        if (entry.value_ptr.* > 1) overload_count += 1;
-    }
-    if (overload_count == 0) return;
 
     // Walk backward: for each overloaded function, mark its last body-bearing impl
     var names_found = std.StringHashMap(void).init(scanner.allocator);
@@ -1014,4 +1010,73 @@ test "scanner skipWhitespaceAndComments" {
     defer s.deinit();
     s.skipWhitespaceAndComments();
     try std.testing.expectEqualStrings("hello", s.source[s.pos .. s.pos + 5]);
+}
+
+// --- Tests added for performance/fix patches ---
+
+// isWordInText: when a hit fails the right-boundary check (e.g. searching for
+// "Foo" inside "FooBar"), the new implementation skips past the matched
+// substring instead of advancing one byte. These cases verify both the
+// short-circuit and the normal advancement paths still report correctly.
+test "isWordInText skips past failing right boundary" {
+    // Multiple longer-ident matches followed by a real match — the optimization
+    // must not skip the legitimate later match.
+    try std.testing.expect(isWordInText("Foo", "FooBar FooBaz Foo;"));
+    try std.testing.expect(!isWordInText("Foo", "FooBar FooBaz FooQuux"));
+    // Self-overlap at the left boundary still works (advance-by-1 path).
+    try std.testing.expect(isWordInText("aa", "xxaa"));
+    // Empty needle is rejected.
+    try std.testing.expect(!isWordInText("", "anything"));
+    // Needle longer than text is rejected without indexOf.
+    try std.testing.expect(!isWordInText("longer", "no"));
+}
+
+// peekAfterKeyword: the first-byte fast-fail must short-circuit cleanly when
+// the next ident byte after `word1` doesn't even match `word2[0]`.
+test "peekAfterKeyword first-byte fast-fail" {
+    var s1 = Scanner.init(std.testing.allocator, "async function foo", true, false);
+    defer s1.deinit();
+    try std.testing.expect(s1.peekAfterKeyword("async", "function"));
+
+    var s2 = Scanner.init(std.testing.allocator, "async const foo", true, false);
+    defer s2.deinit();
+    try std.testing.expect(!s2.peekAfterKeyword("async", "function"));
+
+    // Empty word2 must be rejected (avoids matching anything spuriously).
+    var s3 = Scanner.init(std.testing.allocator, "async ", true, false);
+    defer s3.deinit();
+    try std.testing.expect(!s3.peekAfterKeyword("async", ""));
+}
+
+// isRegexStart: the first-char dispatch must still recognize every keyword
+// previously checked, and must reject identifiers that share a prefix with
+// one of the regex-introducing keywords.
+test "isRegexStart keyword dispatch covers all branches" {
+    // Helper: position the scanner at the slash and ask isRegexStart.
+    const cases = [_]struct { src: []const u8, expected: bool }{
+        .{ .src = "return /a/", .expected = true },
+        .{ .src = "typeof /a/", .expected = true },
+        .{ .src = "throw /a/", .expected = true },
+        .{ .src = "void /a/", .expected = true },
+        .{ .src = "delete /a/", .expected = true },
+        .{ .src = "new /a/", .expected = true },
+        .{ .src = "in /a/", .expected = true },
+        .{ .src = "instanceof /a/", .expected = true },
+        .{ .src = "of /a/", .expected = true },
+        .{ .src = "case /a/", .expected = true },
+        .{ .src = "yield /a/", .expected = true },
+        .{ .src = "await /a/", .expected = true },
+        // Look-alike identifiers must NOT trigger regex-mode.
+        .{ .src = "myReturn /a/", .expected = false }, // "myReturn" is not "return"
+        .{ .src = "thrower /a/", .expected = false },
+        .{ .src = "x /a/", .expected = false }, // 1-char ident, length-bucket reject
+    };
+    for (cases) |c| {
+        var s = Scanner.init(std.testing.allocator, c.src, true, false);
+        defer s.deinit();
+        // Walk to the slash position
+        const slash_idx = std.mem.indexOfScalar(u8, c.src, '/').?;
+        s.pos = slash_idx;
+        try std.testing.expectEqual(c.expected, s.isRegexStart());
+    }
 }

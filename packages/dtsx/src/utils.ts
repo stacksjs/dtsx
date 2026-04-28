@@ -34,7 +34,8 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
     return entry.isDirectory() ? getAllTypeScriptFiles(res) : res
   }))
 
-  return Array.prototype.concat(...files).filter(file => extname(file) === '.ts')
+  // .flat() avoids the spread+concat pattern, which can stack-overflow on huge directories.
+  return (files as (string | string[])[]).flat(Infinity).filter((file): file is string => typeof file === 'string' && extname(file) === '.ts')
 }
 
 // only checks for 2 potentially nested levels
@@ -220,31 +221,35 @@ export function validateDtsContent(content: string, filename: string): Validatio
  * Returns formatted diff output with +/- prefixes
  */
 export function createDiff(oldContent: string, newContent: string, filename: string): string {
+  // Equality fast-path avoids split/scan entirely.
+  if (oldContent === newContent) return ''
+
   const oldLines = oldContent.split('\n')
   const newLines = newContent.split('\n')
 
-  // Simple diff: find added and removed lines
-  const oldSet = new Set(oldLines)
-  const newSet = new Set(newLines)
+  // Multiset-aware diff: count occurrences so duplicate lines (e.g. multiple `}`)
+  // are reported correctly when only some of them are removed/added.
+  const oldCounts = new Map<string, number>()
+  const newCounts = new Map<string, number>()
+  for (let i = 0; i < oldLines.length; i++) oldCounts.set(oldLines[i], (oldCounts.get(oldLines[i]) ?? 0) + 1)
+  for (let i = 0; i < newLines.length; i++) newCounts.set(newLines[i], (newCounts.get(newLines[i]) ?? 0) + 1)
 
-  const removed = oldLines.filter(line => !newSet.has(line))
-  const added = newLines.filter(line => !oldSet.has(line))
-
-  if (removed.length === 0 && added.length === 0) {
-    return '' // No changes
+  const removed: string[] = []
+  const added: string[] = []
+  for (const [line, count] of oldCounts) {
+    const surplus = count - (newCounts.get(line) ?? 0)
+    for (let i = 0; i < surplus; i++) removed.push(line)
+  }
+  for (const [line, count] of newCounts) {
+    const surplus = count - (oldCounts.get(line) ?? 0)
+    for (let i = 0; i < surplus; i++) added.push(line)
   }
 
-  const output: string[] = []
-  output.push(`--- ${filename}`)
-  output.push(`+++ ${filename}`)
+  if (removed.length === 0 && added.length === 0) return ''
 
-  for (const line of removed) {
-    output.push(`- ${line}`)
-  }
-  for (const line of added) {
-    output.push(`+ ${line}`)
-  }
-
+  const output: string[] = [`--- ${filename}`, `+++ ${filename}`]
+  for (let i = 0; i < removed.length; i++) output.push(`- ${removed[i]}`)
+  for (let i = 0; i < added.length; i++) output.push(`+ ${added[i]}`)
   return output.join('\n')
 }
 
@@ -313,6 +318,9 @@ export function generateDeclarationMap(
   let prevSourceLine = 0
   let prevSourceCol = 0
 
+  // Hoist line count out of the loop — previously O(N²) (split per iteration)
+  const sourceLineCount = sourceContent.split('\n').length
+
   for (let i = 0; i < dtsLines.length; i++) {
     const line = dtsLines[i]
 
@@ -325,8 +333,7 @@ export function generateDeclarationMap(
     prevGeneratedCol = 0
 
     // Map to corresponding source line (simple 1:1 for declarations)
-    // In a more sophisticated implementation, we'd track actual source positions
-    const sourceLine = Math.min(i, sourceContent.split('\n').length - 1)
+    const sourceLine = Math.min(i, sourceLineCount - 1)
 
     const segments: string[] = []
 

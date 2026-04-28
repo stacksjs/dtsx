@@ -29,22 +29,17 @@ pub fn extractLeadingComments(s: *Scanner, decl_start: usize) ?[]const []const u
         const pu: usize = @intCast(p);
         // Check for block comment ending with */
         if (p >= 1 and s.source[pu] == ch.CH_SLASH and s.source[pu - 1] == ch.CH_STAR) {
-            // Find matching /* or /**
-            var start: isize = p - 2;
-            while (start >= 1) {
-                const su: usize = @intCast(start);
-                if (s.source[su] == ch.CH_SLASH and s.source[su + 1] == ch.CH_STAR) break;
-                start -= 1;
-            }
-            if (start >= 0) {
-                const su: usize = @intCast(start);
-                if (s.source[su] == ch.CH_SLASH and s.source[su + 1] == ch.CH_STAR) {
-                    comments.append(s.source[su .. pu + 1]) catch {};
-                    has_block_comment = true;
-                    p = start - 1;
-                    while (p >= 0 and ch.isWhitespace(s.source[@intCast(p)])) p -= 1;
-                    continue;
-                }
+            // Find matching `/*` opener — std.mem.lastIndexOf walks bytes via
+            // the optimized scanner path. Was a manual byte-by-byte loop walking
+            // backwards, which is O(N) for long block comments.
+            const search_end = pu - 1;
+            const found = std.mem.lastIndexOf(u8, s.source[0..search_end], "/*");
+            if (found) |su| {
+                comments.append(s.source[su .. pu + 1]) catch {};
+                has_block_comment = true;
+                p = @as(isize, @intCast(su)) - 1;
+                while (p >= 0 and ch.isWhitespace(s.source[@intCast(p)])) p -= 1;
+                continue;
             }
             break;
         }
@@ -78,19 +73,23 @@ pub fn extractLeadingComments(s: *Scanner, decl_start: usize) ?[]const []const u
                 }
             }
 
+            // Single-line short-circuit: skip reverse + join when there's only one comment.
+            if (single_lines.items.len == 1) {
+                comments.append(single_lines.items[0]) catch {};
+                continue;
+            }
+
             // Reverse and join with newlines
             std.mem.reverse([]const u8, single_lines.items);
-            var total_len: usize = 0;
-            for (single_lines.items, 0..) |line, i| {
-                total_len += line.len;
-                if (i < single_lines.items.len - 1) total_len += 1;
-            }
+            var total_len: usize = single_lines.items.len - 1; // newlines between
+            for (single_lines.items) |line| total_len += line.len;
             const joined = s.allocator.alloc(u8, total_len) catch break;
             var offset: usize = 0;
+            const last_idx = single_lines.items.len - 1;
             for (single_lines.items, 0..) |line, i| {
                 @memcpy(joined[offset .. offset + line.len], line);
                 offset += line.len;
-                if (i < single_lines.items.len - 1) {
+                if (i < last_idx) {
                     joined[offset] = '\n';
                     offset += 1;
                 }
@@ -151,7 +150,8 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
         }
     }
 
-    // Extract source module
+    // Extract source module — use indexOfChar (single-byte SIMD scan) for the
+    // closing quote instead of indexOf with a 1-char needle.
     var module_src: []const u8 = "";
     {
         const from_idx = ch.indexOf(text, "from ", 0);
@@ -161,9 +161,7 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
             if (mi < text.len) {
                 const q = text[mi];
                 if (q == ch.CH_SQUOTE or q == ch.CH_DQUOTE) {
-                    const q_str: []const u8 = if (q == ch.CH_SQUOTE) "'" else "\"";
-                    const end_idx = ch.indexOf(text, q_str, mi + 1);
-                    if (end_idx) |ei| {
+                    if (ch.indexOfChar(text, q, mi + 1)) |ei| {
                         module_src = text[mi + 1 .. ei];
                     }
                 }
@@ -173,9 +171,7 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
             while (mi < text.len and text[mi] != ch.CH_SQUOTE and text[mi] != ch.CH_DQUOTE) mi += 1;
             if (mi < text.len) {
                 const q = text[mi];
-                const q_str: []const u8 = if (q == ch.CH_SQUOTE) "'" else "\"";
-                const end_idx = ch.indexOf(text, q_str, mi + 1);
-                if (end_idx) |ei| {
+                if (ch.indexOfChar(text, q, mi + 1)) |ei| {
                     module_src = text[mi + 1 .. ei];
                 }
             }
@@ -240,9 +236,9 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
                 }
             }
 
-            // Named imports
+            // Named imports — splitScalar is faster than splitSequence for a 1-byte separator.
             const named_part = import_part[bs + 1 .. be];
-            var iter = std.mem.splitSequence(u8, named_part, ",");
+            var iter = std.mem.splitScalar(u8, named_part, ',');
             while (iter.next()) |raw_item| {
                 const trimmed = ch.sliceTrimmed(raw_item, 0, raw_item.len);
                 if (trimmed.len == 0) continue;
@@ -266,14 +262,15 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
             }
         }
 
+        // toOwnedSlice trims unused capacity — important for non-arena callers.
         parsed_import = .{
             .default_name = default_name,
-            .named_items = named_items.items,
+            .named_items = named_items.toOwnedSlice() catch named_items.items,
             .source = module_src,
             .is_type_only = is_type_only,
             .is_namespace = is_namespace,
             .namespace_name = namespace_name,
-            .resolved_items = resolved_items.items,
+            .resolved_items = resolved_items.toOwnedSlice() catch resolved_items.items,
         };
     }
 
@@ -302,8 +299,9 @@ pub fn extractGenerics(s: *Scanner) []const u8 {
     const start = s.pos;
     _ = s.findMatchingClose(ch.CH_LANGLE, ch.CH_RANGLE);
     const raw = s.source[start..s.pos];
-    // Normalize multi-line generics to single line
-    if (ch.indexOf(raw, "\n", 0) != null) {
+    // Normalize multi-line generics to single line. indexOfChar is the
+    // single-byte SIMD path; the previous code used the multi-byte indexOf.
+    if (ch.indexOfChar(raw, '\n', 0) != null) {
         // Direct alloc: output ≤ input length (whitespace collapsed)
         const buf = s.allocator.alloc(u8, raw.len) catch return raw;
         var pos: usize = 0;
@@ -395,15 +393,18 @@ fn endsWithWord(text: []const u8, word: []const u8) bool {
 
 /// Check if string is a numeric literal
 pub fn isNumericLiteral(v: []const u8) bool {
+    if (v.len == 0) return false;
     var i: usize = 0;
-    if (i < v.len and v[i] == '-') i += 1;
-    if (i >= v.len) return false;
-    if (v[i] < '0' or v[i] > '9') return false;
-    while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
+    if (v[0] == '-') {
+        i = 1;
+        if (i >= v.len) return false;
+    }
+    if (!ch.isDigit(v[i])) return false;
+    while (i < v.len and ch.isDigit(v[i])) i += 1;
     if (i < v.len and v[i] == '.') {
         i += 1;
-        if (i >= v.len or v[i] < '0' or v[i] > '9') return false;
-        while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
+        if (i >= v.len or !ch.isDigit(v[i])) return false;
+        while (i < v.len and ch.isDigit(v[i])) i += 1;
     }
     return i == v.len;
 }
@@ -411,27 +412,40 @@ pub fn isNumericLiteral(v: []const u8) bool {
 /// Infer type from a default value expression (simple cases)
 pub fn inferTypeFromDefault(value: []const u8) []const u8 {
     const v = std.mem.trim(u8, value, " \t\r\n");
-    if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "false")) return "boolean";
-    if (isNumericLiteral(v)) return "number";
-    if (v.len >= 2 and ((v[0] == '\'' and v[v.len - 1] == '\'') or (v[0] == '"' and v[v.len - 1] == '"'))) return "string";
-    if (v.len > 0 and v[0] == '[') return "unknown[]";
-    if (v.len > 0 and v[0] == '{') return "Record<string, unknown>";
-    return "unknown";
+    if (v.len == 0) return "unknown";
+    // Dispatch on first byte to avoid running multiple checks for cases that
+    // can't possibly match. e.g. a value starting with `[` is never `true`.
+    return switch (v[0]) {
+        't' => if (std.mem.eql(u8, v, "true")) "boolean" else "unknown",
+        'f' => if (std.mem.eql(u8, v, "false")) "boolean" else "unknown",
+        '[' => "unknown[]",
+        '{' => "Record<string, unknown>",
+        '\'', '"' => if (v.len >= 2 and v[v.len - 1] == v[0]) "string" else "unknown",
+        '-', '0'...'9' => if (isNumericLiteral(v)) "number" else "unknown",
+        else => "unknown",
+    };
 }
 
 /// Infer literal type from initializer value (for const-like / static readonly)
 pub fn inferLiteralType(value: []const u8) []const u8 {
     const v = std.mem.trim(u8, value, " \t\r\n");
-    if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "false")) return v;
-    if (isNumericLiteral(v)) return v;
-    if (v.len >= 2 and ((v[0] == '\'' and v[v.len - 1] == '\'') or (v[0] == '"' and v[v.len - 1] == '"'))) return v;
-    return "unknown";
+    if (v.len == 0) return "unknown";
+    return switch (v[0]) {
+        't' => if (std.mem.eql(u8, v, "true")) v else "unknown",
+        'f' => if (std.mem.eql(u8, v, "false")) v else "unknown",
+        '\'', '"' => if (v.len >= 2 and v[v.len - 1] == v[0]) v else "unknown",
+        '-', '0'...'9' => if (isNumericLiteral(v)) v else "unknown",
+        else => "unknown",
+    };
 }
 
 /// Extract type from `as Type` assertion in initializer
 pub fn extractAssertion(init_text: []const u8) ?[]const u8 {
     if (ch.endsWith(init_text, "as const")) return null;
-    // Only find " as " at depth 0 (not inside nested brackets/braces/parens)
+    // Cheap pre-check: if ` as ` doesn't appear anywhere, skip the entire walk.
+    if (ch.indexOf(init_text, " as ", 0) == null) return null;
+
+    // Only find " as " at depth 0 (not inside nested brackets/braces/parens).
     var last_as: ?usize = null;
     var depth: isize = 0;
     var in_str: u8 = 0;
@@ -453,7 +467,11 @@ pub fn extractAssertion(init_text: []const u8) ?[]const u8 {
             depth += 1;
         } else if (c == ')' or c == ']' or c == '}' or c == '>') {
             depth -= 1;
-        } else if (depth == 0 and i + 4 <= init_text.len and std.mem.eql(u8, init_text[i .. i + 4], " as ")) {
+        } else if (depth == 0 and c == ' ' and i + 4 <= init_text.len and
+            init_text[i + 1] == 'a' and init_text[i + 2] == 's' and init_text[i + 3] == ' ')
+        {
+            // Inline 4-byte check is faster than std.mem.eql for a fixed-length
+            // needle, and gates the comparison on the leading space first.
             last_as = i;
         }
         i += 1;
@@ -502,7 +520,16 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             }
         }
         if (can_passthrough and colons >= commas + 1) {
-            // Check for parameter modifiers
+            // Check for parameter modifiers. First-byte fast-fail: param
+            // modifiers start with one of `p`, `r`, or `o`. If `inner` doesn't
+            // even contain any of those bytes, skip the per-modifier loop
+            // entirely — saves ~5 full string scans on every parameter list
+            // that lacks modifiers (the common case).
+            const has_p = ch.indexOfChar(inner, 'p', 0) != null;
+            const has_r = ch.indexOfChar(inner, 'r', 0) != null;
+            const has_o = ch.indexOfChar(inner, 'o', 0) != null;
+            if (!has_p and !has_r and !has_o) return raw_params;
+
             var has_modifier = false;
             for (types.PARAM_MODIFIERS) |mod| {
                 if (ch.indexOf(inner, mod, 0)) |mod_idx| {
@@ -893,7 +920,7 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare function ") catch {};
     text.appendSlice(func_name) catch {};
@@ -1082,7 +1109,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     text.appendSlice(kind) catch {};
@@ -1156,7 +1183,7 @@ pub fn extractInterface(s: *Scanner, decl_start: usize, is_exported: bool) Decla
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare interface ") catch {};
     text.appendSlice(name) catch {};
@@ -1220,7 +1247,7 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
 
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("type ") catch {};
     text.appendSlice(name) catch {};
@@ -1343,7 +1370,7 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
 
     // Build DTS text
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     if (is_abstract) text.appendSlice("abstract ") catch {};
@@ -1570,7 +1597,9 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
 }
 
 fn isAccessorFollowed(s: *const Scanner) bool {
-    const next_after = s.peekAfterWord(if (s.matchWord("get")) "get" else "set");
+    // Both "get" and "set" are 3 chars — the caller already verified one matched.
+    // Inspect the byte at +3 directly instead of calling matchWord again.
+    const next_after = s.peekAfterWord("get"); // length is what matters; "get".len == "set".len
     return next_after != 0 and (ch.isIdentStart(next_after) or next_after == ch.CH_LBRACKET or next_after == ch.CH_HASH);
 }
 
@@ -1867,7 +1896,7 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
         "{}";
 
     var text = std.array_list.Managed(u8).init(s.allocator);
-    text.ensureTotalCapacity(128) catch {};
+    text.ensureTotalCapacity(256) catch {};
     if (is_exported) text.appendSlice("export ") catch {};
     text.appendSlice("declare ") catch {};
     text.appendSlice(keyword) catch {};
@@ -1965,7 +1994,12 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             line.append(';') catch {};
             lines.append(line.toOwnedSlice() catch "") catch {};
         } else if (s.matchWord("const") or s.matchWord("let") or s.matchWord("var")) {
-            const kw: []const u8 = if (s.matchWord("const")) "const" else if (s.matchWord("let")) "let" else "var";
+            // First-char dispatch — previously matchWord ran twice more here.
+            const kw: []const u8 = switch (s.source[s.pos]) {
+                'c' => "const",
+                'l' => "let",
+                else => "var",
+            };
             s.pos += kw.len;
             s.skipWhitespaceAndComments();
 
@@ -2139,8 +2173,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             line.appendSlice(ebody) catch {};
             lines.append(line.toOwnedSlice() catch "") catch {};
         } else if (s.matchWord("namespace") or s.matchWord("module")) {
-            // Handle nested namespace/module
-            const ns_kw: []const u8 = if (s.matchWord("namespace")) "namespace" else "module";
+            // First-char dispatch — previously matchWord ran twice more.
+            const ns_kw: []const u8 = if (s.source[s.pos] == 'n') "namespace" else "module";
             s.pos += ns_kw.len;
             s.skipWhitespaceAndComments();
             const ns_name = s.readIdent();
@@ -2293,8 +2327,18 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
         if (!needs_reindent) return raw;
     }
 
-    // Check if there are any comment markers
-    const has_comments = ch.contains(raw, "//") or ch.contains(raw, "/*");
+    // Check if there are any comment markers — single scan for '/' and only do
+    // the multi-byte verification if found.
+    const has_comments = blk: {
+        var i: usize = 0;
+        while (ch.indexOfChar(raw, '/', i)) |slash_idx| {
+            if (slash_idx + 1 < raw.len and (raw[slash_idx + 1] == '/' or raw[slash_idx + 1] == '*')) {
+                break :blk true;
+            }
+            i = slash_idx + 1;
+        }
+        break :blk false;
+    };
 
     // Split raw text by newlines and process line by line
     const est_lines = @max(raw.len / 30, 4);
@@ -2346,7 +2390,8 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
                 // Compute indent
                 var iw: usize = 0;
                 while (iw < cleaned_line.len and (cleaned_line[iw] == ' ' or cleaned_line[iw] == '\t')) iw += 1;
-                if (!std.mem.eql(u8, ct, "{") and !std.mem.eql(u8, ct, "}")) {
+                // Single-byte literal check — `std.mem.eql` is overkill for a 1-char comparison.
+                if (!(ct.len == 1 and (ct[0] == '{' or ct[0] == '}'))) {
                     if (iw < min_indent) min_indent = iw;
                 }
                 indent_cache.append(iw) catch {};
@@ -2366,7 +2411,8 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
 
                 var iw: usize = 0;
                 while (iw < cleaned_line.len and (cleaned_line[iw] == ' ' or cleaned_line[iw] == '\t')) iw += 1;
-                if (!std.mem.eql(u8, ct, "{") and !std.mem.eql(u8, ct, "}")) {
+                // Single-byte literal check — `std.mem.eql` is overkill for a 1-char comparison.
+                if (!(ct.len == 1 and (ct[0] == '{' or ct[0] == '}'))) {
                     if (iw < min_indent) min_indent = iw;
                 }
                 indent_cache.append(iw) catch {};
@@ -2402,9 +2448,9 @@ pub fn cleanBraceBlock(s: *Scanner, raw: []const u8) []const u8 {
         }
 
         const ct = ch.sliceTrimmed(line, 0, line.len);
-        if (std.mem.eql(u8, ct, "{")) {
-            @memcpy(buf[pos..][0..ct.len], ct);
-            pos += ct.len;
+        if (ct.len == 1 and ct[0] == '{') {
+            buf[pos] = '{';
+            pos += 1;
             continue;
         }
 
@@ -2480,7 +2526,8 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
         }
     } else if (s.matchWord("let") or s.matchWord("var")) {
         if (is_exported) {
-            const kind: []const u8 = if (s.matchWord("let")) "let" else "var";
+            // First-char dispatch — saves a redundant matchWord call.
+            const kind: []const u8 = if (s.source[s.pos] == 'l') "let" else "var";
             const decls = extractVariable(s, stmt_start, kind, true);
             for (decls) |d| s.declarations.append(d) catch {};
         } else {
@@ -2497,7 +2544,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
         s.skipWhitespaceAndComments();
         const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, "  ") else "{}";
         var text = std.array_list.Managed(u8).init(s.allocator);
-        text.ensureTotalCapacity(128) catch {};
+        text.ensureTotalCapacity(256) catch {};
         text.appendSlice("declare global ") catch {};
         text.appendSlice(body) catch {};
         const comments = extractLeadingComments(s, stmt_start);

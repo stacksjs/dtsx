@@ -81,21 +81,19 @@ export async function buildDependencyGraph(
   const graph = new Map<string, DependencyNode>()
   const rootDir = options.rootDir || process.cwd()
 
+  // Parallelize file analysis — previously serialized I/O dominated build time
+  // for large projects (every readFile waited on the previous one).
+  const targets: string[] = []
   for (const filePath of files) {
-    // Skip if matches ignore patterns
-    if (options.ignore?.some(pattern => matchPattern(filePath, pattern))) {
-      continue
-    }
+    if (options.ignore?.some(pattern => matchPattern(filePath, pattern))) continue
+    if (!options.includeNodeModules && filePath.includes('node_modules')) continue
+    targets.push(filePath)
+  }
 
-    // Skip node_modules unless explicitly included
-    if (!options.includeNodeModules && filePath.includes('node_modules')) {
-      continue
-    }
-
-    const node = await analyzeFile(filePath, rootDir)
-    if (node) {
-      graph.set(filePath, node)
-    }
+  const nodes = await Promise.all(targets.map(p => analyzeFile(p, rootDir)))
+  for (let i = 0; i < targets.length; i++) {
+    const node = nodes[i]
+    if (node) graph.set(targets[i], node)
   }
 
   // Build reverse dependencies
@@ -247,20 +245,15 @@ function resolveImportPath(
 
   const dir = dirname(fromFile)
   const resolved = resolve(dir, specifier)
+  if (resolved.includes('node_modules')) return null
 
-  // Try common extensions
-  const extensions = ['.ts', '.tsx', '.d.ts', '/index.ts', '/index.tsx', '/index.d.ts']
-  for (const ext of extensions) {
-    const withExt = resolved.endsWith('.ts') || resolved.endsWith('.tsx')
-      ? resolved
-      : resolved + ext
-
-    // Simple check - in a real implementation, would use fs.existsSync
-    if (!withExt.includes('node_modules')) {
-      return withExt.replace(/\.tsx?$/, '.ts')
-    }
+  // If the specifier already has a .ts/.tsx extension, normalize to .ts.
+  // Pre-fix: the for-loop body returned on its first iteration, making the
+  // remaining extension candidates dead code — preserve the single-shot
+  // behaviour callers depended on while removing the unreachable branches.
+  if (resolved.endsWith('.ts') || resolved.endsWith('.tsx')) {
+    return resolved.replace(/\.tsx?$/, '.ts')
   }
-
   return `${resolved}.ts`
 }
 
@@ -283,27 +276,27 @@ export function detectCircularDependencies(
   options: CircularDetectionOptions = {},
 ): CircularDependency[] {
   const cycles: CircularDependency[] = []
+  // visited is shared across all DFS roots — once a node is fully explored we
+  // never need to walk it again. (Pre-fix the visited set was cleared for each
+  // starting node, causing O(N²) work over the full graph.)
   const visited = new Set<string>()
   const recursionStack = new Set<string>()
+  const path: string[] = []
+  // Index lookup avoids the O(N) `path.indexOf(filePath)` call when we hit a
+  // back-edge — important for large dependency graphs.
+  const pathIndex = new Map<string, number>()
   const maxDepth = options.maxDepth || 100
 
-  function dfs(
-    filePath: string,
-    path: string[],
-    depth: number,
-  ): void {
-    if (depth > maxDepth)
-      return
+  function dfs(filePath: string, depth: number): void {
+    if (depth > maxDepth) return
 
     if (recursionStack.has(filePath)) {
       // Found a cycle!
-      const cycleStart = path.indexOf(filePath)
-      const chain = [...path.slice(cycleStart), filePath]
+      const cycleStart = pathIndex.get(filePath) ?? path.indexOf(filePath)
+      const chain = path.slice(cycleStart)
+      chain.push(filePath)
 
-      // Find symbols involved in the cycle
       const symbols = findCycleSymbols(chain, graph)
-
-      // Determine if this is a type-only cycle
       const isTypeOnly = isTypeCycle(chain, graph)
 
       if (!options.typesOnly || isTypeOnly) {
@@ -316,33 +309,32 @@ export function detectCircularDependencies(
             : 'Value-level circular dependency may cause runtime issues',
         })
       }
-
       return
     }
 
-    if (visited.has(filePath))
-      return
+    if (visited.has(filePath)) return
 
     const node = graph.get(filePath)
-    if (!node)
-      return
+    if (!node) return
 
-    visited.add(filePath)
     recursionStack.add(filePath)
+    pathIndex.set(filePath, path.length)
     path.push(filePath)
 
     for (const dep of node.dependencies) {
-      dfs(dep, [...path], depth + 1)
+      dfs(dep, depth + 1)
     }
 
     recursionStack.delete(filePath)
+    path.pop()
+    pathIndex.delete(filePath)
+    // Mark fully explored — subsequent roots that reach this node skip it.
+    visited.add(filePath)
   }
 
-  // Start DFS from each node
+  // Start DFS from each node — shared visited makes this O(V + E) total.
   for (const filePath of graph.keys()) {
-    visited.clear()
-    recursionStack.clear()
-    dfs(filePath, [], 0)
+    if (!visited.has(filePath)) dfs(filePath, 0)
   }
 
   // Deduplicate cycles (same cycle might be found from different starting points)

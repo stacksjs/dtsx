@@ -49,24 +49,17 @@ export interface AsyncParseConfig {
 const MAX_CACHE_SIZE = 100
 
 /**
- * Evict oldest entry if cache exceeds max size
- * Uses O(n) scan instead of O(n log n) sort since we add one entry at a time
+ * Evict the oldest entry if the cache exceeds max size.
+ *
+ * Map preserves insertion order, and the get* helpers below now promote on
+ * hit (delete + re-set), so the first key Map yields is always the LRU
+ * entry. That gives O(1) eviction — the previous implementation walked the
+ * full cache to find the oldest `lastAccess`.
  */
 export function evictOldestEntries(): void {
-  if (sourceFileCache.size <= MAX_CACHE_SIZE) {
-    return
-  }
-
-  // Find the oldest entry by last access time
-  let oldestKey: string | null = null
-  let oldestTime = Infinity
-  for (const [key, entry] of sourceFileCache) {
-    if (entry.lastAccess < oldestTime) {
-      oldestTime = entry.lastAccess
-      oldestKey = key
-    }
-  }
-  if (oldestKey) {
+  while (sourceFileCache.size > MAX_CACHE_SIZE) {
+    const oldestKey = sourceFileCache.keys().next().value
+    if (oldestKey === undefined) break
     sourceFileCache.delete(oldestKey)
   }
 }
@@ -81,8 +74,12 @@ export function getSourceFile(filePath: string, sourceCode: string, precomputedH
   const now = Date.now()
 
   if (cached && cached.contentHash === contentHash) {
-    // Update last access time
+    // Promote on hit: delete + set re-inserts at the end of the Map's
+    // insertion order so eviction (which scans from the front) drops cold
+    // entries first. Keeps lastAccess in sync for any consumer reading it.
     cached.lastAccess = now
+    sourceFileCache.delete(filePath)
+    sourceFileCache.set(filePath, cached)
     return cached.sourceFile
   }
 
@@ -202,10 +199,12 @@ export async function getSourceFileAsync(
   const cacheKey = filePath
   const now = Date.now()
 
-  // Check cache first
+  // Check cache first — promote on hit for LRU eviction.
   const cached = sourceFileCache.get(cacheKey)
   if (cached && cached.contentHash === contentHash) {
     cached.lastAccess = now
+    sourceFileCache.delete(cacheKey)
+    sourceFileCache.set(cacheKey, cached)
     return cached.sourceFile
   }
 
@@ -263,13 +262,16 @@ export async function batchParseSourceFiles(
       }),
     )
 
-    for (const result of batchResults) {
+    // Index-based iteration — previously used `batchResults.indexOf(result)`
+    // inside the loop, which is O(N²) over the batch.
+    for (let bi = 0; bi < batchResults.length; bi++) {
+      const result = batchResults[bi]
       if (result.status === 'fulfilled') {
         results.set(result.value.filePath, result.value.sourceFile)
       }
       else {
         errors.push({
-          filePath: batch[batchResults.indexOf(result)].filePath,
+          filePath: batch[bi].filePath,
           error: result.reason,
         })
       }

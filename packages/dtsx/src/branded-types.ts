@@ -3,6 +3,8 @@
  * These types provide compile-time guarantees for distinct string types
  */
 
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+
 /**
  * Brand symbol for creating nominal types
  */
@@ -226,14 +228,16 @@ export type ExtractBrand<T> = T extends Brand<unknown, infer B> ? B : never
 export type ExtractBase<T> = T extends Brand<infer U, string> ? U : T
 
 /**
- * Safe path operations that preserve branding
+ * Safe path operations that preserve branding.
+ * Uses ESM imports hoisted to module scope so each call avoids the per-call
+ * `require('node:path')` overhead that the previous CommonJS-style implementation
+ * incurred.
  */
 export const BrandedPath = {
   /**
    * Join path segments, returning appropriate branded type
    */
   join(base: DirectoryPath, ...segments: string[]): FilePath {
-    const { join } = require('node:path')
     return join(base, ...segments) as FilePath
   },
 
@@ -241,7 +245,6 @@ export const BrandedPath = {
    * Get directory name from a file path
    */
   dirname(path: FilePath): DirectoryPath {
-    const { dirname } = require('node:path')
     return dirname(path) as DirectoryPath
   },
 
@@ -249,7 +252,6 @@ export const BrandedPath = {
    * Get base name from a file path
    */
   basename(path: FilePath): string {
-    const { basename } = require('node:path')
     return basename(path)
   },
 
@@ -257,7 +259,6 @@ export const BrandedPath = {
    * Resolve path to absolute
    */
   resolve(...segments: string[]): AbsolutePath {
-    const { resolve } = require('node:path')
     return resolve(...segments) as AbsolutePath
   },
 
@@ -265,7 +266,6 @@ export const BrandedPath = {
    * Check if path is absolute
    */
   isAbsolute(path: string): path is AbsolutePath {
-    const { isAbsolute } = require('node:path')
     return isAbsolute(path)
   },
 
@@ -273,7 +273,6 @@ export const BrandedPath = {
    * Get relative path from one path to another
    */
   relative(from: DirectoryPath, to: FilePath): RelativePath {
-    const { relative } = require('node:path')
     return relative(from, to) as RelativePath
   },
 }

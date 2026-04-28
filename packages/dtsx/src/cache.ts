@@ -1,5 +1,5 @@
 import type { DtsGenerationConfig } from './types'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { hashContent } from './extractor/cache'
 
@@ -238,8 +238,7 @@ export class BuildCache {
 
     try {
       if (existsSync(this.manifestPath)) {
-        const fs = require('node:fs')
-        fs.rmSync(this.cacheDir, { recursive: true, force: true })
+        rmSync(this.cacheDir, { recursive: true, force: true })
       }
     }
     catch {

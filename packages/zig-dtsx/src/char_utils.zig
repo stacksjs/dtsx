@@ -118,16 +118,22 @@ pub inline fn indexOfChar(haystack: []const u8, needle: u8, start: usize) ?usize
 }
 
 /// Slice source[start..end) with leading/trailing whitespace trimmed
-pub fn sliceTrimmed(source: []const u8, start_pos: usize, end_pos: usize) []const u8 {
-    var s = start_pos;
-    var e = end_pos;
-    if (s >= e) return "";
+pub inline fn sliceTrimmed(source: []const u8, start_pos: usize, end_pos: usize) []const u8 {
+    if (start_pos >= end_pos) return "";
 
-    // Fast path: if endpoints are already non-whitespace, skip trim loops
-    if (!isWhitespace(source[s]) and !isWhitespace(source[e - 1])) {
-        return source[s..e];
+    // Fast path: if endpoints are already non-whitespace, skip trim loops.
+    // Most slices in TS source already have clean boundaries — this branch
+    // dominates and is worth keeping out of any function call.
+    const first = source[start_pos];
+    const last = source[end_pos - 1];
+    if (first != CH_SPACE and first != CH_TAB and first != CH_LF and first != CH_CR and
+        last != CH_SPACE and last != CH_TAB and last != CH_LF and last != CH_CR)
+    {
+        return source[start_pos..end_pos];
     }
 
+    var s = start_pos;
+    var e = end_pos;
     while (s < e and isWhitespace(source[s])) s += 1;
     while (e > s and isWhitespace(source[e - 1])) e -= 1;
     return source[s..e];
@@ -184,6 +190,23 @@ test "sliceTrimmed" {
     const src = "  hello  ";
     try std.testing.expectEqualStrings("hello", sliceTrimmed(src, 0, src.len));
     try std.testing.expectEqualStrings("hello", sliceTrimmed(src, 2, 7));
+}
+
+test "sliceTrimmed fast path: clean endpoints return zero-copy slice" {
+    // After the inline + manual-whitespace-check rewrite the fast path must
+    // still bypass the trim loops when the endpoints are non-whitespace.
+    const src = "abc def";
+    const out = sliceTrimmed(src, 0, src.len);
+    try std.testing.expectEqualStrings("abc def", out);
+    // Returned slice points into the same buffer (no copy).
+    try std.testing.expect(out.ptr == src.ptr);
+}
+
+test "sliceTrimmed handles tabs, newlines, and CR" {
+    try std.testing.expectEqualStrings("x", sliceTrimmed("\tx\n", 0, 3));
+    try std.testing.expectEqualStrings("x", sliceTrimmed("\rx\r", 0, 3));
+    try std.testing.expectEqualStrings("", sliceTrimmed("   ", 0, 3));
+    try std.testing.expectEqualStrings("", sliceTrimmed("abc", 1, 1));
 }
 
 test "indexOf" {

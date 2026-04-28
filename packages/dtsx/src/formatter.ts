@@ -169,16 +169,16 @@ function formatBuiltIn(content: string, options: BuiltInFormatterOptions = {}): 
   let result = content
   const indent = useTabs ? '\t' : ' '.repeat(indentSize)
 
-  // Normalize line endings
-  result = result.replace(/\r\n/g, '\n')
+  // Normalize line endings — skip the replace entirely if no \r\n is present.
+  if (result.indexOf('\r\n') !== -1) result = result.replace(/\r\n/g, '\n')
 
   // Normalize whitespace
   if (normalizeWhitespace) {
-    // Remove trailing whitespace from lines
-    result = result.replace(/[ \t]+$/gm, '')
+    // Remove trailing whitespace from lines (gated to avoid full-string scan when clean)
+    if (/[ \t]\n/.test(result) || /[ \t]$/.test(result)) result = result.replace(/[ \t]+$/gm, '')
 
-    // Collapse multiple blank lines to maximum of 2
-    result = result.replace(/\n{3,}/g, '\n\n')
+    // Collapse multiple blank lines to maximum of 2 (gated)
+    if (result.indexOf('\n\n\n') !== -1) result = result.replace(/\n{3,}/g, '\n\n')
 
     // Ensure consistent indentation
     result = normalizeIndentation(result, indent)
@@ -256,10 +256,13 @@ function formatImports(
     if (importMatch) {
       inImportBlock = true
       _importBlockEnd = i
+      // Cheap startsWith check on the trimmed leading portion — previously
+      // scanned the full line for "import type".
+      const lt = importMatch[1] // "import ... from '"
       imports.push({
         line,
         source: importMatch[2],
-        isType: line.includes('import type'),
+        isType: lt.startsWith('import type ') || lt.startsWith('import type\t'),
       })
     }
     else if (inImportBlock && line.trim() === '') {
@@ -294,20 +297,22 @@ function formatImports(
   // Group imports
   let formattedImports: string[]
   if (options.group) {
-    const nodeImports = imports.filter(i => i.source.startsWith('node:'))
-    const builtinImports = imports.filter(i =>
-      !i.source.startsWith('.')
-      && !i.source.startsWith('node:')
-      && !i.source.includes('/'),
-    )
-    const externalImports = imports.filter(i =>
-      !i.source.startsWith('.')
-      && !i.source.startsWith('node:')
-      && i.source.includes('/')
-      && !i.source.startsWith('@'),
-    )
-    const scopedImports = imports.filter(i => i.source.startsWith('@'))
-    const relativeImports = imports.filter(i => i.source.startsWith('.'))
+    // Single-pass categorization — previously made 5 separate filter passes
+    // over `imports`, allocating 5 intermediate arrays.
+    const nodeImports: typeof imports = []
+    const builtinImports: typeof imports = []
+    const externalImports: typeof imports = []
+    const scopedImports: typeof imports = []
+    const relativeImports: typeof imports = []
+    for (let i = 0; i < imports.length; i++) {
+      const imp = imports[i]
+      const src = imp.source
+      if (src.charCodeAt(0) === 46 /* . */) relativeImports.push(imp)
+      else if (src.startsWith('node:')) nodeImports.push(imp)
+      else if (src.charCodeAt(0) === 64 /* @ */) scopedImports.push(imp)
+      else if (src.includes('/')) externalImports.push(imp)
+      else builtinImports.push(imp)
+    }
 
     formattedImports = [
       ...nodeImports.map(i => i.line),

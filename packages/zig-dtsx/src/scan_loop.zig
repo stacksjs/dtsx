@@ -133,33 +133,50 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         if (dch == 'f' and s.matchWord("function")) {
             const decl = ext.extractFunction(s, stmt_start, true, false, true);
             if (decl) |d| try s.declarations.append(d);
-        } else if (dch == 'a' and s.matchWord("async")) {
-            s.pos += 5;
-            s.skipWhitespaceAndComments();
-            if (s.matchWord("function")) {
-                const decl = ext.extractFunction(s, stmt_start, true, true, true);
-                if (decl) |d| try s.declarations.append(d);
-            } else {
-                s.skipToStatementEnd();
-                const full_text = s.sliceTrimmed(stmt_start, s.pos);
-                try s.declarations.append(.{
-                    .kind = .export_decl,
-                    .name = "default",
-                    .text = full_text,
-                    .is_exported = true,
-                    .start = stmt_start,
-                    .end = s.pos,
-                });
-            }
         } else if (dch == 'c' and s.matchWord("class")) {
             const decl = ext.extractClass(s, stmt_start, true, false);
             try s.declarations.append(decl);
-        } else if (dch == 'a' and s.matchWord("abstract")) {
-            s.pos += 8;
-            s.skipWhitespaceAndComments();
-            if (s.matchWord("class")) {
-                const decl = ext.extractClass(s, stmt_start, true, true);
-                try s.declarations.append(decl);
+        } else if (dch == 'a') {
+            // Combined dispatch — both async and abstract start with 'a',
+            // and only one matchWord runs per code path.
+            if (s.matchWord("async")) {
+                s.pos += 5;
+                s.skipWhitespaceAndComments();
+                if (s.matchWord("function")) {
+                    const decl = ext.extractFunction(s, stmt_start, true, true, true);
+                    if (decl) |d| try s.declarations.append(d);
+                } else {
+                    s.skipToStatementEnd();
+                    const full_text = s.sliceTrimmed(stmt_start, s.pos);
+                    try s.declarations.append(.{
+                        .kind = .export_decl,
+                        .name = "default",
+                        .text = full_text,
+                        .is_exported = true,
+                        .start = stmt_start,
+                        .end = s.pos,
+                    });
+                }
+            } else if (s.matchWord("abstract")) {
+                s.pos += 8;
+                s.skipWhitespaceAndComments();
+                if (s.matchWord("class")) {
+                    const decl = ext.extractClass(s, stmt_start, true, true);
+                    try s.declarations.append(decl);
+                }
+            } else {
+                s.skipToStatementEnd();
+                const text = s.sliceTrimmed(stmt_start, s.pos);
+                const comments = ext.extractLeadingComments(s, stmt_start);
+                try s.declarations.append(.{
+                    .kind = .export_decl,
+                    .name = "default",
+                    .text = text,
+                    .is_exported = true,
+                    .leading_comments = comments,
+                    .start = stmt_start,
+                    .end = s.pos,
+                });
             }
         } else {
             s.skipToStatementEnd();
@@ -216,12 +233,25 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
     } else if (ech == 'f' and s.matchWord("function")) {
         const decl = ext.extractFunction(s, stmt_start, true, false, false);
         if (decl) |d| try s.declarations.append(d);
-    } else if (ech == 'a' and s.matchWord("async")) {
-        s.pos += 5;
-        s.skipWhitespaceAndComments();
-        if (s.matchWord("function")) {
-            const decl = ext.extractFunction(s, stmt_start, true, true, false);
-            if (decl) |d| try s.declarations.append(d);
+    } else if (ech == 'a') {
+        // Combined dispatch — both async and abstract start with 'a',
+        // and only one matchWord runs in any given path.
+        if (s.matchWord("async")) {
+            s.pos += 5;
+            s.skipWhitespaceAndComments();
+            if (s.matchWord("function")) {
+                const decl = ext.extractFunction(s, stmt_start, true, true, false);
+                if (decl) |d| try s.declarations.append(d);
+            } else {
+                s.skipToStatementEnd();
+            }
+        } else if (s.matchWord("abstract")) {
+            s.pos += 8;
+            s.skipWhitespaceAndComments();
+            if (s.matchWord("class")) {
+                const decl = ext.extractClass(s, stmt_start, true, true);
+                try s.declarations.append(decl);
+            }
         } else {
             s.skipToStatementEnd();
         }
@@ -245,13 +275,6 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
             }
         } else {
             s.skipToStatementEnd();
-        }
-    } else if (ech == 'a' and s.matchWord("abstract")) {
-        s.pos += 8;
-        s.skipWhitespaceAndComments();
-        if (s.matchWord("class")) {
-            const decl = ext.extractClass(s, stmt_start, true, true);
-            try s.declarations.append(decl);
         }
     } else if (ech == 'l' and s.matchWord("let")) {
         const decls = ext.extractVariable(s, stmt_start, "let", true);
@@ -291,16 +314,16 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         s.skipExportStar();
         const text = s.sliceTrimmed(stmt_start, s.pos);
         const comments = ext.extractLeadingComments(s, stmt_start);
-        // Extract source from 'from "..."'
+        // Extract source from 'from "..."'. indexOfChar is the single-byte
+        // SIMD path; the previous indexOf with a 1-char needle was strictly slower.
         var export_source: []const u8 = "";
         const from_idx = ch.indexOf(text, "from ", 0);
         if (from_idx) |fi| {
             var qi = fi + 5;
             while (qi < text.len and (text[qi] == ' ' or text[qi] == '\t')) qi += 1;
             if (qi < text.len and (text[qi] == '\'' or text[qi] == '"')) {
-                const q_str: []const u8 = if (text[qi] == '\'') "'" else "\"";
-                const q_end = ch.indexOf(text, q_str, qi + 1);
-                if (q_end) |qe| export_source = text[qi + 1 .. qe];
+                const quote = text[qi];
+                if (ch.indexOfChar(text, quote, qi + 1)) |qe| export_source = text[qi + 1 .. qe];
             }
         }
         try s.declarations.append(.{

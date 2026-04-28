@@ -98,11 +98,21 @@ fn processSourceInternal(
     return .{ .ptr = dts_output.ptr, .len = dts_output.len };
 }
 
-/// Get the length of a result string (without null terminator)
+/// Get the length of a result string (without null terminator).
+/// SIMD-scan 16 bytes at a time for the null terminator — faster on long
+/// results than the byte-by-byte loop the compiler will generate from the
+/// scalar form.
 export fn result_length(ptr: [*]const u8) usize {
     var i: usize = 0;
-    while (ptr[i] != 0) i += 1;
-    return i;
+    while (true) {
+        const chunk: @Vector(16, u8) = ptr[i..][0..16].*;
+        const zero_mask = chunk == @as(@Vector(16, u8), @splat(0));
+        if (@reduce(.Or, zero_mask)) {
+            const bits: u16 = @bitCast(zero_mask);
+            return i + @ctz(bits);
+        }
+        i += 16;
+    }
 }
 
 /// Free a result string previously returned by process_source
@@ -220,9 +230,15 @@ export fn process_batch(
     };
     defer std.heap.c_allocator.free(threads);
 
-    const chunk_size = (n + num_threads - 1) / num_threads;
-    var thread_spawned: [64]bool = .{false} ** 64; // max 64 threads
+    // Heap-allocate thread-spawned flags so we don't overflow when num_threads > 64.
+    const thread_spawned = std.heap.c_allocator.alloc(bool, num_threads) catch {
+        batchWorker(tasks);
+        return;
+    };
+    defer std.heap.c_allocator.free(thread_spawned);
+    @memset(thread_spawned, false);
 
+    const chunk_size = (n + num_threads - 1) / num_threads;
     for (0..num_threads) |t| {
         const start = t * chunk_size;
         if (start >= n) break;

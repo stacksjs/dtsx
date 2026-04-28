@@ -56,6 +56,8 @@ fn extractWords(words: *std.StringHashMap(void), text: []const u8) void {
 /// Extract triple-slash directives from source start
 fn extractTripleSlashDirectives(alloc: std.mem.Allocator, source: []const u8) ![][]const u8 {
     var directives = std.array_list.Managed([]const u8).init(alloc);
+    // Pre-allocate small capacity — typical files have 0-3 directives.
+    try directives.ensureTotalCapacity(2);
     var line_start: usize = 0;
 
     var i: usize = 0;
@@ -70,8 +72,14 @@ fn extractTripleSlashDirectives(alloc: std.mem.Allocator, source: []const u8) ![
             line_start = i + 1;
 
             if (trimmed.len >= 3 and trimmed[0] == '/' and trimmed[1] == '/' and trimmed[2] == '/') {
-                // Check for /// <reference .../>
-                if (ch.contains(trimmed, "<reference ") or ch.contains(trimmed, "<amd-module ") or ch.contains(trimmed, "<amd-dependency ")) {
+                // Inline char-by-char check: avoids three full ch.contains scans.
+                // Look for "<reference ", "<amd-module ", "<amd-dependency ".
+                const lt = ch.indexOfChar(trimmed, '<', 3) orelse continue;
+                const tail = trimmed[lt..];
+                if ((tail.len > 11 and std.mem.eql(u8, tail[0..11], "<reference ")) or
+                    (tail.len > 12 and std.mem.eql(u8, tail[0..12], "<amd-module ")) or
+                    (tail.len > 16 and std.mem.eql(u8, tail[0..16], "<amd-dependency ")))
+                {
                     try directives.append(trimmed);
                 }
             } else if (trimmed.len == 0 or (trimmed.len >= 2 and trimmed[0] == '/' and trimmed[1] == '/')) {
@@ -178,10 +186,13 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     // The scanner already built the correct DTS text using the type annotation,
     // so we can return it directly without type inference or value processing.
     if (decl.type_annotation.len > 0 and decl.value.len > 0) {
-        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
-        if (!ch.endsWith(trimmed_val, "as const") and
-            !ch.contains(decl.value, " satisfies "))
-        {
+        // Cheaper "ends with as const" check that skips the trim allocation.
+        // We just need to ignore trailing whitespace.
+        var ve: usize = decl.value.len;
+        while (ve > 0 and (decl.value[ve - 1] == ' ' or decl.value[ve - 1] == '\t' or
+            decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1) {}
+        const ends_as_const = ve >= 8 and std.mem.eql(u8, decl.value[ve - 8 .. ve], "as const");
+        if (!ends_as_const and !ch.contains(decl.value, " satisfies ")) {
             const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
             if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
                 if (comments.len == 0) return decl.text;
@@ -571,8 +582,9 @@ pub fn processDeclarations(
     import_order: []const []const u8,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(result_alloc);
-    // DTS output is typically 30-60% of source size (bodies stripped, types added)
-    try result.ensureTotalCapacity(source_code.len / 2);
+    // DTS output is typically 30-60% of source size (bodies stripped, types added).
+    // Bias toward 60% + 256 byte slack to avoid the final 1-2 reallocs on average files.
+    try result.ensureTotalCapacity((source_code.len * 6) / 10 + 256);
 
     // Extract triple-slash directives
     // Fast check: skip whitespace
@@ -702,7 +714,8 @@ pub fn processDeclarations(
             if (ch.indexOfChar(export_text, '{', 0)) |brace_s| {
                 if (ch.indexOfChar(export_text, '}', brace_s)) |brace_e| {
                     const items_str = export_text[brace_s + 1 .. brace_e];
-                    var iter = std.mem.splitSequence(u8, items_str, ",");
+                    // splitScalar is faster than splitSequence for a 1-byte separator.
+                    var iter = std.mem.splitScalar(u8, items_str, ',');
                     while (iter.next()) |item| {
                         const trimmed_item = ch.sliceTrimmed(item, 0, item.len);
                         if (trimmed_item.len > 0) {
@@ -711,6 +724,11 @@ pub fn processDeclarations(
                     }
                 }
             }
+
+            // Determine type-only-ness BEFORE concatenation. Checking
+            // ch.contains on the full (comments + export_text) text scanned
+            // arbitrarily long comment text on every export.
+            const is_type_export = ch.startsWith(export_text, "export type");
 
             stmt_buf.clearRetainingCapacity();
             try stmt_buf.appendSlice(comments);
@@ -727,7 +745,7 @@ pub fn processDeclarations(
             }
             if (!is_dup) {
                 try seen_exports_arr.append(full_text);
-                if (ch.contains(full_text, "export type")) {
+                if (is_type_export) {
                     try type_export_stmts.append(full_text);
                 } else {
                     try value_export_stmts.append(full_text);
@@ -896,18 +914,24 @@ pub fn processDeclarations(
             const default_priority = import_order.len;
             const priorities = try alloc.alloc(usize, processed_imports.items.len);
             for (processed_imports.items, 0..) |imp, pi| {
+                // Locate the source-string slice. Single scan via indexOf for
+                // the " from " marker, then dispatch on the quote byte we find
+                // there — avoids two separate searches for the 7-byte needle.
+                var src_start: usize = 0;
+                var src_end: usize = imp.len;
+                if (ch.indexOf(imp, " from ", 0)) |fi| {
+                    var qi = fi + 6;
+                    while (qi < imp.len and (imp[qi] == ' ' or imp[qi] == '\t')) qi += 1;
+                    if (qi < imp.len and (imp[qi] == '\'' or imp[qi] == '"')) {
+                        const quote = imp[qi];
+                        src_start = qi + 1;
+                        if (ch.indexOfChar(imp, quote, src_start)) |qe| src_end = qe;
+                    }
+                }
+                const src = if (src_start < src_end) imp[src_start..src_end] else imp;
                 var prio = default_priority;
                 for (import_order, 0..) |p, idx| {
-                    var found = false;
-                    if (ch.indexOf(imp, "from '", 0)) |fi| {
-                        if (ch.indexOf(imp, p, fi + 6) != null) found = true;
-                    }
-                    if (!found) {
-                        if (ch.indexOf(imp, "from \"", 0)) |fi| {
-                            if (ch.indexOf(imp, p, fi + 6) != null) found = true;
-                        }
-                    }
-                    if (found) { prio = idx; break; }
+                    if (ch.indexOf(src, p, 0) != null) { prio = idx; break; }
                 }
                 priorities[pi] = prio;
             }
@@ -1118,4 +1142,31 @@ test "extractTripleSlashDirectives" {
         try std.testing.expectEqual(@as(usize, 1), directives.len);
         try std.testing.expectEqualStrings("/// <reference types=\"node\" />", directives[0]);
     }
+}
+
+test "extractTripleSlashDirectives recognizes amd-module and amd-dependency" {
+    const alloc = std.testing.allocator;
+    const src = "/// <amd-module name=\"m\" />\n/// <amd-dependency path=\"./d\" />\nexport {};";
+    const directives = try extractTripleSlashDirectives(alloc, src);
+    defer alloc.free(directives);
+    try std.testing.expectEqual(@as(usize, 2), directives.len);
+    try std.testing.expect(std.mem.indexOf(u8, directives[0], "amd-module") != null);
+    try std.testing.expect(std.mem.indexOf(u8, directives[1], "amd-dependency") != null);
+}
+
+test "extractTripleSlashDirectives skips triple-slash comments without `<` (fast pre-filter)" {
+    const alloc = std.testing.allocator;
+    const src = "/// just a comment, no angle bracket\nexport {};";
+    const directives = try extractTripleSlashDirectives(alloc, src);
+    defer alloc.free(directives);
+    try std.testing.expectEqual(@as(usize, 0), directives.len);
+}
+
+test "extractTripleSlashDirectives stops at first non-comment statement" {
+    const alloc = std.testing.allocator;
+    const src = "/// <reference types=\"node\" />\nexport const x = 1;\n/// <reference types=\"bun\" />";
+    const directives = try extractTripleSlashDirectives(alloc, src);
+    defer alloc.free(directives);
+    try std.testing.expectEqual(@as(usize, 1), directives.len);
+    try std.testing.expect(std.mem.indexOf(u8, directives[0], "node") != null);
 }

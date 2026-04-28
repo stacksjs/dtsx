@@ -22,32 +22,45 @@ const regexCache = new Map<string, RegExp>()
 const importItemsCache = new Map<string, string[]>()
 
 /**
- * Get or create a cached RegExp for word boundary matching
+ * Get or create a cached RegExp for word boundary matching.
+ * Promotes the entry on a hit so the FIFO eviction approximates LRU.
  */
 export function getCachedRegex(pattern: string): RegExp {
-  let cached = regexCache.get(pattern)
-  if (!cached) {
-    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    cached = new RegExp(`\\b${escaped}\\b`)
+  const cached = regexCache.get(pattern)
+  if (cached) {
+    // Move-to-end: delete + set re-inserts at the end of Map's insertion order,
+    // so eviction (which scans from the front) drops cold entries first.
+    regexCache.delete(pattern)
     regexCache.set(pattern, cached)
+    return cached
+  }
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const fresh = new RegExp(`\\b${escaped}\\b`)
+  regexCache.set(pattern, fresh)
 
-    // Evict a batch of entries if cache is too large
-    if (regexCache.size > MAX_REGEX_CACHE_SIZE) {
-      let count = 0
-      for (const key of regexCache.keys()) {
-        if (count++ >= 50) break
-        regexCache.delete(key)
-      }
+  // Evict a batch of oldest entries if cache is too large.
+  if (regexCache.size > MAX_REGEX_CACHE_SIZE) {
+    let count = 0
+    for (const key of regexCache.keys()) {
+      if (count++ >= 50) break
+      regexCache.delete(key)
     }
   }
-  return cached
+  return fresh
 }
 
 /**
- * Get cached import items or null if not cached
+ * Get cached import items or null if not cached.
+ * Promotes on hit for LRU-like semantics.
  */
 export function getImportItemsFromCache(importText: string): string[] | null {
-  return importItemsCache.get(importText) ?? null
+  const cached = importItemsCache.get(importText)
+  if (cached) {
+    importItemsCache.delete(importText)
+    importItemsCache.set(importText, cached)
+    return cached
+  }
+  return null
 }
 
 /**

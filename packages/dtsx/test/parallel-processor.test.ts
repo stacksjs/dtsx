@@ -3,7 +3,9 @@
  */
 
 import type { ProcessingNode } from '../src/parallel-processor'
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   analyzeParallelizationPotential,
@@ -271,6 +273,60 @@ describe('Parallel Processor', () => {
       expect(result.success.size).toBe(1)
       expect(result.failed.size).toBe(1)
       expect(errors.length).toBe(1)
+    })
+  })
+
+  // ----------------------------------------------------------------------
+  // resolveImportPath behavior — exercised via buildProcessingGraph.
+  //
+  // Pre-fix the function had a `for (const ext of extensions)` loop where
+  // the body unconditionally `return`ed on the first iteration, making the
+  // remaining extensions dead code. The new implementation explicitly
+  // returns the canonical `.ts` candidate (or honors an existing extension)
+  // and rejects node_modules paths. These tests pin that contract.
+  // ----------------------------------------------------------------------
+  describe('resolveImportPath via buildProcessingGraph', () => {
+    let tmpDir: string
+
+    beforeAll(async () => {
+      tmpDir = join(tmpdir(), `dtsx-resolve-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      await mkdir(tmpDir, { recursive: true })
+      // Bare relative import — should resolve to "./helper.ts"
+      await writeFile(join(tmpDir, 'main.ts'), `import { helper } from './helper'\nexport const x = helper()\n`)
+      await writeFile(join(tmpDir, 'helper.ts'), `export function helper(): number { return 1 }\n`)
+      // Relative import that already has an extension — should resolve verbatim
+      await writeFile(join(tmpDir, 'main-ext.ts'), `import { y } from './sibling.ts'\nexport const z = y\n`)
+      await writeFile(join(tmpDir, 'sibling.ts'), `export const y = 2\n`)
+      // Relative import with .tsx extension — must be preserved
+      await writeFile(join(tmpDir, 'main-tsx.ts'), `import { Comp } from './widget.tsx'\nexport const w = Comp\n`)
+      await writeFile(join(tmpDir, 'widget.tsx'), `export const Comp = null\n`)
+    })
+
+    afterAll(async () => {
+      await rm(tmpDir, { recursive: true, force: true })
+    })
+
+    test('resolves bare relative imports to .ts candidate', async () => {
+      const graph = await buildProcessingGraph(['main.ts'], tmpDir)
+      const node = graph.get(join(tmpDir, 'main.ts'))!
+      const deps = Array.from(node.dependencies)
+      expect(deps.some(d => d.endsWith('helper.ts'))).toBe(true)
+    })
+
+    test('preserves .ts extension when already present in import path', async () => {
+      const graph = await buildProcessingGraph(['main-ext.ts'], tmpDir)
+      const node = graph.get(join(tmpDir, 'main-ext.ts'))!
+      const deps = Array.from(node.dependencies)
+      expect(deps.some(d => d.endsWith('sibling.ts'))).toBe(true)
+      // Must not append a second extension (`sibling.ts.ts`).
+      expect(deps.every(d => !d.endsWith('.ts.ts'))).toBe(true)
+    })
+
+    test('preserves .tsx extension when already present', async () => {
+      const graph = await buildProcessingGraph(['main-tsx.ts'], tmpDir)
+      const node = graph.get(join(tmpDir, 'main-tsx.ts'))!
+      const deps = Array.from(node.dependencies)
+      expect(deps.some(d => d.endsWith('widget.tsx'))).toBe(true)
     })
   })
 })

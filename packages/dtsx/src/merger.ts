@@ -101,30 +101,28 @@ export function mergeDeclarations(
   const merges: MergeDetail[] = []
   let mergedCount = 0
 
-  // Group declarations by name and kind
+  // Group declarations by name and kind, preserving first-occurrence order so
+  // we don't need a second pass + processed Set to keep the output ordering.
   const groups = new Map<string, Declaration[]>()
+  const orderedKeys: string[] = []
 
   for (const decl of declarations) {
     const key = `${decl.kind}:${decl.name}`
-    const group = groups.get(key) || []
+    let group = groups.get(key)
+    if (!group) {
+      group = []
+      groups.set(key, group)
+      orderedKeys.push(key)
+    }
     group.push(decl)
-    groups.set(key, group)
   }
 
   // Process each group
   const result: Declaration[] = []
-  const processed = new Set<string>()
 
-  for (const decl of declarations) {
-    const key = `${decl.kind}:${decl.name}`
-
-    // Skip if already processed
-    if (processed.has(key)) {
-      continue
-    }
-    processed.add(key)
-
+  for (const key of orderedKeys) {
     const group = groups.get(key)!
+    const decl = group[0]
 
     // Single declaration - no merging needed
     if (group.length === 1) {
@@ -239,13 +237,16 @@ function mergeInterfaces_(
   const base = interfaces[0]
   const allMembers = new Map<string, Declaration>()
   const allComments: string[] = []
+  // Set-backed dedup — `allComments.includes` was O(N²) for large interfaces.
+  const seenComments = preserveComments ? new Set<string>() : null
 
   // Collect all members and comments
   for (const iface of interfaces) {
     // Collect comments
-    if (preserveComments && iface.leadingComments) {
+    if (preserveComments && iface.leadingComments && seenComments) {
       for (const comment of iface.leadingComments) {
-        if (!allComments.includes(comment)) {
+        if (!seenComments.has(comment)) {
+          seenComments.add(comment)
           allComments.push(comment)
         }
       }
@@ -285,14 +286,17 @@ function mergeInterfaces_(
   const generics = base.generics || ''
   let extendsClause = base.extends || ''
 
-  // Collect all extends
+  // Collect all extends. The Declaration.extends field is the inheritance list
+  // (e.g. "Foo, Bar"), not raw source — so the previous `.replace('extends', '')`
+  // was both redundant and dangerous (could spuriously strip "extends" inside
+  // a type identifier).
   const allExtends = new Set<string>()
   for (const iface of interfaces) {
     if (iface.extends) {
-      // Parse extends clause
-      const extendsList = iface.extends.replace('extends', '').trim().split(',')
+      const extendsList = iface.extends.split(',')
       for (const ext of extendsList) {
-        allExtends.add(ext.trim())
+        const trimmed = ext.trim()
+        if (trimmed) allExtends.add(trimmed)
       }
     }
   }
@@ -326,11 +330,13 @@ function mergeNamespaces_(
   const base = namespaces[0]
   const allMembers = new Map<string, Declaration>()
   const allComments: string[] = []
+  const seenComments = preserveComments ? new Set<string>() : null
 
   for (const ns of namespaces) {
-    if (preserveComments && ns.leadingComments) {
+    if (preserveComments && ns.leadingComments && seenComments) {
       for (const comment of ns.leadingComments) {
-        if (!allComments.includes(comment)) {
+        if (!seenComments.has(comment)) {
+          seenComments.add(comment)
           allComments.push(comment)
         }
       }
@@ -388,11 +394,13 @@ function mergeEnums_(
   const base = enums[0]
   const allMembers = new Map<string, Declaration>()
   const allComments: string[] = []
+  const seenComments = preserveComments ? new Set<string>() : null
 
   for (const en of enums) {
-    if (preserveComments && en.leadingComments) {
+    if (preserveComments && en.leadingComments && seenComments) {
       for (const comment of en.leadingComments) {
-        if (!allComments.includes(comment)) {
+        if (!seenComments.has(comment)) {
+          seenComments.add(comment)
           allComments.push(comment)
         }
       }
@@ -449,23 +457,25 @@ function mergeTypeAliases(
 ): Declaration {
   const base = types[0]
   const allComments: string[] = []
+  const seenComments = preserveComments ? new Set<string>() : null
 
-  // Collect all type definitions
+  // Collect all type definitions — Set-backed dedup (was O(N²) on includes).
   const typeDefinitions: string[] = []
+  const seenTypes = new Set<string>()
 
   for (const t of types) {
-    if (preserveComments && t.leadingComments) {
+    if (preserveComments && t.leadingComments && seenComments) {
       for (const comment of t.leadingComments) {
-        if (!allComments.includes(comment)) {
+        if (!seenComments.has(comment)) {
+          seenComments.add(comment)
           allComments.push(comment)
         }
       }
     }
 
-    if (t.typeAnnotation) {
-      if (!typeDefinitions.includes(t.typeAnnotation)) {
-        typeDefinitions.push(t.typeAnnotation)
-      }
+    if (t.typeAnnotation && !seenTypes.has(t.typeAnnotation)) {
+      seenTypes.add(t.typeAnnotation)
+      typeDefinitions.push(t.typeAnnotation)
     }
   }
 

@@ -135,16 +135,17 @@ pub fn parseArrayElements(alloc: std.mem.Allocator, content: []const u8) InferEr
         try elements.append(last);
     }
 
-    return elements.items;
+    // toOwnedSlice() trims unused capacity — important for non-arena callers.
+    return elements.toOwnedSlice();
 }
 
 /// Clean a method signature: strip async, replace defaults with ?, collapse whitespace.
 /// Single-pass implementation combining all transformations.
 fn cleanMethodSignature(alloc: std.mem.Allocator, signature: []const u8) InferError![]const u8 {
     var input = signature;
-    // Remove leading "async "
+    // Remove leading "async " (6 chars including the trailing space)
     if (ch.startsWith(input, "async ")) {
-        input = trim(input[5..]);
+        input = trim(input[6..]);
     }
 
     // Fast path: if no async, no defaults (=), no consecutive whitespace, return as-is
@@ -241,7 +242,11 @@ fn cleanMethodSignature(alloc: std.mem.Allocator, signature: []const u8) InferEr
 /// Strip 'async' keywords from a string without collapsing whitespace.
 /// Used when we want to remove async modifiers but preserve multiline formatting.
 fn stripAsyncKeyword(alloc: std.mem.Allocator, input: []const u8) InferError![]const u8 {
+    // Fast-path: no "async" substring at all → return input unchanged (zero-copy).
+    if (std.mem.indexOf(u8, input, "async") == null) return input;
+
     var buf = std.array_list.Managed(u8).init(alloc);
+    try buf.ensureTotalCapacity(input.len);
     var j: usize = 0;
     // Remove leading "async "
     if (ch.startsWith(input, "async ")) {
@@ -263,7 +268,9 @@ fn stripAsyncKeyword(alloc: std.mem.Allocator, input: []const u8) InferError![]c
         try buf.append(input[j]);
         j += 1;
     }
-    return buf.items;
+    // toOwnedSlice trims the unused capacity — important when the caller
+    // wraps this in a non-arena allocator.
+    return buf.toOwnedSlice();
 }
 
 /// Convert a method definition to a function type.
@@ -271,9 +278,9 @@ fn stripAsyncKeyword(alloc: std.mem.Allocator, input: []const u8) InferError![]c
 /// Output: "generics(params) => ReturnType"
 fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method_def: []const u8) InferError![]const u8 {
     var cleaned = method_def;
-    // Remove leading async
+    // Remove leading async (6 chars including the trailing space)
     if (ch.startsWith(cleaned, "async ")) {
-        cleaned = trim(cleaned[5..]);
+        cleaned = trim(cleaned[6..]);
     }
 
     // Extract generics from key (e.g., "onSuccess<T>" -> generics = "<T>")
@@ -326,7 +333,10 @@ fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method
 
 /// Clean parameter defaults: replace `param = value` with `param?`
 fn cleanParameterDefaults(alloc: std.mem.Allocator, params: []const u8) InferError![]const u8 {
+    // Fast path: if there's no '=' anywhere, the input is already clean.
+    if (std.mem.indexOfScalar(u8, params, '=') == null) return params;
     var buf = std.array_list.Managed(u8).init(alloc);
+    try buf.ensureTotalCapacity(params.len);
     var j: usize = 0;
     while (j < params.len) {
         // Try to match word= pattern (not =>)
@@ -359,7 +369,8 @@ fn cleanParameterDefaults(alloc: std.mem.Allocator, params: []const u8) InferErr
             j += 1;
         }
     }
-    return buf.items;
+    // toOwnedSlice() trims unused capacity — safer for non-arena allocators.
+    return buf.toOwnedSlice();
 }
 
 /// Parse object properties from content between braces.
@@ -482,7 +493,8 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         }
     }
 
-    return properties.items;
+    // toOwnedSlice() trims unused capacity — important for non-arena callers.
+    return properties.toOwnedSlice();
 }
 
 /// Find matching bracket (open/close) starting from `start`, skipping strings and comments.
@@ -491,33 +503,30 @@ fn findMatchingBracket(str: []const u8, start: usize, open: u8, close: u8) ?usiz
     var i = start;
     while (i < str.len) : (i += 1) {
         const c = str[i];
-        // Skip string literals
+        // Skip string literals — handle backslash escapes, otherwise SIMD-scan
+        // for the next quote/backslash byte.
         if (c == '"' or c == '\'' or c == '`') {
             i += 1;
-            while (i < str.len) : (i += 1) {
-                if (str[i] == '\\') {
-                    i += 1; // skip escaped char
-                    continue;
-                }
+            while (i < str.len) {
+                if (str[i] == '\\') { i += 2; continue; }
                 if (str[i] == c) break;
+                i += 1;
             }
             continue;
         }
-        // Skip line comments
+        // Skip line comments — SIMD-scan to the next newline instead of walking
+        // bytes one at a time.
         if (c == '/' and i + 1 < str.len and str[i + 1] == '/') {
-            i += 2;
-            while (i < str.len and str[i] != '\n') : (i += 1) {}
+            const nl = ch.indexOfChar(str, '\n', i + 2);
+            i = if (nl) |n| n else str.len;
+            if (i == str.len) break;
             continue;
         }
-        // Skip block comments
+        // Skip block comments — indexOf jumps directly to `*/` via SIMD first-byte scan.
         if (c == '/' and i + 1 < str.len and str[i + 1] == '*') {
-            i += 2;
-            while (i + 1 < str.len) : (i += 1) {
-                if (str[i] == '*' and str[i + 1] == '/') {
-                    i += 1;
-                    break;
-                }
-            }
+            const end = ch.indexOf(str, "*/", i + 2);
+            i = if (end) |e| e + 1 else str.len;
+            if (i == str.len) break;
             continue;
         }
         if (c == open) {
@@ -1574,4 +1583,42 @@ test "inferNarrowType basics" {
 test "extractSatisfiesType" {
     try std.testing.expectEqualStrings("Config", extractSatisfiesType("{ port: 3000 } satisfies Config").?);
     try std.testing.expect(extractSatisfiesType("just a value without it") == null);
+}
+
+test "stripAsyncKeyword zero-copy fast path when no async present" {
+    const alloc = std.testing.allocator;
+    // The fast-path return is a zero-copy slice of the input — no allocation
+    // is made, so we don't need to free the result.
+    const src: []const u8 = "function foo(): void {}";
+    const out = try stripAsyncKeyword(alloc, src);
+    try std.testing.expectEqualStrings(src, out);
+    // Same backing pointer = zero-copy was taken.
+    try std.testing.expect(out.ptr == src.ptr);
+}
+
+test "stripAsyncKeyword removes leading async" {
+    const alloc = std.testing.allocator;
+    const out = try stripAsyncKeyword(alloc, "async function foo(): void {}");
+    defer alloc.free(out);
+    try std.testing.expectEqualStrings("function foo(): void {}", out);
+}
+
+test "stripAsyncKeyword removes embedded async at word boundary" {
+    const alloc = std.testing.allocator;
+    const out = try stripAsyncKeyword(alloc, "{ run: async () => 1 }");
+    defer alloc.free(out);
+    // "async " is stripped, leaving the arrow function intact.
+    try std.testing.expectEqualStrings("{ run: () => 1 }", out);
+}
+
+test "stripAsyncKeyword preserves identifiers that contain async substring" {
+    // The fast-path indexOf("async") will short-circuit to the slow loop, but
+    // the slow loop must respect the word boundary. "asynchronous" must NOT
+    // be touched because the byte before "async" is not a word boundary
+    // *and* the byte after is alphanumeric.
+    const alloc = std.testing.allocator;
+    const src: []const u8 = "let asynchronous = true";
+    const out = try stripAsyncKeyword(alloc, src);
+    defer if (out.ptr != src.ptr) alloc.free(out);
+    try std.testing.expectEqualStrings(src, out);
 }

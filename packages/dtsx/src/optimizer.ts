@@ -254,15 +254,15 @@ function mergeInterfaceDeclarations(a: Declaration, b: Declaration): Declaration
  * Sort declarations by kind and name
  */
 function sortDeclarationsFn(declarations: Declaration[]): Declaration[] {
-  const kindOrder = ['import', 'interface', 'type', 'class', 'enum', 'function', 'variable', 'export']
-
+  // Use a Map for O(1) kind→index lookups instead of indexOf O(K) inside the sort
+  // comparator (which runs O(N log N) times).
+  const kindIndex: Record<string, number> = {
+    import: 0, interface: 1, type: 2, class: 3, enum: 4, function: 5, variable: 6, export: 7,
+  }
   return [...declarations].sort((a, b) => {
-    // First by kind
-    const kindDiff = kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind)
-    if (kindDiff !== 0)
-      return kindDiff
-
-    // Then alphabetically by name
+    const ai = kindIndex[a.kind] ?? 99
+    const bi = kindIndex[b.kind] ?? 99
+    if (ai !== bi) return ai - bi
     return a.name.localeCompare(b.name)
   })
 }
@@ -271,8 +271,14 @@ function sortDeclarationsFn(declarations: Declaration[]): Declaration[] {
  * Sort import declarations
  */
 function sortImports(declarations: Declaration[]): Declaration[] {
-  const imports = declarations.filter(d => d.kind === 'import')
-  const nonImports = declarations.filter(d => d.kind !== 'import')
+  // Single-pass partition — previously two filter passes.
+  const imports: Declaration[] = []
+  const nonImports: Declaration[] = []
+  for (let i = 0; i < declarations.length; i++) {
+    const d = declarations[i]
+    if (d.kind === 'import') imports.push(d)
+    else nonImports.push(d)
+  }
 
   const sortedImports = [...imports].sort((a, b) => {
     const sourceA = a.source || ''

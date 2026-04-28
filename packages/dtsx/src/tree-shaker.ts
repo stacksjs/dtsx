@@ -124,7 +124,9 @@ export function treeShake(
     }
   }
   else {
-    // Auto-detect entry points
+    // Auto-detect entry points. Pre-build a Set of shakable kinds for O(1) lookup
+    // instead of Array.includes (O(K)) in a hot loop.
+    const shakableSet = new Set<string>(shakableKinds as readonly string[])
     for (const decl of declarations) {
       // Keep exported declarations
       if (keepExported && decl.isExported) {
@@ -139,16 +141,20 @@ export function treeShake(
       }
 
       // Keep non-shakable kinds
-      if (!shakableKinds.includes(decl.kind)) {
+      if (!shakableSet.has(decl.kind)) {
         roots.add(decl.name)
       }
     }
   }
 
-  // Apply keep patterns
-  for (const decl of declarations) {
-    if (matchesPatterns(decl.name, keep)) {
-      roots.add(decl.name)
+  // Apply keep patterns. When entryPoints was provided we still need this pass;
+  // when auto-detecting, the loop above already covered keep-pattern matches,
+  // so we can short-circuit.
+  if (entryPoints && entryPoints.length > 0 && keep.length > 0) {
+    for (const decl of declarations) {
+      if (matchesPatterns(decl.name, keep)) {
+        roots.add(decl.name)
+      }
     }
   }
 
@@ -218,7 +224,9 @@ export function buildDeclarationDependencyGraph(
   declarations: Declaration[],
 ): Map<string, Set<string>> {
   const graph = new Map<string, Set<string>>()
-  const declNames = new Set(declarations.map(d => d.name))
+  // Single-pass Set construction — avoids the intermediate `.map()` allocation.
+  const declNames = new Set<string>()
+  for (let i = 0; i < declarations.length; i++) declNames.add(declarations[i].name)
 
   for (const decl of declarations) {
     const deps = new Set<string>()
@@ -285,76 +293,31 @@ export function extractTypeReferences(decl: Declaration): Set<string> {
   return references
 }
 
+// Hoisted to module scope — previously rebuilt on every extractRefsFromType call.
+const TYPE_REF_BUILTINS: ReadonlySet<string> = new Set([
+  'string', 'number', 'boolean', 'object', 'any', 'unknown', 'never', 'void',
+  'null', 'undefined', 'symbol', 'bigint', 'true', 'false',
+  'Array', 'Object', 'String', 'Number', 'Boolean', 'Function', 'Symbol',
+  'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet',
+  'Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Exclude',
+  'Extract', 'NonNullable', 'Parameters', 'ReturnType', 'InstanceType',
+  'ConstructorParameters', 'ThisParameterType', 'OmitThisParameter',
+  'ThisType', 'Uppercase', 'Lowercase', 'Capitalize', 'Uncapitalize',
+  'Awaited', 'keyof', 'typeof', 'infer', 'extends', 'readonly', 'const', 'new',
+])
+
+// Module-level regex — `lastIndex` is reset before each use.
+const TYPE_IDENT_PATTERN = /\b([A-Z]\w*)\b/g
+
 /**
  * Extract type references from a type string
  */
 function extractRefsFromType(typeStr: string, refs: Set<string>): void {
-  // Match identifiers that could be type references
-  // Exclude built-in types and keywords
-  const builtins = new Set([
-    'string',
-    'number',
-    'boolean',
-    'object',
-    'any',
-    'unknown',
-    'never',
-    'void',
-    'null',
-    'undefined',
-    'symbol',
-    'bigint',
-    'true',
-    'false',
-    'Array',
-    'Object',
-    'String',
-    'Number',
-    'Boolean',
-    'Function',
-    'Symbol',
-    'Promise',
-    'Map',
-    'Set',
-    'WeakMap',
-    'WeakSet',
-    'Record',
-    'Partial',
-    'Required',
-    'Readonly',
-    'Pick',
-    'Omit',
-    'Exclude',
-    'Extract',
-    'NonNullable',
-    'Parameters',
-    'ReturnType',
-    'InstanceType',
-    'ConstructorParameters',
-    'ThisParameterType',
-    'OmitThisParameter',
-    'ThisType',
-    'Uppercase',
-    'Lowercase',
-    'Capitalize',
-    'Uncapitalize',
-    'Awaited',
-    'keyof',
-    'typeof',
-    'infer',
-    'extends',
-    'readonly',
-    'const',
-    'new',
-  ])
-
-  // Match type identifiers (PascalCase or camelCase followed by optional generics)
-  const typePattern = /\b([A-Z]\w*)\b/g
-  let match
-
-  while ((match = typePattern.exec(typeStr)) !== null) {
+  TYPE_IDENT_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = TYPE_IDENT_PATTERN.exec(typeStr)) !== null) {
     const name = match[1]
-    if (!builtins.has(name)) {
+    if (!TYPE_REF_BUILTINS.has(name)) {
       refs.add(name)
     }
   }
@@ -376,10 +339,12 @@ function findReachable(
   graph: Map<string, Set<string>>,
 ): Set<string> {
   const visited = new Set<string>()
-  const queue = Array.from(roots)
+  // Use a stack with pop() (O(1)) instead of queue.shift() (O(n)) — DFS order
+  // doesn't matter for reachability.
+  const stack = Array.from(roots)
 
-  while (queue.length > 0) {
-    const current = queue.shift()!
+  while (stack.length > 0) {
+    const current = stack.pop()!
 
     if (visited.has(current)) {
       continue
@@ -391,7 +356,7 @@ function findReachable(
     if (deps) {
       for (const dep of deps) {
         if (!visited.has(dep)) {
-          queue.push(dep)
+          stack.push(dep)
         }
       }
     }

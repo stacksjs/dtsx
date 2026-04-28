@@ -177,6 +177,11 @@ function getCategoryName(category: ts.DiagnosticCategory): string {
   }
 }
 
+// Cache split source lines per SourceFile — when many diagnostics target the
+// same file, the previous code split the entire source on every call.
+// WeakMap so we don't pin source files alive longer than TypeScript wants.
+const sourceLinesCache = new WeakMap<ts.SourceFile, string[]>()
+
 /**
  * Convert a TypeScript diagnostic to our TypeDiagnostic format
  */
@@ -194,7 +199,11 @@ function convertDiagnostic(diagnostic: ts.Diagnostic): TypeDiagnostic {
       const endPos = diagnostic.start + diagnostic.length
       const { line: endLine } = sourceFile.getLineAndCharacterOfPosition(endPos)
 
-      const lines = sourceFile.text.split('\n')
+      let lines = sourceLinesCache.get(sourceFile)
+      if (!lines) {
+        lines = sourceFile.text.split('\n')
+        sourceLinesCache.set(sourceFile, lines)
+      }
       const contextStart = Math.max(0, startLine - 1)
       const contextEnd = Math.min(lines.length, endLine + 2)
       source = lines.slice(contextStart, contextEnd).join('\n')

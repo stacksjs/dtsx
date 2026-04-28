@@ -12,6 +12,10 @@ export function getNodeText(node: Node, sourceCode: string, sf?: SourceFile): st
   return sourceCode.slice(sf ? node.getStart(sf) : node.getStart(), node.getEnd())
 }
 
+// Combined block-comment regex: captures both `/** ... */` (JSDoc) and
+// `/* ... */` (non-JSDoc) in a single pass instead of two scans of the trivia.
+const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g
+
 /**
  * Extract JSDoc comments from a node
  */
@@ -21,42 +25,36 @@ export function extractJSDocComments(node: Node, sourceFile: SourceFile): string
   // Get leading trivia (comments before the node)
   const fullStart = node.getFullStart()
   const start = node.getStart(sourceFile)
+  if (fullStart === start) return comments
 
-  if (fullStart !== start) {
-    const triviaText = sourceFile.text.substring(fullStart, start)
+  const triviaText = sourceFile.text.substring(fullStart, start)
 
-    // Extract JSDoc comments (/** ... */) and single-line comments (// ...)
-    const jsDocMatches = triviaText.match(/\/\*\*[\s\S]*?\*\//g)
-    if (jsDocMatches) {
-      comments.push(...jsDocMatches)
+  // Single-pass block-comment extraction (was two separate regexes).
+  if (triviaText.indexOf('/*') !== -1) {
+    BLOCK_COMMENT_RE.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = BLOCK_COMMENT_RE.exec(triviaText)) !== null) {
+      comments.push(match[0])
     }
+  }
 
-    // Also capture regular block comments (/* ... */) that might be documentation
-    const blockCommentMatches = triviaText.match(/\/\*(?!\*)[\s\S]*?\*\//g)
-    if (blockCommentMatches) {
-      comments.push(...blockCommentMatches)
-    }
-
-    // Capture single-line comments that appear right before the declaration
+  // Capture single-line comments adjacent to the declaration. Skip the split
+  // entirely when no `//` markers are present in the trivia.
+  if (triviaText.indexOf('//') !== -1) {
     const lines = triviaText.split('\n')
     const commentLines: string[] = []
-
-    // Look for consecutive comment lines at the end of the trivia
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim()
       if (line.startsWith('//')) {
         commentLines.unshift(line)
       }
       else if (line === '') {
-        // Empty line is okay, continue
         continue
       }
       else {
-        // Non-comment, non-empty line - stop
         break
       }
     }
-
     if (commentLines.length > 0) {
       comments.push(commentLines.join('\n'))
     }
@@ -238,47 +236,21 @@ export function isBuiltInType(typeName: string): boolean {
 // Re-exported from directives.ts for backward compatibility
 export { extractTripleSlashDirectives } from './directives'
 
+// Combined module-type regex: a single pass over the module text capturing the
+// declaration kind in group 1 (unused) and the type name in group 2. The
+// previous implementation ran four separate global regexes and then a second
+// regex replace per match to strip the keyword.
+const MODULE_TYPES_RE = /(?:export\s+)?(?:declare\s+)?(?:const\s+)?(?:interface|type|class|enum)\s+([A-Z][a-zA-Z0-9]*)/g
+
 /**
  * Extract type names from module/namespace text
  */
 export function extractTypesFromModuleText(moduleText: string): string[] {
   const types: string[] = []
-
-  // Look for interface declarations
-  const interfaceMatches = moduleText.match(/(?:export\s+)?interface\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (interfaceMatches) {
-    interfaceMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?interface\s+/, '')
-      types.push(name)
-    })
+  MODULE_TYPES_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = MODULE_TYPES_RE.exec(moduleText)) !== null) {
+    types.push(match[1])
   }
-
-  // Look for type alias declarations
-  const typeMatches = moduleText.match(/(?:export\s+)?type\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (typeMatches) {
-    typeMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?type\s+/, '')
-      types.push(name)
-    })
-  }
-
-  // Look for class declarations
-  const classMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?class\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (classMatches) {
-    classMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?class\s+/, '')
-      types.push(name)
-    })
-  }
-
-  // Look for enum declarations
-  const enumMatches = moduleText.match(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+([A-Z][a-zA-Z0-9]*)/g)
-  if (enumMatches) {
-    enumMatches.forEach((match) => {
-      const name = match.replace(/(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+/, '')
-      types.push(name)
-    })
-  }
-
   return types
 }
