@@ -1033,8 +1033,11 @@ test "isWordInText skips past failing right boundary" {
     // must not skip the legitimate later match.
     try std.testing.expect(isWordInText("Foo", "FooBar FooBaz Foo;"));
     try std.testing.expect(!isWordInText("Foo", "FooBar FooBaz FooQuux"));
-    // Self-overlap at the left boundary still works (advance-by-1 path).
-    try std.testing.expect(isWordInText("aa", "xxaa"));
+    // Left-boundary failure at an early position (`xxaa`) must advance by 1
+    // and still find a real later match (`aa`) — exercises the advance-by-1
+    // branch. (Without the trailing standalone `aa`, this string contains
+    // no whole-word match: the only "aa" is glued to `xx`.)
+    try std.testing.expect(isWordInText("aa", "xxaa aa"));
     // Empty needle is rejected.
     try std.testing.expect(!isWordInText("", "anything"));
     // Needle longer than text is rejected without indexOf.
