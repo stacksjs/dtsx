@@ -1,7 +1,7 @@
 {
   "name": "@stacksjs/zig-dtsx",
   "type": "module",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "description": "High-performance DTS emitter written in Zig",
   "exports": {
     ".": {
