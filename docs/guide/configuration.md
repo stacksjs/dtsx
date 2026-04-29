@@ -2,23 +2,6 @@
 title: Configuration
 description: Configure dtsx for your project with dts.config.ts options.
 ---
-
-### Production Build
-
-```ts
-
-// dts.config.ts
-export default {
-  root: './src',
-  outdir: './dist',
-  clean: true,
-  parallel: true,
-  concurrency: 8,
-  validate: true,
-  keepComments: false,
-  exclude: ['**/*.test.ts', '**/*.spec.ts'],
-}
-
 ```
 
 ### Monorepo Package

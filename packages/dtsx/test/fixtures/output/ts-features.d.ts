@@ -40,6 +40,8 @@ export declare const DEEP_CONFIG: {
 }
 }
 };
+/** Computed property key */
+declare const COMPUTED_KEY: 'dynamicProperty';
 /**
  * Object with computed properties
  * @defaultValue `{ [COMPUTED_KEY]: 'value', [`prefix_${COMPUTED_KEY}`]: 'prefixed' }`

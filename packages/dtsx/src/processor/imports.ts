@@ -45,6 +45,7 @@ export function parseImportStatement(importText: string): {
   namedItems: string[]
   source: string
   isTypeOnly: boolean
+  isNamespace: boolean
 } | null {
   // Find 'from' and extract source
   const fromIndex = importText.indexOf(' from ')
@@ -77,6 +78,7 @@ export function parseImportStatement(importText: string): {
 
   let defaultName: string | null = null
   const namedItems: string[] = []
+  let isNamespace = false
 
   // Check for braces (named imports)
   const braceStart = importPart.indexOf('{')
@@ -104,11 +106,20 @@ export function parseImportStatement(importText: string): {
     }
   }
   else {
-    // Default import only
-    defaultName = importPart.trim() || null
+    const trimmed = importPart.trim()
+    // Namespace import: `* as X` — strip prefix so defaultName = alias and
+    // mark it so the emitter reconstructs `import * as X from '...'`.
+    if (trimmed.startsWith('* as ')) {
+      defaultName = trimmed.slice(5).trim() || null
+      isNamespace = true
+    }
+    else {
+      // Default import only
+      defaultName = trimmed || null
+    }
   }
 
-  return { defaultName, namedItems, source, isTypeOnly }
+  return { defaultName, namedItems, source, isTypeOnly, isNamespace }
 }
 
 /**
@@ -178,10 +189,16 @@ export function extractAllImportedItems(importText: string): string[] {
     }
   }
   else {
-    // Default import only: import defaultName from 'module'
-    const defaultName = importPart.trim()
-    if (defaultName) {
-      items.push(defaultName)
+    const trimmed = importPart.trim()
+    // Namespace import: `* as X` — register the alias so word-detection
+    // finds it when the code uses `X.something`.
+    if (trimmed.startsWith('* as ')) {
+      const alias = trimmed.slice(5).trim()
+      if (alias) items.push(alias)
+    }
+    else if (trimmed) {
+      // Default import: `import defaultName from 'module'`
+      items.push(trimmed)
     }
   }
 

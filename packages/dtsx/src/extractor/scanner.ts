@@ -384,6 +384,23 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
     return true
   }
 
+  /**
+   * Distinguish a TS `module`/`namespace` declaration from CommonJS `module.exports = ...`
+   * or a bare assignment to a variable named `module`/`namespace`.
+   * Call when matchWord('module' | 'namespace') has just succeeded; pos is unchanged.
+   * A real declaration is `<keyword> <ident-or-quoted-string> { ... }`.
+   * Returns false if the next non-whitespace char after the keyword is `.` or `=`.
+   */
+  function isModuleLikeDeclaration(wordLen: number): boolean {
+    let p = pos + wordLen
+    while (p < len) {
+      const c = source.charCodeAt(p)
+      if (c === CH_SPACE || c === CH_TAB || c === CH_LF || c === CH_CR) { p++; continue }
+      return c !== CH_DOT && c !== CH_EQUAL
+    }
+    return false
+  }
+
   /** Check if current position is at a top-level statement-starting keyword */
   function isTopLevelKeyword(): boolean {
     if (pos >= len) return false
@@ -1746,13 +1763,13 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       }
 
       const comments = extractLeadingComments(declStart)
-      const dtsText = `export declare ${kind} ${name}: ${typeAnnotation || 'unknown'};`
+      const dtsText = `${isExported ? 'export ' : ''}declare ${kind} ${name}: ${typeAnnotation || 'unknown'};`
 
       results.push({
         kind: 'variable',
         name,
         text: dtsText,
-        isExported: true,
+        isExported,
         typeAnnotation,
         value: initializerText,
         modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
@@ -3022,11 +3039,11 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         // export declare ...
         handleDeclare(stmtStart, true)
       }
-      else if (ech === 110 /* n */ && matchWord('namespace')) {
+      else if (ech === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
         const decl = extractModule(stmtStart, true, 'namespace')
         declarations.push(decl)
       }
-      else if (ech === 109 /* m */ && matchWord('module')) {
+      else if (ech === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
         const decl = extractModule(stmtStart, true, 'module')
         declarations.push(decl)
       }
@@ -3098,13 +3115,28 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       declarations.push(decl)
     }
     else if (ch0 === 102 /* f */ && matchWord('function')) {
-      // Non-exported function — skip for DTS
-      skipToStatementEnd()
+      // Non-exported function — extract so it can be pulled in if referenced
+      // by an exported declaration via `typeof X` etc. (resolveReferencedTypes
+      // emits it without `export`); otherwise it's dropped from the output.
+      const decl = extractFunction(stmtStart, false, false, false)
+      if (decl) nonExportedTypes.set(decl.name, decl)
+      else skipToStatementEnd()
     }
     else if (ch0 === 97 /* a */) {
       if (matchWord('async')) {
-        // Non-exported async function — skip for DTS
-        skipToStatementEnd()
+        // Non-exported async function — same treatment as plain function
+        const savedAsyncPos = pos
+        pos += 5 // 'async'
+        skipWhitespaceAndComments()
+        if (matchWord('function')) {
+          const decl = extractFunction(stmtStart, false, true, false)
+          if (decl) nonExportedTypes.set(decl.name, decl)
+          else { pos = savedAsyncPos; skipToStatementEnd() }
+        }
+        else {
+          pos = savedAsyncPos
+          skipToStatementEnd()
+        }
       }
       else if (matchWord('abstract')) {
         pos += 8
@@ -3130,7 +3162,7 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         declarations.push(decl)
       }
       else if (matchWord('const')) {
-        // Check for 'const enum' before skipping as variable
+        // Check for 'const enum' before treating as variable
         const savedPos = pos
         pos += 5
         skipWhitespaceAndComments()
@@ -3142,9 +3174,13 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
           declarations.push(decl)
         }
         else {
-          // Non-exported const variable — skip for DTS
+          // Non-exported const — extract so it can be pulled in if referenced
+          // by an exported declaration via `typeof X` etc.
           pos = savedPos
-          skipToStatementEnd()
+          const decls = extractVariable(stmtStart, 'const', false)
+          for (let _di = 0; _di < decls.length; _di++) {
+            nonExportedTypes.set(decls[_di].name, decls[_di])
+          }
         }
       }
       else {
@@ -3166,11 +3202,11 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       // Non-exported variable — skip for DTS
       skipToStatementEnd()
     }
-    else if (ch0 === 109 /* m */ && matchWord('module')) {
+    else if (ch0 === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
       const decl = extractModule(stmtStart, false, 'module')
       declarations.push(decl)
     }
-    else if (ch0 === 110 /* n */ && matchWord('namespace')) {
+    else if (ch0 === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
       const decl = extractModule(stmtStart, false, 'namespace')
       declarations.push(decl)
     }

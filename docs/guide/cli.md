@@ -3,26 +3,6 @@ title: CLI Commands
 description: Complete reference for dtsx command-line interface.
 ---
 
-# Process a file through stdin
-
-cat src/index.ts | dtsx stdin
-
-# Chain with other tools
-
-cat src/utils.ts | dtsx stdin > dist/utils.d.ts
-
-# Process and save
-
-dtsx stdin < src/types.ts > dist/types.d.ts
-
-```
-
-### help
-
-Display help information.
-
-```bash
-
 dtsx --help
 dtsx generate --help
 dtsx watch --help

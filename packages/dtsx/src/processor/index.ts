@@ -300,7 +300,7 @@ export function processDeclarations(
       if (!parsed)
         continue
 
-      const { defaultName, namedItems, source, isTypeOnly } = parsed
+      const { defaultName, namedItems, source, isTypeOnly, isNamespace } = parsed
 
       // Filter to only used items (manual loop avoids closure allocation)
       const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
@@ -323,7 +323,12 @@ export function processDeclarations(
       if (usedDefault || usedNamedCount > 0) {
         let importStatement = isTypeOnly ? 'import type ' : 'import '
         if (usedDefault && defaultName) {
-          importStatement += usedNamedCount > 0 ? `${defaultName}, { ${usedNamedStr} }` : defaultName
+          if (isNamespace) {
+            importStatement += `* as ${defaultName}`
+          }
+          else {
+            importStatement += usedNamedCount > 0 ? `${defaultName}, { ${usedNamedStr} }` : defaultName
+          }
         }
         else if (usedNamedCount > 0) {
           importStatement += `{ ${usedNamedStr} }`
