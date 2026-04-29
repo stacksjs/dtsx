@@ -2,41 +2,6 @@
 title: Isolated Declarations
 description: Understanding TypeScript's isolated declarations and how dtsx optionally leverages them.
 ---
-export const port: number = 3000    // → number (uses annotation)
-
-```
-
-## Common Patterns
-
-### Const Assertions
-
-`as const` gives you deeply readonly literal types:
-
-```ts
-
-export const STATUSES = ['pending', 'active', 'completed'] as const
-// → readonly ['pending', 'active', 'completed']
-
-export type Status = typeof STATUSES[number]
-// Resolves to: 'pending' | 'active' | 'completed'
-
-```
-
-### Type Exports
-
-```ts
-
-export interface User {
-  id: number
-  name: string
-  email: string
-}
-
-export type UserRole = 'admin' | 'user' | 'guest'
-
-```
-
-### Function Exports
 
 ```ts
 

@@ -179,25 +179,25 @@ const config = {
 ## Best Practices
 
 1. **Error Handling**
-   - Use try-catch blocks
-   - Log errors properly
-   - Provide helpful error messages
-   - Handle edge cases
+    - Use try-catch blocks
+    - Log errors properly
+    - Provide helpful error messages
+    - Handle edge cases
 
 2. **Debugging**
-   - Enable verbose logging
-   - Use debugging tools
-   - Track type usage
-   - Monitor performance
+    - Enable verbose logging
+    - Use debugging tools
+    - Track type usage
+    - Monitor performance
 
 3. **Performance**
-   - Profile memory usage
-   - Profile CPU usage
-   - Profile I/O operations
-   - Optimize bottlenecks
+    - Profile memory usage
+    - Profile CPU usage
+    - Profile I/O operations
+    - Optimize bottlenecks
 
 4. **Type Resolution**
-   - Use type inference
-   - Enable type checking
-   - Validate types
-   - Handle edge cases
+    - Use type inference
+    - Enable type checking
+    - Validate types
+    - Handle edge cases

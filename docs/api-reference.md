@@ -340,30 +340,30 @@ const defaultConfig: DtsGenerationConfig = {
 ## Best Practices
 
 1. **Configuration**
-   - Always specify `root` and `outdir` for clarity
-   - Use `clean: true` for fresh builds
-   - Enable `keepComments: true` for documentation preservation
-   - Set appropriate `outputStructure` ('mirror' or 'flat')
+    - Always specify `root` and `outdir` for clarity
+    - Use `clean: true` for fresh builds
+    - Enable `keepComments: true` for documentation preservation
+    - Set appropriate `outputStructure` ('mirror' or 'flat')
 
 2. **Type Processing**
-   - Optionally enable `isolatedDeclarations` in tsconfig.json for a performance fast path
-   - Use type-only imports when possible
-   - Handle circular dependencies carefully
-   - Validate type definitions before processing
+    - Optionally enable `isolatedDeclarations` in tsconfig.json for a performance fast path
+    - Use type-only imports when possible
+    - Handle circular dependencies carefully
+    - Validate type definitions before processing
 
 3. **Comment Preservation**
-   - Use JSDoc comments for comprehensive documentation
-   - Include `@param`, `@returns`, and `@example` tags
-   - Comments are preserved by default (`keepComments: true`)
+    - Use JSDoc comments for comprehensive documentation
+    - Include `@param`, `@returns`, and `@example` tags
+    - Comments are preserved by default (`keepComments: true`)
 
 4. **Error Handling**
-   - Use try-catch blocks around generation calls
-   - Validate input parameters and file paths
-   - Handle file system errors gracefully
-   - Provide helpful error messages to users
+    - Use try-catch blocks around generation calls
+    - Validate input parameters and file paths
+    - Handle file system errors gracefully
+    - Provide helpful error messages to users
 
 5. **Performance**
-   - Use glob patterns efficiently in entrypoints
-   - Consider output structure impact on build times
-   - Enable verbose logging only when debugging
-   - Clean output directory when structure changes
+    - Use glob patterns efficiently in entrypoints
+    - Consider output structure impact on build times
+    - Enable verbose logging only when debugging
+    - Clean output directory when structure changes

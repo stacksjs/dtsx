@@ -2,7 +2,7 @@
 
 [![npm version][npm-version-src]][npm-version-href]
 [![GitHub Actions][github-actions-src]][github-actions-href]
-[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
+[![Commitizen friendly][commitizen-src]][commitizen-href]
 <!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
 <!-- [![Codecov][codecov-src]][codecov-href] -->
 
@@ -30,7 +30,7 @@
 bun install -d @stacksjs/dtsx
 ```
 
-_@npmjs.com, please allow us to use the `dtsx` package name 🙏_
+> _@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
 <!-- _Alternatively, you can install:_
 
@@ -230,7 +230,7 @@ In TypeScript, `const` only makes the _binding_ immutable — object properties 
 
 | Tool | Widened type | Original value preserved? |
 |---|---|---|
-| **dtsx**| `/** @defaultValue 5000 */ timeout: number` | **Yes** — via `@defaultValue` JSDoc |
+| **dtsx**| `/** @defaultValue 5000 */ timeout: number` | Yes — via `@defaultValue` JSDoc |
 | tsc | `timeout: number` | No — value lost entirely |
 | oxc | `timeout: number` | No — value lost entirely |
 
@@ -499,6 +499,8 @@ Made with 💙
 [npm-version-href]: https://npmjs.com/package/@stacksjs/dtsx
 [github-actions-src]: https://img.shields.io/github/actions/workflow/status/stacksjs/dtsx/ci.yml?style=flat-square&branch=main
 [github-actions-href]: https://github.com/stacksjs/dtsx/actions?query=workflow%3Aci
+[commitizen-src]: https://img.shields.io/badge/commitizen-friendly-brightgreen.svg
+[commitizen-href]: http://commitizen.github.io/cz-cli/
 
 <!-- [codecov-src]: https://img.shields.io/codecov/c/gh/stacksjs/dtsx/main?style=flat-square
 [codecov-href]: https://codecov.io/gh/stacksjs/dtsx -->

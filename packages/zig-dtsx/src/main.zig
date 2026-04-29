@@ -45,29 +45,14 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn _mkdir(path: [*:0]const u8) c_int;
 } else struct {
     pub const FILE = opaque {};
-    pub const DIR = opaque {};
 
-    /// True when targeting an Apple libc (macOS / iOS / tvOS / watchOS).
-    /// Used to pick the correct external symbol names + struct layouts.
-    const apple_libc = builtin.os.tag.isDarwin();
-
-    /// `struct dirent` layout differs between glibc/musl and Apple libc.
-    /// We only ever read `d_name`, but its offset matters, so the struct
-    /// has to be accurate up to that field.
-    pub const dirent = if (apple_libc) extern struct {
-        d_ino: u64,
-        d_seekoff: u64,
-        d_reclen: u16,
-        d_namlen: u16,
-        d_type: u8,
-        d_name: [1024]u8,
-    } else extern struct {
-        d_ino: c_ulong,
-        d_off: c_long,
-        d_reclen: c_ushort,
-        d_type: u8,
-        d_name: [256]u8,
-    };
+    /// True when targeting a BSD-derived libc (Darwin, FreeBSD, DragonFly).
+    /// These share the `__stdinp` / `__stdoutp` / `__stderrp` stdio symbol
+    /// naming and the BSD-style hex `O_CREAT`/`O_TRUNC` flag values, both
+    /// of which differ from glibc/musl Linux.
+    const bsd_libc = builtin.os.tag.isDarwin() or
+        builtin.os.tag == .freebsd or
+        builtin.os.tag == .dragonfly;
 
     pub extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
     pub extern "c" fn fclose(stream: *FILE) c_int;
@@ -78,10 +63,6 @@ const c = if (builtin.os.tag == .windows) struct {
     pub const SEEK_SET: c_int = 0;
     pub const SEEK_END: c_int = 2;
 
-    pub extern "c" fn opendir(name: [*:0]const u8) ?*DIR;
-    pub extern "c" fn readdir(dirp: *DIR) ?*dirent;
-    pub extern "c" fn closedir(dirp: *DIR) c_int;
-
     pub extern "c" fn open(path: [*:0]const u8, flags: c_int, ...) c_int;
     pub extern "c" fn openat(dirfd: c_int, path: [*:0]const u8, flags: c_int, ...) c_int;
     pub extern "c" fn close(fd: c_int) c_int;
@@ -90,27 +71,28 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn lseek(fd: c_int, offset: c_long, whence: c_int) c_long;
     pub extern "c" fn mkdir(path: [*:0]const u8, mode: c_uint) c_int;
 
-    // fcntl.h flag values (these *do* differ across platforms — Apple uses
-    // hex bits, Linux uses octal — so we pick per OS rather than guessing).
+    // fcntl.h flag values. BSD-derived libcs (Darwin/FreeBSD/DragonFly) use
+    // hex bits; glibc/musl Linux use octal — these specific constants are
+    // mutually inconsistent so we have to pick per OS.
     pub const O_RDONLY: c_int = 0;
     pub const O_WRONLY: c_int = 1;
-    pub const O_CREAT: c_int = if (apple_libc) 0x0200 else 0o100;
-    pub const O_TRUNC: c_int = if (apple_libc) 0x0400 else 0o1000;
+    pub const O_CREAT: c_int = if (bsd_libc) 0x0200 else 0o100;
+    pub const O_TRUNC: c_int = if (bsd_libc) 0x0400 else 0o1000;
 
-    // Stdio FILE* globals. The on-disk symbol names differ between Apple
-    // libc (`__stdinp` etc.) and glibc/musl (`stdin` etc.), so resolve them
-    // via @extern. Exposed as functions so getStdioPtr's "function-like"
-    // branch picks them up correctly.
+    // Stdio FILE* globals. The on-disk symbol names differ between BSD
+    // libcs (`__stdinp` etc.) and glibc/musl (`stdin` etc.), so resolve
+    // them via @extern. Exposed as functions so getStdioPtr's
+    // "function-like" branch picks them up correctly.
     pub fn stdin() *FILE {
-        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stdinp" else "stdin" });
+        const ptr = @extern(**FILE, .{ .name = if (bsd_libc) "__stdinp" else "stdin" });
         return ptr.*;
     }
     pub fn stdout() *FILE {
-        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stdoutp" else "stdout" });
+        const ptr = @extern(**FILE, .{ .name = if (bsd_libc) "__stdoutp" else "stdout" });
         return ptr.*;
     }
     pub fn stderr() *FILE {
-        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stderrp" else "stderr" });
+        const ptr = @extern(**FILE, .{ .name = if (bsd_libc) "__stderrp" else "stderr" });
         return ptr.*;
     }
 };
@@ -222,15 +204,19 @@ fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8) ![][]const u8 
             if (c._findnext(handle, &fdata) != 0) break;
         }
     } else {
-        // POSIX: use opendir/readdir
+        // POSIX: use std.c's per-platform `dirent` layout + `opendir` /
+        // `readdir` / `closedir`. Zig's std already encodes the right
+        // struct shape for glibc/musl, Darwin, FreeBSD, DragonFly, etc.,
+        // so we don't have to (and `readdir` is dispatched to the right
+        // symbol on macOS x86_64 — `readdir$INODE64` — automatically).
         const dir_z = try alloc.dupeZ(u8, dir_path);
         defer alloc.free(dir_z);
 
-        const dir = c.opendir(dir_z.ptr) orelse return files.toOwnedSlice();
-        defer _ = c.closedir(dir);
+        const dir = std.c.opendir(dir_z.ptr) orelse return files.toOwnedSlice();
+        defer _ = std.c.closedir(dir);
 
-        while (c.readdir(dir)) |entry| {
-            const name_ptr: [*:0]const u8 = @ptrCast(&entry.*.d_name);
+        while (std.c.readdir(dir)) |entry| {
+            const name_ptr: [*:0]const u8 = @ptrCast(&entry.*.name);
             const name = std.mem.span(name_ptr);
             if (std.mem.endsWith(u8, name, ".ts") and !std.mem.endsWith(u8, name, ".d.ts")) {
                 try files.append(try alloc.dupe(u8, name));

@@ -201,25 +201,25 @@ interface PluginConfig {
 ## Best Practices
 
 1. **Build System Integration**
-   - Use appropriate plugin
-   - Configure correctly
-   - Handle errors
-   - Monitor performance
+    - Use appropriate plugin
+    - Configure correctly
+    - Handle errors
+    - Monitor performance
 
 2. **CI/CD Integration**
-   - Set up automated builds
-   - Configure caching
-   - Handle artifacts
-   - Monitor builds
+    - Set up automated builds
+    - Configure caching
+    - Handle artifacts
+    - Monitor builds
 
 3. **Custom Transformers**
-   - Keep transformers focused
-   - Handle errors
-   - Document transformations
-   - Test thoroughly
+    - Keep transformers focused
+    - Handle errors
+    - Document transformations
+    - Test thoroughly
 
 4. **Plugin Development**
-   - Follow plugin interface
-   - Handle dependencies
-   - Document usage
-   - Test thoroughly
+    - Follow plugin interface
+    - Handle dependencies
+    - Document usage
+    - Test thoroughly

@@ -12,7 +12,7 @@ dtsx is designed as a modular, pipeline-based system that processes TypeScript s
 
 ## Core Pipeline
 
-```
+```text
 ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐
 │   Source    │───▶│  Extractor   │───▶│  Processor  │───▶│  Generator   │
 │   Files     │    │              │    │             │    │              │

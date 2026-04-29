@@ -1,6 +1,6 @@
 ## Benchmark Results
 
-**Platform:**darwin arm64 |**Runtime:**Bun 1.3.11 |**Date:** 2026-03-20
+**Platform:**darwin arm64 —**Runtime:**Bun 1.3.11 —**Date:** 2026-03-20
 
 ### In-Process API — Cached
 

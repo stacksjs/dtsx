@@ -171,21 +171,21 @@ type StringProps<T> = PickByType<T, string>;
 ## Best Practices
 
 1. **Use Type Composition**
-   - Combine types using intersection types
-   - Create reusable type utilities
-   - Keep type definitions modular
+    - Combine types using intersection types
+    - Create reusable type utilities
+    - Keep type definitions modular
 
 2. **Handle Circular Dependencies**
-   - Use interface merging
-   - Leverage type aliases
-   - Consider type composition
+    - Use interface merging
+    - Leverage type aliases
+    - Consider type composition
 
 3. **Type Augmentation**
-   - Use module augmentation for extending types
-   - Keep augmentations close to their usage
-   - Document augmented types
+    - Use module augmentation for extending types
+    - Keep augmentations close to their usage
+    - Document augmented types
 
 4. **Type Transformations**
-   - Create reusable type transformers
-   - Use conditional types for complex logic
-   - Leverage mapped types for property transformations
+    - Create reusable type transformers
+    - Use conditional types for complex logic
+    - Leverage mapped types for property transformations

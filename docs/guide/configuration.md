@@ -2,39 +2,6 @@
 title: Configuration
 description: Configure dtsx for your project with dts.config.ts options.
 ---
-  stats: true,
-  validate: true,
-  exclude: ['**/*.test.ts', '**/**tests**/**'],
-})
-
-console.log(`Generated ${stats.filesGenerated} files`)
-console.log(`Duration: ${stats.durationMs}ms`)
-
-```
-
-## Environment Variables
-
-dtsx supports environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `DTSX_VERBOSE` | Enable verbose output |
-| `DTSX_PARALLEL` | Enable parallel processing |
-| `DTSX_CONCURRENCY` | Set concurrency level |
-
-## Example Configurations
-
-### Minimal Configuration
-
-```ts
-
-// dts.config.ts
-export default {
-  root: './src',
-  outdir: './dist',
-}
-
-```
 
 ### Production Build
 

@@ -419,7 +419,7 @@ export default defineConfig({
 | Build tools | ❌ | ❌ | ❌ | Rollup | tsup | All |
 | Programmatic | ⚠️ | ❌ | ⚠️ | ⚠️ | ⚠️ | ✅ |
 
-Legend: ✅ Full support | ⚠️ Partial | ❌ None
+Legend: ✅ Full support — ⚠️ Partial — ❌ None
 
 ## Troubleshooting Migration
 
@@ -466,7 +466,7 @@ If you encounter issues during migration:
 1. Check the [FAQ](https://github.com/stacksjs/dtsx/wiki/FAQ)
 2. Search [existing issues](https://github.com/stacksjs/dtsx/issues)
 3. Open a new issue with:
-   - Previous tool and version
-   - dtsx version
-   - Minimal reproduction
-   - Expected vs actual output
+    - Previous tool and version
+    - dtsx version
+    - Minimal reproduction
+    - Expected vs actual output

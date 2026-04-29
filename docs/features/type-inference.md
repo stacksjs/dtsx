@@ -214,7 +214,7 @@ All three tools correctly widen mutable container properties. The difference is 
 
 | Tool | Widened type | Original value preserved? |
 |---|---|---|
-| **dtsx**| `/** @defaultValue 5000 */ timeout: number` | **Yes** — via `@defaultValue` JSDoc |
+| **dtsx**| `/** @defaultValue 5000 */ timeout: number` | Yes — via `@defaultValue` JSDoc |
 | tsc | `timeout: number` | No — value lost entirely |
 | oxc | `timeout: number` | No — value lost entirely |
 

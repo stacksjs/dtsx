@@ -3,46 +3,6 @@ title: CLI Commands
 description: Complete reference for dtsx command-line interface.
 ---
 
-| Option | Description |
-|--------|-------------|
-| `--debounce <ms>` | Debounce delay in milliseconds |
-
-#### Examples
-
-```bash
-
-# Watch with default options
-
-dtsx watch
-
-# Watch specific directory
-
-dtsx watch --root src --outdir dist/types
-
-# Watch with validation
-
-dtsx watch --validate --verbose
-
-```
-
-### stdin
-
-Process TypeScript from stdin and output declarations to stdout.
-
-```bash
-
-dtsx stdin
-
-```
-
-#### Examples
-
-```bash
-
-# Pipe source code directly
-
-echo "export const foo: string = 'bar'" | dtsx stdin
-
 # Process a file through stdin
 
 cat src/index.ts | dtsx stdin

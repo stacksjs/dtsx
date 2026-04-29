@@ -2,7 +2,7 @@ import type { PickierConfig } from 'pickier'
 
 const config: PickierConfig = {
   verbose: false,
-  ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.test-cli/**', '**/test/fixtures/**', '**/profiler.ts', '**/profiler-deep.ts', ],
+  ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.test-cli/**', '**/test/fixtures/**', '**/profiler.ts', '**/profiler-deep.ts', 'CHANGELOG.md'],
 
   lint: {
     extensions: ['ts', 'js', 'md'],
@@ -35,6 +35,10 @@ const config: PickierConfig = {
     'regexp/no-super-linear-backtracking': 'off',
     'style/quotes': 'off',
     'quality/quotes': 'off',
+    // false positive: splits on raw `|` and counts pipes inside `\|` escapes
+    // and inline code spans as column separators. Tables with TS union types
+    // (e.g. `'build' \| 'watch'`) are flagged with mismatched column counts.
+    'markdown/table-column-count': 'off',
   },
 }
 

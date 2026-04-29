@@ -33,7 +33,7 @@ import { User, Role, Permission } from './types';
 
 1. **Incremental Processing**
 
-   ```typescript
+    ```typescript
    interface ProcessingOptions {
      // Process files in chunks
      chunkSize: number;
@@ -42,11 +42,11 @@ import { User, Role, Permission } from './types';
      // Parallel processing
      parallel: boolean;
    }
-   ```
+    ```
 
 2. **Memory-Efficient Type Tracking**
 
-   ```typescript
+    ```typescript
    // Use the tracking config option
    const config = {
      tracking: {
@@ -61,7 +61,7 @@ import { User, Role, Permission } from './types';
        importUsage: true,
      },
    };
-   ```
+    ```
 
 ## Parallel Processing
 
@@ -154,31 +154,31 @@ interface ProfilingConfig {
 ## Best Practices
 
 1. **Optimize Import Statements**
-   - Use type-only imports
-   - Remove unused imports
-   - Consolidate imports
-   - Use namespace imports for large modules
+    - Use type-only imports
+    - Remove unused imports
+    - Consolidate imports
+    - Use namespace imports for large modules
 
 2. **Memory Management**
-   - Process files in chunks
-   - Use incremental processing
-   - Implement memory limits
-   - Clean up unused resources
+    - Process files in chunks
+    - Use incremental processing
+    - Implement memory limits
+    - Clean up unused resources
 
 3. **Parallel Processing**
-   - Use worker pools
-   - Balance worker count
-   - Monitor worker performance
-   - Handle worker failures
+    - Use worker pools
+    - Balance worker count
+    - Monitor worker performance
+    - Handle worker failures
 
 4. **Caching**
-   - Cache type definitions
-   - Cache import statements
-   - Cache type relationships
-   - Implement cache invalidation
+    - Cache type definitions
+    - Cache import statements
+    - Cache type relationships
+    - Implement cache invalidation
 
 5. **Monitoring**
-   - Track processing time
-   - Monitor memory usage
-   - Profile CPU usage
-   - Log performance metrics
+    - Track processing time
+    - Monitor memory usage
+    - Profile CPU usage
+    - Log performance metrics
