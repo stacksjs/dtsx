@@ -39,17 +39,6 @@ pub fn build(b: *std.Build) void {
     if (optimize != .Debug) {
         exe.root_module.strip = true;
     }
-    // Zig 0.17 removed @cImport as a language builtin. On non-Windows, expose
-    // POSIX stdio/dirent/fcntl/unistd via a translate-c module imported as "c".
-    // Windows builds use manually-declared externs in main.zig.
-    if (target.result.os.tag != .windows) {
-        const translate_c = b.addTranslateC(.{
-            .root_source_file = b.path("src/c_imports.h"),
-            .target = target,
-            .optimize = optimize,
-        });
-        exe.root_module.addImport("c", translate_c.createModule());
-    }
     b.installArtifact(exe);
 
     // CLI-only step (for cross-compilation without shared library)

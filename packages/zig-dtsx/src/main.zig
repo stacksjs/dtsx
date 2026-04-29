@@ -7,11 +7,17 @@ const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
 
 // Platform-aware C stdio bindings.
-// On Windows, translate-c can't lower stdin/stdout (they're runtime function
-// calls Zig can't fold at comptime), so we declare the extern functions
-// manually. On POSIX targets we use a translate-c module wired up in
-// build.zig and imported as "c". (Zig 0.17 removed @cImport as a language
-// builtin, so this can no longer be done inline.)
+//
+// Zig 0.17 removed `@cImport` as a language builtin, so we declare every C
+// symbol we need manually here instead of pulling them in from system
+// headers. This also keeps cross-compilation working on CI runners where
+// `addTranslateC` blows up with `CacheCheckFailed` for cross targets.
+//
+// On Windows we use UCRT's `_findfirst`/`__acrt_iob_func` family. On POSIX
+// (Linux + the BSD-derived Apple platforms) we use stdio + dirent + open(2)
+// directly. Stdio FILE* globals have different external symbol names
+// across libcs (`stdin`/`stdout`/`stderr` on glibc/musl, `__stdinp` etc.
+// on Apple), so we expose them as functions that resolve via `@extern`.
 const c = if (builtin.os.tag == .windows) struct {
     pub const FILE = opaque {};
     pub extern "c" fn __acrt_iob_func(index: c_int) *FILE;
@@ -37,7 +43,77 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn _findnext(handle: isize, fileinfo: *_finddata_t) c_int;
     pub extern "c" fn _findclose(handle: isize) c_int;
     pub extern "c" fn _mkdir(path: [*:0]const u8) c_int;
-} else @import("c");
+} else struct {
+    pub const FILE = opaque {};
+    pub const DIR = opaque {};
+
+    /// True when targeting an Apple libc (macOS / iOS / tvOS / watchOS).
+    /// Used to pick the correct external symbol names + struct layouts.
+    const apple_libc = builtin.os.tag.isDarwin();
+
+    /// `struct dirent` layout differs between glibc/musl and Apple libc.
+    /// We only ever read `d_name`, but its offset matters, so the struct
+    /// has to be accurate up to that field.
+    pub const dirent = if (apple_libc) extern struct {
+        d_ino: u64,
+        d_seekoff: u64,
+        d_reclen: u16,
+        d_namlen: u16,
+        d_type: u8,
+        d_name: [1024]u8,
+    } else extern struct {
+        d_ino: c_ulong,
+        d_off: c_long,
+        d_reclen: c_ushort,
+        d_type: u8,
+        d_name: [256]u8,
+    };
+
+    pub extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
+    pub extern "c" fn fclose(stream: *FILE) c_int;
+    pub extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
+    pub extern "c" fn fwrite(ptr: [*]const u8, size: usize, nmemb: usize, stream: *FILE) usize;
+    pub extern "c" fn fseek(stream: *FILE, offset: c_long, whence: c_int) c_int;
+    pub extern "c" fn ftell(stream: *FILE) c_long;
+    pub const SEEK_SET: c_int = 0;
+    pub const SEEK_END: c_int = 2;
+
+    pub extern "c" fn opendir(name: [*:0]const u8) ?*DIR;
+    pub extern "c" fn readdir(dirp: *DIR) ?*dirent;
+    pub extern "c" fn closedir(dirp: *DIR) c_int;
+
+    pub extern "c" fn open(path: [*:0]const u8, flags: c_int, ...) c_int;
+    pub extern "c" fn openat(dirfd: c_int, path: [*:0]const u8, flags: c_int, ...) c_int;
+    pub extern "c" fn close(fd: c_int) c_int;
+    pub extern "c" fn read(fd: c_int, buf: [*]u8, count: usize) isize;
+    pub extern "c" fn write(fd: c_int, buf: [*]const u8, count: usize) isize;
+    pub extern "c" fn lseek(fd: c_int, offset: c_long, whence: c_int) c_long;
+    pub extern "c" fn mkdir(path: [*:0]const u8, mode: c_uint) c_int;
+
+    // fcntl.h flag values (these *do* differ across platforms — Apple uses
+    // hex bits, Linux uses octal — so we pick per OS rather than guessing).
+    pub const O_RDONLY: c_int = 0;
+    pub const O_WRONLY: c_int = 1;
+    pub const O_CREAT: c_int = if (apple_libc) 0x0200 else 0o100;
+    pub const O_TRUNC: c_int = if (apple_libc) 0x0400 else 0o1000;
+
+    // Stdio FILE* globals. The on-disk symbol names differ between Apple
+    // libc (`__stdinp` etc.) and glibc/musl (`stdin` etc.), so resolve them
+    // via @extern. Exposed as functions so getStdioPtr's "function-like"
+    // branch picks them up correctly.
+    pub fn stdin() *FILE {
+        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stdinp" else "stdin" });
+        return ptr.*;
+    }
+    pub fn stdout() *FILE {
+        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stdoutp" else "stdout" });
+        return ptr.*;
+    }
+    pub fn stderr() *FILE {
+        const ptr = @extern(**FILE, .{ .name = if (apple_libc) "__stderrp" else "stderr" });
+        return ptr.*;
+    }
+};
 
 fn getStdout() *c.FILE {
     if (builtin.os.tag == .windows) return c.__acrt_iob_func(1);
