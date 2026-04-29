@@ -100,6 +100,17 @@ jobs:
         working-directory: packages/zig-dtsx
         run: bun test test/zig-dtsx.test.ts
 
+  build-zig-cli:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.56+a8226cd53
+
       - name: Build Zig CLI Binaries
         working-directory: packages/zig-dtsx
         env:
@@ -133,7 +144,7 @@ jobs:
           zip -j ../dtsx/bin/dtsx-freebsd-x64.zip zig-out/bin/zig-dtsx
 
   publish-commit:
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, build-zig-cli]
     runs-on: ubuntu-latest
 
     steps:
