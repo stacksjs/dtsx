@@ -1,8 +1,8 @@
 <p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
 
-[![npm version][npm-version-src]][npm-version-href]
-[![GitHub Actions][github-actions-src]][github-actions-href]
-[![Commitizen friendly][commitizen-src]][commitizen-href]
+[![npm version](https://img.shields.io/npm/v/@stacksjs/dtsx?style=flat-square)](https://npmjs.com/package/@stacksjs/dtsx)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/stacksjs/dtsx/ci.yml?style=flat-square&branch=main)](https://github.com/stacksjs/dtsx/actions?query=workflow%3Aci)
+[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 <!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
 <!-- [![Codecov][codecov-src]][codecov-href] -->
 
@@ -495,12 +495,6 @@ The MIT License (MIT). Please see [LICENSE](https://github.com/stacksjs/dtsx/tre
 Made with 💙
 
 <!-- Badges -->
-[npm-version-src]: https://img.shields.io/npm/v/@stacksjs/dtsx?style=flat-square
-[npm-version-href]: https://npmjs.com/package/@stacksjs/dtsx
-[github-actions-src]: https://img.shields.io/github/actions/workflow/status/stacksjs/dtsx/ci.yml?style=flat-square&branch=main
-[github-actions-href]: https://github.com/stacksjs/dtsx/actions?query=workflow%3Aci
-[commitizen-src]: https://img.shields.io/badge/commitizen-friendly-brightgreen.svg
-[commitizen-href]: http://commitizen.github.io/cz-cli/
 
 <!-- [codecov-src]: https://img.shields.io/codecov/c/gh/stacksjs/dtsx/main?style=flat-square
 [codecov-href]: https://codecov.io/gh/stacksjs/dtsx -->
