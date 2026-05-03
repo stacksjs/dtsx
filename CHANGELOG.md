@@ -1,4 +1,131 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.14...v0.9.15)
+
+### 🐛 Bug Fixes
+
+- **scanner**: handle line comments inside inline object types ([c6f4558](https://github.com/stacksjs/dtsx/commit/c6f4558)) _(by Chris <chrisbreuer93@gmail.com>)_
+- add setup-bun to publish-commit job ([45bddbc](https://github.com/stacksjs/dtsx/commit/45bddbc)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🤖 Continuous Integration
+
+- drop redundant setup-bun (pantry installs bun via deps.yaml) ([a4420ea](https://github.com/stacksjs/dtsx/commit/a4420ea)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.15 ([acb83e4](https://github.com/stacksjs/dtsx/commit/acb83e4)) _(by Chris <chrisbreuer93@gmail.com>)_
+- refresh bun.lock and apply pickier --fix ([266b7b6](https://github.com/stacksjs/dtsx/commit/266b7b6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- refresh bun.lock ([0f29c70](https://github.com/stacksjs/dtsx/commit/0f29c70)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fresh install to pick up dtsx 0.9.14 and bunfig 0.15.9 ([97d2d9e](https://github.com/stacksjs/dtsx/commit/97d2d9e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.14 ([9d2f312](https://github.com/stacksjs/dtsx/commit/9d2f312)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4454a11](https://github.com/stacksjs/dtsx/commit/4454a11)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([93ca0e0](https://github.com/stacksjs/dtsx/commit/93ca0e0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1bd87c2](https://github.com/stacksjs/dtsx/commit/1bd87c2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f32bee](https://github.com/stacksjs/dtsx/commit/8f32bee)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([85e7846](https://github.com/stacksjs/dtsx/commit/85e7846)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.13...HEAD)
+
+### 🐛 Bug Fixes
+
+- **scanner**: handle line comments inside inline object types ([c6f4558](https://github.com/stacksjs/dtsx/commit/c6f4558)) _(by Chris <chrisbreuer93@gmail.com>)_
+- add setup-bun to publish-commit job ([45bddbc](https://github.com/stacksjs/dtsx/commit/45bddbc)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- add missing createHash import from node:crypto ([63ee11a](https://github.com/stacksjs/dtsx/commit/63ee11a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- add setup-bun step to release workflow ([04a5e5a](https://github.com/stacksjs/dtsx/commit/04a5e5a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- resolve lint errors ([922f6f3](https://github.com/stacksjs/dtsx/commit/922f6f3)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- simplify zig comptime_match to fix Linux test failure ([43b3137](https://github.com/stacksjs/dtsx/commit/43b3137)) _(by Chris <chrisbreuer93@gmail.com>)_
+- resolve remaining CI failures — zig cross-compile, lint, and test ([407681b](https://github.com/stacksjs/dtsx/commit/407681b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- pin zig version, fix lint errors in type-inference and comments ([78129a8](https://github.com/stacksjs/dtsx/commit/78129a8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- resolve CI failures — escape template literals in worker, restore zig/bun setup ([5b22ec8](https://github.com/stacksjs/dtsx/commit/5b22ec8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- avoid nested template literals in worker code string ([c91b18d](https://github.com/stacksjs/dtsx/commit/c91b18d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### ⚡ Performance Improvements
+
+- restore integer comparison in comptime_match for power-of-2 sizes ([70618f3](https://github.com/stacksjs/dtsx/commit/70618f3)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🤖 Continuous Integration
+
+- drop redundant setup-bun (pantry installs bun via deps.yaml) ([a4420ea](https://github.com/stacksjs/dtsx/commit/a4420ea)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- refresh bun.lock and apply pickier --fix ([266b7b6](https://github.com/stacksjs/dtsx/commit/266b7b6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- refresh bun.lock ([0f29c70](https://github.com/stacksjs/dtsx/commit/0f29c70)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fresh install to pick up dtsx 0.9.14 and bunfig 0.15.9 ([97d2d9e](https://github.com/stacksjs/dtsx/commit/97d2d9e)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- release v0.9.14 ([9d2f312](https://github.com/stacksjs/dtsx/commit/9d2f312)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4454a11](https://github.com/stacksjs/dtsx/commit/4454a11)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([93ca0e0](https://github.com/stacksjs/dtsx/commit/93ca0e0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([1bd87c2](https://github.com/stacksjs/dtsx/commit/1bd87c2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([8f32bee](https://github.com/stacksjs/dtsx/commit/8f32bee)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([85e7846](https://github.com/stacksjs/dtsx/commit/85e7846)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7ef20b1](https://github.com/stacksjs/dtsx/commit/7ef20b1)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([35c07e8](https://github.com/stacksjs/dtsx/commit/35c07e8)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([c4eeb1d](https://github.com/stacksjs/dtsx/commit/c4eeb1d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- migrate all CI commands from bun to pantry ([ea90445](https://github.com/stacksjs/dtsx/commit/ea90445)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([adaf137](https://github.com/stacksjs/dtsx/commit/adaf137)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([5bb6274](https://github.com/stacksjs/dtsx/commit/5bb6274)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([a985d21](https://github.com/stacksjs/dtsx/commit/a985d21)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([c217cb8](https://github.com/stacksjs/dtsx/commit/c217cb8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([b648ca2](https://github.com/stacksjs/dtsx/commit/b648ca2)) _(by Chris <chrisbreuer93@gmail.com>)_
+- bump zig to 0.17.0-dev.56+a8226cd53 ([937b06a](https://github.com/stacksjs/dtsx/commit/937b06a)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- gitignore pantry directory ([d8f537b](https://github.com/stacksjs/dtsx/commit/d8f537b)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- minor updates ([b2a5d8f](https://github.com/stacksjs/dtsx/commit/b2a5d8f)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fix lint errors ([6fc1277](https://github.com/stacksjs/dtsx/commit/6fc1277)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- include md in pickier lint extensions ([4c94ce0](https://github.com/stacksjs/dtsx/commit/4c94ce0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update dependency typescript to 6.0.2 (rebased) (#3082) ([d8e7a6c](https://github.com/stacksjs/dtsx/commit/d8e7a6c)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3082](https://github.com/stacksjs/dtsx/issues/3082), [#3082](https://github.com/stacksjs/dtsx/issues/3082))
+- **deps**: update all non-major dependencies (rebased) (#3084) ([b2eb0ae](https://github.com/stacksjs/dtsx/commit/b2eb0ae)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3084](https://github.com/stacksjs/dtsx/issues/3084), [#3084](https://github.com/stacksjs/dtsx/issues/3084))
+- update vscode config ([f5576c9](https://github.com/stacksjs/dtsx/commit/f5576c9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([861f367](https://github.com/stacksjs/dtsx/commit/861f367)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- update vscode config ([4886956](https://github.com/stacksjs/dtsx/commit/4886956)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- update zig to 0.16.0-dev.2962+08416b44f ([b181ec2](https://github.com/stacksjs/dtsx/commit/b181ec2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- repo cleanup and modernization ([0d9d105](https://github.com/stacksjs/dtsx/commit/0d9d105)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- add git-hooks config ([e300500](https://github.com/stacksjs/dtsx/commit/e300500)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- remove redundant docs/.vitepress ([6cc7ba2](https://github.com/stacksjs/dtsx/commit/6cc7ba2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([34c3228](https://github.com/stacksjs/dtsx/commit/34c3228)) _(by Chris <chrisbreuer93@gmail.com>)_
+- consolidate zig-test and zig-build into test job ([b631d2a](https://github.com/stacksjs/dtsx/commit/b631d2a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([00a51e4](https://github.com/stacksjs/dtsx/commit/00a51e4)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([17e1fcc](https://github.com/stacksjs/dtsx/commit/17e1fcc)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([f12206e](https://github.com/stacksjs/dtsx/commit/f12206e)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([f747972](https://github.com/stacksjs/dtsx/commit/f747972)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([4b45292](https://github.com/stacksjs/dtsx/commit/4b45292)) _(by Chris <chrisbreuer93@gmail.com>)_
+- use Pantry action for publish-commit and add job dependencies ([b4a3191](https://github.com/stacksjs/dtsx/commit/b4a3191)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: update all non-major dependencies (rebased) (#3075) ([a7fa3f0](https://github.com/stacksjs/dtsx/commit/a7fa3f0)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3075](https://github.com/stacksjs/dtsx/issues/3075), [#3075](https://github.com/stacksjs/dtsx/issues/3075))
+- remove file ignores from pickier config ([ea355fc](https://github.com/stacksjs/dtsx/commit/ea355fc)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fix lint warnings ([79a3d82](https://github.com/stacksjs/dtsx/commit/79a3d82)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- fix lint warnings ([c5eac68](https://github.com/stacksjs/dtsx/commit/c5eac68)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- remove .pickierignore ([7c7ccb5](https://github.com/stacksjs/dtsx/commit/7c7ccb5)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- enrich CLAUDE.md with detailed project context from README ([623fee2](https://github.com/stacksjs/dtsx/commit/623fee2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- update CLAUDE.md with project context and crosswind details ([d211b46](https://github.com/stacksjs/dtsx/commit/d211b46)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- add proper claude code guidelines ([31611cc](https://github.com/stacksjs/dtsx/commit/31611cc)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([b65a005](https://github.com/stacksjs/dtsx/commit/b65a005)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- use pantry monorepo action instead of pantry-setup ([097bede](https://github.com/stacksjs/dtsx/commit/097bede)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- ignore claude config in linter ([1123fda](https://github.com/stacksjs/dtsx/commit/1123fda)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- add claude code guidelines ([4606fd6](https://github.com/stacksjs/dtsx/commit/4606fd6)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **deps**: update dependency @typescript/native-preview to 7.0.0-dev.20260311.1 (rebased) (#3074) ([10c1d21](https://github.com/stacksjs/dtsx/commit/10c1d21)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3074](https://github.com/stacksjs/dtsx/issues/3074), [#3074](https://github.com/stacksjs/dtsx/issues/3074))
+- **deps**: update dependency @typescript/native-preview to 7.0.0-dev.20260310.1 (#3073) ([e82ff05](https://github.com/stacksjs/dtsx/commit/e82ff05)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3073](https://github.com/stacksjs/dtsx/issues/3073), [#3073](https://github.com/stacksjs/dtsx/issues/3073))
+- **deps**: update dependency @typescript/native-preview to 7.0.0-dev.20260309.1 (rebased) (#3070) ([fd9b0fe](https://github.com/stacksjs/dtsx/commit/fd9b0fe)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3070](https://github.com/stacksjs/dtsx/issues/3070), [#3070](https://github.com/stacksjs/dtsx/issues/3070))
+- **deps**: update all non-major dependencies (#3072) ([74d02f7](https://github.com/stacksjs/dtsx/commit/74d02f7)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3072](https://github.com/stacksjs/dtsx/issues/3072), [#3072](https://github.com/stacksjs/dtsx/issues/3072))
+- **deps**: update all non-major dependencies (rebased) (#3067) ([34114db](https://github.com/stacksjs/dtsx/commit/34114db)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3067](https://github.com/stacksjs/dtsx/issues/3067), [#3067](https://github.com/stacksjs/dtsx/issues/3067))
+- **deps**: update dependency @typescript/native-preview to 7.0.0-dev.20260306.1 (rebased) (#3068) ([32d13ba](https://github.com/stacksjs/dtsx/commit/32d13ba)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3068](https://github.com/stacksjs/dtsx/issues/3068), [#3068](https://github.com/stacksjs/dtsx/issues/3068))
+- **deps**: update dependency webpack to 5.105.4 (rebased) (#3069) ([481036f](https://github.com/stacksjs/dtsx/commit/481036f)) _(by [github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>](https://github.com/github-actions[bot]))_ ([#3069](https://github.com/stacksjs/dtsx/issues/3069), [#3069](https://github.com/stacksjs/dtsx/issues/3069))
+- wip ([dfa9db7](https://github.com/stacksjs/dtsx/commit/dfa9db7)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([688d9ab](https://github.com/stacksjs/dtsx/commit/688d9ab)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([7b44069](https://github.com/stacksjs/dtsx/commit/7b44069)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([bbbfb9d](https://github.com/stacksjs/dtsx/commit/bbbfb9d)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([4e6af9c](https://github.com/stacksjs/dtsx/commit/4e6af9c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([b38eedc](https://github.com/stacksjs/dtsx/commit/b38eedc)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([03f6990](https://github.com/stacksjs/dtsx/commit/03f6990)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([a7c5de9](https://github.com/stacksjs/dtsx/commit/a7c5de9)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.13...v0.9.14)
 
 ### 🐛 Bug Fixes
