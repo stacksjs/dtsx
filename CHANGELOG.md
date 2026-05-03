@@ -1,4 +1,36 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.16...v0.9.17)
+
+### 🐛 Bug Fixes
+
+- **generator**: walk imports too when auto-including reachable files ([5a9a672](https://github.com/stacksjs/dtsx/commit/5a9a672)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧪 Tests
+
+- **generator**: cover type-position import auto-include ([35a7ab7](https://github.com/stacksjs/dtsx/commit/35a7ab7)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.17 ([5d3a845](https://github.com/stacksjs/dtsx/commit/5d3a845)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.16...HEAD)
+
+### 🐛 Bug Fixes
+
+- **generator**: walk imports too when auto-including reachable files ([5a9a672](https://github.com/stacksjs/dtsx/commit/5a9a672)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧪 Tests
+
+- **generator**: cover type-position import auto-include ([35a7ab7](https://github.com/stacksjs/dtsx/commit/35a7ab7)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.15...v0.9.16)
 
 ### ⚡ Performance Improvements

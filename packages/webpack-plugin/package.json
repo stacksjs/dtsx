@@ -1,7 +1,7 @@
 {
   "name": "webpack-plugin-dtsx",
   "type": "module",
-  "version": "0.9.16",
+  "version": "0.9.17",
   "description": "A webpack plugin that auto generates your DTS types extremely fast.",
   "author": "Chris Breuer <chris@ow3.org>",
   "license": "MIT",
