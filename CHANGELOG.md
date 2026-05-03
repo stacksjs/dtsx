@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.15...v0.9.16)
+
+### ⚡ Performance Improvements
+
+- **release**: drop dead compile:all + zip from prepublishOnly ([908b94a](https://github.com/stacksjs/dtsx/commit/908b94a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.16 ([0f8a15a](https://github.com/stacksjs/dtsx/commit/0f8a15a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.15...HEAD)
+
+### ⚡ Performance Improvements
+
+- **release**: drop dead compile:all + zip from prepublishOnly ([908b94a](https://github.com/stacksjs/dtsx/commit/908b94a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.14...v0.9.15)
 
 ### 🐛 Bug Fixes
