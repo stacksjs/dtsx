@@ -123,3 +123,71 @@ describe('issue 3093 — inline object type separators', () => {
     expect(out).toContain('handler: () => void')
   })
 })
+
+describe('issue 3093 — line comments inside inline object types', () => {
+  // Bug: buildDtsParams stripped trailing `// ...` comments from each param
+  // by walking the param string for `//` and slicing there. The walker did
+  // not track brace depth, so a `// eslint-disable-next-line` between
+  // fields of an *inline* object type was treated as a trailing comment
+  // and chopped off everything after it — including the remaining fields
+  // and their closing braces. Real-world repro:
+  // `very-happy-dom@0.1.2`'s `BrowserPage.screenshot()` shipped a malformed
+  // `.d.ts` (`}>): Promise<…>`) that broke `tsc --noEmit` for every consumer.
+  it('keeps fields after a line comment inside an inline object type', () => {
+    const src = `export class Page {
+  async screenshot(options: {
+    useWebView?: boolean | {
+      css?: string
+      fonts?: Array<{ family: string, url: string }>
+      // eslint-disable-next-line pickier/no-unused-vars
+      console?: true | ((event: unknown) => void)
+    }
+  } = {}): Promise<string | Buffer> {
+    return ''
+  }
+}`
+    const out = processSource(src)
+    // Field after the comment must survive
+    expect(out).toContain('console?:')
+    // The inline comment itself should not appear in .d.ts output
+    expect(out).not.toContain('eslint-disable')
+    // Bracket structure must still close properly — no `}>):` adjacency
+    expect(out).not.toMatch(/}>\)\s*:/)
+    // The screenshot signature must end with the documented return type
+    expect(out).toMatch(/Promise<string\s*\|\s*Buffer>/)
+    expect(out).toContain('screenshot(')
+  })
+
+  it('still strips a true trailing line comment on the param itself', () => {
+    const src = `export function fn(
+  options: { a?: string } = {}, // legacy compatibility
+) {}`
+    const out = processSource(src)
+    // The trailing `// legacy …` is at param scope, not inside the type — strip it
+    expect(out).not.toContain('legacy compatibility')
+    // The param + its type must survive
+    expect(out).toContain('options?:')
+  })
+
+  it('keeps fields after multiple comments within deeply nested inline types', () => {
+    const src = `export class C {
+  m(opts: {
+    nested?: {
+      // first comment
+      a?: string
+      // second comment
+      b?: number
+      // third
+      c?: boolean
+    }
+  } = {}): void {}
+}`
+    const out = processSource(src)
+    expect(out).toContain('a?:')
+    expect(out).toContain('b?:')
+    expect(out).toContain('c?:')
+    expect(out).not.toContain('first comment')
+    expect(out).not.toContain('second comment')
+    expect(out).not.toContain('third')
+  })
+})

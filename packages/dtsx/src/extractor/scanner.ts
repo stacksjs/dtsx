@@ -1194,19 +1194,50 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       // Strip trailing inline comments from the parameter
       let cleanedParam = param
       {
+        // Strip line comments — but only those that aren't inside an inline
+        // object/generic/parens type. A `// eslint-disable-next-line` between
+        // fields of an inline object type was previously chopping off the
+        // remaining fields plus all the closing braces.
         let si = false
         let sc = 0
+        let cdepth = 0
+        let lineStart = 0
         for (let ci = 0; ci < cleanedParam.length - 1; ci++) {
           const cc = cleanedParam.charCodeAt(ci)
+          if (cc === CH_LF) {
+            lineStart = ci + 1
+            continue
+          }
           if (si) {
             if (cc === CH_BACKSLASH) { ci++; continue }
             if (cc === sc) si = false
             continue
           }
           if (cc === CH_SQUOTE || cc === CH_DQUOTE || cc === CH_BACKTICK) { si = true; sc = cc; continue }
+          if (cc === CH_LBRACE || cc === CH_LBRACKET || cc === CH_LPAREN || cc === CH_LANGLE) {
+            cdepth++
+            continue
+          }
+          if (cc === CH_RBRACE || cc === CH_RBRACKET || cc === CH_RPAREN || cc === CH_RANGLE) {
+            if (cdepth > 0) cdepth--
+            continue
+          }
           if (cc === CH_SLASH && cleanedParam.charCodeAt(ci + 1) === CH_SLASH) {
-            cleanedParam = cleanedParam.slice(0, ci).trimEnd()
-            break
+            if (cdepth === 0) {
+              // Trailing comment on the param itself — strip it and stop.
+              cleanedParam = cleanedParam.slice(0, ci).trimEnd()
+              break
+            }
+            // Comment nested inside a type — drop just this line, keep the rest.
+            const eol = cleanedParam.indexOf('\n', ci)
+            if (eol === -1) {
+              cleanedParam = cleanedParam.slice(0, lineStart).trimEnd()
+              break
+            }
+            const prefix = cleanedParam.slice(0, lineStart)
+            const suffix = cleanedParam.slice(eol + 1)
+            cleanedParam = `${prefix}${suffix}`
+            ci = lineStart - 1
           }
         }
       }
