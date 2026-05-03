@@ -81,7 +81,7 @@
     "lint:fix": "bunx --bun pickier run . --mode lint --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
     "changelog": "bunx changelogen --output CHANGELOG.md",
-    "prepublishOnly": "bun --bun run build && bun run compile:all && bun run zip",
+    "prepublishOnly": "bun --bun run build",
     "release": "bun run changelog && bunx bumpp package.json --all",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit",
