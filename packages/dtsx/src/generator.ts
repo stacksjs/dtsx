@@ -95,13 +95,20 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   const entryFiles = await findFiles(config)
   let files = entryFiles.slice()
 
-  // Auto-expand the file set through relative re-exports so a barrel
-  // `export * from './x'` pulls in `./x.ts`. Otherwise the emitted
-  // `.d.ts` re-exports siblings dtsx never wrote, producing types that
-  // resolve to nothing for consumers (stacksjs/dtsx#3090).
+  // Auto-expand the file set through relative re-exports AND imports so:
+  //   1. A barrel `export * from './x'` pulls in `./x.ts`. Otherwise the
+  //      emitted `.d.ts` re-exports siblings dtsx never wrote, producing
+  //      types that resolve to nothing for consumers (stacksjs/dtsx#3090).
+  //   2. A type-position `import { Foo } from './foo'` pulls in `./foo.ts`.
+  //      Otherwise the emitted `.d.ts` keeps that import statement
+  //      (because `Foo` is referenced from a public declaration) but the
+  //      target `.d.ts` is never written — `tsc --noEmit` then fails with
+  //      `Cannot find module './foo'` for every consumer.
+  // The walker chases all imports (not just type-only) since runtime
+  // imports may still surface in declaration types via inferred returns.
   let reExportReachability: Awaited<ReturnType<typeof collectReachableViaReExports>> | null = null
   if (config.autoIncludeReExports !== false && files.length > 0) {
-    reExportReachability = await collectReachableViaReExports(files)
+    reExportReachability = await collectReachableViaReExports(files, { includeImports: true })
 
     const rootPath = resolve(config.cwd, config.root)
     const excludePatterns = config.exclude || []
