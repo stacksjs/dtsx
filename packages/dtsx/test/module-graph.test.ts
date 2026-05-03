@@ -167,6 +167,42 @@ describe('generate auto-includes reachable subpaths', () => {
     expect(types).toContain('RouteConfig')
   })
 
+  it('emits .d.ts for siblings reached only through type-position imports', async () => {
+    // Regression: a file imported by `import { Foo } from './foo'` and
+    // used as a type in a public declaration must also get a `.d.ts`.
+    // Otherwise the emitted `.d.ts` keeps the import (because `Foo` is
+    // referenced) but the target was never written, and `tsc --noEmit`
+    // fails with `Cannot find module './foo'` for every consumer.
+    await writeFiles(TMP, {
+      'src/index.ts': `export { Template } from './template';`,
+      'src/template.ts': `import { Fragment } from './fragment';\nexport class Template {\n  content: Fragment\n  constructor() { this.content = new Fragment() }\n}`,
+      'src/fragment.ts': `export class Fragment {\n  nodeType: number = 11\n}`,
+    })
+
+    const config: DtsGenerationConfig = {
+      cwd: TMP,
+      root: 'src',
+      entrypoints: ['index.ts'],
+      outdir: join(TMP, 'dist'),
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+    }
+
+    const stats = await generate(config)
+    expect(stats.filesGenerated).toBe(3)
+
+    const template = await Bun.file(join(TMP, 'dist', 'template.d.ts')).text()
+    expect(template).toContain('Template')
+    expect(template).toMatch(/import\s*\{\s*Fragment\s*\}\s*from\s*['"]\.\/fragment['"]/)
+
+    // The critical assertion: fragment.d.ts must exist so the import above resolves
+    expect(await Bun.file(join(TMP, 'dist', 'fragment.d.ts')).exists()).toBe(true)
+    const fragment = await Bun.file(join(TMP, 'dist', 'fragment.d.ts')).text()
+    expect(fragment).toContain('Fragment')
+  })
+
   it('respects autoIncludeReExports: false', async () => {
     await writeFiles(TMP, {
       'src/index.ts': `export * from './router';`,
