@@ -102,12 +102,12 @@
     }
   },
   "dependencies": {
-    "@stacksjs/clapp": "^0.2.0"
+    "@stacksjs/clapp": "^0.2.7"
   },
   "devDependencies": {
-    "bunfig": "^0.15.6",
-    "oxc-parser": "^0.121.0",
-    "typescript": "^6.0.2"
+    "bunfig": "^0.15.11",
+    "oxc-parser": "^0.128.0",
+    "typescript": "^6.0.3"
   },
   "git-hooks": {
     "pre-commit": {

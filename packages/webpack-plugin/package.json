@@ -52,6 +52,6 @@
     "@stacksjs/dtsx": "workspace:*"
   },
   "peerDependencies": {
-    "webpack": "^5.105.4"
+    "webpack": "^5.106.2"
   }
 }
