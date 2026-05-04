@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.17...v0.9.18)
+
+### 🐛 Bug Fixes
+
+- **scanner**: JSDoc apostrophe in destructured param emits malformed .d.ts ([eb331a0](https://github.com/stacksjs/dtsx/commit/eb331a0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.18 ([37b1ffe](https://github.com/stacksjs/dtsx/commit/37b1ffe)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.17...HEAD)
+
+### 🐛 Bug Fixes
+
+- **scanner**: JSDoc apostrophe in destructured param emits malformed .d.ts ([eb331a0](https://github.com/stacksjs/dtsx/commit/eb331a0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.16...v0.9.17)
 
 ### 🐛 Bug Fixes
