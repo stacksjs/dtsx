@@ -555,9 +555,19 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     var str_ch: u8 = 0;
     var skip_next = false;
 
+    var in_block_comment = false;
+    var skip_to_eol = false;
     for (inner, 0..) |c, i| {
         if (skip_next) {
             skip_next = false;
+            continue;
+        }
+        if (skip_to_eol) {
+            if (c == '\n') skip_to_eol = false;
+            continue;
+        }
+        if (in_block_comment) {
+            if (c == '/' and i > 0 and inner[i - 1] == '*') in_block_comment = false;
             continue;
         }
         if (in_str) {
@@ -567,6 +577,20 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             }
             if (c == str_ch) in_str = false;
             continue;
+        }
+        // Skip block and line comments — JSDoc prose can contain unmatched
+        // quote chars (e.g. apostrophe in "error's") that would otherwise
+        // trip the scanner into a string-literal mode it never escapes.
+        if (c == '/' and i + 1 < inner.len) {
+            const nc = inner[i + 1];
+            if (nc == '*') {
+                in_block_comment = true;
+                continue;
+            }
+            if (nc == '/') {
+                skip_to_eol = true;
+                continue;
+            }
         }
         if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE or c == ch.CH_BACKTICK) {
             in_str = true;
@@ -655,9 +679,19 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     var str_ch2: u8 = 0;
     var skip_next2 = false;
 
+    var in_block_comment2 = false;
+    var skip_to_eol2 = false;
     for (p, 0..) |c, i| {
         if (skip_next2) {
             skip_next2 = false;
+            continue;
+        }
+        if (skip_to_eol2) {
+            if (c == '\n') skip_to_eol2 = false;
+            continue;
+        }
+        if (in_block_comment2) {
+            if (c == '/' and i > 0 and p[i - 1] == '*') in_block_comment2 = false;
             continue;
         }
         if (in_str2) {
@@ -667,6 +701,19 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
             }
             if (c == str_ch2) in_str2 = false;
             continue;
+        }
+        // Skip block and line comments before string-mode detection so JSDoc
+        // apostrophes (e.g. "error's") don't trigger an unclosed string.
+        if (c == '/' and i + 1 < p.len) {
+            const nc = p[i + 1];
+            if (nc == '*') {
+                in_block_comment2 = true;
+                continue;
+            }
+            if (nc == '/') {
+                skip_to_eol2 = true;
+                continue;
+            }
         }
         if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE or c == ch.CH_BACKTICK) {
             in_str2 = true;
@@ -762,6 +809,30 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
 
     while (i < pattern.len) : (i += 1) {
         const c = pattern[i];
+
+        // Preserve block and line comments verbatim (useful JSDoc) but skip
+        // parsing inside them so apostrophes in prose (e.g. "error's") don't
+        // put us in an inescapable string mode.
+        if (!in_str and c == '/' and i + 1 < pattern.len) {
+            const nc = pattern[i + 1];
+            if (nc == '*') {
+                const start = i;
+                var j = i + 2;
+                while (j + 1 < pattern.len and !(pattern[j] == '*' and pattern[j + 1] == '/')) : (j += 1) {}
+                const end = if (j + 1 < pattern.len) j + 2 else pattern.len;
+                result.appendSlice(pattern[start..end]) catch {};
+                i = end - 1; // loop's += 1 advances past
+                continue;
+            }
+            if (nc == '/') {
+                const start = i;
+                var j = i;
+                while (j < pattern.len and pattern[j] != '\n') : (j += 1) {}
+                result.appendSlice(pattern[start..j]) catch {};
+                i = if (j == 0) 0 else j - 1; // loop's += 1 lands on the newline
+                continue;
+            }
+        }
 
         // String tracking
         if (!in_str and (c == '\'' or c == '"' or c == '`')) {

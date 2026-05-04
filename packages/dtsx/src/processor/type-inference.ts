@@ -974,6 +974,22 @@ export function cleanParameterDefaults(params: string): string {
       if (ch === strCh) inStr = false
       continue
     }
+    // Skip block and line comments — JSDoc prose can contain unmatched
+    // quote chars (e.g. apostrophe in "error's") that would otherwise
+    // trip the scanner into a string-literal mode it never escapes.
+    if (ch === 47 /* / */ && i + 1 < trimmedInner.length) {
+      const nc = trimmedInner.charCodeAt(i + 1)
+      if (nc === 42 /* * */) {
+        i += 2
+        while (i + 1 < trimmedInner.length && !(trimmedInner.charCodeAt(i) === 42 && trimmedInner.charCodeAt(i + 1) === 47)) i++
+        i++ // position on closing '/'; loop's i++ moves past
+        continue
+      }
+      if (nc === 47) {
+        while (i < trimmedInner.length && trimmedInner.charCodeAt(i) !== 10) i++
+        continue
+      }
+    }
     if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
     if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++
     else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) depth--
@@ -1053,6 +1069,21 @@ function cleanSingleParam(param: string): string {
       if (ch === 92 /* \\ */) { i++; continue }
       if (ch === strCh) inStr = false
       continue
+    }
+    // Skip block and line comments before string-mode detection so JSDoc
+    // apostrophes (e.g. "error's") don't trigger an unclosed string.
+    if (ch === 47 /* / */ && i + 1 < param.length) {
+      const nc = param.charCodeAt(i + 1)
+      if (nc === 42 /* * */) {
+        i += 2
+        while (i + 1 < param.length && !(param.charCodeAt(i) === 42 && param.charCodeAt(i + 1) === 47)) i++
+        i++
+        continue
+      }
+      if (nc === 47) {
+        while (i < param.length && param.charCodeAt(i) !== 10) i++
+        continue
+      }
     }
     if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
     if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++

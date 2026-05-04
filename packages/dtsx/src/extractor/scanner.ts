@@ -1166,6 +1166,22 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
           inStr = false
         continue
       }
+      // Skip block and line comments — JSDoc prose (e.g. "error's") can
+      // contain unmatched quote chars that would otherwise put the scanner
+      // into a string-literal mode it never escapes.
+      if (ch === CH_SLASH && i + 1 < inner.length) {
+        const nc = inner.charCodeAt(i + 1)
+        if (nc === CH_STAR) {
+          i += 2
+          while (i + 1 < inner.length && !(inner.charCodeAt(i) === CH_STAR && inner.charCodeAt(i + 1) === CH_SLASH)) i++
+          i++ // position on the closing '/'; loop's i++ moves past
+          continue
+        }
+        if (nc === CH_SLASH) {
+          while (i < inner.length && inner.charCodeAt(i) !== 10 /* \n */) i++
+          continue
+        }
+      }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
         inStr = true
         strCh = ch
@@ -1268,6 +1284,26 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         if (ch === strCh)
           inStr = false
         result += name[i]; i++; continue
+      }
+      // Preserve block and line comments verbatim — they're useful JSDoc
+      // documentation. Crucially, skip parsing inside them so apostrophes in
+      // prose (e.g. "error's") don't put us in an inescapable string mode.
+      if (ch === CH_SLASH && i + 1 < name.length) {
+        const nc = name.charCodeAt(i + 1)
+        if (nc === CH_STAR) {
+          const start = i
+          i += 2
+          while (i + 1 < name.length && !(name.charCodeAt(i) === CH_STAR && name.charCodeAt(i + 1) === CH_SLASH)) i++
+          i = Math.min(i + 2, name.length) // past closing */
+          result += name.slice(start, i)
+          continue
+        }
+        if (nc === CH_SLASH) {
+          const start = i
+          while (i < name.length && name.charCodeAt(i) !== 10) i++
+          result += name.slice(start, i)
+          continue
+        }
       }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
         inStr = true; strCh = ch
@@ -1391,6 +1427,20 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
         if (ch === strCh2)
           inStr2 = false
         continue
+      }
+      // Skip block and line comments so JSDoc apostrophes don't trip string mode.
+      if (ch === CH_SLASH && i + 1 < p.length) {
+        const nc = p.charCodeAt(i + 1)
+        if (nc === CH_STAR) {
+          i += 2
+          while (i + 1 < p.length && !(p.charCodeAt(i) === CH_STAR && p.charCodeAt(i + 1) === CH_SLASH)) i++
+          i++
+          continue
+        }
+        if (nc === CH_SLASH) {
+          while (i < p.length && p.charCodeAt(i) !== 10) i++
+          continue
+        }
       }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
         inStr2 = true

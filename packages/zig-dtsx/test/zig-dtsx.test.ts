@@ -1173,6 +1173,29 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
       expect(result).toContain('declare function parse')
     })
 
+    test('issue 3095 — destructured param with JSDoc apostrophe', () => {
+      // JSDoc prose containing an apostrophe (e.g. "error's") used to put the
+      // param scanner into an inescapable string-literal mode, producing
+      // `,: unknown):` that TypeScript rejects with TS1138.
+      const result = dts(`export class CLI {
+  async parse(
+    argv: string[] = [],
+    {
+      /** Whether to run the action for matched command */
+      run = true,
+      /**
+       * Defaults to \`false\`. When set, render the error's message and exit.
+       */
+      exitOnError = false,
+    }: { run?: boolean, exitOnError?: boolean } = {},
+  ): Promise<void> {}
+}`)
+      expect(result).not.toMatch(/,\s*:\s*unknown\)/)
+      expect(result).not.toContain('= {}')
+      expect(result).toContain('run?: boolean')
+      expect(result).toContain('exitOnError?: boolean')
+    })
+
     test('export declare (already declared)', () => {
       const result = dts(`export declare const VERSION: string`)
       expect(result).toContain('export declare const VERSION: string')
