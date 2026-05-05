@@ -111,6 +111,21 @@ export function hasExportModifier(node: Node): boolean {
 }
 
 /**
+ * Check if a node has the `default` modifier — i.e. it's an
+ * `export default` declaration. Without this check, `buildFunctionSignature`
+ * (and friends) only emit `export declare function ...` when the source
+ * was `export default function ...`, which silently drops the default
+ * qualifier and breaks `import { default as X } from './mod'`
+ * re-exports downstream.
+ */
+export function hasDefaultModifier(node: Node): boolean {
+  if (!('modifiers' in node) || !node.modifiers)
+    return false
+  const modifiers = node.modifiers as readonly Modifier[]
+  return modifiers.some((mod: Modifier) => mod.kind === SyntaxKind.DefaultKeyword)
+}
+
+/**
  * Check if a function has async modifier
  */
 export function hasAsyncModifier(node: FunctionDeclaration): boolean {

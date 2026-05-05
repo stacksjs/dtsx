@@ -6,7 +6,7 @@ import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclara
 import type { Declaration } from '../types'
 import { forEachChild, isAsExpression, isFunctionDeclaration, isIdentifier, isStringLiteral, NodeFlags, SyntaxKind } from 'typescript'
 import { buildClassDeclaration, buildFunctionSignature, buildInterfaceDeclaration, buildModuleDeclaration, buildTypeDeclaration, buildVariableDeclaration } from './builders'
-import { extractJSDocComments, extractTypesFromModuleText, getNodeText, hasAsyncModifier, hasExportModifier, isBuiltInType } from './helpers'
+import { extractJSDocComments, extractTypesFromModuleText, getNodeText, hasAsyncModifier, hasDefaultModifier, hasExportModifier, isBuiltInType } from './helpers'
 
 /**
  * Extract import declaration
@@ -108,6 +108,7 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, _sourceCod
 
   const name = node.name.getText(sourceFile)
   const isExported = hasExportModifier(node)
+  const isDefault = isExported && hasDefaultModifier(node)
   const isAsync = hasAsyncModifier(node)
   const isGenerator = !!node.asteriskToken
 
@@ -152,6 +153,7 @@ export function extractFunctionDeclaration(node: FunctionDeclaration, _sourceCod
     name,
     text: signature,
     isExported,
+    isDefault,
     isAsync,
     isGenerator,
     parameters,
@@ -339,9 +341,10 @@ export function extractTypeAliasDeclaration(node: TypeAliasDeclaration, _sourceC
 export function extractClassDeclaration(node: ClassDeclaration, _sourceCode: string, sourceFile: SourceFile, keepComments: boolean): Declaration {
   const name = node.name?.getText(sourceFile) || 'AnonymousClass'
   const isExported = hasExportModifier(node)
+  const isDefault = isExported && hasDefaultModifier(node)
 
   // Build clean class declaration for DTS
-  const text = buildClassDeclaration(node, isExported, sourceFile)
+  const text = buildClassDeclaration(node, isExported, sourceFile, isDefault)
 
   // Extract extends clause
   const extendsClause = node.heritageClauses?.find(clause =>
@@ -367,6 +370,7 @@ export function extractClassDeclaration(node: ClassDeclaration, _sourceCode: str
     name,
     text,
     isExported,
+    isDefault,
     extends: extendsClause,
     implements: implementsClause,
     generics: generics ? `<${generics}>` : undefined,

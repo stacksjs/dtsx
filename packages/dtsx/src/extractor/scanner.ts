@@ -1690,9 +1690,17 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       pos++ // skip ;
     }
 
-    // Build DTS text
+    // Build DTS text. `export default function X` must keep the
+    // `default` keyword so consumers can `import { default as Y }`
+    // re-export the value — without it the .d.ts has no default
+    // export at all. The `declare` keyword is *omitted* in that
+    // case (the standard form for an ambient default export in a
+    // .d.ts file).
     const dtsParams = buildDtsParams(rawParams)
-    const text = `${isExported ? 'export ' : ''}declare function ${name || 'default'}${generics}${dtsParams}: ${returnType};`
+    const exportPrefix = isExported
+      ? (isDefault ? 'export default function ' : 'export declare function ')
+      : 'declare function '
+    const text = `${exportPrefix}${name || 'default'}${generics}${dtsParams}: ${returnType};`
     const comments = extractLeadingComments(declStart)
 
     // Record index if this function had a body (implementation signature for overloads)
@@ -2017,7 +2025,7 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
    * Extract class declaration and build DTS.
    * pos should be at 'class' keyword.
    */
-  function extractClass(declStart: number, isExported: boolean, isAbstract: boolean): Declaration {
+  function extractClass(declStart: number, isExported: boolean, isAbstract: boolean, isDefault: boolean = false): Declaration {
     pos += 5 // skip 'class'
     skipWhitespaceAndComments()
 
@@ -2078,8 +2086,13 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
     // Extract class body and build DTS members
     const classBody = buildClassBodyDts()
 
-    // Build DTS text
-    const text = `${isExported ? 'export ' : ''}declare ${isAbstract ? 'abstract ' : ''}class ${name}${generics}${extendsClause ? ` extends ${extendsClause}` : ''}${implementsList && implementsList.length > 0 ? ` implements ${implementsList.join(', ')}` : ''} ${classBody}`
+    // Build DTS text. `export default class` keeps the `default`
+    // qualifier and drops `declare` (the standard form for an
+    // ambient default class export in a .d.ts file).
+    const exportPrefix = isExported
+      ? (isDefault ? 'export default ' : 'export declare ')
+      : 'declare '
+    const text = `${exportPrefix}${isAbstract ? 'abstract ' : ''}class ${name}${generics}${extendsClause ? ` extends ${extendsClause}` : ''}${implementsList && implementsList.length > 0 ? ` implements ${implementsList.join(', ')}` : ''} ${classBody}`
     const comments = extractLeadingComments(declStart)
 
     return {
@@ -2087,6 +2100,7 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
       name,
       text,
       isExported,
+      isDefault,
       extends: extendsClause || undefined,
       implements: implementsList,
       generics: generics || undefined,
@@ -2974,14 +2988,14 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
           }
         }
         else if (dch === 99 /* c */ && matchWord('class')) {
-          const decl = extractClass(stmtStart, true, false)
+          const decl = extractClass(stmtStart, true, false, true)
           declarations.push(decl)
         }
         else if (dch === 97 /* a */ && matchWord('abstract')) {
           pos += 8
           skipWhitespaceAndComments()
           if (matchWord('class')) {
-            const decl = extractClass(stmtStart, true, true)
+            const decl = extractClass(stmtStart, true, true, true)
             declarations.push(decl)
           }
         }

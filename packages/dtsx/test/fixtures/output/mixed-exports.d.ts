@@ -9,7 +9,7 @@ export declare function isString(value: unknown): value is string;
 // Assertion function
 export declare function assertDefined<T>(value: T | null | undefined, message?: string): asserts value is T;
 // Default export
-export declare function main(): void;
+export default function main(): void;
 // Default export with named exports
 export declare const VERSION: '2.0.0';
 export declare const MAX_RETRIES: 3;

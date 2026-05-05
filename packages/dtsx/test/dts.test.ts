@@ -33,6 +33,7 @@ describe('dts-generation', () => {
     'class',
     'comments',
     'complex-class',
+    'default-exports',
     'edge-cases',
     'enum',
     'exports',

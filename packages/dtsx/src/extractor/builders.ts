@@ -5,7 +5,7 @@
 import type { ClassDeclaration, FunctionDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import { isCallSignatureDeclaration, isConstructorDeclaration, isConstructSignatureDeclaration, isEnumDeclaration, isEnumMember, isExportAssignment, isFunctionDeclaration, isGetAccessorDeclaration, isIdentifier, isIndexSignatureDeclaration, isInterfaceDeclaration, isMethodDeclaration, isMethodSignature, isModuleBlock, isModuleDeclaration, isPrivateIdentifier, isPropertyDeclaration, isPropertySignature, isSetAccessorDeclaration, isTypeAliasDeclaration, isVariableStatement, NodeFlags, SyntaxKind } from 'typescript'
 import { inferNarrowType } from '../processor/type-inference'
-import { getParameterName, hasExportModifier } from './helpers'
+import { getParameterName, hasDefaultModifier, hasExportModifier } from './helpers'
 
 const AS_TYPE_RE = /\s+as\s+(\S+)\s*$/
 
@@ -53,10 +53,23 @@ export function buildFunctionSignature(node: FunctionDeclaration, sf: SourceFile
   const isAsync = node.modifiers?.some(mod => mod.kind === SyntaxKind.AsyncKeyword)
   const isGenerator = !!node.asteriskToken
 
-  // Add modifiers
+  // Add modifiers. Default exports must keep the `default` keyword
+  // so consumers can `import { default as X } from './mod'` (or
+  // `import X from './mod'`). Without it, the resulting .d.ts is
+  // `export declare function name(...)` and the module has no
+  // default export at all from TypeScript's perspective.
+  //
+  // Note: `export default declare function` is invalid syntax —
+  // when a function is exported as default, we drop the `declare`
+  // keyword (TypeScript treats `export default function` as an
+  // ambient declaration in a `.d.ts` file).
+  const isDefault = hasExportModifier(node) && hasDefaultModifier(node)
   if (hasExportModifier(node))
     parts.push('export ')
-  parts.push('declare function ')
+  if (isDefault)
+    parts.push('default function ')
+  else
+    parts.push('declare function ')
 
   // Add name (no space before)
   if (node.name)
@@ -278,13 +291,18 @@ export function buildTypeDeclaration(node: TypeAliasDeclaration, isExported: boo
 /**
  * Build clean class declaration for DTS
  */
-export function buildClassDeclaration(node: ClassDeclaration, isExported: boolean, sf: SourceFile): string {
+export function buildClassDeclaration(node: ClassDeclaration, isExported: boolean, sf: SourceFile, isDefault: boolean = false): string {
   const parts: string[] = []
 
-  // Add export if needed
+  // Add export if needed. As with functions, `export default class`
+  // must keep the `default` keyword and *omit* `declare` (the
+  // standard form for an ambient default class export).
   if (isExported)
     parts.push('export ')
-  parts.push('declare ')
+  if (isDefault)
+    parts.push('default ')
+  else
+    parts.push('declare ')
 
   // Add abstract modifier if present
   const isAbstract = node.modifiers?.some(mod => mod.kind === SyntaxKind.AbstractKeyword)
