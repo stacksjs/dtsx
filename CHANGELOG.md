@@ -1,4 +1,29 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.18...v0.9.19)
+
+### 🐛 Bug Fixes
+
+- **extractor**: preserve `default` qualifier on default exports ([618247b](https://github.com/stacksjs/dtsx/commit/618247b)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.19 ([fd7c302](https://github.com/stacksjs/dtsx/commit/fd7c302)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.18...HEAD)
+
+### 🐛 Bug Fixes
+
+- **extractor**: preserve `default` qualifier on default exports ([618247b](https://github.com/stacksjs/dtsx/commit/618247b)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+<<<<<<< Updated upstream
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.17...v0.9.18)
 
 ### 🐛 Bug Fixes
@@ -13,15 +38,25 @@
 
 - _glennmichael123 <gtorregosa@gmail.com>_
 
+=======
+>>>>>>> Stashed changes
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.17...HEAD)
 
 ### 🐛 Bug Fixes
 
+<<<<<<< Updated upstream
 - **scanner**: JSDoc apostrophe in destructured param emits malformed .d.ts ([eb331a0](https://github.com/stacksjs/dtsx/commit/eb331a0)) _(by glennmichael123 <gtorregosa@gmail.com>)_
 
 ### Contributors
 
 - _glennmichael123 <gtorregosa@gmail.com>_
+=======
+- **extractor**: preserve `default` qualifier on default exports ([0dde350](https://github.com/stacksjs/dtsx/commit/0dde350)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+>>>>>>> Stashed changes
 
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.16...v0.9.17)
 
