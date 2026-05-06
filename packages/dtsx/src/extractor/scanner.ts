@@ -247,7 +247,14 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
           pos = end === -1 ? len : end + 2
           continue
         }
-        // Not a comment; treat as normal char
+        // Regex literal inside `${...}` — without this branch, `/"/g`
+        // dropped the scanner into skipString('"') and consumed past
+        // the substitution's closing '}', skipping subsequent declarations.
+        if (isRegexStart()) {
+          skipRegex()
+          continue
+        }
+        // Division operator
         pos++
         continue
       }
