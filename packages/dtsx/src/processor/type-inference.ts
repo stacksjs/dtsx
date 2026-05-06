@@ -1131,6 +1131,29 @@ function cleanSingleParam(param: string): string {
 }
 
 /**
+ * Find the index after any leading block comments and whitespace in a key.
+ * Used to locate the actual identifier so modifiers like `async` can be
+ * detected even when JSDoc precedes the method name.
+ */
+function findIdentifierStart(key: string): number {
+  let i = 0
+  const n = key.length
+  while (i < n) {
+    // Skip whitespace
+    while (i < n && (key.charCodeAt(i) === 32 || key.charCodeAt(i) === 9 || key.charCodeAt(i) === 10 || key.charCodeAt(i) === 13)) i++
+    // Skip /* ... */ block comments (handles nested */ since dtsx-stripped)
+    if (i + 1 < n && key.charCodeAt(i) === 47 && key.charCodeAt(i + 1) === 42) {
+      i += 2
+      while (i + 1 < n && !(key.charCodeAt(i) === 42 && key.charCodeAt(i + 1) === 47)) i++
+      i += 2 // skip the closing '*/'
+      continue
+    }
+    break
+  }
+  return i
+}
+
+/**
  * Parse object properties
  */
 function parseObjectProperties(content: string): Array<[string, string]> {
@@ -1143,6 +1166,13 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   let inKey = true
   let inComment = false
   let commentDepth = 0
+  // True while collecting the value of a method shorthand (between the
+  // method's '(' and the body's closing '}').
+  let inMethodShorthand = false
+  // True between the closing ')' of a method shorthand's params and its body '{'.
+  // While true, commas at depth 0 belong to the return-type annotation
+  // (e.g. `Promise<Record<string, X>>`) and must not split properties.
+  let methodAwaitingBody = false
 
   for (let i = 0; i < content.length; i++) {
     const cc = content.charCodeAt(i)
@@ -1196,38 +1226,61 @@ function parseObjectProperties(content: string): Array<[string, string]> {
     }
     else if (!inString && !inComment) {
       if (cc === 40 /* ( */ && depth === 0 && inKey) {
-        // Method definition like: methodName(params) or async methodName<T>(params)
-        // Must be checked BEFORE general bracket tracking so ( isn't swallowed
+        // Method definition like: methodName(params) or async methodName<T>(params).
+        // Must be checked BEFORE general bracket tracking so ( isn't swallowed.
         currentKey = current.trim()
-        // Remove 'async' from the key if present, prefix value with 'async ' marker
+        // The key may carry leading JSDoc/block comments. Split off the
+        // comment block so `async`/`*` modifiers right before the
+        // identifier can still be detected and stripped.
+        const idStart = findIdentifierStart(currentKey)
+        const commentLead = idStart > 0 ? currentKey.slice(0, idStart) : ''
+        let identifier = currentKey.slice(idStart)
         let methodPrefix = ''
-        if (currentKey.startsWith('async ')) {
-          currentKey = currentKey.slice(6).trim()
+        if (identifier.startsWith('async ') || identifier.startsWith('async\t') || identifier.startsWith('async\n')) {
+          identifier = identifier.slice(6).trimStart()
           methodPrefix = 'async '
         }
-        // Remove generator '*' prefix from key, prefix value with '*' marker
-        if (currentKey.startsWith('*')) {
-          currentKey = currentKey.slice(1).trim()
+        if (identifier.startsWith('*')) {
+          identifier = identifier.slice(1).trimStart()
           methodPrefix += '*'
         }
+        currentKey = commentLead + identifier
         current = methodPrefix + char // Start with any prefix + opening parenthesis
         inKey = false
-        depth = 1 // We're now inside the method definition
+        inMethodShorthand = true
+        methodAwaitingBody = false
+        depth = 1 // We're now inside the method definition's params
       }
       else if (cc === 123 /* { */ || cc === 91 /* [ */ || cc === 40 /* ( */) {
         depth++
         current += char
+        // Body '{' of a method shorthand — type annotation phase ends here.
+        if (methodAwaitingBody && cc === 123 /* { */) {
+          methodAwaitingBody = false
+        }
       }
       else if (cc === 125 /* } */ || cc === 93 /* ] */ || cc === 41 /* ) */) {
         depth--
         current += char
+        if (inMethodShorthand) {
+          // Closing ')' of params at depth 0 → enter return-type annotation
+          // phase (commas in `Record<K, V>` etc must not split properties).
+          if (cc === 41 /* ) */ && depth === 0 && !methodAwaitingBody) {
+            methodAwaitingBody = true
+          }
+          // Closing '}' at depth 0 ends the method shorthand value entirely.
+          else if (cc === 125 /* } */ && depth === 0) {
+            inMethodShorthand = false
+            methodAwaitingBody = false
+          }
+        }
       }
       else if (cc === 58 /* : */ && depth === 0 && inKey) {
         currentKey = current.trim()
         current = ''
         inKey = false
       }
-      else if (cc === 44 /* , */ && depth === 0) {
+      else if (cc === 44 /* , */ && depth === 0 && !methodAwaitingBody) {
         if (currentKey && current.trim()) {
           const value = current.trim()
           properties.push([currentKey, value])
