@@ -963,7 +963,9 @@ export function useFoo(f: Foo): void {}
 
     test('default export function', () => {
       const result = dts(`export default function main(): void {}`)
-      expect(result).toContain('declare function main(): void')
+      // `export default function` keeps the `default` keyword in DTS —
+      // `export declare function` would lose the default-export signal.
+      expect(result).toContain('export default function main(): void')
     })
 
     test('default export class', () => {
@@ -977,7 +979,7 @@ export const version = '1.0.0'
 export default function init(): void {}
 `)
       expect(result).toContain('declare const version')
-      expect(result).toContain('declare function init')
+      expect(result).toContain('export default function init')
     })
   })
 

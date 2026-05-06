@@ -1005,16 +1005,18 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 
     // Build DTS text — single alloc + memcpy is cheaper than ArrayList init +
     // multiple appendSlice + toOwnedSlice for the fixed-shape function header.
-    const export_prefix: []const u8 = if (is_exported) "export " else "";
-    const declare_kw = "declare function ";
+    // `export default function foo()` keeps its `default` keyword in DTS:
+    // `declare` is not allowed alongside `default`, and emitting
+    // `export declare function ...` would silently drop the default-export
+    // signal that consumers (and the dtsx TS reference impl) preserve.
+    const export_prefix: []const u8 = if (is_default) "export default function " else if (is_exported) "export declare function " else "declare function ";
     const colon_sep = ": ";
-    const total = export_prefix.len + declare_kw.len + func_name.len + generics.len +
+    const total = export_prefix.len + func_name.len + generics.len +
         dts_params.len + colon_sep.len + return_type.len + 1; // +1 for ';'
     const dts_text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
         @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
         @memcpy(buf[tp..][0..func_name.len], func_name); tp += func_name.len;
         @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
         @memcpy(buf[tp..][0..dts_params.len], dts_params); tp += dts_params.len;
