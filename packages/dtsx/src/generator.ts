@@ -684,6 +684,44 @@ function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   }
 }
 
+function getDeclarationSpecifier(fromOutputPath: string, toOutputPath: string): string {
+  let specifier = relative(dirname(fromOutputPath), toOutputPath).replace(/\\/g, '/')
+  specifier = specifier
+    .replace(/\.d\.mts$/, '')
+    .replace(/\.d\.cts$/, '')
+    .replace(/\.d\.ts$/, '')
+
+  if (!specifier.startsWith('.')) {
+    specifier = `./${specifier}`
+  }
+
+  return specifier
+}
+
+function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string, config: DtsGenerationConfig): string {
+  const outputPath = getOutputPath(filePath, config)
+
+  const rewriteSpecifier = (specifier: string): string => {
+    const resolved = resolveRelativeSpecifier(specifier, filePath)
+    if (!resolved.isRelative || !resolved.resolved) {
+      return specifier
+    }
+
+    return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config))
+  }
+
+  return content
+    .replace(/\b(from\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
+      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
+    })
+    .replace(/\b(import\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
+      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
+    })
+    .replace(/\b(import\s*\(\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
+      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
+    })
+}
+
 /**
  * Process a single TypeScript file and generate its DTS
  */
@@ -755,6 +793,7 @@ async function processFileWithStatsFromSource(
 
   // Process declarations to generate DTS
   let dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
+  dtsContent = rewriteRelativeDeclarationSpecifiers(dtsContent, filePath, config)
 
   // Run onAfterFile hooks (may modify output)
   if (pluginManager) {

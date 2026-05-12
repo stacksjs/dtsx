@@ -1,10 +1,23 @@
 import type { DtsGenerationConfig } from '../src/types'
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generate, processSource } from '../src/generator'
 import { extractDeclarations } from '../src/extractor'
 import { processCode } from './test-utils'
+
+const tempDirs: string[] = []
+
+async function createTempDir(): Promise<string> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'dtsx-generator-'))
+  tempDirs.push(tempDir)
+  return tempDir
+}
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+})
 
 describe('processSource (stdin support)', () => {
   it('should process simple variable declaration', () => {
@@ -94,6 +107,40 @@ describe('processSource (stdin support)', () => {
     const source = `export type MyReadonly<T> = { +readonly [K in keyof T]: T[K]; };`
     const result = processSource(source)
     expect(result).toContain('+readonly')
+  })
+})
+
+describe('generate relative declaration specifiers', () => {
+  it('rewrites relative imports and exports from the emitted declaration path', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(join(srcDir, 'nested'), { recursive: true })
+    await writeFile(join(tempDir, 'index.ts'), [
+      `export * from './src/request'`,
+      `export { Thing } from './src/nested/thing'`,
+      `export interface Wrapper { request: import('./src/request').RequestInstance }`,
+    ].join('\n'))
+    await writeFile(join(srcDir, 'request.ts'), `export interface RequestInstance { id: string }\n`)
+    await writeFile(join(srcDir, 'nested', 'thing.ts'), `export interface Thing { name: string }\n`)
+
+    await generate({
+      cwd: tempDir,
+      root: '.',
+      outdir: outDir,
+      entrypoints: ['index.ts'],
+      outputStructure: 'mirror',
+      clean: false,
+      keepComments: true,
+      logLevel: 'error',
+    })
+
+    const output = await readFile(join(outDir, 'index.d.ts'), 'utf8')
+
+    expect(output).toContain(`export * from './src/request';`)
+    expect(output).toContain(`export { Thing } from './src/nested/thing';`)
+    expect(output).toContain(`import('./src/request').RequestInstance`)
   })
 })
 
