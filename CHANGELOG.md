@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.21...v0.9.22)
+
+### 🐛 Bug Fixes
+
+- clean stale declaration outputs ([67d7da2](https://github.com/stacksjs/dtsx/commit/67d7da2)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.22 ([0affa9d](https://github.com/stacksjs/dtsx/commit/0affa9d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.21...HEAD)
+
+### 🐛 Bug Fixes
+
+- clean stale declaration outputs ([67d7da2](https://github.com/stacksjs/dtsx/commit/67d7da2)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.20...v0.9.21)
 
 ### 🐛 Bug Fixes
