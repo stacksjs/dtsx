@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.22...v0.9.23)
+
+### 🐛 Bug Fixes
+
+- ignore imports inside template literals ([a6b51bf](https://github.com/stacksjs/dtsx/commit/a6b51bf)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.23 ([6fba203](https://github.com/stacksjs/dtsx/commit/6fba203)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.22...HEAD)
+
+### 🐛 Bug Fixes
+
+- ignore imports inside template literals ([a6b51bf](https://github.com/stacksjs/dtsx/commit/a6b51bf)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.21...v0.9.22)
 
 ### 🐛 Bug Fixes
