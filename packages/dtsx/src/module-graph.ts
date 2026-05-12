@@ -111,15 +111,19 @@ function stripComments(input: string): string {
   while (i < len) {
     const c = input.charCodeAt(i)
 
-    // String / template literal — copy through verbatim
+    // String / template literal
     if (c === 0x22 /* " */ || c === 0x27 /* ' */ || c === 0x60 /* ` */) {
       const quote = c
       out += input[i++]
       while (i < len) {
         const cc = input.charCodeAt(i)
-        out += input[i++]
+        const ch = input[i++]
+        out += quote === 0x60 && cc !== quote
+          ? (cc === 0x0A || cc === 0x0D ? ch : ' ')
+          : ch
         if (cc === 0x5C /* \\ */ && i < len) {
-          out += input[i++]
+          const escaped = input[i++]
+          out += quote === 0x60 ? (escaped === '\n' || escaped === '\r' ? escaped : ' ') : escaped
           continue
         }
         if (cc === quote) break

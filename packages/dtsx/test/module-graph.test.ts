@@ -52,6 +52,11 @@ describe('scanReExportSpecifiers', () => {
     expect(scanReExportSpecifiers(src)).toEqual([])
   })
 
+  it('ignores imports inside multiline template literals', () => {
+    const src = "const serverCode = `import { Database } from 'bun:sqlite';\nimport { SESClient } from './ts-cloud-dist.js';\n`"
+    expect(scanReExportSpecifiers(src, { includeImports: true })).toEqual([])
+  })
+
   it('ignores re-exports inside line comments', () => {
     const src = `// export * from './fake';\nexport * from './real';`
     const refs = scanReExportSpecifiers(src)
