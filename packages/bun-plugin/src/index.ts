@@ -496,7 +496,7 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
     root,
     entrypoints,
     outdir,
-    clean: options.clean,
+    clean: options.clean ?? true,
     tsconfigPath: options.tsconfigPath,
   }
 }

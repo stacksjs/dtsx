@@ -1,6 +1,6 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { Glob } from 'bun'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
@@ -90,6 +90,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   // Log start
   logger.debug('Starting DTS generation...')
   logger.debug('Config:', config)
+
+  if (config.clean && !config.dryRun) {
+    await cleanDeclarationOutputs(config)
+  }
 
   // Find all TypeScript files based on entrypoints
   const entryFiles = await findFiles(config)
@@ -597,6 +601,41 @@ function getCompiledGlob(pattern: string): Glob {
     }
   }
   return glob
+}
+
+async function cleanDeclarationOutputs(config: DtsGenerationConfig): Promise<void> {
+  const outdir = resolve(config.cwd, config.outdir)
+
+  async function walk(dir: string): Promise<void> {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    }
+    catch {
+      return
+    }
+
+    await Promise.all(entries.map(async (entry) => {
+      const path = resolve(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(path)
+        return
+      }
+
+      if (
+        entry.name.endsWith('.d.ts')
+        || entry.name.endsWith('.d.mts')
+        || entry.name.endsWith('.d.cts')
+        || entry.name.endsWith('.d.ts.map')
+        || entry.name.endsWith('.d.mts.map')
+        || entry.name.endsWith('.d.cts.map')
+      ) {
+        await rm(path, { force: true })
+      }
+    }))
+  }
+
+  await walk(outdir)
 }
 
 /**
