@@ -1,4 +1,40 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.19...v0.9.20)
+
+### 🐛 Bug Fixes
+
+- **zig-dtsx**: preserve `default` keyword on default-exported functions ([34d2556](https://github.com/stacksjs/dtsx/commit/34d2556)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **type-inference**: preserve async method shorthand and generic-typed return values ([3dcbfef](https://github.com/stacksjs/dtsx/commit/3dcbfef)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **scanner**: regex literal inside template substitution swallows code ([254ec32](https://github.com/stacksjs/dtsx/commit/254ec32)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.20 ([a438cce](https://github.com/stacksjs/dtsx/commit/a438cce)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **ci**: bump actions/checkout to v6, actions/cache to v5 ([f655ee2](https://github.com/stacksjs/dtsx/commit/f655ee2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([eecb669](https://github.com/stacksjs/dtsx/commit/eecb669)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.19...HEAD)
+
+### 🐛 Bug Fixes
+
+- **zig-dtsx**: preserve `default` keyword on default-exported functions ([34d2556](https://github.com/stacksjs/dtsx/commit/34d2556)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **type-inference**: preserve async method shorthand and generic-typed return values ([3dcbfef](https://github.com/stacksjs/dtsx/commit/3dcbfef)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- **scanner**: regex literal inside template substitution swallows code ([254ec32](https://github.com/stacksjs/dtsx/commit/254ec32)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- **ci**: bump actions/checkout to v6, actions/cache to v5 ([f655ee2](https://github.com/stacksjs/dtsx/commit/f655ee2)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+- wip ([eecb669](https://github.com/stacksjs/dtsx/commit/eecb669)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.18...v0.9.19)
 
 ### 🐛 Bug Fixes

@@ -1,7 +1,7 @@
 {
   "name": "@stacksjs/dtsx",
   "type": "module",
-  "version": "0.9.19",
+  "version": "0.9.20",
   "private": true,
   "description": "A modern, fast .d.ts generation tool, powered by Bun.",
   "author": "Chris Breuer <chris@stacksjs.org>",
@@ -44,14 +44,15 @@
     "benchmark": "bun benchmark/index.ts",
     "build": "bun --filter './packages/dtsx' build",
     "test": "bun test",
-    "lint": "bunx --bun pickier .",
-    "lint:fix": "bunx --bun pickier . --fix",
-    "format": "bunx --bun pickier . --format",
-    "format:fix": "bunx --bun pickier . --format --write",
-    "changelog": "bunx logsmith --verbose",
-    "changelog:generate": "bunx logsmith --output CHANGELOG.md",
-    "release": "bun --bun run changelog:generate && bunx --bun bumpx prompt --recursive",
-    "typecheck": "bunx tsc --noEmit",
+    "lint": "bun x --bun pickier .",
+    "lint:fix": "bun x --bun pickier . --fix",
+    "format": "bun x --bun pickier . --format",
+    "format:fix": "bun x --bun pickier . --format --write",
+    "changelog": "bun x logsmith --verbose",
+    "changelog:generate": "bun x logsmith --output CHANGELOG.md",
+    "release": "bun --bun run changelog:generate && bun x --bun bumpx prompt --recursive",
+    "release:patch": "bun --bun run changelog:generate && bun x --bun bumpx patch --recursive --yes",
+    "typecheck": "bun x tsc --noEmit",
     "dev:docs": "bun --bun vitepress dev docs",
     "build:docs": "bun --bun vitepress build docs",
     "preview:docs": "bun --bun vitepress preview docs"
@@ -78,9 +79,9 @@
   "git-hooks": {
     "pre-commit": {
       "staged-lint": {
-        "*.{js,ts,json,yaml,yml,md}": "bunx --bun pickier lint --fix"
+        "*.{js,ts,json,yaml,yml,md}": "bun x --bun pickier lint --fix"
       }
     },
-    "commit-msg": "bunx gitlint --edit .git/COMMIT_EDITMSG"
+    "commit-msg": "bun x gitlint --edit .git/COMMIT_EDITMSG"
   }
 }

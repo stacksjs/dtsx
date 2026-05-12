@@ -1,7 +1,7 @@
 {
   "name": "bun-plugin-dtsx",
   "type": "module",
-  "version": "0.9.18",
+  "version": "0.9.20",
   "description": "A Bun Bundler plugin that auto generates your DTS types extremely fast.",
   "author": "Chris Breuer <chris@ow3.org>",
   "license": "MIT",
@@ -46,7 +46,9 @@
     "build": "bun build.ts",
     "prepublishOnly": "bun run build",
     "test": "bun test",
-    "typecheck": "bun tsc --noEmit"
+    "typecheck": "bun tsc --noEmit",
+    "lint": "bun x --bun pickier .",
+    "lint:fix": "bun x --bun pickier . --fix"
   },
   "dependencies": {
     "@stacksjs/dtsx": "workspace:*"
