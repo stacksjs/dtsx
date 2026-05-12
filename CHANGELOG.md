@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.20...v0.9.21)
+
+### 🐛 Bug Fixes
+
+- rewrite emitted declaration specifiers ([562937a](https://github.com/stacksjs/dtsx/commit/562937a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.21 ([9048e79](https://github.com/stacksjs/dtsx/commit/9048e79)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.20...HEAD)
+
+### 🐛 Bug Fixes
+
+- rewrite emitted declaration specifiers ([562937a](https://github.com/stacksjs/dtsx/commit/562937a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.19...v0.9.20)
 
 ### 🐛 Bug Fixes
