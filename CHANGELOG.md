@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.24...v0.9.25)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: skip non-source import targets ([fa4187d](https://github.com/stacksjs/dtsx/commit/fa4187d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.25 ([eb80b58](https://github.com/stacksjs/dtsx/commit/eb80b58)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.24...HEAD)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: skip non-source import targets ([fa4187d](https://github.com/stacksjs/dtsx/commit/fa4187d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.23...v0.9.24)
 
 ### 🐛 Bug Fixes
