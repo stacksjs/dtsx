@@ -120,6 +120,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     const additions: string[] = []
     for (const f of reExportReachability.reachable) {
       if (files.includes(f)) continue
+      if (!isProcessableSourceFile(f)) continue
       if (f.endsWith('.d.ts')) continue
       if (f.includes('node_modules')) continue
       if (isExcluded(f, excludePatterns, rootPath)) continue
@@ -687,7 +688,7 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
         onlyFiles: true,
       })) {
         // Skip .d.ts files, node_modules, and excluded patterns
-        if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
+        if (isProcessableSourceFile(file) && !file.includes('node_modules')) {
           if (!isExcluded(file, excludePatterns, rootPath)) {
             files.push(file)
           }
@@ -698,6 +699,10 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
 
   // Remove duplicates
   return [...new Set(files)]
+}
+
+function isProcessableSourceFile(filePath: string): boolean {
+  return /\.(m?tsx?|cts|jsx?|mjs|cjs)$/.test(filePath) && !filePath.endsWith('.d.ts')
 }
 
 /**

@@ -167,6 +167,33 @@ describe('generate relative declaration specifiers', () => {
     expect(output).toContain(`export { Thing } from './src/nested/thing';`)
     expect(output).toContain(`import('./src/request').RequestInstance`)
   })
+
+  it('does not emit declarations over JSON files reached by imports', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+    const packageJson = `{"name":"json-import-fixture","version":"1.0.0"}\n`
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(tempDir, 'package.json'), packageJson)
+    await writeFile(join(srcDir, 'index.ts'), [
+      `import packageJson from '../package.json' with { type: 'json' }`,
+      `export const name = packageJson.name`,
+    ].join('\n'))
+
+    await generate({
+      cwd: tempDir,
+      root: 'src',
+      outdir: outDir,
+      entrypoints: ['index.ts'],
+      outputStructure: 'mirror',
+      clean: false,
+      keepComments: true,
+      logLevel: 'error',
+    })
+
+    expect(await readFile(join(tempDir, 'package.json'), 'utf8')).toBe(packageJson)
+  })
 })
 
 describe('generate with parallel processing', () => {
