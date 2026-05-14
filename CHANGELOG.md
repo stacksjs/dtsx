@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.23...v0.9.24)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: preserve object property comments ([13d3704](https://github.com/stacksjs/dtsx/commit/13d3704)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.24 ([3767e0f](https://github.com/stacksjs/dtsx/commit/3767e0f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.23...HEAD)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: preserve object property comments ([13d3704](https://github.com/stacksjs/dtsx/commit/13d3704)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.22...v0.9.23)
 
 ### 🐛 Bug Fixes
