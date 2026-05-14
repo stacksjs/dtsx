@@ -734,6 +734,9 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   const cleanProps: string[] = []
 
   for (const [key, val] of properties) {
+    const { comments: keyComments, key: propertyKey } = splitLeadingCommentsFromKey(key)
+    const commentPrefix = keyComments ? `${keyComments}\n  ` : ''
+
     // Save/restore nested clean default around recursive calls
     const saved = _cleanDefaultResult
     _cleanDefaultResult = null
@@ -744,7 +747,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     // Method definitions (method shorthand syntax) — convert directly to function type
     // to avoid double-processing through inferNarrowType which loses return type info
     if (isMethodDefinition(trimVal)) {
-      valueType = convertMethodToFunctionType(key, trimVal)
+      valueType = convertMethodToFunctionType(propertyKey, trimVal)
     }
     else {
       valueType = inferNarrowType(val, isConst, false, _depth + 1)
@@ -766,27 +769,27 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     // regular property that becomes `get X: () => T`, which is invalid
     // TS. Reshape into proper accessor signatures (`get X(): T` and
     // `set X(arg: T): void`). See stacksjs/dtsx#3093.
-    const accessor = matchAccessorKey(key)
+    const accessor = matchAccessorKey(propertyKey)
     if (accessor) {
       const sig = formatAccessor(accessor.kind, accessor.name, valueType)
       if (sig) {
-        propTypes.push(sig)
+        propTypes.push(`${commentPrefix}${sig}`)
         // Accessors don't carry @defaultValue; skip the trackDefaults block below.
         continue
       }
     }
 
     if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-      propTypes.push(`/** @defaultValue ${rawVal} */\n  ${key}: ${valueType}`)
+      propTypes.push(`${commentPrefix}/** @defaultValue ${rawVal} */\n  ${propertyKey}: ${valueType}`)
     }
     else {
-      propTypes.push(`${key}: ${valueType}`)
+      propTypes.push(`${commentPrefix}${propertyKey}: ${valueType}`)
     }
 
     // Build clean default inline (same pass, no re-parse)
     // Strip block/JSDoc comments from key to prevent nested */ in @defaultValue code blocks
     if (trackDefaults) {
-      const cleanKey = stripBlockComments(key)
+      const cleanKey = stripBlockComments(propertyKey)
       if (rawVal.endsWith('as const')) {
         // skip — type already narrow
       }
@@ -1151,6 +1154,30 @@ function findIdentifierStart(key: string): number {
     break
   }
   return i
+}
+
+function splitLeadingCommentsFromKey(key: string): { comments: string, key: string } {
+  const comments: string[] = []
+  let i = 0
+  const n = key.length
+
+  while (i < n) {
+    while (i < n && key.charCodeAt(i) <= 32) i++
+
+    if (i + 1 >= n || key.charCodeAt(i) !== 47 || key.charCodeAt(i + 1) !== 42)
+      break
+
+    const start = i
+    i += 2
+    while (i + 1 < n && !(key.charCodeAt(i) === 42 && key.charCodeAt(i + 1) === 47)) i++
+    i = Math.min(i + 2, n)
+    comments.push(key.slice(start, i).trim())
+  }
+
+  return {
+    comments: comments.join('\n'),
+    key: key.slice(i).trim(),
+  }
 }
 
 /**

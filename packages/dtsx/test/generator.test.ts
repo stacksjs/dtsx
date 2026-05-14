@@ -97,6 +97,31 @@ describe('processSource (stdin support)', () => {
     expect(result).toContain('export declare const config: { port: number };')
   })
 
+  it('should emit valid object literal declarations with property JSDoc', () => {
+    const source = `
+      export const CERT_CONSTANTS = {
+        /**
+         * Default key size for RSA keys
+         */
+        DEFAULT_KEY_SIZE: 2048,
+
+        /**
+         * Default trust arguments for Linux certificates
+         */
+        LINUX_TRUST_ARGS: 'TC, C, C',
+      }
+    `
+
+    const result = processSource(source, 'constants.ts', true)
+
+    expect(result).toContain('/**\n         * Default key size for RSA keys\n         */')
+    expect(result).toContain('DEFAULT_KEY_SIZE: number')
+    expect(result).toContain('/**\n         * Default trust arguments for Linux certificates\n         */')
+    expect(result).toContain('LINUX_TRUST_ARGS: string')
+    expect(result).not.toContain("'* Default")
+    expect(result).not.toContain('* Default key size for RSA keys: () => unknown')
+  })
+
   it('should handle const type parameters', () => {
     const source = `export function createArray<const T extends readonly unknown[]>(items: T): T { return items; }`
     const result = processSource(source)
