@@ -1,4 +1,36 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.25...v0.9.26)
+
+### 🚀 Features
+
+- **zig-dtsx**: ship cross-platform CLI + FFI library prebuilts ([97ad78c](https://github.com/stacksjs/dtsx/commit/97ad78c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.26 ([6828752](https://github.com/stacksjs/dtsx/commit/6828752)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### ⏪ Reverts
+
+- **zig-dtsx**: drop fetch-prebuilt postinstall ([23d1d16](https://github.com/stacksjs/dtsx/commit/23d1d16)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.25...HEAD)
+
+### 🚀 Features
+
+- **zig-dtsx**: ship cross-platform CLI + FFI library prebuilts ([97ad78c](https://github.com/stacksjs/dtsx/commit/97ad78c)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### ⏪ Reverts
+
+- **zig-dtsx**: drop fetch-prebuilt postinstall ([23d1d16](https://github.com/stacksjs/dtsx/commit/23d1d16)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.24...v0.9.25)
 
 ### 🐛 Bug Fixes
