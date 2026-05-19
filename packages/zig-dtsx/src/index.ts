@@ -5,8 +5,6 @@ import { dlopen, FFIType, type Pointer, ptr, suffix, toArrayBuffer } from 'bun:f
 import { join } from 'node:path'
 
 const LIB_NAME = `libzig-dtsx.${suffix}`
-// On Windows, Zig produces `zig-dtsx.dll` (no `lib` prefix); other platforms keep `libzig-dtsx.{so,dylib}`.
-const LIB_NAME_ALT = suffix === 'dll' ? `zig-dtsx.${suffix}` : LIB_NAME
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const outLenBuffer = new BigUint64Array(1)
@@ -16,15 +14,10 @@ const outLenBufferIsolated = new BigUint64Array(1)
 // Avoids per-call Uint8Array allocation from encoder.encode().
 let inputBuf = new Uint8Array(4 * 1024 * 1024) // 4 MB initial
 
-// Try to find the shared library. Order:
-//   1. prebuilt/ (npm postinstall fetched the platform-matching binary from the GH release)
-//   2. zig-out/lib/ (monorepo dev — `zig build lib` writes here for unix targets)
-//   3. zig-out/bin/ (monorepo dev — Windows Zig builds drop the DLL here)
+// Try to find the shared library
 const libPaths = [
-  join(import.meta.dir, '..', 'prebuilt', LIB_NAME_ALT),
-  join(import.meta.dir, '..', 'prebuilt', LIB_NAME),
   join(import.meta.dir, '..', 'zig-out', 'lib', LIB_NAME),
-  join(import.meta.dir, '..', 'zig-out', 'bin', LIB_NAME_ALT),
+  join(import.meta.dir, '..', `zig-out/lib/${LIB_NAME}`),
 ]
 
 let lib: ReturnType<typeof dlopen> | null = null
