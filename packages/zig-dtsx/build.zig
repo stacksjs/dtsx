@@ -46,6 +46,11 @@ pub fn build(b: *std.Build) void {
     const cli_step = b.step("cli", "Build only the CLI binary");
     cli_step.dependOn(&cli_install.step);
 
+    // Lib-only step (mirror of cli step — for cross-compiling the FFI shared library alone)
+    const lib_install = b.addInstallArtifact(lib, .{});
+    const lib_step = b.step("lib", "Build only the shared library");
+    lib_step.dependOn(&lib_install.step);
+
     // Run step
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

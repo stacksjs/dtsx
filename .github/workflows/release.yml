@@ -30,34 +30,36 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
-      - name: Build Zig CLI Binaries
+      - name: Build Zig CLI + Library Binaries
         working-directory: packages/zig-dtsx
         run: |
           mkdir -p ../dtsx/bin
 
-          # Linux x64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-linux
-          zip -j ../dtsx/bin/dtsx-linux-x64.zip zig-out/bin/zig-dtsx
+          build_target() {
+            local target="$1"   # zig target triple (e.g. x86_64-linux)
+            local plat="$2"     # release-artifact platform slug (e.g. linux-x64)
+            local exe_ext="$3"  # CLI extension (empty for unix, .exe for windows)
+            local lib_dir="$4"  # subdirectory of zig-out/ containing the shared library (lib or bin)
+            local lib_file="$5" # exact shared library filename inside lib_dir
 
-          # Linux arm64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-linux
-          zip -j ../dtsx/bin/dtsx-linux-arm64.zip zig-out/bin/zig-dtsx
+            # Clean to avoid mixing artifacts between targets
+            rm -rf zig-out
 
-          # macOS x64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-macos
-          zip -j ../dtsx/bin/dtsx-darwin-x64.zip zig-out/bin/zig-dtsx
+            zig build cli -Doptimize=ReleaseFast -Dtarget="$target"
+            zip -j "../dtsx/bin/zig-dtsx-${plat}.zip" "zig-out/bin/zig-dtsx${exe_ext}"
 
-          # macOS arm64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=aarch64-macos
-          zip -j ../dtsx/bin/dtsx-darwin-arm64.zip zig-out/bin/zig-dtsx
+            zig build lib -Doptimize=ReleaseFast -Dtarget="$target"
+            # Flat tar.gz (no subdir prefix) so the npm postinstall extracts straight into prebuilt/.
+            # Windows DLLs land in zig-out/bin/, unix shared libs in zig-out/lib/.
+            tar -czf "../dtsx/bin/zig-dtsx-lib-${plat}.tar.gz" -C "zig-out/${lib_dir}" "${lib_file}"
+          }
 
-          # Windows x64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-windows
-          zip -j ../dtsx/bin/dtsx-windows-x64.zip zig-out/bin/zig-dtsx.exe
-
-          # FreeBSD x64
-          zig build cli -Doptimize=ReleaseFast -Dtarget=x86_64-freebsd
-          zip -j ../dtsx/bin/dtsx-freebsd-x64.zip zig-out/bin/zig-dtsx
+          build_target x86_64-linux    linux-x64     ""     lib libzig-dtsx.so
+          build_target aarch64-linux   linux-arm64   ""     lib libzig-dtsx.so
+          build_target x86_64-macos    darwin-x64    ""     lib libzig-dtsx.dylib
+          build_target aarch64-macos   darwin-arm64  ""     lib libzig-dtsx.dylib
+          build_target x86_64-windows  windows-x64   '.exe' bin zig-dtsx.dll
+          build_target x86_64-freebsd  freebsd-x64   ""     lib libzig-dtsx.so
 
       - name: Publish
         run: pantry publish --npm --access public
@@ -68,11 +70,17 @@ jobs:
         uses: stacksjs/action-releaser@v1.2.9
         with:
           files: |
-            packages/dtsx/bin/dtsx-linux-x64.zip
-            packages/dtsx/bin/dtsx-linux-arm64.zip
-            packages/dtsx/bin/dtsx-darwin-x64.zip
-            packages/dtsx/bin/dtsx-darwin-arm64.zip
-            packages/dtsx/bin/dtsx-windows-x64.zip
-            packages/dtsx/bin/dtsx-freebsd-x64.zip
+            packages/dtsx/bin/zig-dtsx-linux-x64.zip
+            packages/dtsx/bin/zig-dtsx-linux-arm64.zip
+            packages/dtsx/bin/zig-dtsx-darwin-x64.zip
+            packages/dtsx/bin/zig-dtsx-darwin-arm64.zip
+            packages/dtsx/bin/zig-dtsx-windows-x64.zip
+            packages/dtsx/bin/zig-dtsx-freebsd-x64.zip
+            packages/dtsx/bin/zig-dtsx-lib-linux-x64.tar.gz
+            packages/dtsx/bin/zig-dtsx-lib-linux-arm64.tar.gz
+            packages/dtsx/bin/zig-dtsx-lib-darwin-x64.tar.gz
+            packages/dtsx/bin/zig-dtsx-lib-darwin-arm64.tar.gz
+            packages/dtsx/bin/zig-dtsx-lib-windows-x64.tar.gz
+            packages/dtsx/bin/zig-dtsx-lib-freebsd-x64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

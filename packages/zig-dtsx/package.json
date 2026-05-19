@@ -15,8 +15,16 @@
     "build": "bun run build:zig",
     "test": "bun test",
     "test:zig": "zig build test",
-    "benchmark": "bun run test/benchmark.ts"
+    "benchmark": "bun run test/benchmark.ts",
+    "postinstall": "node scripts/fetch-prebuilt.mjs"
   },
+  "files": [
+    "src",
+    "scripts/fetch-prebuilt.mjs",
+    "build.zig",
+    "build.zig.zon",
+    "README.md"
+  ],
   "dependencies": {
     "@stacksjs/dtsx": "workspace:*"
   }
