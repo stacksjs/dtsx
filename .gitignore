@@ -22,6 +22,7 @@ benchmark/oxc-emit
 /packages/dtsx/test/.checker-test-fixtures
 /packages/zig-dtsx/.zig-cache
 /packages/zig-dtsx/zig-out
+/packages/zig-dtsx/prebuilt
 *.node
 /packages/dtsx/.test-cli
 pantry

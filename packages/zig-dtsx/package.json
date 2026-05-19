@@ -17,6 +17,13 @@
     "test:zig": "zig build test",
     "benchmark": "bun run test/benchmark.ts"
   },
+  "files": [
+    "src",
+    "prebuilt",
+    "build.zig",
+    "build.zig.zon",
+    "README.md"
+  ],
   "dependencies": {
     "@stacksjs/dtsx": "workspace:*"
   }

@@ -49,9 +49,12 @@ jobs:
             zip -j "../dtsx/bin/zig-dtsx-${plat}.zip" "zig-out/bin/zig-dtsx${exe_ext}"
 
             zig build lib -Doptimize=ReleaseFast -Dtarget="$target"
-            # Flat tar.gz (no subdir prefix) so the npm postinstall extracts straight into prebuilt/.
             # Windows DLLs land in zig-out/bin/, unix shared libs in zig-out/lib/.
+            # tar.gz for the GH release (standalone download); copy into prebuilt/
+            # for the npm tarball so consumers get the FFI lib without a postinstall.
             tar -czf "../dtsx/bin/zig-dtsx-lib-${plat}.tar.gz" -C "zig-out/${lib_dir}" "${lib_file}"
+            mkdir -p "prebuilt/${plat}"
+            cp "zig-out/${lib_dir}/${lib_file}" "prebuilt/${plat}/"
           }
 
           build_target x86_64-linux    linux-x64     ""     lib libzig-dtsx.so

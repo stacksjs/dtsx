@@ -2,9 +2,31 @@
  * TypeScript wrapper for the Zig DTS emitter using Bun FFI.
  */
 import { dlopen, FFIType, type Pointer, ptr, suffix, toArrayBuffer } from 'bun:ffi'
+import { arch, platform } from 'node:os'
 import { join } from 'node:path'
 
 const LIB_NAME = `libzig-dtsx.${suffix}`
+// On Windows, Zig produces `zig-dtsx.dll` (no `lib` prefix); other platforms keep `libzig-dtsx.{so,dylib}`.
+const LIB_NAME_ALT = suffix === 'dll' ? `zig-dtsx.${suffix}` : LIB_NAME
+
+function platformSlug(): string | null {
+  const p = platform()
+  const a = arch()
+  if (p === 'darwin' && a === 'arm64')
+    return 'darwin-arm64'
+  if (p === 'darwin' && a === 'x64')
+    return 'darwin-x64'
+  if (p === 'linux' && a === 'arm64')
+    return 'linux-arm64'
+  if (p === 'linux' && a === 'x64')
+    return 'linux-x64'
+  if (p === 'win32' && a === 'x64')
+    return 'windows-x64'
+  if (p === 'freebsd' && a === 'x64')
+    return 'freebsd-x64'
+  return null
+}
+
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const outLenBuffer = new BigUint64Array(1)
@@ -14,11 +36,18 @@ const outLenBufferIsolated = new BigUint64Array(1)
 // Avoids per-call Uint8Array allocation from encoder.encode().
 let inputBuf = new Uint8Array(4 * 1024 * 1024) // 4 MB initial
 
-// Try to find the shared library
-const libPaths = [
-  join(import.meta.dir, '..', 'zig-out', 'lib', LIB_NAME),
-  join(import.meta.dir, '..', `zig-out/lib/${LIB_NAME}`),
-]
+// Try to find the shared library. Lookup order:
+//   1. prebuilt/<slug>/ — shipped in the npm tarball by release.yml (production path)
+//   2. zig-out/lib/ — monorepo dev (`zig build lib` writes here for unix targets)
+//   3. zig-out/bin/ — monorepo dev (Windows Zig builds drop the DLL here)
+const slug = platformSlug()
+const libPaths: string[] = []
+if (slug !== null) {
+  libPaths.push(join(import.meta.dir, '..', 'prebuilt', slug, LIB_NAME))
+  libPaths.push(join(import.meta.dir, '..', 'prebuilt', slug, LIB_NAME_ALT))
+}
+libPaths.push(join(import.meta.dir, '..', 'zig-out', 'lib', LIB_NAME))
+libPaths.push(join(import.meta.dir, '..', 'zig-out', 'bin', LIB_NAME_ALT))
 
 let lib: ReturnType<typeof dlopen> | null = null
 for (const libPath of libPaths) {
