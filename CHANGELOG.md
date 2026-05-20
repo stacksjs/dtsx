@@ -1,4 +1,28 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.26...v0.9.27)
+
+### 🚀 Features
+
+- **zig-dtsx**: vendor prebuilt FFI libraries into npm tarball ([222fbbe](https://github.com/stacksjs/dtsx/commit/222fbbe)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.27 ([1a97a75](https://github.com/stacksjs/dtsx/commit/1a97a75)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.26...HEAD)
+
+### 🚀 Features
+
+- **zig-dtsx**: vendor prebuilt FFI libraries into npm tarball ([222fbbe](https://github.com/stacksjs/dtsx/commit/222fbbe)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### Contributors
+
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.25...v0.9.26)
 
 ### 🚀 Features

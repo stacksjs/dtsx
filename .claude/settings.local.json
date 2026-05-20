@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun test:*)",
+      "Bash(bun run:*)",
+      "Bash(bun:*)",
+      "Bash(bun bin/dtsx:*)",
+      "Bash(echo:*)",
+      "Bash(/Users/glennmichaeltorregosa/Documents/Projects/dtsx/packages/dtsx/test/fixtures/output/type-interface-imports.d.ts)",
+      "Bash(../../packages/dtsx/build.ts)",
+      "Bash(cat:*)",
+      "Bash(for i in 1 2 3)",
+      "Bash(do bun:*)",
+      "Bash(done)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(node -e:*)",
+      "Bash(test:*)",
+      "Bash(ls:*)",
+      "Bash(bunx --bun pickier run:*)",
+      "Bash(ln:*)",
+      "Bash(for link in /Users/glennmichaeltorregosa/Documents/Projects/dtsx/packages/dtsx/node_modules/*)",
+      "Bash(do if [ -L \"$link\" ])",
+      "Bash([ ! -e \"$link\" ])",
+      "Bash(fi)",
+      "Bash(zig version:*)",
+      "Bash(zig build:*)",
+      "WebSearch",
+      "Bash(bunx --bun pickier:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
