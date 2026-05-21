@@ -1,9 +1,12 @@
 name: Buddy Bot
 
 on:
+  # Rebase checkbox: fires instantly when a PR body is edited (e.g. checkbox ticked).
+  # No polling needed — this replaces the old every-minute cron for rebase detection.
+  pull_request:
+    types: [edited]
+
   schedule:
-    # Check for rebase requests every 20 minutes
-    - cron: '*/20 * * * *'
     # Update dependencies every 2 hours
     - cron: '0 */2 * * *'
     # Update dashboard 15 minutes after dependency updates (ensures updates are reflected)
@@ -58,10 +61,10 @@ on:
         type: boolean
 
 env:
-  # For workflow file updates, you need a Personal Access Token with 'repo' and 'workflow' scopes
-  # Create a PAT at: https://github.com/settings/tokens
-  # Add it as a repository secret named 'BUDDY_BOT_TOKEN'
-  # If BUDDY_BOT_TOKEN is not available, falls back to GITHUB_TOKEN (limited permissions)
+  # Use the built-in GITHUB_TOKEN for commits and PRs — contributions are attributed
+  # to github-actions[bot] instead of a personal account.
+  # BUDDY_BOT_TOKEN (a PAT with 'repo' and 'workflow' scopes) is only used when
+  # workflow file updates are needed. Create one at: https://github.com/settings/tokens
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   BUDDY_BOT_TOKEN: ${{ secrets.BUDDY_BOT_TOKEN }}
 
@@ -73,10 +76,18 @@ permissions:
   checks: read
   statuses: read
 
+# Serialize runs per ref so parallel scheduled + manual triggers don't race
+# on the same branches/PRs. cancel-in-progress: false lets the currently
+# running job finish cleanly instead of being killed mid-commit.
+concurrency:
+  group: buddy-bot-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Job to determine which jobs should run based on trigger
   determine-jobs:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       run_check: ${{ steps.determine.outputs.run_check }}
       run_update: ${{ steps.determine.outputs.run_update }}
@@ -90,7 +101,23 @@ jobs:
           echo "run_update=false" >> $GITHUB_OUTPUT
           echo "run_dashboard=false" >> $GITHUB_OUTPUT
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR body was edited — check if it's a buddy-bot PR with rebase checkbox
+            # Only run the check job (lightweight: just scans for the checkbox and rebases)
+            ACTOR="${{ github.actor }}"
+            BRANCH="${{ github.event.pull_request.head.ref }}"
+
+            # Skip if the edit was made by a bot (prevents cascade loops where
+            # buddy-bot updates a PR body → fires edited event → re-triggers workflow)
+            if [[ "$ACTOR" == *"[bot]"* ]] || [[ "$ACTOR" == "github-actions[bot]" ]] || [[ "$ACTOR" == "buddy-bot" ]]; then
+              echo "ℹ️ Skipping — PR edit was made by bot actor: $ACTOR"
+            elif [[ "$BRANCH" == buddy-bot/* ]]; then
+              echo "run_check=true" >> $GITHUB_OUTPUT
+              echo "ℹ️ buddy-bot PR edited by user — running rebase check for branch: $BRANCH"
+            else
+              echo "ℹ️ Non-buddy-bot PR edited — skipping (branch: $BRANCH)"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             JOB="${{ github.event.inputs.job || 'all' }}"
             if [ "$JOB" = "all" ] || [ "$JOB" = "check" ]; then
               echo "run_check=true" >> $GITHUB_OUTPUT
@@ -103,9 +130,7 @@ jobs:
             fi
           elif [ "${{ github.event_name }}" = "schedule" ]; then
             # Determine based on cron schedule
-            if [ "${{ github.event.schedule }}" = "5,25,45 * * * *" ]; then
-              echo "run_check=true" >> $GITHUB_OUTPUT
-            elif [ "${{ github.event.schedule }}" = "0 */2 * * *" ]; then
+            if [ "${{ github.event.schedule }}" = "0 */2 * * *" ]; then
               echo "run_update=true" >> $GITHUB_OUTPUT
             elif [ "${{ github.event.schedule }}" = "15 */2 * * *" ]; then
               echo "run_dashboard=true" >> $GITHUB_OUTPUT
@@ -115,11 +140,12 @@ jobs:
   # Shared setup job for common dependencies
   setup:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: determine-jobs
     if: ${{ needs.determine-jobs.outputs.run_check == 'true' || needs.determine-jobs.outputs.run_update == 'true' || needs.determine-jobs.outputs.run_dashboard == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0 # Fetch full history for rebasing
@@ -130,7 +156,7 @@ jobs:
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
-        uses: shivammathur/setup-php@2.36.0
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
           tools: composer
@@ -151,12 +177,13 @@ jobs:
   # Check job (handles both rebase requests and auto-closing PRs)
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [determine-jobs, setup]
     if: ${{ needs.determine-jobs.outputs.run_check == 'true' }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -221,7 +248,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "⏰ **Scheduled Check**: Automatically checks every 20 minutes" >> $GITHUB_STEP_SUMMARY
+            echo "⏰ **Scheduled Check**: Automatically checks every minute" >> $GITHUB_STEP_SUMMARY
           else
             echo "🖱️ **Manual Check**: Manually triggered from Actions tab" >> $GITHUB_STEP_SUMMARY
           fi
@@ -232,12 +259,13 @@ jobs:
   # Dependency update job
   dependency-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [determine-jobs, setup]
     if: ${{ needs.determine-jobs.outputs.run_update == 'true' }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -248,7 +276,7 @@ jobs:
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
-        uses: shivammathur/setup-php@2.36.0
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
           tools: composer
@@ -341,12 +369,13 @@ jobs:
   # Dashboard update job
   dashboard-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [determine-jobs, setup, dependency-update]
     if: ${{ needs.determine-jobs.outputs.run_dashboard == 'true' && always() }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
