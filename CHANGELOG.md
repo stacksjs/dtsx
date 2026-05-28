@@ -1,4 +1,25 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.27...v0.9.28)
+
+### 🐛 Bug Fixes
+
+- **scanner**: narrow `as const` class properties to their literal type ([3129f88](https://github.com/stacksjs/dtsx/commit/3129f88)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **scripts**: stop double-generating CHANGELOG on release ([7f56a6c](https://github.com/stacksjs/dtsx/commit/7f56a6c)) _(by Glenn Michael Torregosa <gtorregosa@gmail.com>)_
+
+### 🤖 Continuous Integration
+
+- **buddy-bot**: add daily cleanup cron to workflow ([5f27f58](https://github.com/stacksjs/dtsx/commit/5f27f58)) _(by Glenn Michael Torregosa <gtorregosa@gmail.com>)_
+- **buddy-bot**: regenerate workflow from current template ([035a09e](https://github.com/stacksjs/dtsx/commit/035a09e)) _(by Glenn Michael Torregosa <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.28 ([0d46a36](https://github.com/stacksjs/dtsx/commit/0d46a36)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _Glenn Michael Torregosa <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.26...v0.9.27)
 
 ### 🚀 Features
