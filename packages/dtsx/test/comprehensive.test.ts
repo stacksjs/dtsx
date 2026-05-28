@@ -1811,6 +1811,25 @@ describe('Class static members', () => {
     expect(result).toContain('static readonly DEFAULT_TIMEOUT: number;')
     expect(result).toContain('static instance: Config | null;')
   })
+
+  it('should narrow `as const` class properties to literal types', () => {
+    const source = `
+      export class C {
+        readonly provider = 'threads' as const
+        static readonly apiVersion = '1.0' as const
+        readonly count = 42 as const
+        mutableConst = 'x' as const
+      }
+    `
+    const result = processSource(source)
+    // `as const` narrows to the literal type regardless of modifiers
+    // (previously these emitted `unknown`).
+    expect(result).toContain('readonly provider: \'threads\';')
+    expect(result).toContain('static readonly apiVersion: \'1.0\';')
+    expect(result).toContain('readonly count: 42;')
+    expect(result).toContain('mutableConst: \'x\';')
+    expect(result).not.toContain('unknown')
+  })
 })
 
 // ============================================================

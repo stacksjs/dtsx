@@ -1560,7 +1560,11 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
 
   /** Infer literal type from initializer value (for const-like / static readonly) */
   function inferLiteralType(value: string): string {
-    const v = value.trim()
+    let v = value.trim()
+    // `x as const` narrows to the literal type of `x` — strip the assertion
+    // and infer from the underlying value (e.g. `'threads' as const` → "threads").
+    if (v.endsWith('as const'))
+      v = v.slice(0, -8).trim()
     if (v === 'true' || v === 'false')
       return v
     if (isNumericLiteral(v))
@@ -2506,8 +2510,12 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
             type = asType
           }
           else {
+            // `as const` always narrows to the literal type (like tsc), no
+            // matter the modifiers; otherwise only static-readonly
+            // ("const-like") fields narrow and plain fields widen.
+            const isConstAssertion = initText.endsWith('as const')
             const isConstLike = isStatic && isReadonly
-            type = isConstLike ? inferLiteralType(initText) : inferTypeFromDefault(initText)
+            type = (isConstAssertion || isConstLike) ? inferLiteralType(initText) : inferTypeFromDefault(initText)
           }
         }
         else {
