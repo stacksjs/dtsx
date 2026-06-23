@@ -1,5 +1,15 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.29...v0.9.30)
+
+## 🧹 Chores
+
+- release v0.9.30 ([942c2a4](https://github.com/stacksjs/dtsx/commit/942c2a4)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.28...v0.9.29)
 
 ## 🚀 Features
