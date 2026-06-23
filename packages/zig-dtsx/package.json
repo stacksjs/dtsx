@@ -1,5 +1,5 @@
 {
-  "name": "@stacksjs/zig-dtsx",
+  "name": "zig-dtsx",
   "type": "module",
   "version": "0.9.28",
   "description": "High-performance DTS emitter written in Zig",

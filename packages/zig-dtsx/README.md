@@ -9,7 +9,7 @@ A high-performance TypeScript declaration file (.d.ts) emitter written in Zig. T
 ## Installation
 
 ```bash
-bun add @stacksjs/zig-dtsx -d
+bun add zig-dtsx -d
 ```
 
 ## Usage
@@ -17,7 +17,7 @@ bun add @stacksjs/zig-dtsx -d
 ### As a Library
 
 ```typescript
-import { processSource, ZIG_AVAILABLE } from '@stacksjs/zig-dtsx'
+import { processSource, ZIG_AVAILABLE } from 'zig-dtsx'
 
 if (ZIG_AVAILABLE) {
   const dtsOutput = processSource(typescriptSource, true)
