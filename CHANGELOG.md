@@ -1,4 +1,19 @@
 # Changelog
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.28...v0.9.29)
+
+## 🚀 Features
+
+- **zig-dtsx**: add native-Zig API root and publish as unscoped zig-dtsx ([7b545c5](https://github.com/stacksjs/dtsx/commit/7b545c5)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🧹 Chores
+
+- release v0.9.29 ([6ce96d8](https://github.com/stacksjs/dtsx/commit/6ce96d8)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.27...v0.9.28)
 
 ### 🐛 Bug Fixes
