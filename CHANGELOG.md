@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.30...v0.9.31)
+
+## 🤖 Continuous Integration
+
+- **release**: publish to the Pantry registry instead of npm ([ee8c86e](https://github.com/stacksjs/dtsx/commit/ee8c86e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## 🧹 Chores
+
+- release v0.9.31 ([6207233](https://github.com/stacksjs/dtsx/commit/6207233)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+## Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.29...v0.9.30)
 
 ## 🧹 Chores
