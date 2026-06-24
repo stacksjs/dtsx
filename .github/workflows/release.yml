@@ -64,10 +64,18 @@ jobs:
           build_target x86_64-windows  windows-x64   '.exe' bin zig-dtsx.dll
           build_target x86_64-freebsd  freebsd-x64   ""     lib libzig-dtsx.so
 
-      - name: Publish
-        run: pantry publish --npm --access public
+      - name: Publish to Pantry registry
+        run: pantry publish
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Registry (registry.pantry.dev) auth. Token path (HTTP upload)
+          # is preferred; AWS creds enable the direct-S3 fallback. zig-dtsx
+          # (and its siblings) ship to the Pantry registry, not npm — Home
+          # consumes them via `pantry install`.
+          PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
+          PANTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       - name: Attach Binaries
         uses: stacksjs/action-releaser@v1.2.9
