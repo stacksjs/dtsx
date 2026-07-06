@@ -2,7 +2,7 @@ import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { generate } from '@stacksjs/dtsx'
 
@@ -452,22 +452,43 @@ function wrapError(error: unknown): DtsxPluginError {
 }
 
 /**
+ * The deepest directory containing every given (absolute) path — the same
+ * rule Bun.build uses to root its outputs when multiple entrypoints are given.
+ */
+function commonParentDir(paths: string[]): string {
+  const dirs = paths.map(p => dirname(p).split(sep))
+  let common = dirs[0]
+  for (const parts of dirs.slice(1)) {
+    let i = 0
+    while (i < common.length && i < parts.length && common[i] === parts[i])
+      i++
+    common = common.slice(0, i)
+  }
+  return common.join(sep) || sep
+}
+
+/**
  * Normalizes and validates the configuration
  * @param options - User provided options
  * @param build - Build configuration
  * @returns Normalized configuration
  */
 function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): DtsGenerationOption {
-  const root = options.root || options.build?.config.root || build?.config.root || './src'
+  const cwd = options.cwd || process.cwd()
+  const bunEntrypoints = build?.config?.entrypoints
   const outdir = options.outdir || options.build?.config.outdir || build?.config.outdir || './dist'
 
-  if (!root) {
-    throw new DtsxPluginError(
-      'Root directory is required',
-      'CONFIG_ERROR',
-      { providedRoot: root },
-    )
+  // When no root is given, mirror Bun.build's output layout: Bun roots JS
+  // outputs at the common ancestor directory of the entrypoints. Declarations
+  // must use the same root, or the two dist trees diverge — e.g. entrypoints
+  // ['src/index.ts', 'bin/cli.ts'] put JS at dist/src/index.js while a './src'
+  // root would emit dist/index.d.ts, breaking the package.json `types` paths.
+  let root = options.root || options.build?.config.root || build?.config.root
+  if (!root && bunEntrypoints?.length) {
+    const ancestor = commonParentDir(bunEntrypoints.map((ep: string) => resolve(cwd, ep)))
+    root = relative(cwd, ancestor) || '.'
   }
+  root = root || './src'
 
   // Derive entrypoints from Bun's build config if not explicitly provided.
   // Using '**/*.ts' as default causes dtsx to process every .ts file individually,
@@ -475,15 +496,21 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
   // or fall back to 'index.ts'.
   let entrypoints = options.entrypoints
   if (!entrypoints) {
-    const bunEntrypoints = build?.config?.entrypoints
     if (bunEntrypoints?.length) {
-      const resolvedRoot = resolve(options.cwd || process.cwd(), root)
-      entrypoints = bunEntrypoints.map((ep: string) => {
-        const resolved = resolve(ep)
-        return resolved.startsWith(resolvedRoot)
-          ? resolved.slice(resolvedRoot.length + 1)
-          : basename(resolved)
-      })
+      const resolvedRoot = resolve(cwd, root)
+      const inside: string[] = []
+      for (const ep of bunEntrypoints) {
+        const resolved = resolve(cwd, ep)
+        if (resolved === resolvedRoot || resolved.startsWith(resolvedRoot + sep)) {
+          inside.push(relative(resolvedRoot, resolved))
+        }
+        else {
+          // An entrypoint outside the root cannot be emitted at a matching
+          // path — surface it instead of silently mapping it to its basename.
+          console.warn(`[bun-plugin-dtsx] Skipping entrypoint outside root "${root}": ${ep}`)
+        }
+      }
+      entrypoints = inside.length ? inside : ['index.ts']
     }
     else {
       entrypoints = ['index.ts']
@@ -492,7 +519,7 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
 
   return {
     ...options,
-    cwd: options.cwd || process.cwd(),
+    cwd,
     root,
     entrypoints,
     outdir,

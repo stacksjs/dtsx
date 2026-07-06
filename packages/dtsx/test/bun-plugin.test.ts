@@ -47,4 +47,70 @@ describe('bun-plugin-dtsx', () => {
     expect(declaration).toContain(`export declare const value: 'ok';`)
     await expect(readFile(join(outDir, 'stale.d.ts'), 'utf8')).rejects.toThrow()
   })
+
+  it('mirrors Bun\'s common-ancestor output layout when no root is given', async () => {
+    // With entrypoints in src/ AND bin/, Bun roots JS outputs at the package
+    // dir (dist/src/index.js, dist/bin/cli.js). Declarations must land at the
+    // matching paths or the package.json `types` fields point at nothing.
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const binDir = join(tempDir, 'bin')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(join(srcDir, 'cloud'), { recursive: true })
+    await mkdir(binDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `export const value = 'ok'\n`)
+    await writeFile(join(srcDir, 'cloud', 'index.ts'), `export const cloud = true\n`)
+    await writeFile(join(binDir, 'cli.ts'), `export const cli = 1\n`)
+
+    const result = await Bun.build({
+      entrypoints: [
+        join(srcDir, 'index.ts'),
+        join(srcDir, 'cloud', 'index.ts'),
+        join(binDir, 'cli.ts'),
+      ],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [
+        dts({ cwd: tempDir, outdir: './dist' }),
+      ],
+    })
+
+    expect(result.success).toBe(true)
+
+    // JS lands at dist/src/... and dist/bin/... — declarations must too.
+    expect(await readFile(join(outDir, 'src', 'index.js'), 'utf8')).toContain('ok')
+    expect(await readFile(join(outDir, 'src', 'index.d.ts'), 'utf8')).toContain(`export declare const value: 'ok';`)
+    expect(await readFile(join(outDir, 'src', 'cloud', 'index.d.ts'), 'utf8')).toContain('cloud')
+    await expect(readFile(join(outDir, 'index.d.ts'), 'utf8')).rejects.toThrow()
+  })
+
+  it('skips entrypoints outside an explicit root instead of mangling them', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const binDir = join(tempDir, 'bin')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await mkdir(binDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `export const value = 'ok'\n`)
+    await writeFile(join(binDir, 'cli.ts'), `export const cli = 1\n`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts'), join(binDir, 'cli.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [
+        dts({ cwd: tempDir, root: './src', outdir: './dist' }),
+      ],
+    })
+
+    expect(result.success).toBe(true)
+    // src entrypoint emitted relative to the explicit root...
+    expect(await readFile(join(outDir, 'index.d.ts'), 'utf8')).toContain(`export declare const value: 'ok';`)
+    // ...and the out-of-root bin entrypoint is skipped, not emitted as cli.d.ts.
+    await expect(readFile(join(outDir, 'cli.d.ts'), 'utf8')).rejects.toThrow()
+  })
 })
