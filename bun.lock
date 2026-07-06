@@ -23,14 +23,14 @@
     },
     "packages/bun-plugin": {
       "name": "bun-plugin-dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
     },
     "packages/dtsx": {
       "name": "@stacksjs/dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "bin": {
         "dtsx": "./dist/bin/cli.js",
       },
@@ -48,7 +48,7 @@
     },
     "packages/esbuild-plugin": {
       "name": "esbuild-plugin-dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -58,7 +58,7 @@
     },
     "packages/tsup-plugin": {
       "name": "tsup-plugin-dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -68,7 +68,7 @@
     },
     "packages/vite-plugin": {
       "name": "vite-plugin-dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "bin": {
         "dtsx": "./dist/bin/cli.js",
       },
@@ -82,7 +82,7 @@
     },
     "packages/webpack-plugin": {
       "name": "webpack-plugin-dtsx",
-      "version": "0.9.18",
+      "version": "0.9.31",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -91,8 +91,8 @@
       },
     },
     "packages/zig-dtsx": {
-      "name": "@stacksjs/zig-dtsx",
-      "version": "0.9.18",
+      "name": "zig-dtsx",
+      "version": "0.9.31",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -338,8 +338,6 @@
     "@stacksjs/ts-spell-check": ["@stacksjs/ts-spell-check@0.1.0", "", {}, "sha512-GnrxhHh606U6e0uPoUfbyh3sWI2VCtj6IwtSS4ik8Jz7vF11WFZ4qeCnXlUSZXLLlk0ukcdpilZr4girmx7PbA=="],
 
     "@stacksjs/ts-xml": ["@stacksjs/ts-xml@0.1.0", "", { "bin": { "bin-name": "./dist/bin/cli.js" } }, "sha512-YB7FSlFcPqopUOmjK1Qqr5E6QaarerIFJzWfUXOO/EuR1qX+IRRKxOKbWRmCvN72Mnchz8EfXhlvxEK+Zz/mQQ=="],
-
-    "@stacksjs/zig-dtsx": ["@stacksjs/zig-dtsx@workspace:packages/zig-dtsx"],
 
     "@ts-cloud/aws-types": ["@ts-cloud/aws-types@0.2.10", "", {}, "sha512-v90lSv1qQUo4XwDy9MCu2ACk/e2fdB7wTXMZVUG4g2hUgZVux2DZMzc6TYyw1zJOMuNXUxxeLd3mfff1MD+U8A=="],
 
@@ -780,6 +778,8 @@
     "wrap-ansi": ["wrap-ansi@8.1.0", "", { "dependencies": { "ansi-styles": "^6.1.0", "string-width": "^5.0.1", "strip-ansi": "^7.0.1" } }, "sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ=="],
 
     "wrap-ansi-cjs": ["wrap-ansi@7.0.0", "", { "dependencies": { "ansi-styles": "^4.0.0", "string-width": "^4.1.0", "strip-ansi": "^6.0.0" } }, "sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q=="],
+
+    "zig-dtsx": ["zig-dtsx@workspace:packages/zig-dtsx"],
 
     "zip-stream": ["zip-stream@6.0.1", "", { "dependencies": { "archiver-utils": "^5.0.0", "compress-commons": "^6.0.2", "readable-stream": "^4.0.0" } }, "sha512-zK7YHHz4ZXpW89AHXUPbQVGKI7uvkd3hzusTdotCg1UxyaVtg0zFJSTfW/Dq5f7OBBVnq6cZIaC8Ti4hb6dtCA=="],
 

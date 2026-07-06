@@ -1,4 +1,17 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.31...v0.9.32)
+
+### 🐛 Bug Fixes
+
+- **bun-plugin**: mirror Bun's common-ancestor output layout for declarations ([5ccdf6d](https://github.com/stacksjs/dtsx/commit/5ccdf6d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.32 ([f25df94](https://github.com/stacksjs/dtsx/commit/f25df94)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
 
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.30...v0.9.31)
 
