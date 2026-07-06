@@ -1,4 +1,19 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.32...v0.9.33)
+
+### 🤖 Continuous Integration
+
+- **release**: use proven publish --npm --skip zig-dtsx for npm ([cba85b3](https://github.com/stacksjs/dtsx/commit/cba85b3)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **release**: publish JS plugins to npm via pantry npm:publish ([b624345](https://github.com/stacksjs/dtsx/commit/b624345)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.33 ([891080f](https://github.com/stacksjs/dtsx/commit/891080f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.31...v0.9.32)
 
 ### 🐛 Bug Fixes
