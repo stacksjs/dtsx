@@ -83,7 +83,12 @@ jobs:
       # binary Pantry-only (it has no JS entry, so its npm tarball would be
       # broken); the JS packages publish. Same `publish --npm` flow ts-cloud's
       # release uses, so it works with the pantry the action ships today.
+      # Non-fatal: npm auth (a scoped NPM_TOKEN, or OIDC trusted publishers) may
+      # not cover every package. The Pantry upload, GitHub release, and binaries
+      # must still ship, so a partial npm failure only warns. Fix npm access
+      # with a broader NPM_TOKEN or `pantry publisher:add` per package.
       - name: Publish to npm
+        continue-on-error: true
         run: pantry publish --npm --skip zig-dtsx --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
