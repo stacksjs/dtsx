@@ -76,14 +76,15 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Also publish to npm, where downstream tools install the JS plugins from
-      # (e.g. better-dx depends on bun-plugin-dtsx). Dropping this in ee8c86e —
-      # when the Pantry upload was added for zig-dtsx — accidentally froze the
-      # npm packages at 0.9.26. `pantry npm:publish` handles the monorepo and
-      # skips private packages, and uses OIDC (id-token: write) with the token
-      # as fallback.
+      # Also publish the JS plugins to npm, where downstream tools install them
+      # from (e.g. better-dx depends on bun-plugin-dtsx). Dropping this in
+      # ee8c86e — when the Pantry upload was added for zig-dtsx — accidentally
+      # froze the npm packages at 0.9.26. `--skip zig-dtsx` keeps the native
+      # binary Pantry-only (it has no JS entry, so its npm tarball would be
+      # broken); the JS packages publish. Same `publish --npm` flow ts-cloud's
+      # release uses, so it works with the pantry the action ships today.
       - name: Publish to npm
-        run: pantry npm:publish --access public
+        run: pantry publish --npm --skip zig-dtsx --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           BUN_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
