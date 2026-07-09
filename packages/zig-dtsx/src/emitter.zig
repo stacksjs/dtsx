@@ -620,7 +620,7 @@ pub fn processDeclarations(
     const GROUP_COUNT = 9;
     // Group order: imports(0), functions(1), variables(2), interfaces(3), types(4),
     //              classes(5), enums(6), modules(7), exports(8)
-    var group_counts = [_]u32{0} ** GROUP_COUNT;
+    var group_counts: [GROUP_COUNT]u32 = @splat(0);
 
     // First pass: count declarations per group
     for (declarations) |d| {
@@ -642,7 +642,7 @@ pub fn processDeclarations(
     // Compute offsets for each group in the flat index array. Reuse the
     // cumulative running total as the final size — saves one O(GROUP_COUNT)
     // pass over the counts.
-    var group_offsets = [_]u32{0} ** GROUP_COUNT;
+    var group_offsets: [GROUP_COUNT]u32 = @splat(0);
     var total_indexed: u32 = 0;
     for (0..GROUP_COUNT) |g| {
         group_offsets[g] = total_indexed;
@@ -651,7 +651,7 @@ pub fn processDeclarations(
 
     // Single allocation for all group indices
     const group_indices = try alloc.alloc(u32, total_indexed);
-    var write_pos = [_]u32{0} ** GROUP_COUNT;
+    var write_pos: [GROUP_COUNT]u32 = @splat(0);
     @memcpy(&write_pos, &group_offsets);
 
     // Second pass: fill indices

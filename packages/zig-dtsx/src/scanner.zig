@@ -12,7 +12,7 @@ const Allocator = std.mem.Allocator;
 inline fn comptime_match(comptime N: usize, src: *const [N]u8, comptime word: []const u8) bool {
     // Use integer comparison for power-of-2 sizes (u8, u16, u32, u64)
     if (N == 1 or N == 2 or N == 4 or N == 8) {
-        const T = std.meta.Int(.unsigned, N * 8);
+        const T = @Int(.unsigned, N * 8);
         const expected: T = comptime blk: {
             var val: T = 0;
             for (word, 0..) |b, i| {
