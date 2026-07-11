@@ -103,16 +103,6 @@ fn formatComments(alloc: std.mem.Allocator, comments: ?[]const []const u8, keep_
     if (cmts.len == 1) {
         const raw = cmts[0];
         const t = ch.sliceTrimmed(raw, 0, raw.len);
-        // Zero-alloc fast path: if the trimmed comment is the full slice AND
-        // there's a '\n' right after it in memory, return a slice that includes
-        // the newline. This works because comments point into the source buffer.
-        if (t.len == raw.len and t.len > 0) {
-            // Check if the byte after the comment in the source buffer is '\n'
-            const end_ptr = t.ptr + t.len;
-            if (@intFromPtr(end_ptr) > 0 and end_ptr[0] == '\n') {
-                return t.ptr[0 .. t.len + 1];
-            }
-        }
         const buf = try alloc.alloc(u8, t.len + 1);
         @memcpy(buf[0..t.len], t);
         buf[t.len] = '\n';
@@ -200,7 +190,8 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         // We just need to ignore trailing whitespace.
         var ve: usize = decl.value.len;
         while (ve > 0 and (decl.value[ve - 1] == ' ' or decl.value[ve - 1] == '\t' or
-            decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1) {}
+            decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1)
+        {}
         const ends_as_const = ve >= 8 and std.mem.eql(u8, decl.value[ve - 8 .. ve], "as const");
         if (!ends_as_const and !ch.contains(decl.value, " satisfies ")) {
             const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
@@ -293,21 +284,31 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
 
             if (std.mem.indexOfScalar(u8, dv, '\n')) |_| {
                 const hdr = "@defaultValue\n * ```ts\n";
-                @memcpy(tag_mem[tp..][0..hdr.len], hdr); tp += hdr.len;
+                @memcpy(tag_mem[tp..][0..hdr.len], hdr);
+                tp += hdr.len;
                 var line_iter = std.mem.splitScalar(u8, dv, '\n');
                 while (line_iter.next()) |line| {
-                    @memcpy(tag_mem[tp..][0..3], " * "); tp += 3;
-                    @memcpy(tag_mem[tp..][0..line.len], line); tp += line.len;
-                    tag_mem[tp] = '\n'; tp += 1;
+                    @memcpy(tag_mem[tp..][0..3], " * ");
+                    tp += 3;
+                    @memcpy(tag_mem[tp..][0..line.len], line);
+                    tp += line.len;
+                    tag_mem[tp] = '\n';
+                    tp += 1;
                 }
-                @memcpy(tag_mem[tp..][0..6], " * ```"); tp += 6;
+                @memcpy(tag_mem[tp..][0..6], " * ```");
+                tp += 6;
             } else if (is_container) {
-                @memcpy(tag_mem[tp..][0..15], "@defaultValue `"); tp += 15;
-                @memcpy(tag_mem[tp..][0..dv.len], dv); tp += dv.len;
-                tag_mem[tp] = '`'; tp += 1;
+                @memcpy(tag_mem[tp..][0..15], "@defaultValue `");
+                tp += 15;
+                @memcpy(tag_mem[tp..][0..dv.len], dv);
+                tp += dv.len;
+                tag_mem[tp] = '`';
+                tp += 1;
             } else {
-                @memcpy(tag_mem[tp..][0..14], "@defaultValue "); tp += 14;
-                @memcpy(tag_mem[tp..][0..dv.len], dv); tp += dv.len;
+                @memcpy(tag_mem[tp..][0..14], "@defaultValue ");
+                tp += 14;
+                @memcpy(tag_mem[tp..][0..dv.len], dv);
+                tp += dv.len;
             }
             const default_tag = tag_mem[0..tp];
 
@@ -326,14 +327,20 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 while (end > 0 and (before_raw[end - 1] == ' ' or before_raw[end - 1] == '\t' or before_raw[end - 1] == '\n' or before_raw[end - 1] == '\r')) : (end -= 1) {}
                 const before = before_raw[0..end];
                 if (before.len > 4 and ch.startsWith(before, "/** ") and std.mem.indexOfScalar(u8, before, '\n') == null) {
-                    @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
-                    @memcpy(rbuf[rp..][0..before.len - 4], before[4..]); rp += before.len - 4;
+                    @memcpy(rbuf[rp..][0..7], "/**\n * ");
+                    rp += 7;
+                    @memcpy(rbuf[rp..][0 .. before.len - 4], before[4..]);
+                    rp += before.len - 4;
                 } else {
-                    @memcpy(rbuf[rp..][0..before.len], before); rp += before.len;
+                    @memcpy(rbuf[rp..][0..before.len], before);
+                    rp += before.len;
                 }
-                @memcpy(rbuf[rp..][0..4], "\n * "); rp += 4;
-                @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
-                @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
+                @memcpy(rbuf[rp..][0..4], "\n * ");
+                rp += 4;
+                @memcpy(rbuf[rp..][0..default_tag.len], default_tag);
+                rp += default_tag.len;
+                @memcpy(rbuf[rp..][0..5], "\n */\n");
+                rp += 5;
             } else if (comments.len > 0) {
                 const trimmed_cmt = std.mem.trim(u8, comments, " \t\n\r");
                 const cmt_text = if (ch.startsWith(trimmed_cmt, "// "))
@@ -342,31 +349,50 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                     trimmed_cmt[2..]
                 else
                     trimmed_cmt;
-                @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
-                @memcpy(rbuf[rp..][0..cmt_text.len], cmt_text); rp += cmt_text.len;
-                @memcpy(rbuf[rp..][0..4], "\n * "); rp += 4;
-                @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
-                @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
+                @memcpy(rbuf[rp..][0..7], "/**\n * ");
+                rp += 7;
+                @memcpy(rbuf[rp..][0..cmt_text.len], cmt_text);
+                rp += cmt_text.len;
+                @memcpy(rbuf[rp..][0..4], "\n * ");
+                rp += 4;
+                @memcpy(rbuf[rp..][0..default_tag.len], default_tag);
+                rp += default_tag.len;
+                @memcpy(rbuf[rp..][0..5], "\n */\n");
+                rp += 5;
             } else {
                 if (std.mem.indexOfScalar(u8, default_tag, '\n') != null) {
-                    @memcpy(rbuf[rp..][0..7], "/**\n * "); rp += 7;
-                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
-                    @memcpy(rbuf[rp..][0..5], "\n */\n"); rp += 5;
+                    @memcpy(rbuf[rp..][0..7], "/**\n * ");
+                    rp += 7;
+                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag);
+                    rp += default_tag.len;
+                    @memcpy(rbuf[rp..][0..5], "\n */\n");
+                    rp += 5;
                 } else {
-                    @memcpy(rbuf[rp..][0..4], "/** "); rp += 4;
-                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag); rp += default_tag.len;
-                    @memcpy(rbuf[rp..][0..4], " */\n"); rp += 4;
+                    @memcpy(rbuf[rp..][0..4], "/** ");
+                    rp += 4;
+                    @memcpy(rbuf[rp..][0..default_tag.len], default_tag);
+                    rp += default_tag.len;
+                    @memcpy(rbuf[rp..][0..4], " */\n");
+                    rp += 4;
                 }
             }
 
-            @memcpy(rbuf[rp..][0..export_prefix.len], export_prefix); rp += export_prefix.len;
-            @memcpy(rbuf[rp..][0..8], "declare "); rp += 8;
-            @memcpy(rbuf[rp..][0..kind.len], kind); rp += kind.len;
-            rbuf[rp] = ' '; rp += 1;
-            @memcpy(rbuf[rp..][0..decl.name.len], decl.name); rp += decl.name.len;
-            @memcpy(rbuf[rp..][0..2], ": "); rp += 2;
-            @memcpy(rbuf[rp..][0..type_annotation.len], type_annotation); rp += type_annotation.len;
-            rbuf[rp] = ';'; rp += 1;
+            @memcpy(rbuf[rp..][0..export_prefix.len], export_prefix);
+            rp += export_prefix.len;
+            @memcpy(rbuf[rp..][0..8], "declare ");
+            rp += 8;
+            @memcpy(rbuf[rp..][0..kind.len], kind);
+            rp += kind.len;
+            rbuf[rp] = ' ';
+            rp += 1;
+            @memcpy(rbuf[rp..][0..decl.name.len], decl.name);
+            rp += decl.name.len;
+            @memcpy(rbuf[rp..][0..2], ": ");
+            rp += 2;
+            @memcpy(rbuf[rp..][0..type_annotation.len], type_annotation);
+            rp += type_annotation.len;
+            rbuf[rp] = ';';
+            rp += 1;
             return rbuf[0..rp];
         }
     }
@@ -377,15 +403,26 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     const buf = try alloc.alloc(u8, total);
     var pos: usize = 0;
 
-    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
-    @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len;
-    @memcpy(buf[pos..][0..8], "declare "); pos += 8;
-    @memcpy(buf[pos..][0..kind.len], kind); pos += kind.len;
-    buf[pos] = ' '; pos += 1;
-    @memcpy(buf[pos..][0..decl.name.len], decl.name); pos += decl.name.len;
-    @memcpy(buf[pos..][0..2], ": "); pos += 2;
-    @memcpy(buf[pos..][0..type_annotation.len], type_annotation); pos += type_annotation.len;
-    buf[pos] = ';'; pos += 1;
+    if (comments.len > 0) {
+        @memcpy(buf[pos..][0..comments.len], comments);
+        pos += comments.len;
+    }
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix);
+    pos += export_prefix.len;
+    @memcpy(buf[pos..][0..8], "declare ");
+    pos += 8;
+    @memcpy(buf[pos..][0..kind.len], kind);
+    pos += kind.len;
+    buf[pos] = ' ';
+    pos += 1;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name);
+    pos += decl.name.len;
+    @memcpy(buf[pos..][0..2], ": ");
+    pos += 2;
+    @memcpy(buf[pos..][0..type_annotation.len], type_annotation);
+    pos += type_annotation.len;
+    buf[pos] = ';';
+    pos += 1;
 
     return buf[0..pos];
 }
@@ -472,9 +509,18 @@ fn processTypeDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comm
     const buf = try alloc.alloc(u8, total);
     var pos: usize = 0;
 
-    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
-    if (export_prefix.len > 0) { @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len; }
-    if (declare_prefix.len > 0) { @memcpy(buf[pos..][0..declare_prefix.len], declare_prefix); pos += declare_prefix.len; }
+    if (comments.len > 0) {
+        @memcpy(buf[pos..][0..comments.len], comments);
+        pos += comments.len;
+    }
+    if (export_prefix.len > 0) {
+        @memcpy(buf[pos..][0..export_prefix.len], export_prefix);
+        pos += export_prefix.len;
+    }
+    if (declare_prefix.len > 0) {
+        @memcpy(buf[pos..][0..declare_prefix.len], declare_prefix);
+        pos += declare_prefix.len;
+    }
 
     if (!fallback) {
         @memcpy(buf[pos..][0..type_def.len], type_def);
@@ -484,12 +530,18 @@ fn processTypeDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comm
         pos += 5;
         @memcpy(buf[pos..][0..decl.name.len], decl.name);
         pos += decl.name.len;
-        if (decl.generics.len > 0) { @memcpy(buf[pos..][0..decl.generics.len], decl.generics); pos += decl.generics.len; }
+        if (decl.generics.len > 0) {
+            @memcpy(buf[pos..][0..decl.generics.len], decl.generics);
+            pos += decl.generics.len;
+        }
         @memcpy(buf[pos..][0..6], " = any");
         pos += 6;
     }
 
-    if (needs_semi) { buf[pos] = ';'; pos += 1; }
+    if (needs_semi) {
+        buf[pos] = ';';
+        pos += 1;
+    }
 
     return buf[0..pos];
 }
@@ -562,11 +614,18 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
         const total_ambient = comments.len + dm.len + decl.name.len + 1 + body_ambient.len;
         const buf_ambient = try alloc.alloc(u8, total_ambient);
         var ap: usize = 0;
-        if (comments.len > 0) { @memcpy(buf_ambient[ap..][0..comments.len], comments); ap += comments.len; }
-        @memcpy(buf_ambient[ap..][0..dm.len], dm); ap += dm.len;
-        @memcpy(buf_ambient[ap..][0..decl.name.len], decl.name); ap += decl.name.len;
-        buf_ambient[ap] = ' '; ap += 1;
-        @memcpy(buf_ambient[ap..][0..body_ambient.len], body_ambient); ap += body_ambient.len;
+        if (comments.len > 0) {
+            @memcpy(buf_ambient[ap..][0..comments.len], comments);
+            ap += comments.len;
+        }
+        @memcpy(buf_ambient[ap..][0..dm.len], dm);
+        ap += dm.len;
+        @memcpy(buf_ambient[ap..][0..decl.name.len], decl.name);
+        ap += decl.name.len;
+        buf_ambient[ap] = ' ';
+        ap += 1;
+        @memcpy(buf_ambient[ap..][0..body_ambient.len], body_ambient);
+        ap += body_ambient.len;
         return buf_ambient[0..ap];
     }
 
@@ -587,13 +646,22 @@ fn processModuleDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_co
     const total = comments.len + export_prefix.len + declare_kw.len + ns.len + decl.name.len + 1 + body.len;
     const buf = try alloc.alloc(u8, total);
     var pos: usize = 0;
-    if (comments.len > 0) { @memcpy(buf[pos..][0..comments.len], comments); pos += comments.len; }
-    @memcpy(buf[pos..][0..export_prefix.len], export_prefix); pos += export_prefix.len;
-    @memcpy(buf[pos..][0..declare_kw.len], declare_kw); pos += declare_kw.len;
-    @memcpy(buf[pos..][0..ns.len], ns); pos += ns.len;
-    @memcpy(buf[pos..][0..decl.name.len], decl.name); pos += decl.name.len;
-    buf[pos] = ' '; pos += 1;
-    @memcpy(buf[pos..][0..body.len], body); pos += body.len;
+    if (comments.len > 0) {
+        @memcpy(buf[pos..][0..comments.len], comments);
+        pos += comments.len;
+    }
+    @memcpy(buf[pos..][0..export_prefix.len], export_prefix);
+    pos += export_prefix.len;
+    @memcpy(buf[pos..][0..declare_kw.len], declare_kw);
+    pos += declare_kw.len;
+    @memcpy(buf[pos..][0..ns.len], ns);
+    pos += ns.len;
+    @memcpy(buf[pos..][0..decl.name.len], decl.name);
+    pos += decl.name.len;
+    buf[pos] = ' ';
+    pos += 1;
+    @memcpy(buf[pos..][0..body.len], body);
+    pos += body.len;
     return buf[0..pos];
 }
 
@@ -960,7 +1028,10 @@ pub fn processDeclarations(
                 const src = if (src_start < src_end) imp[src_start..src_end] else imp;
                 var prio = default_priority;
                 for (import_order, 0..) |p, idx| {
-                    if (ch.indexOf(src, p, 0) != null) { prio = idx; break; }
+                    if (ch.indexOf(src, p, 0) != null) {
+                        prio = idx;
+                        break;
+                    }
                 }
                 priorities[pi] = prio;
             }

@@ -10,14 +10,8 @@ const ProcessResult = struct {
 };
 
 fn emptyResult() ProcessResult {
-    // Allocate 16 zero bytes so the SIMD result_length scan can read a full
-    // 16-byte vector without touching memory past the allocation. The caller
-    // sees `len == 0` and `ptr[0] == 0`, but free_result will receive `len + 1
-    // = 1` so the freed range matches the slice length the allocator tracks.
-    // Pre-fix this allocated 1 byte and the SIMD loop in result_length would
-    // read 15 bytes of unrelated heap state.
-    const empty = std.heap.c_allocator.alloc(u8, 16) catch @panic("OOM");
-    @memset(empty, 0);
+    const empty = std.heap.c_allocator.alloc(u8, 1) catch @panic("OOM");
+    empty[0] = 0;
     return .{ .ptr = empty.ptr, .len = 0 };
 }
 
@@ -105,20 +99,11 @@ fn processSourceInternal(
 }
 
 /// Get the length of a result string (without null terminator).
-/// SIMD-scan 16 bytes at a time for the null terminator — faster on long
-/// results than the byte-by-byte loop the compiler will generate from the
-/// scalar form.
+/// Scan to the null terminator without reading beyond the caller-owned buffer.
 export fn result_length(ptr: [*]const u8) usize {
     var i: usize = 0;
-    while (true) {
-        const chunk: @Vector(16, u8) = ptr[i..][0..16].*;
-        const zero_mask = chunk == @as(@Vector(16, u8), @splat(0));
-        if (@reduce(.Or, zero_mask)) {
-            const bits: u16 = @bitCast(zero_mask);
-            return i + @ctz(bits);
-        }
-        i += 16;
-    }
+    while (ptr[i] != 0) : (i += 1) {}
+    return i;
 }
 
 /// Free a result string previously returned by process_source
@@ -201,6 +186,9 @@ export fn process_batch(
     const n: usize = @intCast(count);
     if (n == 0) return;
 
+    @memset(out_ptrs[0..n], 0);
+    @memset(out_lens[0..n], 0);
+
     // Build task list
     const tasks = std.heap.c_allocator.alloc(BatchTask, n) catch return;
     defer std.heap.c_allocator.free(tasks);
@@ -274,8 +262,16 @@ export fn process_batch(
 export fn free_batch_results(ptrs: [*]const usize, lens: [*]const u64, count: u32) void {
     const n: usize = @intCast(count);
     for (0..n) |i| {
+        if (ptrs[i] == 0) continue;
         const p: [*]u8 = @ptrFromInt(ptrs[i]);
         const l: usize = @intCast(lens[i]);
         std.heap.c_allocator.free(p[0 .. l + 1]); // +1 for null terminator
     }
+}
+
+test "result_length stays within the null-terminated allocation" {
+    const value = [_]u8{ 'd', 't', 's', 'x', 0 };
+    try std.testing.expectEqual(@as(usize, 4), result_length(&value));
+    const empty = [_]u8{0};
+    try std.testing.expectEqual(@as(usize, 0), result_length(&empty));
 }

@@ -61,10 +61,19 @@ pub inline fn isDigit(ch: u8) bool {
     return ch >= '0' and ch <= '9';
 }
 
+/// Return whether the byte at `index` is escaped by an odd run of backslashes.
+pub fn isEscaped(source: []const u8, index: usize) bool {
+    if (index == 0 or index > source.len) return false;
+    var slash_count: usize = 0;
+    var cursor = index;
+    while (cursor > 0 and source[cursor - 1] == CH_BACKSLASH) : (cursor -= 1) slash_count += 1;
+    return slash_count % 2 == 1;
+}
+
 /// Find needle in haystack starting from start position.
 /// For single-byte needles, uses SIMD. For multi-byte, uses SIMD first-byte scan + verify.
 pub inline fn indexOf(haystack: []const u8, needle: []const u8, start: usize) ?usize {
-    if (needle.len == 0) return start;
+    if (needle.len == 0) return if (start <= haystack.len) start else null;
     if (start + needle.len > haystack.len) return null;
     if (needle.len == 1) return indexOfChar(haystack, needle[0], start);
     // SIMD first-byte scan: find positions where needle[0] matches, then verify rest
@@ -119,21 +128,23 @@ pub inline fn indexOfChar(haystack: []const u8, needle: u8, start: usize) ?usize
 
 /// Slice source[start..end) with leading/trailing whitespace trimmed
 pub inline fn sliceTrimmed(source: []const u8, start_pos: usize, end_pos: usize) []const u8 {
-    if (start_pos >= end_pos) return "";
+    if (start_pos >= end_pos or start_pos >= source.len) return "";
+    const safe_end = @min(end_pos, source.len);
+    if (start_pos >= safe_end) return "";
 
     // Fast path: if endpoints are already non-whitespace, skip trim loops.
     // Most slices in TS source already have clean boundaries — this branch
     // dominates and is worth keeping out of any function call.
     const first = source[start_pos];
-    const last = source[end_pos - 1];
+    const last = source[safe_end - 1];
     if (first != CH_SPACE and first != CH_TAB and first != CH_LF and first != CH_CR and
         last != CH_SPACE and last != CH_TAB and last != CH_LF and last != CH_CR)
     {
-        return source[start_pos..end_pos];
+        return source[start_pos..safe_end];
     }
 
     var s = start_pos;
-    var e = end_pos;
+    var e = safe_end;
     while (s < e and isWhitespace(source[s])) s += 1;
     while (e > s and isWhitespace(source[e - 1])) e -= 1;
     return source[s..e];
@@ -214,6 +225,19 @@ test "indexOf" {
     try std.testing.expectEqual(@as(?usize, 6), indexOf(s, "world", 0));
     try std.testing.expectEqual(@as(?usize, null), indexOf(s, "xyz", 0));
     try std.testing.expectEqual(@as(?usize, null), indexOf(s, "world", 7));
+    try std.testing.expectEqual(@as(?usize, s.len), indexOf(s, "", s.len));
+    try std.testing.expectEqual(@as(?usize, null), indexOf(s, "", s.len + 1));
+}
+
+test "isEscaped counts odd and even backslash runs" {
+    try std.testing.expect(isEscaped("\\\"", 1));
+    try std.testing.expect(!isEscaped("\\\\\"", 2));
+    try std.testing.expect(isEscaped("\\\\\\\"", 3));
+}
+
+test "sliceTrimmed clamps an oversized end offset" {
+    try std.testing.expectEqualStrings("value", sliceTrimmed(" value ", 0, 100));
+    try std.testing.expectEqualStrings("", sliceTrimmed("value", 100, 101));
 }
 
 test "startsWith and endsWith" {
