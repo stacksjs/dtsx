@@ -184,18 +184,19 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'string'
   }
 
+  // Runtime interpolation contains value expressions rather than type nodes.
+  // Multiline template values are widened as well, keeping declarations compact
+  // and preventing embedded CSS or HTML comments from being normalized as code.
+  if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+    if (!isConst || trimmed.includes('${') || trimmed.includes('\n') || trimmed.includes('\r')) return 'string'
+    return trimmed
+  }
+
   // String literals
   if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
-    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
-    || (trimmed.startsWith('`') && trimmed.endsWith('`'))) {
-    if (!trimmed.includes('${')) {
-      if (!isConst) return 'string'
-      return trimmed
-    }
-    if (isConst) {
-      return trimmed
-    }
-    return 'string'
+    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))) {
+    if (!isConst) return 'string'
+    return trimmed
   }
 
   // Number literals
@@ -290,8 +291,36 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'symbol'
   }
 
+  if (hasTopLevelComparison(trimmed)) return 'boolean'
+
   // Other expressions (method calls, property access, etc.)
   return 'unknown'
+}
+
+/** Check for a comparison operator outside nested expressions and strings. */
+function hasTopLevelComparison(value: string): boolean {
+  let depth = 0
+  for (let index = 0; index < value.length; index++) {
+    const char = value.charCodeAt(index)
+    if (char === 34 || char === 39 || char === 96) {
+      index = skipQuotedValue(value, index, char) - 1
+      continue
+    }
+    if (char === 40 || char === 91 || char === 123) {
+      depth++
+      continue
+    }
+    if (char === 41 || char === 93 || char === 125) {
+      depth--
+      continue
+    }
+    if (depth !== 0) continue
+    if (value.startsWith('===', index) || value.startsWith('!==', index)
+      || value.startsWith('==', index) || value.startsWith('!=', index)
+      || value.startsWith('>=', index) || value.startsWith('<=', index)) return true
+    if ((char === 62 || char === 60) && value.charCodeAt(index - 1) !== 61 && value.charCodeAt(index + 1) !== 61) return true
+  }
+  return false
 }
 
 /**
@@ -576,16 +605,10 @@ function inferTemplateLiteralType(value: string, isConst: boolean): string {
     return 'string'
   }
 
-  if (!isConst)
+  if (!isConst || value.includes('${') || value.includes('\n') || value.includes('\r'))
     return 'string'
 
-  // Simple template literal without expressions
-  if (!value.includes('${')) {
-    return value
-  }
-
-  // Complex template literal - would need more sophisticated parsing
-  return 'string'
+  return value
 }
 
 /**

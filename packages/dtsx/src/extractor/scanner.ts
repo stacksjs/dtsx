@@ -66,6 +66,21 @@ function isEntityNameText(value: string): boolean {
   return value.length > 0 && !expectsStart
 }
 
+/** Return the first index after a quoted initializer value. */
+function findQuotedValueEnd(value: string, start: number, quote: number): number {
+  let index = start + 1
+  while (index < value.length) {
+    const char = value.charCodeAt(index)
+    if (char === CH_BACKSLASH) {
+      index += 2
+      continue
+    }
+    index++
+    if (char === quote) break
+  }
+  return index
+}
+
 /** Check whether an annotation benefits from initializer-derived documentation. */
 function isBroadAnnotation(type: string): boolean {
   if (type === 'any' || type === 'object' || type === 'unknown') return true
@@ -1615,7 +1630,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let lastAsIdx = -1
     for (let i = 0; i < initText.length; i++) {
       const ch = initText.charCodeAt(i)
-      if (ch === 123 /* { */ || ch === 91 /* [ */ || ch === 40 /* ( */) depth++
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+        i = findQuotedValueEnd(initText, i, ch) - 1
+      }
+      else if (ch === 123 /* { */ || ch === 91 /* [ */ || ch === 40 /* ( */) depth++
       else if (ch === 125 /* } */ || ch === 93 /* ] */ || ch === 41 /* ) */) depth--
       else if (depth === 0 && ch === 32 /* space */ && i + 4 <= initText.length && initText.substring(i, i + 4) === ' as ') {
         lastAsIdx = i

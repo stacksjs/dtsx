@@ -66,6 +66,23 @@ describe('semantic return inference regressions', () => {
 })
 
 describe('semantic spread and value-reference regressions', () => {
+  it('widens multiline template literal values', () => {
+    const output = processSourceSemantic('export const styles = `/** Wrapped as .card by the renderer. */\n.card { color: red; }`')
+    expect(output).toContain('styles: string')
+    expect(output).not.toContain('.card {')
+  })
+
+  it('widens interpolated runtime template literals', () => {
+    const output = processSourceSemantic('declare const name: string\nexport const greeting = `Hello ${name}`')
+    expect(output).toContain('greeting: string')
+    expect(output).not.toContain('${name}')
+  })
+
+  it('infers top-level comparison expressions as boolean', () => {
+    const output = processSourceSemantic("export const isDevelopment = process.env.NODE_ENV === 'development'")
+    expect(output).toContain('isDevelopment: boolean')
+  })
+
   it('retains object spread bindings and own properties', () => {
     const output = processSourceSemantic(`const base = { a: 1 }; export const value = { ...base, b: 2 }`)
     expect(output).toContain('declare const base:')
@@ -123,6 +140,8 @@ describe('semantic spread and value-reference regressions', () => {
       `const base = { value: 1 }; export const result = { ...base, value: 'changed' }`,
       `const values = [1, 2]; export const result = [...values, 3]`,
       `const namespace = { value: 1 }; export default namespace.value`,
+      `export const styles = \`/** theme */\n.card { color: red; }\``,
+      `declare const name: string; export const greeting = \`Hello \${name}\``,
     ]
     const paths = await Promise.all(sources.map(async (source, index) => {
       const path = join(directory, `${index}.d.ts`)

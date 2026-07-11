@@ -14,7 +14,7 @@ export declare const symbolUnique: symbol;
 export declare const symbolFor: symbol;
 // Template literals
 export declare const templateSimple: `Hello World`;
-export declare const templateWithExpression: `Count: ${42}`;
+export declare const templateWithExpression: string;
 export declare const templateTagged: string;
 // Promise types
 export declare const promiseResolved: Promise<42>;
