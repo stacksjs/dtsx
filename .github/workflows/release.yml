@@ -5,9 +5,17 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v-prefixed tag to release
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
-  npm:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,9 +26,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@main
+        uses: home-lang/pantry/packages/action@abb26af17a5c06a115c5adc42463ae1a44cd822a
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -29,6 +38,12 @@ jobs:
 
       - name: Install Dependencies
         run: bun install
+
+      - name: Validate Release Tag
+        run: |
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}"
+          package_version="$(bun -e "console.log((await Bun.file('package.json').json()).version)")"
+          test "v${package_version}" = "${RELEASE_TAG}"
 
       - name: Build Zig CLI + Library Binaries
         working-directory: packages/zig-dtsx
@@ -83,10 +98,17 @@ jobs:
       - name: Publish to npm
         run: pantry publish --npm --skip zig-dtsx --access public
 
-      - name: Attach Binaries
-        uses: stacksjs/action-releaser@v1.2.9
+      - name: Create GitHub Release with Pantry
+        id: pantry-release
+        uses: home-lang/pantry/packages/action@abb26af17a5c06a115c5adc42463ae1a44cd822a
         with:
-          files: |
+          install: false
+          release: true
+          release-tag: ${{ env.RELEASE_TAG }}
+          release-changelog: auto
+          release-checksums: sha256
+          release-token: ${{ secrets.GITHUB_TOKEN }}
+          release-files: |
             packages/dtsx/bin/zig-dtsx-linux-x64.zip
             packages/dtsx/bin/zig-dtsx-linux-arm64.zip
             packages/dtsx/bin/zig-dtsx-darwin-x64.zip
@@ -99,5 +121,29 @@ jobs:
             packages/dtsx/bin/zig-dtsx-lib-darwin-arm64.tar.gz
             packages/dtsx/bin/zig-dtsx-lib-windows-x64.tar.gz
             packages/dtsx/bin/zig-dtsx-lib-freebsd-x64.tar.gz
+
+      - name: Verify Pantry GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_URL: ${{ steps.pantry-release.outputs.release-url }}
+        run: |
+          test -n "${RELEASE_URL}"
+          test -s checksums.txt
+
+          checksum_count="$(wc -l < checksums.txt | tr -d ' ')"
+          test "${checksum_count}" -eq 12
+          awk 'length($1) != 64 || $2 !~ /^zig-dtsx-/ { exit 1 }' checksums.txt
+
+          (
+            cd packages/dtsx/bin
+            sha256sum --check ../../../checksums.txt
+          )
+
+          while read -r checksum asset; do
+            test -n "${checksum}"
+            gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | grep -Fx "${asset}"
+          done < checksums.txt
+
+          gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | grep -Fx 'checksums.txt'
+          release_body="$(gh release view "${RELEASE_TAG}" --json body --jq '.body')"
+          test -n "${release_body}"
