@@ -5,6 +5,7 @@ const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const Scanner = @import("scanner.zig").Scanner;
 const ext = @import("extractors.zig");
+const type_inf = @import("type_inference.zig");
 const Declaration = types.Declaration;
 
 /// Main scan loop: iterate through source and extract declarations
@@ -85,7 +86,8 @@ pub fn scanMainLoop(s: *Scanner) !void {
                     try s.declarations.append(decl);
                 } else {
                     s.pos = saved_pos;
-                    s.skipToStatementEnd();
+                    const decls = ext.extractVariable(s, stmt_start, "const", false);
+                    for (decls) |decl| s.putNonExportedType(decl.name, decl);
                 }
             } else {
                 s.pos += 1;
@@ -140,6 +142,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         s.pos += 7;
         s.skipWhitespaceAndComments();
         if (s.pos >= s.len) return;
+        const expression_start = s.pos;
         const dch = s.source[s.pos];
 
         if (dch == 'f' and s.matchWord("function")) {
@@ -158,16 +161,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
                     const decl = ext.extractFunction(s, stmt_start, true, true, true);
                     if (decl) |d| try s.declarations.append(d);
                 } else {
-                    s.skipToStatementEnd();
-                    const full_text = s.sliceTrimmed(stmt_start, s.pos);
-                    try s.declarations.append(.{
-                        .kind = .export_decl,
-                        .name = "default",
-                        .text = full_text,
-                        .is_exported = true,
-                        .start = stmt_start,
-                        .end = s.pos,
-                    });
+                    try extractDefaultExpression(s, stmt_start, expression_start);
                 }
             } else if (s.matchWord("abstract")) {
                 s.pos += 8;
@@ -177,32 +171,10 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
                     try s.declarations.append(decl);
                 }
             } else {
-                s.skipToStatementEnd();
-                const text = s.sliceTrimmed(stmt_start, s.pos);
-                const comments = ext.extractLeadingComments(s, stmt_start);
-                try s.declarations.append(.{
-                    .kind = .export_decl,
-                    .name = "default",
-                    .text = text,
-                    .is_exported = true,
-                    .leading_comments = comments,
-                    .start = stmt_start,
-                    .end = s.pos,
-                });
+                try extractDefaultExpression(s, stmt_start, expression_start);
             }
         } else {
-            s.skipToStatementEnd();
-            const text = s.sliceTrimmed(stmt_start, s.pos);
-            const comments = ext.extractLeadingComments(s, stmt_start);
-            try s.declarations.append(.{
-                .kind = .export_decl,
-                .name = "default",
-                .text = text,
-                .is_exported = true,
-                .leading_comments = comments,
-                .start = stmt_start,
-                .end = s.pos,
-            });
+            try extractDefaultExpression(s, stmt_start, expression_start);
         }
     } else if (ech == 't' and s.matchWord("type")) {
         const saved_pos = s.pos;
@@ -363,4 +335,69 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
             });
         }
     }
+}
+
+fn extractDefaultExpression(s: *Scanner, stmt_start: usize, expression_start: usize) !void {
+    s.skipToStatementEnd();
+    var expression = s.sliceTrimmed(expression_start, s.pos);
+    if (expression.len > 0 and expression[expression.len - 1] == ';') expression = std.mem.trim(u8, expression[0 .. expression.len - 1], " \t\r\n");
+    if (expression.len == 0) return;
+
+    const comments = ext.extractLeadingComments(s, stmt_start);
+    if (isEntityName(expression) and std.mem.indexOfScalar(u8, expression, '.') == null) {
+        try s.declarations.append(.{
+            .kind = .export_decl,
+            .name = "default",
+            .text = try std.fmt.allocPrint(s.allocator, "export default {s};", .{expression}),
+            .is_exported = true,
+            .leading_comments = comments,
+            .start = stmt_start,
+            .end = s.pos,
+        });
+        return;
+    }
+
+    var helper_name: []const u8 = "__dtsx_default_export__";
+    var suffix: usize = 1;
+    while (std.mem.indexOf(u8, s.source, helper_name) != null) : (suffix += 1) {
+        helper_name = try std.fmt.allocPrint(s.allocator, "__dtsx_default_export_{d}__", .{suffix});
+    }
+    const inferred = try type_inf.inferNarrowType(s.allocator, expression, false, false, 0);
+    const inferred_type = if (std.mem.eql(u8, inferred, "unknown") and isEntityName(expression))
+        try std.fmt.allocPrint(s.allocator, "typeof {s}", .{expression})
+    else
+        inferred;
+    try s.declarations.append(.{
+        .kind = .variable_decl,
+        .name = helper_name,
+        .text = try std.fmt.allocPrint(s.allocator, "declare const {s}: {s};", .{ helper_name, inferred_type }),
+        .type_annotation = inferred_type,
+        .preserve_type_annotation = true,
+        .modifiers = &.{"const"},
+        .start = stmt_start,
+        .end = s.pos,
+    });
+    try s.declarations.append(.{
+        .kind = .export_decl,
+        .name = "default",
+        .text = try std.fmt.allocPrint(s.allocator, "export default {s};", .{helper_name}),
+        .is_exported = true,
+        .leading_comments = comments,
+        .start = stmt_start,
+        .end = s.pos,
+    });
+}
+
+fn isEntityName(value: []const u8) bool {
+    var expects_start = true;
+    for (value) |c| {
+        if (c == '.') {
+            if (expects_start) return false;
+            expects_start = true;
+        } else if (expects_start) {
+            if (!ch.isIdentStart(c)) return false;
+            expects_start = false;
+        } else if (!ch.isIdentChar(c)) return false;
+    }
+    return value.len > 0 and !expects_start;
 }

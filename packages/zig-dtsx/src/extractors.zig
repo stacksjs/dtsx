@@ -505,12 +505,21 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             } else if (c == ch.CH_RPAREN or c == ch.CH_RANGLE) {
                 depth -= 1;
             } else if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
-                if (depth == 0 and !seen_colon) { can_passthrough = false; break; }
+                if (depth == 0 and !seen_colon) {
+                    can_passthrough = false;
+                    break;
+                }
                 depth += 1;
             } else if (c == ch.CH_RBRACE or c == ch.CH_RBRACKET) {
                 depth -= 1;
             } else if (depth == 0) {
-                if (c == ch.CH_COLON) { colons += 1; seen_colon = true; } else if (c == ch.CH_COMMA) { commas += 1; seen_colon = false; } else if (c == ch.CH_EQUAL and (fp_i + 1 >= inner.len or (inner[fp_i + 1] != ch.CH_RANGLE and inner[fp_i + 1] != ch.CH_EQUAL))) {
+                if (c == ch.CH_COLON) {
+                    colons += 1;
+                    seen_colon = true;
+                } else if (c == ch.CH_COMMA) {
+                    commas += 1;
+                    seen_colon = false;
+                } else if (c == ch.CH_EQUAL and (fp_i + 1 >= inner.len or (inner[fp_i + 1] != ch.CH_RANGLE and inner[fp_i + 1] != ch.CH_EQUAL))) {
                     can_passthrough = false;
                     break;
                 } else if (c == ch.CH_AT) {
@@ -779,11 +788,18 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     const total = rest_prefix.len + name.len + opt_marker.len + 2 + param_type.len;
     const result_buf = s.allocator.alloc(u8, total) catch return "unknown: unknown";
     var rp: usize = 0;
-    if (is_rest) { @memcpy(result_buf[rp..][0..3], "..."); rp += 3; }
-    @memcpy(result_buf[rp..][0..name.len], name); rp += name.len;
-    @memcpy(result_buf[rp..][0..opt_marker.len], opt_marker); rp += opt_marker.len;
-    @memcpy(result_buf[rp..][0..2], ": "); rp += 2;
-    @memcpy(result_buf[rp..][0..param_type.len], param_type); rp += param_type.len;
+    if (is_rest) {
+        @memcpy(result_buf[rp..][0..3], "...");
+        rp += 3;
+    }
+    @memcpy(result_buf[rp..][0..name.len], name);
+    rp += name.len;
+    @memcpy(result_buf[rp..][0..opt_marker.len], opt_marker);
+    rp += opt_marker.len;
+    @memcpy(result_buf[rp..][0..2], ": ");
+    rp += 2;
+    @memcpy(result_buf[rp..][0..param_type.len], param_type);
+    rp += param_type.len;
     return result_buf[0..rp];
 }
 
@@ -979,6 +995,7 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     s.skipWhitespaceAndComments();
 
     var return_type = extractReturnType(s);
+    const has_explicit_return_type = return_type.len > 0;
     if (return_type.len == 0) {
         if (is_async and is_generator) {
             return_type = "AsyncGenerator<unknown, void, unknown>";
@@ -995,7 +1012,15 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     var has_body = false;
     if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
         has_body = true;
+        const body_start = s.pos;
         _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
+        if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
+            const inferred = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0) catch return_type;
+            return_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
+                std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) catch inferred
+            else
+                inferred;
+        }
     } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
         s.pos += 1;
     }
@@ -1016,12 +1041,18 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     const dts_text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..func_name.len], func_name); tp += func_name.len;
-        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
-        @memcpy(buf[tp..][0..dts_params.len], dts_params); tp += dts_params.len;
-        @memcpy(buf[tp..][0..colon_sep.len], colon_sep); tp += colon_sep.len;
-        @memcpy(buf[tp..][0..return_type.len], return_type); tp += return_type.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..func_name.len], func_name);
+        tp += func_name.len;
+        @memcpy(buf[tp..][0..generics.len], generics);
+        tp += generics.len;
+        @memcpy(buf[tp..][0..dts_params.len], dts_params);
+        tp += dts_params.len;
+        @memcpy(buf[tp..][0..colon_sep.len], colon_sep);
+        tp += colon_sep.len;
+        @memcpy(buf[tp..][0..return_type.len], return_type);
+        tp += return_type.len;
         buf[tp] = ';';
         break :blk @as([]const u8, buf);
     };
@@ -1208,13 +1239,20 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
     const text_buf = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
-        @memcpy(buf[tp..][0..kind.len], kind); tp += kind.len;
-        buf[tp] = ' '; tp += 1;
-        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
-        @memcpy(buf[tp..][0..2], ": "); tp += 2;
-        @memcpy(buf[tp..][0..final_type.len], final_type); tp += final_type.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
+        tp += declare_kw.len;
+        @memcpy(buf[tp..][0..kind.len], kind);
+        tp += kind.len;
+        buf[tp] = ' ';
+        tp += 1;
+        @memcpy(buf[tp..][0..name.len], name);
+        tp += name.len;
+        @memcpy(buf[tp..][0..2], ": ");
+        tp += 2;
+        @memcpy(buf[tp..][0..final_type.len], final_type);
+        tp += final_type.len;
         buf[tp] = ';';
         break :blk @as([]const u8, buf);
     };
@@ -1292,14 +1330,22 @@ pub fn extractInterface(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     const text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
-        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
-        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
-        @memcpy(buf[tp..][0..extends_kw.len], extends_kw); tp += extends_kw.len;
-        @memcpy(buf[tp..][0..extends_clause.len], extends_clause); tp += extends_clause.len;
-        buf[tp] = ' '; tp += 1;
-        @memcpy(buf[tp..][0..body.len], body); tp += body.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
+        tp += declare_kw.len;
+        @memcpy(buf[tp..][0..name.len], name);
+        tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics);
+        tp += generics.len;
+        @memcpy(buf[tp..][0..extends_kw.len], extends_kw);
+        tp += extends_kw.len;
+        @memcpy(buf[tp..][0..extends_clause.len], extends_clause);
+        tp += extends_clause.len;
+        buf[tp] = ' ';
+        tp += 1;
+        @memcpy(buf[tp..][0..body.len], body);
+        tp += body.len;
         break :blk @as([]const u8, buf);
     };
 
@@ -1362,12 +1408,18 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
     const text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..type_kw.len], type_kw); tp += type_kw.len;
-        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
-        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
-        @memcpy(buf[tp..][0..eq_sep.len], eq_sep); tp += eq_sep.len;
-        @memcpy(buf[tp..][0..type_body.len], type_body); tp += type_body.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..type_kw.len], type_kw);
+        tp += type_kw.len;
+        @memcpy(buf[tp..][0..name.len], name);
+        tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics);
+        tp += generics.len;
+        @memcpy(buf[tp..][0..eq_sep.len], eq_sep);
+        tp += eq_sep.len;
+        @memcpy(buf[tp..][0..type_body.len], type_body);
+        tp += type_body.len;
         break :blk @as([]const u8, buf);
     };
 
@@ -1497,18 +1549,30 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
     const text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
-        @memcpy(buf[tp..][0..abstract_kw.len], abstract_kw); tp += abstract_kw.len;
-        @memcpy(buf[tp..][0..class_kw.len], class_kw); tp += class_kw.len;
-        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
-        @memcpy(buf[tp..][0..generics.len], generics); tp += generics.len;
-        @memcpy(buf[tp..][0..extends_sep.len], extends_sep); tp += extends_sep.len;
-        @memcpy(buf[tp..][0..extends_clause.len], extends_clause); tp += extends_clause.len;
-        @memcpy(buf[tp..][0..implements_sep.len], implements_sep); tp += implements_sep.len;
-        @memcpy(buf[tp..][0..implements_text.len], implements_text); tp += implements_text.len;
-        buf[tp] = ' '; tp += 1;
-        @memcpy(buf[tp..][0..class_body.len], class_body); tp += class_body.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
+        tp += declare_kw.len;
+        @memcpy(buf[tp..][0..abstract_kw.len], abstract_kw);
+        tp += abstract_kw.len;
+        @memcpy(buf[tp..][0..class_kw.len], class_kw);
+        tp += class_kw.len;
+        @memcpy(buf[tp..][0..name.len], name);
+        tp += name.len;
+        @memcpy(buf[tp..][0..generics.len], generics);
+        tp += generics.len;
+        @memcpy(buf[tp..][0..extends_sep.len], extends_sep);
+        tp += extends_sep.len;
+        @memcpy(buf[tp..][0..extends_clause.len], extends_clause);
+        tp += extends_clause.len;
+        @memcpy(buf[tp..][0..implements_sep.len], implements_sep);
+        tp += implements_sep.len;
+        @memcpy(buf[tp..][0..implements_text.len], implements_text);
+        tp += implements_text.len;
+        buf[tp] = ' ';
+        tp += 1;
+        @memcpy(buf[tp..][0..class_body.len], class_body);
+        tp += class_body.len;
         break :blk @as([]const u8, buf);
     };
 
@@ -1572,32 +1636,48 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             const mc = s.source[s.pos];
             switch (mc) {
                 'p' => {
-                    if (s.matchWord("private")) { is_private = true; s.pos += 7; }
-                    else if (s.matchWord("protected")) { is_protected = true; s.pos += 9; }
-                    else if (s.matchWord("public")) { s.pos += 6; }
-                    else break;
+                    if (s.matchWord("private")) {
+                        is_private = true;
+                        s.pos += 7;
+                    } else if (s.matchWord("protected")) {
+                        is_protected = true;
+                        s.pos += 9;
+                    } else if (s.matchWord("public")) {
+                        s.pos += 6;
+                    } else break;
                 },
                 's' => {
-                    if (s.matchWord("static")) { is_static = true; s.pos += 6; }
-                    else break;
+                    if (s.matchWord("static")) {
+                        is_static = true;
+                        s.pos += 6;
+                    } else break;
                 },
                 'a' => {
-                    if (s.matchWord("abstract")) { is_abstract = true; s.pos += 8; }
-                    else if (s.matchWord("accessor")) { s.pos += 8; }
-                    else if (s.matchWord("async")) { is_async = true; s.pos += 5; }
-                    else break;
+                    if (s.matchWord("abstract")) {
+                        is_abstract = true;
+                        s.pos += 8;
+                    } else if (s.matchWord("accessor")) {
+                        s.pos += 8;
+                    } else if (s.matchWord("async")) {
+                        is_async = true;
+                        s.pos += 5;
+                    } else break;
                 },
                 'r' => {
-                    if (s.matchWord("readonly")) { is_readonly = true; s.pos += 8; }
-                    else break;
+                    if (s.matchWord("readonly")) {
+                        is_readonly = true;
+                        s.pos += 8;
+                    } else break;
                 },
                 'o' => {
-                    if (s.matchWord("override")) { s.pos += 8; }
-                    else break;
+                    if (s.matchWord("override")) {
+                        s.pos += 8;
+                    } else break;
                 },
                 'd' => {
-                    if (s.matchWord("declare")) { s.pos += 7; }
-                    else break;
+                    if (s.matchWord("declare")) {
+                        s.pos += 7;
+                    } else break;
                 },
                 else => break,
             }
@@ -1624,12 +1704,25 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             @as(usize, if (is_readonly) "readonly ".len else 0);
         const prefix = blk: {
             const pbuf = s.allocator.alloc(u8, proto_len) catch break :blk @as([]const u8, "  ");
-            pbuf[0] = ' '; pbuf[1] = ' ';
+            pbuf[0] = ' ';
+            pbuf[1] = ' ';
             var pp: usize = 2;
-            if (is_protected) { @memcpy(pbuf[pp..][0.."protected ".len], "protected "); pp += "protected ".len; }
-            if (is_static) { @memcpy(pbuf[pp..][0.."static ".len], "static "); pp += "static ".len; }
-            if (is_abstract) { @memcpy(pbuf[pp..][0.."abstract ".len], "abstract "); pp += "abstract ".len; }
-            if (is_readonly) { @memcpy(pbuf[pp..][0.."readonly ".len], "readonly "); pp += "readonly ".len; }
+            if (is_protected) {
+                @memcpy(pbuf[pp..][0.."protected ".len], "protected ");
+                pp += "protected ".len;
+            }
+            if (is_static) {
+                @memcpy(pbuf[pp..][0.."static ".len], "static ");
+                pp += "static ".len;
+            }
+            if (is_abstract) {
+                @memcpy(pbuf[pp..][0.."abstract ".len], "abstract ");
+                pp += "abstract ".len;
+            }
+            if (is_readonly) {
+                @memcpy(pbuf[pp..][0.."readonly ".len], "readonly ");
+                pp += "readonly ".len;
+            }
             break :blk @as([]const u8, pbuf);
         };
 
@@ -1684,11 +1777,16 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             const get_total = prefix.len + get_kw.len + member_name.len + get_sep.len + ret_type.len + 1;
             const get_buf = s.allocator.alloc(u8, get_total) catch break;
             var gp: usize = 0;
-            @memcpy(get_buf[gp..][0..prefix.len], prefix); gp += prefix.len;
-            @memcpy(get_buf[gp..][0..get_kw.len], get_kw); gp += get_kw.len;
-            @memcpy(get_buf[gp..][0..member_name.len], member_name); gp += member_name.len;
-            @memcpy(get_buf[gp..][0..get_sep.len], get_sep); gp += get_sep.len;
-            @memcpy(get_buf[gp..][0..ret_type.len], ret_type); gp += ret_type.len;
+            @memcpy(get_buf[gp..][0..prefix.len], prefix);
+            gp += prefix.len;
+            @memcpy(get_buf[gp..][0..get_kw.len], get_kw);
+            gp += get_kw.len;
+            @memcpy(get_buf[gp..][0..member_name.len], member_name);
+            gp += member_name.len;
+            @memcpy(get_buf[gp..][0..get_sep.len], get_sep);
+            gp += get_sep.len;
+            @memcpy(get_buf[gp..][0..ret_type.len], ret_type);
+            gp += ret_type.len;
             get_buf[gp] = ';';
             members.append(get_buf) catch {};
         } else if (s.matchWord("set") and isAccessorFollowed(s)) {
@@ -1713,10 +1811,14 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             const set_total = prefix.len + set_kw.len + member_name.len + dts_params.len + 1;
             const set_buf = s.allocator.alloc(u8, set_total) catch break;
             var sp: usize = 0;
-            @memcpy(set_buf[sp..][0..prefix.len], prefix); sp += prefix.len;
-            @memcpy(set_buf[sp..][0..set_kw.len], set_kw); sp += set_kw.len;
-            @memcpy(set_buf[sp..][0..member_name.len], member_name); sp += member_name.len;
-            @memcpy(set_buf[sp..][0..dts_params.len], dts_params); sp += dts_params.len;
+            @memcpy(set_buf[sp..][0..prefix.len], prefix);
+            sp += prefix.len;
+            @memcpy(set_buf[sp..][0..set_kw.len], set_kw);
+            sp += set_kw.len;
+            @memcpy(set_buf[sp..][0..member_name.len], member_name);
+            sp += member_name.len;
+            @memcpy(set_buf[sp..][0..dts_params.len], dts_params);
+            sp += dts_params.len;
             set_buf[sp] = ';';
             members.append(set_buf) catch {};
         } else {
@@ -1744,17 +1846,21 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
     for (members.items) |m| total_len += m.len;
     total_len += members.items.len - 1; // newlines between
     const buf = s.allocator.alloc(u8, total_len) catch return "{}";
-    buf[0] = '{'; buf[1] = '\n';
+    buf[0] = '{';
+    buf[1] = '\n';
     var rp: usize = 2;
     @memcpy(buf[rp..][0..members.items[0].len], members.items[0]);
     rp += members.items[0].len;
     for (members.items[1..]) |m| {
-        buf[rp] = '\n'; rp += 1;
+        buf[rp] = '\n';
+        rp += 1;
         @memcpy(buf[rp..][0..m.len], m);
         rp += m.len;
     }
-    buf[rp] = '\n'; rp += 1;
-    buf[rp] = '}'; rp += 1;
+    buf[rp] = '\n';
+    rp += 1;
+    buf[rp] = '}';
+    rp += 1;
     return buf[0..rp];
 }
 
@@ -1806,6 +1912,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         const raw_params = extractParamList(s);
         s.skipWhitespaceAndComments();
         var ret_type = extractReturnType(s);
+        const has_explicit_return_type = ret_type.len > 0;
         if (ret_type.len == 0) {
             if (is_async and is_generator) {
                 ret_type = "AsyncGenerator<unknown, void, unknown>";
@@ -1819,7 +1926,15 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         }
         s.skipWhitespaceAndComments();
         if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
+            const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
+            if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
+                const inferred = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0) catch ret_type;
+                ret_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
+                    std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) catch inferred
+                else
+                    inferred;
+            }
         } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
             s.pos += 1;
         }
@@ -1834,14 +1949,22 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             generics.len + dts_params.len + 2 + ret_type.len + 1;
         const meth_buf = s.allocator.alloc(u8, meth_total) catch return;
         var mp: usize = 0;
-        @memcpy(meth_buf[mp..][0..mod_prefix.len], mod_prefix); mp += mod_prefix.len;
-        @memcpy(meth_buf[mp..][0..gen_text.len], gen_text); mp += gen_text.len;
-        @memcpy(meth_buf[mp..][0..member_name.len], member_name); mp += member_name.len;
-        @memcpy(meth_buf[mp..][0..opt_mark.len], opt_mark); mp += opt_mark.len;
-        @memcpy(meth_buf[mp..][0..generics.len], generics); mp += generics.len;
-        @memcpy(meth_buf[mp..][0..dts_params.len], dts_params); mp += dts_params.len;
-        @memcpy(meth_buf[mp..][0..2], ": "); mp += 2;
-        @memcpy(meth_buf[mp..][0..ret_type.len], ret_type); mp += ret_type.len;
+        @memcpy(meth_buf[mp..][0..mod_prefix.len], mod_prefix);
+        mp += mod_prefix.len;
+        @memcpy(meth_buf[mp..][0..gen_text.len], gen_text);
+        mp += gen_text.len;
+        @memcpy(meth_buf[mp..][0..member_name.len], member_name);
+        mp += member_name.len;
+        @memcpy(meth_buf[mp..][0..opt_mark.len], opt_mark);
+        mp += opt_mark.len;
+        @memcpy(meth_buf[mp..][0..generics.len], generics);
+        mp += generics.len;
+        @memcpy(meth_buf[mp..][0..dts_params.len], dts_params);
+        mp += dts_params.len;
+        @memcpy(meth_buf[mp..][0..2], ": ");
+        mp += 2;
+        @memcpy(meth_buf[mp..][0..ret_type.len], ret_type);
+        mp += ret_type.len;
         meth_buf[mp] = ';';
         members.append(meth_buf) catch {};
     } else if (next_ch == ch.CH_COLON or next_ch == ch.CH_EQUAL or next_ch == ch.CH_SEMI or next_ch == ch.CH_RBRACE or next_ch == ch.CH_LF or next_ch == ch.CH_CR) {
@@ -1914,11 +2037,16 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         const prop_total = mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;
         const prop_buf = s.allocator.alloc(u8, prop_total) catch return;
         var pp: usize = 0;
-        @memcpy(prop_buf[pp..][0..mod_prefix.len], mod_prefix); pp += mod_prefix.len;
-        @memcpy(prop_buf[pp..][0..member_name.len], member_name); pp += member_name.len;
-        @memcpy(prop_buf[pp..][0..opt_mark.len], opt_mark); pp += opt_mark.len;
-        @memcpy(prop_buf[pp..][0..2], ": "); pp += 2;
-        @memcpy(prop_buf[pp..][0..prop_type.len], prop_type); pp += prop_type.len;
+        @memcpy(prop_buf[pp..][0..mod_prefix.len], mod_prefix);
+        pp += mod_prefix.len;
+        @memcpy(prop_buf[pp..][0..member_name.len], member_name);
+        pp += member_name.len;
+        @memcpy(prop_buf[pp..][0..opt_mark.len], opt_mark);
+        pp += opt_mark.len;
+        @memcpy(prop_buf[pp..][0..2], ": ");
+        pp += 2;
+        @memcpy(prop_buf[pp..][0..prop_type.len], prop_type);
+        pp += prop_type.len;
         prop_buf[pp] = ';';
         members.append(prop_buf) catch {};
     } else {
@@ -2026,25 +2154,41 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         const m_total = 2 + mod_text_len + dts_param.len + 1;
         const mbuf = s.allocator.alloc(u8, m_total) catch continue;
         var mp: usize = 0;
-        mbuf[mp] = ' '; mp += 1;
-        mbuf[mp] = ' '; mp += 1;
+        mbuf[mp] = ' ';
+        mp += 1;
+        mbuf[mp] = ' ';
+        mp += 1;
         var first_mod = true;
         if (has_public) {
-            @memcpy(mbuf[mp..][0..pub_token.len], pub_token); mp += pub_token.len;
+            @memcpy(mbuf[mp..][0..pub_token.len], pub_token);
+            mp += pub_token.len;
             first_mod = false;
         }
         if (has_protected) {
-            if (!first_mod) { mbuf[mp] = ' '; mp += 1; }
-            @memcpy(mbuf[mp..][0..prot_token.len], prot_token); mp += prot_token.len;
+            if (!first_mod) {
+                mbuf[mp] = ' ';
+                mp += 1;
+            }
+            @memcpy(mbuf[mp..][0..prot_token.len], prot_token);
+            mp += prot_token.len;
             first_mod = false;
         }
         if (has_readonly) {
-            if (!first_mod) { mbuf[mp] = ' '; mp += 1; }
-            @memcpy(mbuf[mp..][0..ro_token.len], ro_token); mp += ro_token.len;
+            if (!first_mod) {
+                mbuf[mp] = ' ';
+                mp += 1;
+            }
+            @memcpy(mbuf[mp..][0..ro_token.len], ro_token);
+            mp += ro_token.len;
         }
-        if (num_mods > 0) { mbuf[mp] = ' '; mp += 1; }
-        @memcpy(mbuf[mp..][0..dts_param.len], dts_param); mp += dts_param.len;
-        mbuf[mp] = ';'; mp += 1;
+        if (num_mods > 0) {
+            mbuf[mp] = ' ';
+            mp += 1;
+        }
+        @memcpy(mbuf[mp..][0..dts_param.len], dts_param);
+        mp += dts_param.len;
+        mbuf[mp] = ';';
+        mp += 1;
         members.append(mbuf[0..mp]) catch {};
     }
 }
@@ -2098,13 +2242,20 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
     const text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix); tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw); tp += declare_kw.len;
-        @memcpy(buf[tp..][0..keyword.len], keyword); tp += keyword.len;
-        buf[tp] = ' '; tp += 1;
-        @memcpy(buf[tp..][0..name.len], name); tp += name.len;
-        buf[tp] = ' '; tp += 1;
-        @memcpy(buf[tp..][0..body.len], body); tp += body.len;
+        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+        tp += export_prefix.len;
+        @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
+        tp += declare_kw.len;
+        @memcpy(buf[tp..][0..keyword.len], keyword);
+        tp += keyword.len;
+        buf[tp] = ' ';
+        tp += 1;
+        @memcpy(buf[tp..][0..name.len], name);
+        tp += name.len;
+        buf[tp] = ' ';
+        tp += 1;
+        @memcpy(buf[tp..][0..body.len], body);
+        tp += body.len;
         break :blk @as([]const u8, buf);
     };
 
@@ -2162,7 +2313,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
         // byte could start either. Saves matchWord on every other dispatch path.
         const dispatch_byte: u8 = if (s.pos < s.len) s.source[s.pos] else 0;
         if ((dispatch_byte == 'f' and s.matchWord("function")) or
-            (dispatch_byte == 'a' and s.matchWord("async") and s.peekAfterKeyword("async", "function"))) {
+            (dispatch_byte == 'a' and s.matchWord("async") and s.peekAfterKeyword("async", "function")))
+        {
             var is_async = false;
             if (dispatch_byte == 'a' and s.matchWord("async")) {
                 is_async = true;
@@ -2198,14 +2350,22 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 generics.len + dts_params.len + colon_sep.len + ret_type.len + 1;
             const fn_buf = s.allocator.alloc(u8, fn_total) catch continue;
             var fp: usize = 0;
-            @memcpy(fn_buf[fp..][0..indent.len], indent); fp += indent.len;
-            @memcpy(fn_buf[fp..][0..prefix.len], prefix); fp += prefix.len;
-            @memcpy(fn_buf[fp..][0..fn_kw.len], fn_kw); fp += fn_kw.len;
-            @memcpy(fn_buf[fp..][0..fname.len], fname); fp += fname.len;
-            @memcpy(fn_buf[fp..][0..generics.len], generics); fp += generics.len;
-            @memcpy(fn_buf[fp..][0..dts_params.len], dts_params); fp += dts_params.len;
-            @memcpy(fn_buf[fp..][0..colon_sep.len], colon_sep); fp += colon_sep.len;
-            @memcpy(fn_buf[fp..][0..ret_type.len], ret_type); fp += ret_type.len;
+            @memcpy(fn_buf[fp..][0..indent.len], indent);
+            fp += indent.len;
+            @memcpy(fn_buf[fp..][0..prefix.len], prefix);
+            fp += prefix.len;
+            @memcpy(fn_buf[fp..][0..fn_kw.len], fn_kw);
+            fp += fn_kw.len;
+            @memcpy(fn_buf[fp..][0..fname.len], fname);
+            fp += fname.len;
+            @memcpy(fn_buf[fp..][0..generics.len], generics);
+            fp += generics.len;
+            @memcpy(fn_buf[fp..][0..dts_params.len], dts_params);
+            fp += dts_params.len;
+            @memcpy(fn_buf[fp..][0..colon_sep.len], colon_sep);
+            fp += colon_sep.len;
+            @memcpy(fn_buf[fp..][0..ret_type.len], ret_type);
+            fp += ret_type.len;
             fn_buf[fp] = ';';
             lines.append(fn_buf) catch {};
         } else if (s.matchWord("const") or s.matchWord("let") or s.matchWord("var")) {
@@ -2231,12 +2391,18 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 const ce_total = indent.len + prefix.len + ce_kw.len + ce_name.len + 1 + ce_body.len;
                 const ce_buf = s.allocator.alloc(u8, ce_total) catch continue;
                 var cp: usize = 0;
-                @memcpy(ce_buf[cp..][0..indent.len], indent); cp += indent.len;
-                @memcpy(ce_buf[cp..][0..prefix.len], prefix); cp += prefix.len;
-                @memcpy(ce_buf[cp..][0..ce_kw.len], ce_kw); cp += ce_kw.len;
-                @memcpy(ce_buf[cp..][0..ce_name.len], ce_name); cp += ce_name.len;
-                ce_buf[cp] = ' '; cp += 1;
-                @memcpy(ce_buf[cp..][0..ce_body.len], ce_body); cp += ce_body.len;
+                @memcpy(ce_buf[cp..][0..indent.len], indent);
+                cp += indent.len;
+                @memcpy(ce_buf[cp..][0..prefix.len], prefix);
+                cp += prefix.len;
+                @memcpy(ce_buf[cp..][0..ce_kw.len], ce_kw);
+                cp += ce_kw.len;
+                @memcpy(ce_buf[cp..][0..ce_name.len], ce_name);
+                cp += ce_name.len;
+                ce_buf[cp] = ' ';
+                cp += 1;
+                @memcpy(ce_buf[cp..][0..ce_body.len], ce_body);
+                cp += ce_body.len;
                 lines.append(ce_buf) catch {};
                 continue;
             }
@@ -2309,13 +2475,20 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             const var_total = indent.len + prefix.len + kw.len + 1 + vname.len + 2 + vtype.len + 1;
             const var_buf = s.allocator.alloc(u8, var_total) catch continue;
             var vp: usize = 0;
-            @memcpy(var_buf[vp..][0..indent.len], indent); vp += indent.len;
-            @memcpy(var_buf[vp..][0..prefix.len], prefix); vp += prefix.len;
-            @memcpy(var_buf[vp..][0..kw.len], kw); vp += kw.len;
-            var_buf[vp] = ' '; vp += 1;
-            @memcpy(var_buf[vp..][0..vname.len], vname); vp += vname.len;
-            @memcpy(var_buf[vp..][0..2], ": "); vp += 2;
-            @memcpy(var_buf[vp..][0..vtype.len], vtype); vp += vtype.len;
+            @memcpy(var_buf[vp..][0..indent.len], indent);
+            vp += indent.len;
+            @memcpy(var_buf[vp..][0..prefix.len], prefix);
+            vp += prefix.len;
+            @memcpy(var_buf[vp..][0..kw.len], kw);
+            vp += kw.len;
+            var_buf[vp] = ' ';
+            vp += 1;
+            @memcpy(var_buf[vp..][0..vname.len], vname);
+            vp += vname.len;
+            @memcpy(var_buf[vp..][0..2], ": ");
+            vp += 2;
+            @memcpy(var_buf[vp..][0..vtype.len], vtype);
+            vp += vtype.len;
             var_buf[vp] = ';';
             lines.append(var_buf) catch {};
         } else if (s.matchWord("interface")) {
@@ -2341,14 +2514,22 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 generics.len + ext.len + 1 + body.len;
             const if_buf = s.allocator.alloc(u8, if_total) catch continue;
             var ifp: usize = 0;
-            @memcpy(if_buf[ifp..][0..indent.len], indent); ifp += indent.len;
-            @memcpy(if_buf[ifp..][0..prefix.len], prefix); ifp += prefix.len;
-            @memcpy(if_buf[ifp..][0..if_kw.len], if_kw); ifp += if_kw.len;
-            @memcpy(if_buf[ifp..][0..iname.len], iname); ifp += iname.len;
-            @memcpy(if_buf[ifp..][0..generics.len], generics); ifp += generics.len;
-            @memcpy(if_buf[ifp..][0..ext.len], ext); ifp += ext.len;
-            if_buf[ifp] = ' '; ifp += 1;
-            @memcpy(if_buf[ifp..][0..body.len], body); ifp += body.len;
+            @memcpy(if_buf[ifp..][0..indent.len], indent);
+            ifp += indent.len;
+            @memcpy(if_buf[ifp..][0..prefix.len], prefix);
+            ifp += prefix.len;
+            @memcpy(if_buf[ifp..][0..if_kw.len], if_kw);
+            ifp += if_kw.len;
+            @memcpy(if_buf[ifp..][0..iname.len], iname);
+            ifp += iname.len;
+            @memcpy(if_buf[ifp..][0..generics.len], generics);
+            ifp += generics.len;
+            @memcpy(if_buf[ifp..][0..ext.len], ext);
+            ifp += ext.len;
+            if_buf[ifp] = ' ';
+            ifp += 1;
+            @memcpy(if_buf[ifp..][0..body.len], body);
+            ifp += body.len;
             lines.append(if_buf) catch {};
         } else if (s.matchWord("type")) {
             s.pos += 4;
@@ -2384,13 +2565,20 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     generics.len + eq_sep.len + type_body.len;
                 const ty_buf = s.allocator.alloc(u8, ty_total) catch continue;
                 var typ: usize = 0;
-                @memcpy(ty_buf[typ..][0..indent.len], indent); typ += indent.len;
-                @memcpy(ty_buf[typ..][0..prefix.len], prefix); typ += prefix.len;
-                @memcpy(ty_buf[typ..][0..ty_kw.len], ty_kw); typ += ty_kw.len;
-                @memcpy(ty_buf[typ..][0..tname.len], tname); typ += tname.len;
-                @memcpy(ty_buf[typ..][0..generics.len], generics); typ += generics.len;
-                @memcpy(ty_buf[typ..][0..eq_sep.len], eq_sep); typ += eq_sep.len;
-                @memcpy(ty_buf[typ..][0..type_body.len], type_body); typ += type_body.len;
+                @memcpy(ty_buf[typ..][0..indent.len], indent);
+                typ += indent.len;
+                @memcpy(ty_buf[typ..][0..prefix.len], prefix);
+                typ += prefix.len;
+                @memcpy(ty_buf[typ..][0..ty_kw.len], ty_kw);
+                typ += ty_kw.len;
+                @memcpy(ty_buf[typ..][0..tname.len], tname);
+                typ += tname.len;
+                @memcpy(ty_buf[typ..][0..generics.len], generics);
+                typ += generics.len;
+                @memcpy(ty_buf[typ..][0..eq_sep.len], eq_sep);
+                typ += eq_sep.len;
+                @memcpy(ty_buf[typ..][0..type_body.len], type_body);
+                typ += type_body.len;
                 lines.append(ty_buf) catch {};
             }
         } else if (s.matchWord("enum")) {
@@ -2405,12 +2593,18 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             const en_total = indent.len + prefix.len + en_kw.len + ename.len + 1 + ebody.len;
             const en_buf = s.allocator.alloc(u8, en_total) catch continue;
             var ep: usize = 0;
-            @memcpy(en_buf[ep..][0..indent.len], indent); ep += indent.len;
-            @memcpy(en_buf[ep..][0..prefix.len], prefix); ep += prefix.len;
-            @memcpy(en_buf[ep..][0..en_kw.len], en_kw); ep += en_kw.len;
-            @memcpy(en_buf[ep..][0..ename.len], ename); ep += ename.len;
-            en_buf[ep] = ' '; ep += 1;
-            @memcpy(en_buf[ep..][0..ebody.len], ebody); ep += ebody.len;
+            @memcpy(en_buf[ep..][0..indent.len], indent);
+            ep += indent.len;
+            @memcpy(en_buf[ep..][0..prefix.len], prefix);
+            ep += prefix.len;
+            @memcpy(en_buf[ep..][0..en_kw.len], en_kw);
+            ep += en_kw.len;
+            @memcpy(en_buf[ep..][0..ename.len], ename);
+            ep += ename.len;
+            en_buf[ep] = ' ';
+            ep += 1;
+            @memcpy(en_buf[ep..][0..ebody.len], ebody);
+            ep += ebody.len;
             lines.append(en_buf) catch {};
         } else if (s.matchWord("namespace") or s.matchWord("module")) {
             // First-char dispatch — previously matchWord ran twice more.
@@ -2425,13 +2619,20 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             const ns_total = indent.len + prefix.len + ns_kw.len + 1 + ns_name.len + 1 + ns_body.len;
             const ns_buf = s.allocator.alloc(u8, ns_total) catch continue;
             var nsp: usize = 0;
-            @memcpy(ns_buf[nsp..][0..indent.len], indent); nsp += indent.len;
-            @memcpy(ns_buf[nsp..][0..prefix.len], prefix); nsp += prefix.len;
-            @memcpy(ns_buf[nsp..][0..ns_kw.len], ns_kw); nsp += ns_kw.len;
-            ns_buf[nsp] = ' '; nsp += 1;
-            @memcpy(ns_buf[nsp..][0..ns_name.len], ns_name); nsp += ns_name.len;
-            ns_buf[nsp] = ' '; nsp += 1;
-            @memcpy(ns_buf[nsp..][0..ns_body.len], ns_body); nsp += ns_body.len;
+            @memcpy(ns_buf[nsp..][0..indent.len], indent);
+            nsp += indent.len;
+            @memcpy(ns_buf[nsp..][0..prefix.len], prefix);
+            nsp += prefix.len;
+            @memcpy(ns_buf[nsp..][0..ns_kw.len], ns_kw);
+            nsp += ns_kw.len;
+            ns_buf[nsp] = ' ';
+            nsp += 1;
+            @memcpy(ns_buf[nsp..][0..ns_name.len], ns_name);
+            nsp += ns_name.len;
+            ns_buf[nsp] = ' ';
+            nsp += 1;
+            @memcpy(ns_buf[nsp..][0..ns_body.len], ns_body);
+            nsp += ns_body.len;
             lines.append(ns_buf) catch {};
         } else if (s.matchWord("class") or s.matchWord("abstract")) {
             // Handle class inside namespace
@@ -2455,18 +2656,14 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     if (s.pos >= s.len) break;
                     const c0 = s.source[s.pos];
                     var kw_len: usize = 0;
-                    if (c0 == 'e' and s.matchWord("extends")) kw_len = 7
-                    else if (c0 == 'i' and s.matchWord("implements")) kw_len = 10
-                    else break;
+                    if (c0 == 'e' and s.matchWord("extends")) kw_len = 7 else if (c0 == 'i' and s.matchWord("implements")) kw_len = 10 else break;
                     s.pos += kw_len;
                     s.skipWhitespaceAndComments();
                     var depth: isize = 0;
                     while (s.pos < s.len) {
                         if (s.skipNonCode()) continue;
                         const tc = s.source[s.pos];
-                        if (tc == ch.CH_LANGLE) depth += 1
-                        else if (tc == ch.CH_RANGLE and !s.isArrowGT()) depth -= 1
-                        else if (depth == 0 and (tc == ch.CH_LBRACE or (tc == 'i' and s.matchWord("implements")))) break;
+                        if (tc == ch.CH_LANGLE) depth += 1 else if (tc == ch.CH_RANGLE and !s.isArrowGT()) depth -= 1 else if (depth == 0 and (tc == ch.CH_LBRACE or (tc == 'i' and s.matchWord("implements")))) break;
                         s.pos += 1;
                     }
                 }
@@ -2479,14 +2676,22 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     cname.len + cgen.len + 1 + cbody.len;
                 const cl_buf = s.allocator.alloc(u8, cl_total) catch continue;
                 var cp: usize = 0;
-                @memcpy(cl_buf[cp..][0..indent.len], indent); cp += indent.len;
-                @memcpy(cl_buf[cp..][0..prefix.len], prefix); cp += prefix.len;
-                @memcpy(cl_buf[cp..][0..abs_kw.len], abs_kw); cp += abs_kw.len;
-                @memcpy(cl_buf[cp..][0..cl_kw.len], cl_kw); cp += cl_kw.len;
-                @memcpy(cl_buf[cp..][0..cname.len], cname); cp += cname.len;
-                @memcpy(cl_buf[cp..][0..cgen.len], cgen); cp += cgen.len;
-                cl_buf[cp] = ' '; cp += 1;
-                @memcpy(cl_buf[cp..][0..cbody.len], cbody); cp += cbody.len;
+                @memcpy(cl_buf[cp..][0..indent.len], indent);
+                cp += indent.len;
+                @memcpy(cl_buf[cp..][0..prefix.len], prefix);
+                cp += prefix.len;
+                @memcpy(cl_buf[cp..][0..abs_kw.len], abs_kw);
+                cp += abs_kw.len;
+                @memcpy(cl_buf[cp..][0..cl_kw.len], cl_kw);
+                cp += cl_kw.len;
+                @memcpy(cl_buf[cp..][0..cname.len], cname);
+                cp += cname.len;
+                @memcpy(cl_buf[cp..][0..cgen.len], cgen);
+                cp += cgen.len;
+                cl_buf[cp] = ' ';
+                cp += 1;
+                @memcpy(cl_buf[cp..][0..cbody.len], cbody);
+                cp += cbody.len;
                 lines.append(cl_buf) catch {};
             } else {
                 s.skipToStatementEnd();
@@ -2504,9 +2709,12 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 const def_total = indent.len + def_kw.len + def_text.len + 1;
                 const def_buf = s.allocator.alloc(u8, def_total) catch continue;
                 var dp: usize = 0;
-                @memcpy(def_buf[dp..][0..indent.len], indent); dp += indent.len;
-                @memcpy(def_buf[dp..][0..def_kw.len], def_kw); dp += def_kw.len;
-                @memcpy(def_buf[dp..][0..def_text.len], def_text); dp += def_text.len;
+                @memcpy(def_buf[dp..][0..indent.len], indent);
+                dp += indent.len;
+                @memcpy(def_buf[dp..][0..def_kw.len], def_kw);
+                dp += def_kw.len;
+                @memcpy(def_buf[dp..][0..def_text.len], def_text);
+                dp += def_text.len;
                 def_buf[dp] = ';';
                 lines.append(def_buf) catch {};
             }
@@ -2521,17 +2729,21 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
     for (lines.items) |line| total_len += line.len;
     total_len += lines.items.len - 1; // newlines between
     const buf = s.allocator.alloc(u8, total_len) catch return "{}";
-    buf[0] = '{'; buf[1] = '\n';
+    buf[0] = '{';
+    buf[1] = '\n';
     var rp: usize = 2;
     @memcpy(buf[rp..][0..lines.items[0].len], lines.items[0]);
     rp += lines.items[0].len;
     for (lines.items[1..]) |line| {
-        buf[rp] = '\n'; rp += 1;
+        buf[rp] = '\n';
+        rp += 1;
         @memcpy(buf[rp..][0..line.len], line);
         rp += line.len;
     }
-    buf[rp] = '\n'; rp += 1;
-    buf[rp] = '}'; rp += 1;
+    buf[rp] = '\n';
+    rp += 1;
+    buf[rp] = '}';
+    rp += 1;
     return buf[0..rp];
 }
 

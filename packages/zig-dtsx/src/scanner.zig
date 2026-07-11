@@ -109,7 +109,11 @@ pub const Scanner = struct {
             // non-whitespace control chars (0-8, 14-31) are absent in TS source.
             while (self.pos + 16 <= self.len) {
                 const chunk: @Vector(16, u8) = self.source[self.pos..][0..16].*;
-                if (@reduce(.And, chunk <= @as(@Vector(16, u8), @splat(32)))) {
+                const whitespace = (chunk == @as(@Vector(16, u8), @splat(ch.CH_SPACE))) |
+                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_TAB))) |
+                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
+                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
+                if (@reduce(.And, whitespace)) {
                     self.pos += 16;
                 } else {
                     break;
@@ -222,6 +226,7 @@ pub const Scanner = struct {
                     const match_mask = (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKSLASH))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_DOLLAR))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE)));
                     if (@reduce(.Or, match_mask)) {
                         const bits: u16 = @bitCast(match_mask);
@@ -245,6 +250,11 @@ pub const Scanner = struct {
             if (c == ch.CH_DOLLAR and pos + 1 < len and src[pos + 1] == ch.CH_LBRACE) {
                 pos += 2;
                 depth += 1;
+                continue;
+            }
+            if (c == ch.CH_LBRACE and depth > 0) {
+                depth += 1;
+                pos += 1;
                 continue;
             }
             if (c == ch.CH_RBRACE and depth > 0) {
@@ -836,6 +846,9 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
     var word_set = std.StringHashMap(void).init(declarations.allocator);
     defer word_set.deinit();
+    for (declarations.items) |d| {
+        if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
+    }
 
     // Track how far we've extracted words — only process new text_parts each iteration
     var words_extracted_up_to: usize = 0;
@@ -915,8 +928,52 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
         for (to_insert.items) |d| {
             if (d.kind != .import_decl) {
                 text_parts.append(d.text) catch {};
+                if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
             }
         }
+    }
+}
+
+fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(void)) void {
+    var i: usize = 0;
+    while (i < value.len) {
+        const c = value[i];
+        if (c == '\'' or c == '"' or c == '`') {
+            const quote = c;
+            i += 1;
+            while (i < value.len) : (i += 1) {
+                if (value[i] == quote and !ch.isEscaped(value, i)) {
+                    i += 1;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '/') {
+            i = ch.indexOfChar(value, '\n', i + 2) orelse value.len;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '*') {
+            i = if (ch.indexOf(value, "*/", i + 2)) |end| end + 2 else value.len;
+            continue;
+        }
+        if (!ch.isIdentStart(c)) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        i += 1;
+        while (i < value.len and ch.isIdentChar(value[i])) i += 1;
+        var before = start;
+        while (before > 0 and ch.isWhitespace(value[before - 1])) before -= 1;
+        var after = i;
+        while (after < value.len and ch.isWhitespace(value[after])) after += 1;
+        const previous = if (before > 0) value[before - 1] else @as(u8, 0);
+        const next = if (after < value.len) value[after] else @as(u8, 0);
+        const is_spread = start >= 3 and std.mem.eql(u8, value[start - 3 .. start], "...");
+        if (next == ':' or (previous == '.' and !is_spread)) continue;
+        if (next == '(' and (previous == '{' or previous == ',')) continue;
+        references.put(value[start..i], {}) catch {};
     }
 }
 
@@ -1020,6 +1077,21 @@ test "scanner skipWhitespaceAndComments" {
     defer s.deinit();
     s.skipWhitespaceAndComments();
     try std.testing.expectEqualStrings("hello", s.source[s.pos .. s.pos + 5]);
+}
+
+test "scanner does not classify arbitrary control bytes as whitespace" {
+    var s = Scanner.init(std.testing.allocator, "\x00export", true, false);
+    defer s.deinit();
+    s.skipWhitespaceAndComments();
+    try std.testing.expectEqual(@as(usize, 0), s.pos);
+}
+
+test "scanner template literals balance nested interpolation braces" {
+    const source = "`value: ${{ nested: { answer: 42 } }.nested.answer}` rest";
+    var s = Scanner.init(std.testing.allocator, source, true, false);
+    defer s.deinit();
+    s.skipTemplateLiteral();
+    try std.testing.expectEqualStrings(" rest", source[s.pos..]);
 }
 
 // --- Tests added for performance/fix patches ---
