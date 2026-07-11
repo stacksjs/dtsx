@@ -1,7 +1,7 @@
 {
   "name": "zig-dtsx",
   "type": "module",
-  "version": "0.9.34",
+  "version": "0.9.35",
   "description": "High-performance DTS emitter written in Zig",
   "exports": {
     ".": {

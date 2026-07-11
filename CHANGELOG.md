@@ -1,4 +1,34 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.34...v0.9.35)
+
+### 🐛 Bug Fixes
+
+- **benchmark**: compare against TypeScript 7 CLI ([8304ed4](https://github.com/stacksjs/dtsx/commit/8304ed4)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **bun**: restore the dedicated plugin package ([37d58b2](https://github.com/stacksjs/dtsx/commit/37d58b2)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig-dtsx**: migrate sentinel allocation ([ae01902](https://github.com/stacksjs/dtsx/commit/ae01902)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **inference**: preserve inline object return types ([4bac8da](https://github.com/stacksjs/dtsx/commit/4bac8da)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### ⚡ Performance Improvements
+
+- **benchmark**: batch TypeScript project runs ([2fe9e76](https://github.com/stacksjs/dtsx/commit/2fe9e76)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### ♻️ Code Refactoring
+
+- **runtime**: standardize dtsx on TypeScript 7 ([e4a96ef](https://github.com/stacksjs/dtsx/commit/e4a96ef)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🤖 Continuous Integration
+
+- **benchmark**: validate native emitter changes ([b513f75](https://github.com/stacksjs/dtsx/commit/b513f75)) _(by Chris <chrisbreuer93@gmail.com>)_
+- align Zig with native emitter ([20471f6](https://github.com/stacksjs/dtsx/commit/20471f6)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.9.35 ([721ffbb](https://github.com/stacksjs/dtsx/commit/721ffbb)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.32...v0.9.33)
 
 ### 🤖 Continuous Integration
