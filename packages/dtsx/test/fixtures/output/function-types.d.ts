@@ -17,15 +17,15 @@ export declare function assertDefined<T>(value: T | undefined): asserts value is
 // Generator function types
 export declare function simpleGenerator(): Generator<number, void, unknown>;
 // Arrow function variations
-export declare const arrowSimple: () => 'simple';
-export declare const arrowWithParams: (x: number, y: number) => unknown;
+export declare const arrowSimple: () => string;
+export declare const arrowWithParams: (x: number, y: number) => number;
 export declare const arrowAsync: (url: string) => Promise<unknown>;
 export declare const arrowGeneric: <T extends object>(obj: T) => T;
 // Higher order functions
 export declare const createMultiplier: (factor: number) => (value: number) => any;
 export declare const pipe: <T>(...fns: Array<(value: T) => T>) => (value: T) => T;
 // Method decorator pattern
-export declare const methodDecorator: (target: any, propertyKey: string, descriptor: PropertyDescriptor) => unknown;
+export declare const methodDecorator: (target: any, propertyKey: string, descriptor: PropertyDescriptor) => PropertyDescriptor;
 export declare const generatorArrow: <T>(items: T[]) => Generator<T, void, unknown>;
 // Constructor function
 export declare interface ConstructorExample {

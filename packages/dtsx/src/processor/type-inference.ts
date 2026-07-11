@@ -417,12 +417,15 @@ function collectParameterTypes(parameters: string): Map<string, string> {
   const types = new Map<string, string>()
   const content = parameters.startsWith('(') && parameters.endsWith(')') ? parameters.slice(1, -1) : parameters
   let start = 0
-  let depth = 0
+  let structuralDepth = 0
+  let typeArgumentDepth = 0
   for (let i = 0; i <= content.length; i++) {
     const char = content.charCodeAt(i)
-    if (char === 40 || char === 91 || char === 123 || char === 60) depth++
-    else if (char === 41 || char === 93 || char === 125 || char === 62) depth--
-    if (i !== content.length && (char !== 44 || depth !== 0)) continue
+    if (char === 40 || char === 91 || char === 123) structuralDepth++
+    else if (char === 41 || char === 93 || char === 125) structuralDepth--
+    else if (char === 60) typeArgumentDepth++
+    else if (char === 62 && content.charCodeAt(i - 1) !== 61 && typeArgumentDepth > 0) typeArgumentDepth--
+    if (i !== content.length && (char !== 44 || structuralDepth !== 0 || typeArgumentDepth !== 0)) continue
 
     const parameter = content.slice(start, i).trim()
     const colon = parameter.indexOf(':')
@@ -440,6 +443,7 @@ function collectParameterTypes(parameters: string): Map<string, string> {
 
 function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>): string {
   let value = expression.trim()
+  while (hasBalancedOuterParentheses(value)) value = value.slice(1, -1).trim()
   if (value.startsWith('await ')) {
     const awaited = inferBodyExpressionType(value.slice(6), parameterTypes)
     return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
@@ -447,6 +451,13 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
   if (parameterTypes.has(value)) return parameterTypes.get(value)!
   if (value.startsWith('!')) return 'boolean'
   if (value.startsWith('fetch(')) return 'Promise<Response>'
+
+  const conditional = splitTopLevelConditional(value)
+  if (conditional) {
+    const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes)
+    const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes)
+    return whenTrue === whenFalse ? whenTrue : `${whenTrue} | ${whenFalse}`
+  }
 
   const comparisonOperators = ['===', '!==', '==', '!=', '>=', '<=']
   if (comparisonOperators.some(operator => value.includes(operator)) || value.includes(' > ') || value.includes(' < ')) return 'boolean'
@@ -465,9 +476,37 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     }
   }
 
-  // Remove a single balanced pair of grouping parentheses before falling back.
-  if (value.startsWith('(') && value.endsWith(')')) value = value.slice(1, -1).trim()
-  return inferNarrowType(value, false)
+  const inferred = inferNarrowType(value, false)
+  return inferred.replace(/\btypeof\s+[$A-Z_a-z][$\w]*/g, (reference) => {
+    const name = reference.slice(7)
+    return parameterTypes.get(name) ?? 'unknown'
+  })
+}
+
+function hasBalancedOuterParentheses(value: string): boolean {
+  if (!value.startsWith('(') || !value.endsWith(')')) return false
+  let depth = 0
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i)
+    if (char === 40) depth++
+    else if (char === 41 && --depth === 0) return i === value.length - 1
+  }
+  return false
+}
+
+function splitTopLevelConditional(value: string): { whenTrue: string, whenFalse: string } | null {
+  let depth = 0
+  let question = -1
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i)
+    if (char === 40 || char === 91 || char === 123) depth++
+    else if (char === 41 || char === 93 || char === 125) depth--
+    else if (char === 63 && depth === 0 && value.charCodeAt(i + 1) !== 63) question = i
+    else if (char === 58 && depth === 0 && question !== -1) {
+      return { whenTrue: value.slice(question + 1, i), whenFalse: value.slice(i + 1) }
+    }
+  }
+  return null
 }
 
 function isWordBoundary(value: string, start: number, length: number): boolean {
@@ -771,7 +810,15 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
     const trimmedEl = el.trim()
     const saved = _cleanDefaultResult
     _cleanDefaultResult = null
-    if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
+    if (trimmedEl.startsWith('...')) {
+      const spreadValue = trimmedEl.slice(3).trim()
+      const spreadType = inferNarrowType(spreadValue, false, false, _depth + 1)
+      if (spreadType.endsWith('[]')) elementTypes.push(spreadType.slice(0, -2))
+      else if (spreadType.startsWith('readonly [') && spreadType.endsWith(']')) elementTypes.push(spreadType.slice(10, -1))
+      else if (isEntityName(spreadValue)) elementTypes.push(`(typeof ${spreadValue})[number]`)
+      else elementTypes.push('unknown')
+    }
+    else if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
       elementTypes.push(inferArrayType(trimmedEl, isConst, _depth + 1))
     }
     else {
@@ -956,6 +1003,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   // Parse object properties
   const properties = parseObjectProperties(content)
   const propTypes: string[] = []
+  const spreadTypes: string[] = []
 
   // Track whether we should build a clean default inline
   const trackDefaults = _collectCleanDefault && !isConst
@@ -964,6 +1012,16 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   for (const [key, val] of properties) {
     const { comments: keyComments, key: propertyKey } = splitLeadingCommentsFromKey(key)
     const commentPrefix = keyComments ? `${keyComments}\n  ` : ''
+
+    if (propertyKey === '...') {
+      const spreadValue = val.trim()
+      const spreadType = isEntityName(spreadValue)
+        ? `typeof ${spreadValue}`
+        : inferNarrowType(spreadValue, isConst, false, _depth + 1)
+      if (spreadType !== 'unknown') spreadTypes.push(spreadType)
+      if (trackDefaults && (isEntityName(spreadValue) || spreadValue.startsWith('{'))) cleanProps.push(`...${collapseWhitespace(spreadValue)}`)
+      continue
+    }
 
     // Save/restore nested clean default around recursive calls
     const saved = _cleanDefaultResult
@@ -1056,7 +1114,14 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
   }
 
-  return `{\n  ${propTypes.join(';\n  ')}\n}`
+  const ownType = propTypes.length > 0 ? `{\n  ${propTypes.join(';\n  ')}\n}` : '{}'
+  if (spreadTypes.length === 0) return ownType
+
+  let mergedType = spreadTypes[0]
+  for (let i = 1; i < spreadTypes.length; i++) {
+    mergedType = `Omit<${mergedType}, keyof ${spreadTypes[i]}> & ${spreadTypes[i]}`
+  }
+  return propTypes.length > 0 ? `Omit<${mergedType}, keyof ${ownType}> & ${ownType}` : mergedType
 }
 
 function isIdentifierName(value: string): boolean {
@@ -1067,6 +1132,11 @@ function isIdentifierName(value: string): boolean {
     if (!isWordChar(value.charCodeAt(i))) return false
   }
   return true
+}
+
+function isEntityName(value: string): boolean {
+  const parts = value.split('.')
+  return parts.length > 0 && parts.every(isIdentifierName)
 }
 
 /**
@@ -1581,6 +1651,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         else if (inKey && current.trim()) {
           const shorthand = current.trim()
           if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
+          else if (shorthand.startsWith('...') && shorthand.length > 3) properties.push(['...', shorthand.slice(3).trim()])
         }
         current = ''
         currentKey = ''
@@ -1607,6 +1678,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   else if (inKey && current.trim()) {
     const shorthand = current.trim()
     if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
+    else if (shorthand.startsWith('...') && shorthand.length > 3) properties.push(['...', shorthand.slice(3).trim()])
   }
 
   return properties
@@ -1941,16 +2013,13 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
   // Handle async arrow functions
   if (trimmed.startsWith('async ') && trimmed.includes('=>')) {
     const asyncRemoved = trimmed.slice(5).trim() // Remove 'async '
-    const arrowIndex = asyncRemoved.indexOf('=>')
-    let params = asyncRemoved.substring(0, arrowIndex).trim()
+    const arrowIndex = findMainArrowIndex(asyncRemoved)
+    if (arrowIndex === -1) return inUnion ? '(() => Promise<unknown>)' : '() => Promise<unknown>'
+    const rawParams = asyncRemoved.substring(0, arrowIndex).trim()
     const body = asyncRemoved.substring(arrowIndex + 2).trim()
-
-    let explicitReturnType = ''
-    const closingParenColon = params.lastIndexOf('):')
-    if (closingParenColon !== -1) {
-      explicitReturnType = params.substring(closingParenColon + 2).trim()
-      params = params.substring(0, closingParenColon + 1)
-    }
+    const signature = splitArrowSignature(rawParams)
+    let params = signature.params
+    const explicitReturnType = signature.returnType
 
     // Clean up params - remove default values
     params = cleanParameterDefaults(params)
@@ -1970,15 +2039,14 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       // The source annotation already contains the required Promise wrapper.
     }
     else if (body.startsWith('{')) {
-      // Block body - can't easily infer return type
-      returnType = 'unknown'
+      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), true, params)
     }
     else {
       // Expression body - try to infer
       returnType = inferNarrowType(body, isConst, false, _depth + 1)
     }
 
-    const funcType = `${params} => ${explicitReturnType || `Promise<${returnType}>`}`
+    const funcType = `${params} => ${explicitReturnType || returnType.startsWith('Promise<') ? returnType : `Promise<${returnType}>`}`
     return inUnion ? `(${funcType})` : funcType
   }
 
@@ -2005,20 +2073,11 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       return inUnion ? `(${funcType})` : funcType
     }
 
-    let params = remaining.substring(0, arrowIndex).trim()
+    const rawParams = remaining.substring(0, arrowIndex).trim()
     const body = remaining.substring(arrowIndex + 2).trim()
-
-    // Handle explicit return type annotations in parameters
-    // Look for pattern like (param: Type): ReturnType
-    let explicitReturnType = ''
-    const closingParenColon = params.lastIndexOf('):')
-    if (closingParenColon !== -1) {
-      const afterColon = params.substring(closingParenColon + 2).trim()
-      if (afterColon && !afterColon.includes('=>') && !afterColon.includes('=')) {
-        explicitReturnType = afterColon
-        params = params.substring(0, closingParenColon + 1)
-      }
-    }
+    const signature = splitArrowSignature(rawParams)
+    let params = signature.params
+    const explicitReturnType = signature.returnType
 
     // Clean up params - remove default values
     params = cleanParameterDefaults(params)
@@ -2039,8 +2098,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       returnType = explicitReturnType
     }
     else if (body.startsWith('{')) {
-      // Block body - can't easily infer return type
-      returnType = 'unknown'
+      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), false, params)
     }
     else if (body.includes('=>')) {
       // This is a higher-order function returning another function
@@ -2082,7 +2140,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         returnType = 'unknown'
       }
       else {
-        returnType = inferNarrowType(body, isConst, false, _depth + 1)
+        returnType = inferBodyExpressionType(body, collectParameterTypes(params))
       }
     }
 
@@ -2194,6 +2252,18 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
 
   const funcType = '() => unknown'
   return inUnion ? `(${funcType})` : funcType
+}
+
+function splitArrowSignature(value: string): { params: string, returnType: string } {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('(')) return { params: trimmed, returnType: '' }
+  const close = findMatchingBracket(trimmed, 0, '(', ')')
+  if (close === -1) return { params: trimmed, returnType: '' }
+  const suffix = trimmed.slice(close + 1).trim()
+  return {
+    params: trimmed.slice(0, close + 1),
+    returnType: suffix.startsWith(':') ? suffix.slice(1).trim() : '',
+  }
 }
 
 /**

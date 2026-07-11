@@ -15,14 +15,14 @@ export declare var helloWorld: string;
  *   someNumber: 1000,
  *   someBoolean: true,
  *   someFalse: false,
- *   someFunction: () => unknown,
+ *   someFunction: () => void,
  *   anotherOne: () => unknown,
  *   someArray: [1, 2, 3],
  *   someNestedArray: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], ],
  *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
  *   someNestedArray3: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', [11, 12, 13], ],
  *   someObject: { key: 'value' },
- *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => unknown } },
+ *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => void } },
  *   someNestedObjectArray: [ { key: 'value' }, { key2: 'value2' }, ]
  * }
  * ```
@@ -36,7 +36,7 @@ export declare const someObject: {
   someBoolean: boolean;
   /** @defaultValue false */
   someFalse: boolean;
-  someFunction: () => unknown;
+  someFunction: () => void;
   anotherOne: () => unknown;
   someArray: number[];
   someNestedArray: number[][];
@@ -54,7 +54,7 @@ export declare const someObject: {
   /** @defaultValue 'value' */
   key: string
 };
-  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => unknown } };
+  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => void } };
   someNestedObjectArray: ({
   /** @defaultValue 'value' */
   key: string
@@ -113,7 +113,13 @@ export declare const methodDecorator: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
-) => unknown;
+) => Omit<PropertyDescriptor, keyof {
+  /** @defaultValue true */
+  enumerable: boolean
+}> & {
+  /** @defaultValue true */
+  enumerable: boolean
+};
 // declares as SomeType
 export declare const methodDecoratorWithExplicitType: (
   target: any,
