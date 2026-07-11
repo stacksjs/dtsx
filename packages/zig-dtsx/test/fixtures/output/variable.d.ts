@@ -117,7 +117,13 @@ export declare const methodDecorator: (
   target: any,
   propertyKey: string,
   descriptor: PropertyDescriptor
-) => unknown;
+) => Omit<PropertyDescriptor, keyof {
+  /** @defaultValue true */
+  enumerable: boolean
+}> & {
+  /** @defaultValue true */
+  enumerable: boolean
+};
 // declares as SomeType
 export declare const methodDecoratorWithExplicitType: (
   target: any,
@@ -149,7 +155,16 @@ export declare const CONFIG_MAP: {
 }
 }
 };
+/**
+ * @defaultValue
+ * ```ts
+ * {
+ *   run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>,
+ *   runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>
+ * }
+ * ```
+ */
 export declare const command: {
-  run: unknown;
-  runSync: unknown
+  run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>;
+  runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>
 };

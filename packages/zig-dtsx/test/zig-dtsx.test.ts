@@ -233,6 +233,18 @@ describeIf('zig-dtsx', () => {
       expect(result).toContain('greeting: `Hello World`')
     })
 
+    test('widens multiline template literal content', () => {
+      const result = dts('export const styles = `/** theme */\n.card { color: red; }`')
+      expect(result).toContain('styles: string')
+      expect(result).not.toContain('.card {')
+    })
+
+    test('widens interpolated runtime template literals', () => {
+      const result = dts('declare const name: string\nexport const greeting = `Hello ${name}`')
+      expect(result).toContain('greeting: string')
+      expect(result).not.toContain('${name}')
+    })
+
     test('const bigint literal', () => {
       const result = dts('export const big = 123n')
       expect(result).toContain('big: 123n')
@@ -1409,6 +1421,98 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
     test('export void function produces exact format', () => {
       const result = dts(`export function doIt(): void { console.log('done') }`)
       expect(result).toBe('export declare function doIt(): void;')
+    })
+  })
+
+  describe('Zig semantic and safety regressions', () => {
+    test('infers function declaration returns', () => {
+      expect(dts(`export function value() { return 1 }`)).toContain('value(): number')
+    })
+
+    test('infers async function declaration returns', () => {
+      expect(dts(`export async function value() { return 'ready' }`)).toContain('value(): Promise<string>')
+    })
+
+    test('infers class method returns', () => {
+      expect(dts(`export class Value { get() { return true } }`)).toContain('get(): boolean')
+    })
+
+    test('infers async class method returns', () => {
+      expect(dts(`export class Value { async get() { return 1 } }`)).toContain('get(): Promise<number>')
+    })
+
+    test('preserves explicit async arrow return annotations', () => {
+      expect(dts(`export const value = async (input: number) : Promise<number> => input`)).toContain('(input: number) => Promise<number>')
+    })
+
+    test('infers block arrow returns', () => {
+      expect(dts(`export const value = () => { return 1 }`)).toContain('() => number')
+    })
+
+    test('unions multiple block returns', () => {
+      expect(dts(`export const value = () => { if (flag) return 1; return 'none' }`)).toContain('() => number | string')
+    })
+
+    test('retains non-exported shorthand dependencies', () => {
+      const result = dts(`const hidden = 1; export const value = { hidden }`)
+      expect(result).toContain('declare const hidden: 1')
+      expect(result).toContain('hidden: typeof hidden')
+    })
+
+    test('retains non-exported array spread dependencies', () => {
+      const result = dts(`const values = [1, 2]; export const value = [...values, 3]`)
+      expect(result).toContain('declare const values: number[]')
+      expect(result).toContain('(typeof values)[number]')
+      expect(result).toContain('@defaultValue `[...values, 3]`')
+    })
+
+    test('models object spreads and own-property overrides', () => {
+      const result = dts(`const base = { value: 1 }; export const output = { ...base, value: 'changed' }`)
+      expect(result).toContain('Omit<typeof base, keyof {')
+      expect(result).toContain('value: string')
+    })
+
+    test('models later spreads overriding earlier spreads', () => {
+      const result = dts(`const first = { a: 1 }; const second = { b: 2 }; export const output = { ...first, ...second }`)
+      expect(result).toContain('Omit<typeof first, keyof typeof second> & typeof second')
+    })
+
+    test('infers inline object spreads', () => {
+      const result = dts(`export const output = { ...{ a: 1 }, b: true }`)
+      expect(result).toContain('a: number')
+      expect(result).toContain('b: boolean')
+    })
+
+    test('moves default-export object expressions to ambient bindings', () => {
+      const result = dts(`export default { answer: 42 }`)
+      expect(result).toContain('declare const __dtsx_default_export__')
+      expect(result).toContain('export default __dtsx_default_export__')
+      expect(result).not.toContain('export default {')
+    })
+
+    test('types dotted default exports with typeof', () => {
+      const result = dts(`const namespace = { value: 1 }; export default namespace.value`)
+      expect(result).toContain('typeof namespace.value')
+    })
+
+    test('types async default-export arrows', () => {
+      const result = dts(`export default async () => 1`)
+      expect(result).toContain('() => Promise<number>')
+    })
+
+    test('avoids default-export helper name collisions', () => {
+      const result = dts(`const __dtsx_default_export__ = 1; export default { value: 2 }`)
+      expect(result).toContain('__dtsx_default_export_1__')
+    })
+
+    test('balances nested braces in template interpolations', () => {
+      const result = dts('const hidden = `value: ${{ nested: { answer: 42 } }.nested.answer}`; export const visible = 1')
+      expect(result).toContain('visible: 1')
+    })
+
+    test('handles even backslash runs before closing quotes', () => {
+      const result = dts(String.raw`export const values = ["ends\\", "next"]`)
+      expect(result).toContain('string[]')
     })
   })
 })
