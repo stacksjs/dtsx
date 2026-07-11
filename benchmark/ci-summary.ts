@@ -263,7 +263,7 @@ for (const input of crossToolInputs) {
   const dtsx = benchFn(() => dtsxGenerate(input.source, input.filename))
   const dtsxNoCache = benchFn(() => dtsxGenerateNoCache(input.source, input.filename))
   const oxc = benchFn(() => isolatedDeclarationSync(input.filename, input.source, { sourcemap: false }))
-  const tsc = benchFn(() => tscGenerate(input.source, input.filename))
+  const tsc = benchFn(() => tscGenerate(input.source, input.filename), 2, 10)
   const tsgo = null
 
   crossToolResults.push({ input: input.name, zigDtsx, dtsx, dtsxNoCache, oxc, tsc, tsgo })
@@ -318,11 +318,8 @@ for (const count of projectCounts) {
     for (const f of projectFiles) isolatedDeclarationSync(f.name, f.source, { sourcemap: false })
   }, 1, 5)
 
-  const tscProject = benchFn(() => {
-    for (const f of projectFiles) tscGenerate(f.source, f.name)
-  }, 1, 5)
-
-  // tsgo: write all files to temp dir, then benchmark single invocation with all files
+  // TypeScript 7: write all files, then benchmark one project invocation.
+  let tscProject: TimingResult = { avg: 0, min: 0, max: 0 }
   let tsgoProject: TimingResult | null = null
   if (hasTsgo) {
     const tsgoProjectDir = join(tsgoTmpDir, `project-${count}`)
@@ -341,12 +338,12 @@ for (const count of projectCounts) {
         '--outDir', tsgoProjectOut, ...tsgoProjectFiles,
       ], { stdio: 'pipe', timeout: 60000 })
     }, 1, 5)
+    tscProject = tsgoProject
   }
 
-  projectResults.push({ fileCount: count, zigDtsx: zigProject, dtsx: dtsxProject, oxc: oxcProject, tsc: tscProject, tsgo: tsgoProject })
+  projectResults.push({ fileCount: count, zigDtsx: zigProject, dtsx: dtsxProject, oxc: oxcProject, tsc: tscProject, tsgo: null })
   const zigStr = zigProject ? `zig-dtsx=${zigProject.avg.toFixed(1)}ms ` : ''
-  const tsgoStr = tsgoProject ? ` tsgo=${tsgoProject.avg.toFixed(1)}ms` : ''
-  console.log(`  ${count} files: ${zigStr}dtsx=${dtsxProject.avg.toFixed(1)}ms oxc=${oxcProject.avg.toFixed(1)}ms tsc=${tscProject.avg.toFixed(1)}ms${tsgoStr}`)
+  console.log(`  ${count} files: ${zigStr}dtsx=${dtsxProject.avg.toFixed(1)}ms oxc=${oxcProject.avg.toFixed(1)}ms TypeScript7=${tscProject.avg.toFixed(1)}ms`)
 }
 
 // ---------------------------------------------------------------------------
