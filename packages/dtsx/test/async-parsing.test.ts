@@ -86,6 +86,29 @@ describe('Async AST Parsing', () => {
       expect(results[0]).toBe(results[1])
       expect(results[1]).toBe(results[2])
     })
+
+    test('keeps concurrent revisions of the same path distinct', async () => {
+      clearSourceFileCache()
+      const older = getSourceFileAsync('revision.ts', 'export const older = true', { asyncThreshold: 0, yieldInterval: 5 })
+      const newer = getSourceFileAsync('revision.ts', 'export const newer = true', { asyncThreshold: 0 })
+
+      const [olderFile, newerFile] = await Promise.all([older, newer])
+
+      expect(olderFile.text).toContain('older')
+      expect(newerFile.text).toContain('newer')
+      expect((await getSourceFileAsync('revision.ts', 'export const newer = true')).text).toContain('newer')
+    })
+
+    test('does not repopulate a cleared cache from an in-flight parse', async () => {
+      clearSourceFileCache()
+      const activeParse = getSourceFileAsync('cleared.ts', 'export const value = true', { asyncThreshold: 0, yieldInterval: 5 })
+
+      clearSourceFileCache()
+      await activeParse
+
+      expect(getSourceFileCacheSize()).toBe(0)
+      expect(getPendingParseCount()).toBe(0)
+    })
   })
 
   describe('extractDeclarationsAsync', () => {

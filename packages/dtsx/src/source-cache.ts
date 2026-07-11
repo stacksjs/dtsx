@@ -14,8 +14,10 @@ export interface AsyncParseConfig {
 const MAX_CACHE_SIZE = 100
 const cache = new Map<string, { file: CachedSourceFile, hash: number | bigint }>()
 const pending = new Map<string, Promise<CachedSourceFile>>()
+const pathVersions = new Map<string, number>()
+let cacheGeneration = 0
 
-function store(filePath: string, sourceCode: string, hash: number | bigint): CachedSourceFile {
+function storeCached(filePath: string, sourceCode: string, hash: number | bigint): CachedSourceFile {
   const file = { fileName: filePath, text: sourceCode }
   cache.delete(filePath)
   cache.set(filePath, { file, hash })
@@ -25,6 +27,11 @@ function store(filePath: string, sourceCode: string, hash: number | bigint): Cac
     cache.delete(oldest)
   }
   return file
+}
+
+function store(filePath: string, sourceCode: string, hash: number | bigint): CachedSourceFile {
+  pathVersions.set(filePath, (pathVersions.get(filePath) ?? 0) + 1)
+  return storeCached(filePath, sourceCode, hash)
 }
 
 export function getSourceFile(filePath: string, sourceCode: string, contentHash: number | bigint = hashContent(sourceCode)): CachedSourceFile {
@@ -41,21 +48,29 @@ export async function getSourceFileAsync(filePath: string, sourceCode: string, c
   const contentHash = hashContent(sourceCode)
   const cached = cache.get(filePath)
   if (cached?.hash === contentHash) return getSourceFile(filePath, sourceCode, contentHash)
-  const active = pending.get(filePath)
+  const pendingKey = `${filePath}\0${String(contentHash)}`
+  const active = pending.get(pendingKey)
   if (active) return active
 
-  const task = Promise.resolve().then(async () => {
+  const pathVersion = (pathVersions.get(filePath) ?? 0) + 1
+  pathVersions.set(filePath, pathVersion)
+  const generation = cacheGeneration
+  let task: Promise<CachedSourceFile>
+  task = Promise.resolve().then(async () => {
     try {
       if (sourceCode.length >= (config.asyncThreshold ?? 100000)) {
-        await new Promise<void>(resolvePromise => setTimeout(resolvePromise, config.yieldInterval ?? 0))
+        await new Promise<void>(resolvePromise => setTimeout(resolvePromise, Math.max(0, config.yieldInterval ?? 0)))
       }
-      return store(filePath, sourceCode, contentHash)
+      if (generation === cacheGeneration && pathVersions.get(filePath) === pathVersion) {
+        return storeCached(filePath, sourceCode, contentHash)
+      }
+      return { fileName: filePath, text: sourceCode }
     }
     finally {
-      pending.delete(filePath)
+      if (pending.get(pendingKey) === task) pending.delete(pendingKey)
     }
   })
-  pending.set(filePath, task)
+  pending.set(pendingKey, task)
   return task
 }
 
@@ -75,7 +90,12 @@ export async function batchParseSourceFiles(
   return results
 }
 
-export function clearSourceFileCache(): void { cache.clear() }
+export function clearSourceFileCache(): void {
+  cacheGeneration++
+  cache.clear()
+  pending.clear()
+  pathVersions.clear()
+}
 export function getSourceFileCacheSize(): number { return cache.size }
 export function getPendingParseCount(): number { return pending.size }
 export function shouldUseAsyncParsing(sourceCode: string, config: AsyncParseConfig = {}): boolean {
