@@ -1813,7 +1813,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
         // Concrete annotations need no initializer work. Broad annotations retain
         // the initializer only so the processor can emit useful @defaultValue docs.
-        if (isolatedDeclarations && typeAnnotation && !isBroadAnnotation(typeAnnotation)) {
+        if (isolatedDeclarations && typeAnnotation && (!keepComments || !isBroadAnnotation(typeAnnotation))) {
           skipToStatementEnd()
         }
         else {

@@ -26,7 +26,7 @@ export function processSource(
 ): string {
   // Check result cache first — avoids both extraction AND processing on hit
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filename}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}:${importOrder.join('\0')}`
+  const cacheKey = JSON.stringify([filename, keepComments, isolatedDeclarations, importOrder])
   const cached = resultCache.get(cacheKey)
 
   if (cached && cached.contentHash === contentHash) {

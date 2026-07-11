@@ -120,7 +120,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(2)
+      expect(parsed.version).toBe(3)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')
@@ -161,6 +161,30 @@ describe('BuildCache', () => {
 
       const result = cache.getCachedIfValid(filePath, tempDir)
       expect(result).toBeNull()
+    })
+
+    it('returns null when a file is replaced with an older timestamp', () => {
+      const cache = new BuildCache(makeConfig())
+      const sourceContent = 'export const current = true'
+      const filePath = writeSourceFile('src/older.ts', sourceContent)
+      cache.update(filePath, sourceContent, 'export declare const current: true;', tempDir)
+
+      writeFileSync(filePath, 'export const old = false')
+      const oldTime = new Date(1_000_000)
+      utimesSync(filePath, oldTime, oldTime)
+
+      expect(cache.getCachedIfValid(filePath, tempDir)).toBeNull()
+    })
+
+    it('returns null immediately when source size changes', () => {
+      const cache = new BuildCache(makeConfig())
+      const sourceContent = 'export const value = 1'
+      const filePath = writeSourceFile('src/size.ts', sourceContent)
+      cache.update(filePath, sourceContent, 'export declare const value: 1;', tempDir)
+
+      writeFileSync(filePath, 'export const value = 100000')
+
+      expect(cache.getCachedIfValid(filePath, tempDir)).toBeNull()
     })
 
     it('returns null when manifest has not been loaded or created', () => {

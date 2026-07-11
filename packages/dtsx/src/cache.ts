@@ -13,6 +13,10 @@ export interface CacheEntry {
   sourceHash: string
   /** Source file modification time */
   sourceMtime: number
+  /** Source file metadata change time */
+  sourceCtime: number
+  /** Source file size in bytes */
+  sourceSize: number
   /** Generated .d.ts content */
   dtsContent: string
   /** Hash of the generated content */
@@ -34,7 +38,7 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-const CACHE_VERSION = 2
+const CACHE_VERSION = 3
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 
@@ -173,10 +177,12 @@ export class BuildCache {
     try {
       const stats = statSync(filePath)
       const mtime = stats.mtimeMs
+      const ctime = stats.ctimeMs
 
-      // Quick check: modification time
-      if (mtime > entry.sourceMtime) {
-        // Mtime changed, verify with hash
+      if (stats.size !== entry.sourceSize) return null
+
+      // Verify content whenever file metadata changed in either direction.
+      if (mtime !== entry.sourceMtime || ctime !== entry.sourceCtime) {
         const content = readFileSync(filePath, 'utf-8')
         const hash = this.hashString(content)
 
@@ -184,9 +190,9 @@ export class BuildCache {
           return null
         }
 
-        // Hash matches despite mtime change (e.g., touched file)
-        // Update mtime in cache
+        // Hash matches despite metadata change (e.g., touched file).
         entry.sourceMtime = mtime
+        entry.sourceCtime = ctime
       }
 
       return entry.dtsContent
@@ -212,19 +218,27 @@ export class BuildCache {
 
     const relativePath = relative(cwd, filePath)
     let mtime: number
+    let ctime: number
+    let size: number
 
     try {
       const stats = statSync(filePath)
       mtime = stats.mtimeMs
+      ctime = stats.ctimeMs
+      size = stats.size
     }
     catch {
       mtime = Date.now()
+      ctime = mtime
+      size = Buffer.byteLength(sourceContent)
     }
 
     this.manifest.entries[relativePath] = {
       sourcePath: relativePath,
       sourceHash: this.hashString(sourceContent),
       sourceMtime: mtime,
+      sourceCtime: ctime,
+      sourceSize: size,
       dtsContent,
       dtsHash: this.hashString(dtsContent),
       generatedAt: Date.now(),

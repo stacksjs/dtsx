@@ -49,6 +49,16 @@ describe('declaration generation paths', () => {
     expect(result).toContain('export declare const conf: { [key: string]: string };')
   })
 
+  it('skips broad initializers when comments are disabled', () => {
+    const source = `export const values: Record<string, string> = createExpensiveValues();`
+
+    const [declaration] = extractDeclarations(source, 'isolated.ts', false, true)
+    const result = processSourceIsolated(source, 'isolated.ts', false)
+
+    expect(declaration.value).toBeUndefined()
+    expect(result).toBe('export declare const values: Record<string, string>;')
+  })
+
   it('documents as-const records without losing their indexable contract', () => {
     const source = `
       export const PHONE_PATTERNS: Record<string, number[]> = {
@@ -87,6 +97,21 @@ describe('declaration generation paths', () => {
     const nodeFirst = processSource(source, 'order.ts', true, ['node:'])
 
     expect(bunFirst.indexOf("from 'bun'")).toBeLessThan(bunFirst.indexOf("from 'node:fs'"))
+    expect(nodeFirst.indexOf("from 'node:fs'")).toBeLessThan(nodeFirst.indexOf("from 'bun'"))
+  })
+
+  it('does not alias structurally different import-order cache keys', () => {
+    clearResultCache()
+    const source = `
+      import type { BunType } from 'bun';
+      import type { NodeType } from 'node:fs';
+      export interface Result { bun: BunType; node: NodeType }
+    `
+
+    const unmatched = processSource(source, 'collision.ts', true, ['node:\0bun'])
+    const nodeFirst = processSource(source, 'collision.ts', true, ['node:', 'bun'])
+
+    expect(unmatched.indexOf("from 'bun'")).toBeLessThan(unmatched.indexOf("from 'node:fs'"))
     expect(nodeFirst.indexOf("from 'node:fs'")).toBeLessThan(nodeFirst.indexOf("from 'bun'"))
   })
 
