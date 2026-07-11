@@ -253,10 +253,11 @@ export function processDeclarations(
       if (func.isExported) textParts.push(func.text)
     }
     for (const variable of variables) {
-      if (variable.isExported) {
-        textParts.push(variable.text)
-        if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
-      }
+      // Non-exported declarations can still be part of the public graph when
+      // referenced by `export default name`. The declaration processor emits
+      // them, so their type references must participate in import retention.
+      textParts.push(variable.text)
+      if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
     }
     for (const iface of interfaces) {
       if (iface.isExported || interfaceReferences.has(iface.name)) textParts.push(iface.text)

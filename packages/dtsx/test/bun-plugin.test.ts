@@ -149,4 +149,37 @@ export const keyPatterns = {
     expect(declaration).toContain('primary: (eventId: string) => string')
     expect(declaration).not.toContain(')) =>')
   })
+
+  it('retains external type imports used by default-exported constants', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `
+import type { FrameworkModule } from '@example/framework'
+
+const frameworkModule: FrameworkModule<{ enabled?: boolean }> = {
+  enabled: true,
+}
+
+export default frameworkModule
+`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      external: ['@example/framework'],
+      plugins: [dts({ cwd: tempDir, root: './src', outdir: './dist' })],
+    })
+
+    expect(result.success).toBe(true)
+
+    const declaration = await readFile(join(outDir, 'index.d.ts'), 'utf8')
+    expect(declaration).toContain(`import type { FrameworkModule } from '@example/framework';`)
+    expect(declaration).toContain('declare const frameworkModule: FrameworkModule<{ enabled?: boolean }>')
+    expect(declaration).toContain('export default frameworkModule;')
+  })
 })
