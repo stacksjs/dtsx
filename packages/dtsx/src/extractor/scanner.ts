@@ -49,6 +49,23 @@ function isIdentChar(ch: number): boolean {
   return isIdentStart(ch) || (ch >= 48 && ch <= 57)
 }
 
+function isEntityNameText(value: string): boolean {
+  let expectsStart = true
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i)
+    if (char === CH_DOT) {
+      if (expectsStart) return false
+      expectsStart = true
+    }
+    else if (expectsStart) {
+      if (!isIdentStart(char)) return false
+      expectsStart = false
+    }
+    else if (!isIdentChar(char)) return false
+  }
+  return value.length > 0 && !expectsStart
+}
+
 /** Check whether an annotation benefits from initializer-derived documentation. */
 function isBroadAnnotation(type: string): boolean {
   if (type === 'any' || type === 'object' || type === 'unknown') return true
@@ -3004,7 +3021,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let helperName = '__dtsx_default_export__'
     let suffix = 1
     while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
-    const type = inferNarrowType(expression, false)
+    const inferredType = inferNarrowType(expression, false)
+    const type = inferredType === 'unknown' && isEntityNameText(expression)
+      ? `typeof ${expression}`
+      : inferredType
     declarations.push({
       kind: 'variable',
       name: helperName,
@@ -3599,6 +3619,52 @@ function addWordsToSet(text: string, words: Set<string>): void {
   }
 }
 
+/** Collect value references from an initializer without treating object keys as dependencies. */
+function addInitializerReferences(text: string, references: Set<string>): void {
+  let i = 0
+  while (i < text.length) {
+    const char = text.charCodeAt(i)
+    if (char === CH_SQUOTE || char === CH_DQUOTE || char === CH_BACKTICK) {
+      const quote = char
+      i++
+      while (i < text.length) {
+        if (text.charCodeAt(i) === CH_BACKSLASH) i += 2
+        else if (text.charCodeAt(i++) === quote) break
+      }
+      continue
+    }
+    if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_SLASH) {
+      i += 2
+      while (i < text.length && text.charCodeAt(i) !== CH_LF && text.charCodeAt(i) !== CH_CR) i++
+      continue
+    }
+    if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_STAR) {
+      const close = text.indexOf('*/', i + 2)
+      i = close === -1 ? text.length : close + 2
+      continue
+    }
+    if (!isIdentStart(char)) {
+      i++
+      continue
+    }
+
+    const start = i++
+    while (i < text.length && isIdentChar(text.charCodeAt(i))) i++
+    let before = start - 1
+    let after = i
+    while (before >= 0 && isWhitespace(text.charCodeAt(before))) before--
+    while (after < text.length && isWhitespace(text.charCodeAt(after))) after++
+    const previous = before >= 0 ? text.charCodeAt(before) : 0
+    const next = after < text.length ? text.charCodeAt(after) : 0
+
+    // Exclude object property/method names and dotted member suffixes.
+    const isSpreadReference = start >= 3 && text.slice(start - 3, start) === '...'
+    if (next === CH_COLON || (previous === CH_DOT && !isSpreadReference)) continue
+    if (next === CH_LPAREN && (previous === CH_LBRACE || previous === CH_COMMA)) continue
+    references.add(text.slice(start, i))
+  }
+}
+
 /** Resolve non-exported types that are referenced by exported declarations */
 function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>): void {
   // Iteratively resolve referenced non-exported types (transitive closure)
@@ -3610,9 +3676,11 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   const wordSet = new Set<string>()
   const textParts: string[] = []
   for (let i = 0; i < declarations.length; i++) {
-    if (declarations[i].kind !== 'import') {
-      textParts.push(declarations[i].text)
-      addWordsToSet(declarations[i].text, wordSet)
+    const declaration = declarations[i]
+    if (declaration.kind !== 'import') {
+      textParts.push(declaration.text)
+      addWordsToSet(declaration.text, wordSet)
+      if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, wordSet)
     }
   }
 
@@ -3654,6 +3722,7 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
       if (decl.kind !== 'import') {
         textParts.push(decl.text)
         addWordsToSet(decl.text, wordSet)
+        if (typeof decl.value === 'string') addInitializerReferences(decl.value, wordSet)
       }
     }
   }

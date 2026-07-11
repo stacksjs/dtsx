@@ -308,6 +308,7 @@ const TYPE_REF_BUILTINS: ReadonlySet<string> = new Set([
 
 // Module-level regex — `lastIndex` is reset before each use.
 const TYPE_IDENT_PATTERN = /\b([A-Z]\w*)\b/g
+const TYPEOF_VALUE_PATTERN = /\btypeof\s+([$A-Z_a-z][$\w]*)/g
 
 /**
  * Extract type references from a type string
@@ -321,6 +322,9 @@ function extractRefsFromType(typeStr: string, refs: Set<string>): void {
       refs.add(name)
     }
   }
+
+  TYPEOF_VALUE_PATTERN.lastIndex = 0
+  while ((match = TYPEOF_VALUE_PATTERN.exec(typeStr)) !== null) refs.add(match[1])
 }
 
 /**

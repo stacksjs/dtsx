@@ -14,6 +14,11 @@ export default function main(): void;
 export declare const VERSION: '2.0.0';
 export declare const MAX_RETRIES: 3;
 export declare const theme: Theme;
+// Complex const declaration with satisfies
+declare interface Theme {
+  colors: Record<string, string>
+  spacing: Record<string, number>
+}
 export type Options = {
   verbose: boolean
   timeout: number
