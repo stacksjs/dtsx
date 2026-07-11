@@ -72,7 +72,7 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
   }
 
   const malformed: Array<[RegExp, string]> = [
-    [/\b(?:interface|class|enum|type)\s*(?=[{=])/g, 'Declaration name expected'],
+    [/\b(?:interface|class|enum)\s*(?=[{=])/g, 'Declaration name expected'],
     [/\bfunction\s*(?=\()/g, 'Function name expected'],
     [/\(\s*:/g, 'Parameter name expected'],
   ]
@@ -80,6 +80,14 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
     for (const match of source.matchAll(pattern)) {
       issues.push({ ...getLocation(source, match.index), message, code: 'DTSX1005' })
     }
+  }
+
+  // A bare `type {` / `type =` is missing an alias name, but the same token
+  // sequence is valid in `import type { ... }` and `export type { ... }`.
+  for (const match of source.matchAll(/\btype\s*(?=[{=])/g)) {
+    const prefix = source.slice(0, match.index).trimEnd()
+    if (prefix.endsWith('import') || prefix.endsWith('export')) continue
+    issues.push({ ...getLocation(source, match.index), message: 'Declaration name expected', code: 'DTSX1005' })
   }
   return issues.sort((left, right) => left.line - right.line || left.column - right.column)
 }
