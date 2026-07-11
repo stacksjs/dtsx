@@ -450,6 +450,16 @@ describe('BuildCache', () => {
       expect(cache2.load()).toBe(false)
     })
 
+    it('invalidates cache when plugin identity changes', () => {
+      const config1 = makeConfig({ plugins: [{ name: 'transform', version: '1.0.0', cacheKey: 'first' }] })
+      const cache1 = new BuildCache(config1)
+      cache1.save()
+
+      const config2 = makeConfig({ plugins: [{ name: 'transform', version: '1.0.0', cacheKey: 'second' }] })
+      const cache2 = new BuildCache(config2)
+      expect(cache2.load()).toBe(false)
+    })
+
     it('preserves cache when irrelevant config changes', () => {
       const config1 = makeConfig({ verbose: false })
       const cache1 = new BuildCache(config1)

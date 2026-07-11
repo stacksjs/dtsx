@@ -70,6 +70,11 @@ export class BuildCache {
       lineEnding: config.lineEnding,
       normalizeOutput: config.normalizeOutput,
       declarationOrder: config.declarationOrder,
+      plugins: config.plugins?.map(plugin => ({
+        name: plugin.name,
+        version: plugin.version,
+        cacheKey: plugin.cacheKey,
+      })),
     }
     return String(hashContent(JSON.stringify(relevantConfig)))
   }

@@ -84,6 +84,11 @@ export interface Plugin extends PluginHooks {
   name: string
   /** Plugin version */
   version?: string
+  /**
+   * User-defined cache identity for configuration that affects generated output.
+   * Change this value whenever plugin behavior changes without a version bump.
+   */
+  cacheKey?: string
   /** Plugin description */
   description?: string
 }
