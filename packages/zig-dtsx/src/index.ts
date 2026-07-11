@@ -36,18 +36,17 @@ const outLenBufferIsolated = new BigUint64Array(1)
 // Avoids per-call Uint8Array allocation from encoder.encode().
 let inputBuf = new Uint8Array(4 * 1024 * 1024) // 4 MB initial
 
-// Try to find the shared library. Lookup order:
-//   1. prebuilt/<slug>/ — shipped in the npm tarball by release.yml (production path)
-//   2. zig-out/lib/ — monorepo dev (`zig build lib` writes here for unix targets)
-//   3. zig-out/bin/ — monorepo dev (Windows Zig builds drop the DLL here)
+// Try the local build first so repository tests exercise the current Zig source.
+// Published packages do not contain zig-out, so they naturally fall through to
+// the platform-specific prebuilt library shipped by the release workflow.
 const slug = platformSlug()
 const libPaths: string[] = []
+libPaths.push(join(import.meta.dir, '..', 'zig-out', 'lib', LIB_NAME))
+libPaths.push(join(import.meta.dir, '..', 'zig-out', 'bin', LIB_NAME_ALT))
 if (slug !== null) {
   libPaths.push(join(import.meta.dir, '..', 'prebuilt', slug, LIB_NAME))
   libPaths.push(join(import.meta.dir, '..', 'prebuilt', slug, LIB_NAME_ALT))
 }
-libPaths.push(join(import.meta.dir, '..', 'zig-out', 'lib', LIB_NAME))
-libPaths.push(join(import.meta.dir, '..', 'zig-out', 'bin', LIB_NAME_ALT))
 
 let lib: ReturnType<typeof dlopen> | null = null
 for (const libPath of libPaths) {
