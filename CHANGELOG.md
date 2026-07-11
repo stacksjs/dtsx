@@ -1,4 +1,43 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.2...v0.10.3)
+
+### 🚀 Features
+
+- **generator**: improve semantic declaration inference ([6d1600a](https://github.com/stacksjs/dtsx/commit/6d1600a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- **scripts**: scope tests and releases ([5f3396c](https://github.com/stacksjs/dtsx/commit/5f3396c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: support current build runner ([5c44c21](https://github.com/stacksjs/dtsx/commit/5c44c21)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **inference**: handle runtime template expressions ([ee3fd28](https://github.com/stacksjs/dtsx/commit/ee3fd28)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: expand semantic type inference ([69e87f2](https://github.com/stacksjs/dtsx/commit/69e87f2)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: preserve class declaration semantics ([06d7b43](https://github.com/stacksjs/dtsx/commit/06d7b43)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: improve semantic declaration parity ([18ae89c](https://github.com/stacksjs/dtsx/commit/18ae89c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: harden native memory boundaries ([7e3ba9d](https://github.com/stacksjs/dtsx/commit/7e3ba9d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: prefer local native builds ([0f57b9d](https://github.com/stacksjs/dtsx/commit/0f57b9d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **validation**: ignore non-code declaration text ([8776521](https://github.com/stacksjs/dtsx/commit/8776521)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **extractor**: retain inferred value dependencies ([486f656](https://github.com/stacksjs/dtsx/commit/486f656)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **inference**: handle semantic expression edge cases ([3b28768](https://github.com/stacksjs/dtsx/commit/3b28768)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **validation**: accept type-only module syntax ([60537a0](https://github.com/stacksjs/dtsx/commit/60537a0)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧪 Tests
+
+- **zig**: cover expanded inference semantics ([8b56a2d](https://github.com/stacksjs/dtsx/commit/8b56a2d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: cover advanced inference parity ([40e1e0f](https://github.com/stacksjs/dtsx/commit/40e1e0f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: cover native parity regressions ([be420a0](https://github.com/stacksjs/dtsx/commit/be420a0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **inference**: cover semantic edge cases ([d82393d](https://github.com/stacksjs/dtsx/commit/d82393d)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **generator**: cover declaration diagnostics ([c0e1aae](https://github.com/stacksjs/dtsx/commit/c0e1aae)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **generator**: validate issue 3093 with TypeScript ([42b054b](https://github.com/stacksjs/dtsx/commit/42b054b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **plugin**: cover issue 3090 barrel builds ([82d8ab0](https://github.com/stacksjs/dtsx/commit/82d8ab0)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.3 ([d73c70b](https://github.com/stacksjs/dtsx/commit/d73c70b)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.0...v0.10.1)
 
 ### 🐛 Bug Fixes
