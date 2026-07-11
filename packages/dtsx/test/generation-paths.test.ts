@@ -164,6 +164,58 @@ describe('declaration generation paths', () => {
     expect(result).toContain('export declare const values: string[];')
   })
 
+  it('infers function and method returns only in semantic mode', () => {
+    const source = `
+      export function createRecord() { return { answer: 42 } }
+      export class Factory { createName() { return 'dtsx' } }
+    `
+
+    const semantic = processSourceSemantic(source, 'returns.ts')
+    const isolated = processSourceIsolated(source, 'returns.ts')
+
+    expect(semantic).toContain('createRecord(): {')
+    expect(semantic).toContain('answer: number')
+    expect(semantic).toContain('createName(): string;')
+    expect(isolated).toContain('createRecord(): void;')
+    expect(isolated).toContain('createName(): void;')
+  })
+
+  it('ignores returns from nested implementation bodies', () => {
+    const source = `
+      export function outer() {
+        const nested = () => { return 42 }
+        function inner() { return true }
+        return 'outer'
+      }
+    `
+
+    const result = processSourceSemantic(source, 'nested-returns.ts')
+
+    expect(result).toContain('outer(): string;')
+    expect(result).not.toContain('number | string')
+    expect(result).not.toContain('boolean | string')
+  })
+
+  it('preserves shorthand binding types in semantic object inference', () => {
+    const source = `export const answer = 42; export const result = { answer };`
+
+    const result = processSourceSemantic(source, 'shorthand.ts')
+
+    expect(result).toContain('answer: typeof answer')
+  })
+
+  it('moves default-export expressions into typed ambient bindings', () => {
+    const source = `export default { answer: 42, labels: ['fast', 'safe'] }`
+
+    const result = processSourceSemantic(source, 'default-expression.ts')
+
+    expect(result).toContain('declare const __dtsx_default_export__: {')
+    expect(result).toContain('answer: number')
+    expect(result).toContain('labels: string[]')
+    expect(result).toContain('export default __dtsx_default_export__;')
+    expect(result).not.toContain('export default {')
+  })
+
   it('keeps result caches separate across import orders', () => {
     clearResultCache()
     const source = `

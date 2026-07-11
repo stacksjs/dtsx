@@ -303,6 +303,232 @@ export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false,
 }
 
 /**
+ * Infer the public return type of a function body without building a TypeScript AST.
+ *
+ * This is intentionally used only by the semantic generation path. Isolated
+ * declarations remain annotation-first and never scan implementation bodies.
+ */
+export function inferFunctionBodyReturnType(body: string, isAsync: boolean = false, parameters: string = ''): string {
+  const parameterTypes = collectParameterTypes(parameters)
+  const returnTypes: string[] = []
+  let hasBareReturn = false
+  let i = 0
+
+  while (i < body.length) {
+    const char = body.charCodeAt(i)
+
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(body, i, char)
+      continue
+    }
+    if (char === 47 && body.charCodeAt(i + 1) === 47) {
+      i += 2
+      while (i < body.length && body.charCodeAt(i) !== 10 && body.charCodeAt(i) !== 13) i++
+      continue
+    }
+    if (char === 47 && body.charCodeAt(i + 1) === 42) {
+      const close = body.indexOf('*/', i + 2)
+      i = close === -1 ? body.length : close + 2
+      continue
+    }
+
+    // Return statements in nested function/class bodies do not contribute to
+    // the outer signature. Skip their balanced implementation blocks.
+    const startsNestedDeclaration = (body.startsWith('function', i) && isWordBoundary(body, i, 8))
+      || (body.startsWith('class', i) && isWordBoundary(body, i, 5))
+    if (startsNestedDeclaration) {
+      const blockStart = findNextCodeBlock(body, i)
+      if (blockStart !== -1) {
+        i = skipBalancedCodeBlock(body, blockStart)
+        continue
+      }
+    }
+    if (char === 61 && body.charCodeAt(i + 1) === 62) {
+      let blockStart = i + 2
+      while (blockStart < body.length && body.charCodeAt(blockStart) <= 32) blockStart++
+      if (body.charCodeAt(blockStart) === 123) {
+        i = skipBalancedCodeBlock(body, blockStart)
+        continue
+      }
+    }
+
+    if (body.startsWith('return', i)
+      && (i === 0 || !isWordChar(body.charCodeAt(i - 1)))
+      && !isWordChar(body.charCodeAt(i + 6))) {
+      i += 6
+      let sawLineBreak = false
+      while (i < body.length && body.charCodeAt(i) <= 32) {
+        const whitespace = body.charCodeAt(i)
+        if (whitespace === 10 || whitespace === 13) sawLineBreak = true
+        i++
+      }
+
+      if (sawLineBreak || i >= body.length || body.charCodeAt(i) === 59 || body.charCodeAt(i) === 125) {
+        hasBareReturn = true
+        continue
+      }
+
+      const expressionStart = i
+      let parenDepth = 0
+      let bracketDepth = 0
+      let braceDepth = 0
+      while (i < body.length) {
+        const expressionChar = body.charCodeAt(i)
+        if (expressionChar === 34 || expressionChar === 39 || expressionChar === 96) {
+          i = skipQuotedValue(body, i, expressionChar)
+          continue
+        }
+        if (expressionChar === 47 && body.charCodeAt(i + 1) === 47) break
+        if (expressionChar === 47 && body.charCodeAt(i + 1) === 42) {
+          const close = body.indexOf('*/', i + 2)
+          i = close === -1 ? body.length : close + 2
+          continue
+        }
+        if (expressionChar === 40) parenDepth++
+        else if (expressionChar === 41) parenDepth--
+        else if (expressionChar === 91) bracketDepth++
+        else if (expressionChar === 93) bracketDepth--
+        else if (expressionChar === 123) braceDepth++
+        else if (expressionChar === 125) {
+          if (braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) break
+          braceDepth--
+        }
+        else if (expressionChar === 59 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) break
+        i++
+      }
+
+      const expression = body.slice(expressionStart, i).trim()
+      const inferred = inferBodyExpressionType(expression, parameterTypes)
+      if (!returnTypes.includes(inferred)) returnTypes.push(inferred)
+      continue
+    }
+
+    i++
+  }
+
+  if (hasBareReturn && !returnTypes.includes('undefined')) returnTypes.push('undefined')
+  const returnType = returnTypes.includes('unknown')
+    ? 'unknown'
+    : returnTypes.length === 0 ? 'void' : returnTypes.join(' | ')
+  return isAsync && !returnType.startsWith('Promise<') ? `Promise<${returnType}>` : returnType
+}
+
+function collectParameterTypes(parameters: string): Map<string, string> {
+  const types = new Map<string, string>()
+  const content = parameters.startsWith('(') && parameters.endsWith(')') ? parameters.slice(1, -1) : parameters
+  let start = 0
+  let depth = 0
+  for (let i = 0; i <= content.length; i++) {
+    const char = content.charCodeAt(i)
+    if (char === 40 || char === 91 || char === 123 || char === 60) depth++
+    else if (char === 41 || char === 93 || char === 125 || char === 62) depth--
+    if (i !== content.length && (char !== 44 || depth !== 0)) continue
+
+    const parameter = content.slice(start, i).trim()
+    const colon = parameter.indexOf(':')
+    if (colon !== -1) {
+      const name = parameter.slice(0, colon).trim().replace(/^\.\.\./, '').replace(/\?$/, '')
+      let type = parameter.slice(colon + 1).trim()
+      const defaultValue = type.indexOf('=')
+      if (defaultValue !== -1) type = type.slice(0, defaultValue).trim()
+      if (isIdentifierName(name) && type) types.set(name, type)
+    }
+    start = i + 1
+  }
+  return types
+}
+
+function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>): string {
+  let value = expression.trim()
+  if (value.startsWith('await ')) {
+    const awaited = inferBodyExpressionType(value.slice(6), parameterTypes)
+    return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
+  }
+  if (parameterTypes.has(value)) return parameterTypes.get(value)!
+  if (value.startsWith('!')) return 'boolean'
+  if (value.startsWith('fetch(')) return 'Promise<Response>'
+
+  const comparisonOperators = ['===', '!==', '==', '!=', '>=', '<=']
+  if (comparisonOperators.some(operator => value.includes(operator)) || value.includes(' > ') || value.includes(' < ')) return 'boolean'
+
+  let depth = 0
+  for (let i = value.length - 1; i >= 0; i--) {
+    const char = value.charCodeAt(i)
+    if (char === 41 || char === 93 || char === 125) depth++
+    else if (char === 40 || char === 91 || char === 123) depth--
+    else if (depth === 0 && (char === 43 || char === 45 || char === 42 || char === 47 || char === 37)) {
+      const left = inferBodyExpressionType(value.slice(0, i), parameterTypes)
+      const right = inferBodyExpressionType(value.slice(i + 1), parameterTypes)
+      if (char === 43 && (left === 'string' || right === 'string')) return 'string'
+      if (left === 'number' && right === 'number') return 'number'
+      break
+    }
+  }
+
+  // Remove a single balanced pair of grouping parentheses before falling back.
+  if (value.startsWith('(') && value.endsWith(')')) value = value.slice(1, -1).trim()
+  return inferNarrowType(value, false)
+}
+
+function isWordBoundary(value: string, start: number, length: number): boolean {
+  return (start === 0 || !isWordChar(value.charCodeAt(start - 1)))
+    && !isWordChar(value.charCodeAt(start + length))
+}
+
+function findNextCodeBlock(value: string, start: number): number {
+  for (let i = start; i < value.length; i++) {
+    const char = value.charCodeAt(i)
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(value, i, char) - 1
+      continue
+    }
+    if (char === 123) return i
+    if (char === 59) return -1
+  }
+  return -1
+}
+
+function skipBalancedCodeBlock(value: string, start: number): number {
+  let depth = 1
+  let i = start + 1
+  while (i < value.length && depth > 0) {
+    const char = value.charCodeAt(i)
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(value, i, char)
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 47) {
+      i += 2
+      while (i < value.length && value.charCodeAt(i) !== 10 && value.charCodeAt(i) !== 13) i++
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 42) {
+      const close = value.indexOf('*/', i + 2)
+      i = close === -1 ? value.length : close + 2
+      continue
+    }
+    if (char === 123) depth++
+    else if (char === 125) depth--
+    i++
+  }
+  return i
+}
+
+function skipQuotedValue(value: string, start: number, quote: number): number {
+  let i = start + 1
+  while (i < value.length) {
+    const char = value.charCodeAt(i)
+    if (char === 92) {
+      i += 2
+      continue
+    }
+    i++
+    if (char === quote) break
+  }
+  return i
+}
+
+/**
  * Infer type from template literal
  */
 function inferTemplateLiteralType(value: string, isConst: boolean): string {
@@ -746,9 +972,14 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     let valueType: string
     const trimVal = val.trim()
 
+    // Object shorthand keeps the type tied to the binding in scope. This is
+    // both more accurate than `unknown` and avoids needing a symbol table here.
+    if (trimVal === propertyKey && isIdentifierName(trimVal)) {
+      valueType = `typeof ${trimVal}`
+    }
     // Method definitions (method shorthand syntax) — convert directly to function type
     // to avoid double-processing through inferNarrowType which loses return type info
-    if (isMethodDefinition(trimVal)) {
+    else if (isMethodDefinition(trimVal)) {
       valueType = convertMethodToFunctionType(propertyKey, trimVal)
     }
     else {
@@ -826,6 +1057,16 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   }
 
   return `{\n  ${propTypes.join(';\n  ')}\n}`
+}
+
+function isIdentifierName(value: string): boolean {
+  if (!value) return false
+  const first = value.charCodeAt(0)
+  if (!((first >= 65 && first <= 90) || (first >= 97 && first <= 122) || first === 95 || first === 36 || first > 127)) return false
+  for (let i = 1; i < value.length; i++) {
+    if (!isWordChar(value.charCodeAt(i))) return false
+  }
+  return true
 }
 
 /**
@@ -1195,6 +1436,9 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   let inKey = true
   let inComment = false
   let commentDepth = 0
+  let arrowParameterListClosed = false
+  let inArrowReturnType = false
+  let typeArgumentDepth = 0
   // True while collecting the value of a method shorthand (between the
   // method's '(' and the body's closing '}').
   let inMethodShorthand = false
@@ -1291,6 +1535,9 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       else if (cc === 125 /* } */ || cc === 93 /* ] */ || cc === 41 /* ) */) {
         depth--
         current += char
+        if (cc === 41 /* ) */ && depth === 0 && !inKey && !inMethodShorthand) {
+          arrowParameterListClosed = true
+        }
         if (inMethodShorthand) {
           // Closing ')' of params at depth 0 → enter return-type annotation
           // phase (commas in `Record<K, V>` etc must not split properties).
@@ -1309,14 +1556,38 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         current = ''
         inKey = false
       }
-      else if (cc === 44 /* , */ && depth === 0 && !methodAwaitingBody) {
+      else if (cc === 58 /* : */ && depth === 0 && arrowParameterListClosed) {
+        inArrowReturnType = true
+        current += char
+      }
+      else if (cc === 60 /* < */ && inArrowReturnType) {
+        typeArgumentDepth++
+        current += char
+      }
+      else if (cc === 62 /* > */ && typeArgumentDepth > 0 && prevCode !== 61 /* = */) {
+        typeArgumentDepth--
+        current += char
+      }
+      else if (cc === 61 /* = */ && nextCode === 62 /* > */ && inArrowReturnType && typeArgumentDepth === 0) {
+        inArrowReturnType = false
+        arrowParameterListClosed = false
+        current += char
+      }
+      else if (cc === 44 /* , */ && depth === 0 && typeArgumentDepth === 0 && !methodAwaitingBody) {
         if (currentKey && current.trim()) {
           const value = current.trim()
           properties.push([currentKey, value])
         }
+        else if (inKey && current.trim()) {
+          const shorthand = current.trim()
+          if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
+        }
         current = ''
         currentKey = ''
         inKey = true
+        arrowParameterListClosed = false
+        inArrowReturnType = false
+        typeArgumentDepth = 0
       }
       else {
         current += char
@@ -1332,6 +1603,10 @@ function parseObjectProperties(content: string): Array<[string, string]> {
   if (currentKey && current.trim()) {
     const value = current.trim()
     properties.push([currentKey, value])
+  }
+  else if (inKey && current.trim()) {
+    const shorthand = current.trim()
+    if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
   }
 
   return properties
@@ -1670,6 +1945,13 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     let params = asyncRemoved.substring(0, arrowIndex).trim()
     const body = asyncRemoved.substring(arrowIndex + 2).trim()
 
+    let explicitReturnType = ''
+    const closingParenColon = params.lastIndexOf('):')
+    if (closingParenColon !== -1) {
+      explicitReturnType = params.substring(closingParenColon + 2).trim()
+      params = params.substring(0, closingParenColon + 1)
+    }
+
     // Clean up params - remove default values
     params = cleanParameterDefaults(params)
 
@@ -1683,8 +1965,11 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     }
 
     // Try to infer return type from body
-    let returnType = 'unknown'
-    if (body.startsWith('{')) {
+    let returnType = explicitReturnType
+    if (returnType) {
+      // The source annotation already contains the required Promise wrapper.
+    }
+    else if (body.startsWith('{')) {
       // Block body - can't easily infer return type
       returnType = 'unknown'
     }
@@ -1693,7 +1978,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       returnType = inferNarrowType(body, isConst, false, _depth + 1)
     }
 
-    const funcType = `${params} => Promise<${returnType}>`
+    const funcType = `${params} => ${explicitReturnType || `Promise<${returnType}>`}`
     return inUnion ? `(${funcType})` : funcType
   }
 

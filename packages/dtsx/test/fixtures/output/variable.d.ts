@@ -145,8 +145,16 @@ export declare const CONFIG_MAP: {
 }
 }
 };
-/** @defaultValue `{ run: () => unknown, runSync: () => unknown }` */
+/**
+ * @defaultValue
+ * ```ts
+ * {
+ *   run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>,
+ *   runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>
+ * }
+ * ```
+ */
 export declare const command: {
-  run: () => unknown;
-  runSync: () => unknown
+  run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>;
+  runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>
 };

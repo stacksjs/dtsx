@@ -5,6 +5,7 @@
  */
 
 import type { Declaration } from '../types'
+import { inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 
 // Character codes for fast comparison
 const CH_SPACE = 32
@@ -1692,6 +1693,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
     // Return type
     let returnType = extractReturnType()
+    const hasExplicitReturnType = returnType.length > 0
 
     // Default return type based on async/generator
     if (!returnType) {
@@ -1709,7 +1711,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let hasBody = false
     if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
       hasBody = true
+      const bodyStart = pos + 1
       findMatchingClose(CH_LBRACE, CH_RBRACE)
+      if (!isolatedDeclarations && !hasExplicitReturnType && !isGenerator) {
+        returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
+      }
     }
     else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
       pos++ // skip ;
@@ -2405,6 +2411,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       skipWhitespaceAndComments()
 
       let retType = extractReturnType()
+      const hasExplicitReturnType = retType.length > 0
       if (!retType) {
         if (isAsync && isGenerator)
           retType = 'AsyncGenerator<unknown, void, unknown>'
@@ -2418,7 +2425,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       // Skip method body
       skipWhitespaceAndComments()
       if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+        const bodyStart = pos + 1
         findMatchingClose(CH_LBRACE, CH_RBRACE)
+        if (!isolatedDeclarations && !hasExplicitReturnType && !isGenerator) {
+          retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
+        }
       }
       else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
         pos++
@@ -2963,6 +2974,59 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
   }
 
+  /** Convert a default-export expression into an ambient binding plus export. */
+  function extractDefaultExpression(stmtStart: number, expressionStart: number): void {
+    skipToStatementEnd()
+    let expression = sliceTrimmed(expressionStart, pos)
+    if (expression.charCodeAt(expression.length - 1) === CH_SEMI) expression = expression.slice(0, -1).trimEnd()
+    if (!expression) return
+
+    let isIdentifier = isIdentStart(expression.charCodeAt(0))
+    for (let i = 1; isIdentifier && i < expression.length; i++) {
+      isIdentifier = isIdentChar(expression.charCodeAt(i))
+    }
+
+    const comments = extractLeadingComments(stmtStart)
+    if (isIdentifier) {
+      declarations.push({
+        kind: 'export',
+        name: 'default',
+        text: `export default ${expression};`,
+        isExported: true,
+        isTypeOnly: false,
+        leadingComments: comments,
+        start: stmtStart,
+        end: pos,
+      })
+      return
+    }
+
+    let helperName = '__dtsx_default_export__'
+    let suffix = 1
+    while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
+    const type = inferNarrowType(expression, false)
+    declarations.push({
+      kind: 'variable',
+      name: helperName,
+      text: `declare const ${helperName}: ${type};`,
+      isExported: false,
+      typeAnnotation: type,
+      modifiers: ['const'],
+      start: stmtStart,
+      end: pos,
+    })
+    declarations.push({
+      kind: 'export',
+      name: 'default',
+      text: `export default ${helperName};`,
+      isExported: true,
+      isTypeOnly: false,
+      leadingComments: comments,
+      start: stmtStart,
+      end: pos,
+    })
+  }
+
   // --- Main scan loop (first-char dispatch for speed) ---
 
   while (pos < len) {
@@ -2985,6 +3049,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (ech === 100 /* d */ && matchWord('default')) {
         pos += 7
         skipWhitespaceAndComments()
+        const defaultExpressionStart = pos
         const dch = source.charCodeAt(pos)
 
         if (dch === 102 /* f */ && matchWord('function')) {
@@ -3002,17 +3067,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
           else {
             // export default async expression
-            skipToStatementEnd()
-            const fullText = sliceTrimmed(stmtStart, pos)
-            declarations.push({
-              kind: 'export',
-              name: 'default',
-              text: fullText,
-              isExported: true,
-              isTypeOnly: false,
-              start: stmtStart,
-              end: pos,
-            })
+            extractDefaultExpression(stmtStart, defaultExpressionStart)
           }
         }
         else if (dch === 99 /* c */ && matchWord('class')) {
@@ -3029,19 +3084,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         }
         else {
           // export default expression
-          skipToStatementEnd()
-          const text = sliceTrimmed(stmtStart, pos)
-          const comments = extractLeadingComments(stmtStart)
-          declarations.push({
-            kind: 'export',
-            name: 'default',
-            text,
-            isExported: true,
-            isTypeOnly: false,
-            leadingComments: comments,
-            start: stmtStart,
-            end: pos,
-          })
+          extractDefaultExpression(stmtStart, defaultExpressionStart)
         }
       }
       else if (ech === 116 /* t */ && matchWord('type')) {

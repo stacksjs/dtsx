@@ -18,7 +18,7 @@ describe('Functions without return type annotations', () => {
       export function add(a: number, b: number) { return a + b; }
     `
     const result = processSource(source)
-    expect(result).toContain('export declare function add(a: number, b: number): void;')
+    expect(result).toContain('export declare function add(a: number, b: number): number;')
   })
 
   it('should handle async function without return type', () => {
@@ -26,7 +26,7 @@ describe('Functions without return type annotations', () => {
       export async function fetchData(url: string) { return fetch(url); }
     `
     const result = processSource(source)
-    expect(result).toContain('export declare function fetchData(url: string): Promise<void>;')
+    expect(result).toContain('export declare function fetchData(url: string): Promise<Response>;')
   })
 
   it('should handle generator function without return type', () => {
