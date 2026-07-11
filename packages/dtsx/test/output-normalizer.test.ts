@@ -283,6 +283,31 @@ export type Simple = string`
       // Type should come before interface
       expect(result.indexOf('type Simple')).toBeLessThan(result.indexOf('interface MultiLine'))
     })
+
+    test('moves leading documentation with its declaration', () => {
+      const input = `/** Function docs */
+export declare function run(): void;
+/** Value docs */
+export declare const value: string;`
+
+      const result = orderDeclarations(input, {
+        kinds: ['variable', 'function'],
+        groupExports: false,
+      })
+
+      expect(result.indexOf('/** Value docs */')).toBeLessThan(result.indexOf('declare const value'))
+      expect(result.indexOf('/** Function docs */')).toBeLessThan(result.indexOf('declare function run'))
+      expect(result.indexOf('declare const value')).toBeLessThan(result.indexOf('/** Function docs */'))
+    })
+
+    test('preserves triple-slash directives in the preamble', () => {
+      const input = `/// <reference types="node" />
+export declare function run(): void;
+export declare const value: string;`
+      const result = orderDeclarations(input, { kinds: ['variable', 'function'], groupExports: false })
+
+      expect(result.startsWith('/// <reference types="node" />')).toBe(true)
+    })
   })
 
   describe('Full Normalization', () => {

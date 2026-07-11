@@ -501,10 +501,31 @@ export function orderDeclarations(content: string, config: DeclarationOrder): st
   let currentDecl: { lines: string[], kind: DeclarationKind, name: string, isExport: boolean } | null = null
   let braceDepth = 0
   let inPreamble = true
+  let isLeadingBlockComment = false
+  const pendingLeadingLines: string[] = []
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
+    const previousBraceDepth = braceDepth
+
+    const isTripleSlashDirective = trimmed.startsWith('///')
+    const startsLeadingComment = previousBraceDepth === 0 && !isTripleSlashDirective
+      && (trimmed.startsWith('//') || trimmed.startsWith('/*'))
+    if (isLeadingBlockComment || startsLeadingComment) {
+      pendingLeadingLines.push(line)
+      if (!isLeadingBlockComment && trimmed.startsWith('/*') && !trimmed.includes('*/')) {
+        isLeadingBlockComment = true
+      }
+      else if (isLeadingBlockComment && trimmed.includes('*/')) {
+        isLeadingBlockComment = false
+      }
+      continue
+    }
+    if (previousBraceDepth === 0 && pendingLeadingLines.length > 0 && trimmed === '') {
+      pendingLeadingLines.push(line)
+      continue
+    }
 
     // Track brace depth for multi-line declarations
     braceDepth += (line.match(/\{/g) || []).length
@@ -518,6 +539,12 @@ export function orderDeclarations(content: string, config: DeclarationOrder): st
     }
 
     if (inPreamble) {
+      if (pendingLeadingLines.length > 0) {
+        if (declInfo?.kind === 'import' || !declInfo) {
+          preamble.push(...pendingLeadingLines)
+          pendingLeadingLines.length = 0
+        }
+      }
       preamble.push(line)
       continue
     }
@@ -529,11 +556,12 @@ export function orderDeclarations(content: string, config: DeclarationOrder): st
       }
 
       currentDecl = {
-        lines: [line],
+        lines: pendingLeadingLines.length > 0 ? [...pendingLeadingLines, line] : [line],
         kind: declInfo.kind,
         name: declInfo.name,
         isExport: declInfo.isExport,
       }
+      pendingLeadingLines.length = 0
     }
     else if (currentDecl) {
       currentDecl.lines.push(line)
@@ -552,6 +580,7 @@ export function orderDeclarations(content: string, config: DeclarationOrder): st
   if (currentDecl) {
     declarations.push(currentDecl)
   }
+  if (pendingLeadingLines.length > 0) trailer.push(...pendingLeadingLines)
 
   // Sort declarations
   declarations.sort((a, b) => {
