@@ -4,6 +4,10 @@
  * types, default values leaking into declarations.
  */
 import { describe, expect, it } from 'bun:test'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import process from 'node:process'
 import { processSource } from '../src/generator'
 
 describe('issue 3093 — getter syntax', () => {
@@ -189,5 +193,47 @@ describe('issue 3093 — line comments inside inline object types', () => {
     expect(out).not.toContain('first comment')
     expect(out).not.toContain('second comment')
     expect(out).not.toContain('third')
+  })
+})
+
+describe('issue 3093 — downstream TypeScript validation', () => {
+  it('type-checks every reported declaration shape with TypeScript', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dtsx-issue-3093-'))
+    const declarationPath = join(directory, 'issue-3093.d.ts')
+    const declarations = [
+      processSource(`export const ENV = { get TRACE() { return true } }`),
+      processSource(`export function resilient(config: { sentryDsn?: string, bugsnagApiKey?: string, services?: string[] } = {}) {}`),
+      processSource(`export const handler = { resilient(config: { sentryDsn?: string } = {}) { return config } }`),
+    ].join('\n')
+
+    try {
+      await writeFile(declarationPath, declarations)
+      const subprocess = Bun.spawn([
+        process.execPath,
+        'x',
+        'tsc',
+        '--noEmit',
+        '--ignoreConfig',
+        '--skipLibCheck',
+        '--target',
+        'ESNext',
+        declarationPath,
+      ], {
+        cwd: resolve(import.meta.dir, '../../..'),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const [exitCode, stdout, stderr] = await Promise.all([
+        subprocess.exited,
+        new Response(subprocess.stdout).text(),
+        new Response(subprocess.stderr).text(),
+      ])
+
+      expect(`${stdout}${stderr}`).toBe('')
+      expect(exitCode).toBe(0)
+    }
+    finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })
