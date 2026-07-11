@@ -1,4 +1,23 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.4...v0.10.5)
+
+### 🐛 Bug Fixes
+
+- **zig**: infer unary and access expressions ([46e0170](https://github.com/stacksjs/dtsx/commit/46e0170)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: emit every variable binding ([41e256c](https://github.com/stacksjs/dtsx/commit/41e256c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧪 Tests
+
+- **zig**: cover binding and expression inference ([d2d8ec7](https://github.com/stacksjs/dtsx/commit/d2d8ec7)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.5 ([1fb153f](https://github.com/stacksjs/dtsx/commit/1fb153f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.3...v0.10.4)
 
 ### 🐛 Bug Fixes
