@@ -238,11 +238,6 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return inferNewExpressionType(trimmed)
   }
 
-  // Function expressions
-  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
-    return inferFunctionType(trimmed, inUnion, _depth, isConst)
-  }
-
   // As const assertions
   if (trimmed.endsWith('as const')) {
     const withoutAsConst = trimmed.slice(0, -8).trim()
@@ -258,6 +253,13 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
       return `readonly [${elementTypes.join(', ')}]`
     }
     return inferNarrowType(withoutAsConst, true, inUnion, _depth + 1)
+  }
+
+  // Function expressions. Check these after `as const` so an asserted
+  // object or array containing arrow-function properties is inferred as a
+  // container instead of treating the complete initializer as one function.
+  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+    return inferFunctionType(trimmed, inUnion, _depth, isConst)
   }
 
   // Template literal expressions

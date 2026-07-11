@@ -113,4 +113,40 @@ describe('bun-plugin-dtsx', () => {
     // ...and the out-of-root bin entrypoint is skipped, not emitted as cli.d.ts.
     await expect(readFile(join(outDir, 'cli.d.ts'), 'utf8')).rejects.toThrow()
   })
+
+  it('emits complete as-const object types containing arrow functions', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `
+export const keyPatterns = {
+  account: {
+    primary: (accountId: string): string => \`ACCOUNT#\${accountId}\`,
+    secondary: (createdAt: Date, accountId: string): string =>
+      \`CREATED#\${createdAt.toISOString()}#\${accountId}\`,
+  },
+  event: {
+    primary: (eventId: string): string => \`EVENT#\${eventId}\`,
+  },
+} as const
+`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir, root: './src', outdir: './dist' })],
+    })
+
+    expect(result.success).toBe(true)
+
+    const declaration = await readFile(join(outDir, 'index.d.ts'), 'utf8')
+    expect(declaration).toContain('primary: (accountId: string) => string')
+    expect(declaration).toContain('secondary: (createdAt: Date, accountId: string) => string')
+    expect(declaration).toContain('primary: (eventId: string) => string')
+    expect(declaration).not.toContain(')) =>')
+  })
 })
