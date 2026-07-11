@@ -37,7 +37,7 @@ export declare const APP_CONSTANTS: {
 /** Multi-line comment for exported variable */
 export declare const API_VERSION: '2.0.0';
 /* Block comment style */
-export declare const DEBUG_MODE: unknown;
+export declare const DEBUG_MODE: boolean;
 /**
  * Main module documentation
  * This module demonstrates various comment types

@@ -44,7 +44,7 @@ export declare const deeplyNested: {
 export declare const mixedTypeArray: (string | number | boolean | null | undefined | {
   /** @defaultValue 'value' */
   key: string
-} | number[] | (() => unknown) | Date | Promise<string>)[];
+} | number[] | (() => string) | Date | Promise<string>)[];
 // Type with conditional and infer
 export type ExtractPromise<T> = T extends Promise<infer U> ? U : never;
 export type ExtractArray<T> = T extends (infer U)[] ? U : never;

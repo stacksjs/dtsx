@@ -15,14 +15,14 @@ export declare var helloWorld: string;
  *   someNumber: 1000,
  *   someBoolean: true,
  *   someFalse: false,
- *   someFunction: () => unknown,
- *   anotherOne: () => unknown,
+ *   someFunction: () => void,
+ *   anotherOne: () => void,
  *   someArray: [1, 2, 3],
  *   someNestedArray: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], ],
  *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
  *   someNestedArray3: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', [11, 12, 13], ],
  *   someObject: { key: 'value' },
- *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => unknown } },
+ *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => void } },
  *   someNestedObjectArray: [ { key: 'value' }, { key2: 'value2' }, ]
  * }
  * ```
@@ -36,8 +36,8 @@ export declare const someObject: {
   someBoolean: boolean;
   /** @defaultValue false */
   someFalse: boolean;
-  someFunction: () => unknown;
-  anotherOne: () => unknown;
+  someFunction: () => void;
+  anotherOne: () => void;
   someArray: number[];
   someNestedArray: number[][];
   someNestedArray2: (number[] | string)[];
@@ -54,7 +54,7 @@ export declare const someObject: {
   /** @defaultValue 'value' */
   key: string
 };
-  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => unknown } };
+  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => void } };
   someNestedObjectArray: ({
   /** @defaultValue 'value' */
   key: string
@@ -87,7 +87,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  mixedArrays: (Date | Promise<string> | (() => unknown) | (() => Generator<any, any, any>))[]
+  mixedArrays: (Date | Promise<string> | (() => string) | (() => Generator<any, any, any>))[]
 };
 /**
  * Nested Object Types with Methods
@@ -95,9 +95,9 @@ export declare const complexArrays: {
  * ```ts
  * {
  *   handlers: {
- *     onSuccess<T>: (data: T) => unknown,
- *     onError: (error: Error & { code?: number }) => unknown,
- *     someOtherMethod: () => unknown
+ *     onSuccess<T>: (data: T) => Promise<void>,
+ *     onError: (error: Error & { code?: number }) => never,
+ *     someOtherMethod: () => void
  *   },
  *   utils: {
  *     formatters: {
@@ -109,7 +109,7 @@ export declare const complexArrays: {
  * ```
  */
 export declare const complexObject: {
-  handlers: { onSuccess<T>: (data: T) => unknown; onError: (error: Error & { code?: number }) => unknown; someOtherMethod: () => unknown };
+  handlers: { onSuccess<T>: (data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
   utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
