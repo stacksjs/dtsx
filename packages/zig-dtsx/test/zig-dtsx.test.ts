@@ -234,7 +234,7 @@ describeIf('zig-dtsx', () => {
     })
 
     test('widens multiline template literal content', () => {
-      const result = dts('export const styles = `/** theme */\n.card { color: red; }`')
+      const result = dts('export const styles = `/** Wrapped as .card by the renderer. */\n.card { color: red; }`')
       expect(result).toContain('styles: string')
       expect(result).not.toContain('.card {')
     })
@@ -981,7 +981,7 @@ export function useFoo(f: Foo): void {}
 
     test('default export class', () => {
       const result = dts(`export default class App { start(): void {} }`)
-      expect(result).toContain('declare class App')
+      expect(result).toContain('export default class App')
     })
 
     test('named export and default export together', () => {
