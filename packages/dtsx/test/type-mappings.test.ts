@@ -61,6 +61,16 @@ describe('Type Mappings', () => {
       expect(mapper.map('foo | foo | foo')).toBe('bar | bar | bar')
     })
 
+    test('resets stateful regular expressions between uncached values', () => {
+      const mapper = createTypeMapper({
+        rules: [{ pattern: /foo/g, replacement: 'bar', global: true }],
+        includeDefaults: false,
+      })
+
+      expect(mapper.map('foo | first')).toBe('bar | first')
+      expect(mapper.map('foo | second')).toBe('bar | second')
+    })
+
     test('respects condition function', () => {
       const mapper = createTypeMapper({
         rules: [

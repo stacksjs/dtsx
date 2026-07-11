@@ -70,7 +70,22 @@ export class BuildCache {
       indentStyle: config.indentStyle,
       indentSize: config.indentSize,
       prettier: config.prettier,
-      typeMappings: config.typeMappings,
+      typeMappings: config.typeMappings
+        ? {
+            includeDefaults: config.typeMappings.includeDefaults,
+            presets: config.typeMappings.presets,
+            cacheKey: config.typeMappings.cacheKey,
+            rules: config.typeMappings.rules.map(rule => ({
+              pattern: typeof rule.pattern === 'string'
+                ? { kind: 'string', value: rule.pattern }
+                : { kind: 'regex', source: rule.pattern.source, flags: rule.pattern.flags },
+              replacement: rule.replacement,
+              global: rule.global,
+              priority: rule.priority,
+              hasCondition: Boolean(rule.condition),
+            })),
+          }
+        : undefined,
       lineEnding: config.lineEnding,
       normalizeOutput: config.normalizeOutput,
       declarationOrder: config.declarationOrder,

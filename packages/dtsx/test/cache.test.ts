@@ -484,6 +484,28 @@ describe('BuildCache', () => {
       expect(cache2.load()).toBe(false)
     })
 
+    it('distinguishes regular expressions in type-mapping config', () => {
+      const config1 = makeConfig({
+        typeMappings: { rules: [{ pattern: /^First$/, replacement: 'Mapped' }] },
+      })
+      const cache1 = new BuildCache(config1)
+      cache1.save()
+
+      const config2 = makeConfig({
+        typeMappings: { rules: [{ pattern: /^Second$/, replacement: 'Mapped' }] },
+      })
+      expect(new BuildCache(config2).load()).toBe(false)
+    })
+
+    it('invalidates conditional mappings through their cache key', () => {
+      const rule = { pattern: /^string$/, replacement: 'FilePath', condition: () => true }
+      const cache1 = new BuildCache(makeConfig({ typeMappings: { rules: [rule], cacheKey: 'v1' } }))
+      cache1.save()
+
+      const config2 = makeConfig({ typeMappings: { rules: [rule], cacheKey: 'v2' } })
+      expect(new BuildCache(config2).load()).toBe(false)
+    })
+
     it('preserves cache when irrelevant config changes', () => {
       const config1 = makeConfig({ verbose: false })
       const cache1 = new BuildCache(config1)

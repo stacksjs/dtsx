@@ -49,6 +49,8 @@ export interface TypeMappingConfig {
   presets?: TypeMappingPreset[]
   /** Whether to apply default mappings (default: true) */
   includeDefaults?: boolean
+  /** Cache identity for condition functions or other external mapping state. */
+  cacheKey?: string
 }
 
 /**
@@ -271,8 +273,11 @@ export class TypeMapper {
         if (!rule.condition(fullContext)) continue
       }
 
+      regex.lastIndex = 0
       if (regex.test(result)) {
+        regex.lastIndex = 0
         result = result.replace(regex, rule.replacement)
+        regex.lastIndex = 0
         if (!rule.global) break
       }
     }
@@ -315,6 +320,7 @@ export class TypeMapper {
     const originalLength = this.rules.length
     this.rules = this.rules.filter((rule) => {
       const rulePattern = typeof rule.pattern === 'string' ? rule.pattern : rule.pattern.source
+      if (pattern instanceof RegExp) pattern.lastIndex = 0
       return typeof pattern === 'string'
         ? rulePattern !== pattern
         : !pattern.test(rulePattern)
