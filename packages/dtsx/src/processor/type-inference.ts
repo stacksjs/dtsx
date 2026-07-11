@@ -1419,22 +1419,9 @@ function isMethodDefinition(value: string): boolean {
         // Arrow functions have '=>' (possibly after ': ReturnType')
         if (after.startsWith('{')) return true // (params) { body }
         if (after.startsWith(':')) {
-          // Could be (params): ReturnType { body } or (params): ReturnType => body
-          // Check if '=>' appears before '{' at depth 0
-          let scanDepth = 0
-          for (let j = 0; j < after.length; j++) {
-            const sc = after.charCodeAt(j)
-            if (sc === 40 || sc === 91) scanDepth++
-            else if (sc === 41 || sc === 93) scanDepth--
-            else if (sc === 60) scanDepth++ // < for generics in return type
-            else if (sc === 62) { if (scanDepth > 0) scanDepth-- } // >
-            else if (scanDepth === 0 && sc === 61 /* = */ && j + 1 < after.length && after.charCodeAt(j + 1) === 62 /* > */) {
-              return false // Found '=>' — this is an arrow function
-            }
-            else if (scanDepth === 0 && sc === 123 /* { */) {
-              return true // Found '{' before any '=>' — this is a method definition
-            }
-          }
+          const boundary = findReturnTypeBoundary(after, 1)
+          if (boundary?.kind === 'arrow') return false
+          if (boundary?.kind === 'body') return true
         }
         return false
       }
@@ -1491,27 +1478,9 @@ function convertMethodToFunctionType(_methodName: string, _methodDef: string): s
   const afterParams = cleaned.slice(paramEnd + 1).trimStart()
   if (afterParams.charCodeAt(0) === 58 /* : */) {
     const typeContent = afterParams.slice(1) // skip ':'
-    // Find the body start: either '{' at depth 0 (block body) or '=>' at depth 0 (arrow body)
-    // Must track paren/bracket depth to avoid matching '{' inside nested expressions like => ({...})
-    let scanDepth = 0
-    let bodyStartIdx = -1
-    let _bodyIsArrow = false
-    for (let si = 0; si < typeContent.length; si++) {
-      const sc = typeContent.charCodeAt(si)
-      if (sc === 40 /* ( */ || sc === 91 /* [ */) scanDepth++
-      else if (sc === 41 /* ) */ || sc === 93 /* ] */) scanDepth--
-      else if (sc === 123 /* { */ && scanDepth === 0) {
-        bodyStartIdx = si
-        break
-      }
-      else if (sc === 61 /* = */ && si + 1 < typeContent.length && typeContent.charCodeAt(si + 1) === 62 /* > */ && scanDepth === 0) {
-        bodyStartIdx = si
-        _bodyIsArrow = true
-        break
-      }
-    }
-    if (bodyStartIdx !== -1) {
-      returnType = typeContent.slice(0, bodyStartIdx).trim()
+    const boundary = findReturnTypeBoundary(typeContent, 0)
+    if (boundary) {
+      returnType = typeContent.slice(0, boundary.index).trim()
     }
     else {
       returnType = typeContent.trim()
@@ -1539,6 +1508,77 @@ function convertMethodToFunctionType(_methodName: string, _methodDef: string): s
   const cleanedParams = cleanParameterDefaults(params)
 
   return `${generics}${cleanedParams} => ${returnType}`
+}
+
+interface ReturnTypeBoundary {
+  index: number
+  kind: 'arrow' | 'body'
+}
+
+/**
+ * Find where an annotated return type ends and an implementation begins.
+ * Object type literals are part of the type, including when nested in a
+ * generic, union, or intersection. A later top-level brace starts a method
+ * body, while a top-level arrow identifies an arrow-function initializer.
+ */
+function findReturnTypeBoundary(value: string, start: number): ReturnTypeBoundary | null {
+  let parenDepth = 0
+  let bracketDepth = 0
+  let angleDepth = 0
+  let objectTypeDepth = 0
+  let inString = false
+  let stringChar = 0
+
+  for (let i = start; i < value.length; i++) {
+    const current = value.charCodeAt(i)
+
+    if (inString) {
+      if (current === 92 /* \\ */) i++
+      else if (current === stringChar) inString = false
+      continue
+    }
+
+    if (current === 34 /* " */ || current === 39 /* ' */ || current === 96 /* ` */) {
+      inString = true
+      stringChar = current
+      continue
+    }
+
+    if (current === 40 /* ( */) parenDepth++
+    else if (current === 41 /* ) */ && parenDepth > 0) parenDepth--
+    else if (current === 91 /* [ */) bracketDepth++
+    else if (current === 93 /* ] */ && bracketDepth > 0) bracketDepth--
+    else if (current === 60 /* < */) angleDepth++
+    else if (current === 62 /* > */ && angleDepth > 0) angleDepth--
+    else if (current === 125 /* } */ && objectTypeDepth > 0) objectTypeDepth--
+    else if (current === 123 /* { */) {
+      const nested = parenDepth > 0 || bracketDepth > 0 || angleDepth > 0 || objectTypeDepth > 0
+      const preceding = value.slice(start, i).trimEnd()
+      const previous = preceding.charCodeAt(preceding.length - 1)
+      const startsObjectType = preceding.length === 0
+        || previous === 38 /* & */
+        || previous === 124 /* | */
+        || previous === 40 /* ( */
+        || previous === 44 /* , */
+        || previous === 58 /* : */
+        || previous === 61 /* = */
+        || previous === 91 /* [ */
+
+      if (nested || startsObjectType) objectTypeDepth++
+      else return { index: i, kind: 'body' }
+    }
+    else if (current === 61 /* = */
+      && i + 1 < value.length
+      && value.charCodeAt(i + 1) === 62 /* > */
+      && parenDepth === 0
+      && bracketDepth === 0
+      && angleDepth === 0
+      && objectTypeDepth === 0) {
+      return { index: i, kind: 'arrow' }
+    }
+  }
+
+  return null
 }
 
 /**

@@ -182,4 +182,36 @@ export default frameworkModule
     expect(declaration).toContain('declare const frameworkModule: FrameworkModule<{ enabled?: boolean }>')
     expect(declaration).toContain('export default frameworkModule;')
   })
+
+  it('preserves inline object return types in exported function maps', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `
+export const api = {
+  async login(credentials: { email: string }): Promise<{ user: Record<string, unknown>, token: string }> {
+    return { user: {}, token: credentials.email }
+  },
+  relation: (id: string): { parent: string, child: string } => ({ parent: id, child: id }),
+}
+`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir, root: './src', outdir: './dist' })],
+    })
+
+    expect(result.success).toBe(true)
+
+    const declaration = await readFile(join(outDir, 'index.d.ts'), 'utf8')
+    expect(declaration).toContain('login: (credentials: { email: string }) => Promise<{ user: Record<string, unknown>, token: string }>')
+    expect(declaration).toContain('relation: (id: string) => { parent: string, child: string }')
+    expect(declaration).not.toContain('Promise<;')
+    expect(declaration).not.toContain('=> ;')
+  })
 })
