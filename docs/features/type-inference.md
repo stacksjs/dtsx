@@ -298,7 +298,7 @@ export const promiseVal = Promise.resolve(42)
 
 ## isolatedDeclarations (Optional)
 
-dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx treats every explicit annotation as authoritative and skips its initializer expression entirely, including broad and generic annotations.
+dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. Explicit annotations remain authoritative. Concrete annotations skip their initializer expressions entirely; broad containers are read only to preserve initializer details through `@defaultValue` without narrowing away their declared contract.
 
 When disabled (the default), dtsx reads every initializer and infers the correct type. This is the recommended mode for most projects.
 

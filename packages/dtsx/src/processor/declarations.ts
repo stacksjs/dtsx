@@ -117,7 +117,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     }
   }
   // If we have a value that ends with 'as const' at the top level, infer narrow from value
-  else if (value && value.trim().endsWith('as const')) {
+  else if (!typeAnnotation && value && value.trim().endsWith('as const')) {
     typeAnnotation = inferNarrowType(value, true)
   }
   else if (!typeAnnotation && value && kind === 'const') {
@@ -128,13 +128,6 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     const isContainer = trimmedVal.startsWith('{') || trimmedVal.startsWith('[')
     if (isContainer) enableCleanDefaultCollection()
     typeAnnotation = inferNarrowType(value, !isContainer)
-  }
-  else if (typeAnnotation && value && kind === 'const' && isGenericType(typeAnnotation)) {
-    // For const declarations with generic type annotations (Record, any, object), prefer narrow inference
-    const inferredType = inferNarrowType(value, true)
-    if (inferredType !== 'unknown') {
-      typeAnnotation = inferredType
-    }
   }
   else if (!typeAnnotation && value) {
     // If no explicit type annotation, try to infer from value
@@ -149,7 +142,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   // Build @defaultValue content for widened declarations (TSDoc standard)
   // Skip when value uses 'as const' — types are already narrow/self-documenting
   let defaultTag = ''
-  if (value && !decl.typeAnnotation && !value.trim().endsWith('as const')) {
+  if (keepComments && value && !decl.typeAnnotation && !value.trim().endsWith('as const')) {
     const trimVal = value.trim()
     if (kind !== 'const') {
       // let/var with widened primitives
@@ -169,6 +162,22 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
         else {
           defaultTag = `@defaultValue \`${cleanDefault}\``
         }
+      }
+    }
+  }
+  else if (keepComments && value && decl.typeAnnotation && isGenericType(decl.typeAnnotation)) {
+    enableCleanDefaultCollection()
+    const trimmedValue = value.trim()
+    const valueForDefaults = trimmedValue.endsWith('as const') ? trimmedValue.slice(0, -8).trim() : trimmedValue
+    inferNarrowType(valueForDefaults, false)
+    const cleanDefault = consumeCleanDefault()
+    if (cleanDefault) {
+      if (cleanDefault.includes('\n')) {
+        const lines = cleanDefault.split('\n')
+        defaultTag = `@defaultValue\n * \`\`\`ts\n${lines.map(l => ` * ${l}`).join('\n')}\n * \`\`\``
+      }
+      else {
+        defaultTag = `@defaultValue \`${cleanDefault}\``
       }
     }
   }

@@ -1,5 +1,6 @@
 /**
  * Example of const declaration
+ * @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: '5000' }`
  */
 export declare const conf: { [key: string]: string };
 /** @defaultValue 'test' */

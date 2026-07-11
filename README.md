@@ -22,7 +22,7 @@
 - ✅ Built-in validation
 
 > [!NOTE]
-> dtsx works out of the box without `isolatedDeclarations` — it infers narrow types directly from your source values. That said, enabling `isolatedDeclarations` is still a good idea as it enforces explicit type annotations at module boundaries, encouraging better type hygiene across your codebase. When enabled, dtsx treats annotations as authoritative and skips their initializer expressions entirely.
+> dtsx works out of the box without `isolatedDeclarations` — it infers narrow types directly from your source values. That said, enabling `isolatedDeclarations` is still a good idea as it enforces explicit type annotations at module boundaries, encouraging better type hygiene across your codebase. When enabled, dtsx treats annotations as authoritative, skips initializers for concrete types, and only reads broad containers to preserve `@defaultValue` documentation.
 
 ## Install
 

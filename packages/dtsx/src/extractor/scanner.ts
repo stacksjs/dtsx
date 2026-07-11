@@ -48,6 +48,13 @@ function isIdentChar(ch: number): boolean {
   return isIdentStart(ch) || (ch >= 48 && ch <= 57)
 }
 
+/** Check whether an annotation benefits from initializer-derived documentation. */
+function isBroadAnnotation(type: string): boolean {
+  if (type === 'any' || type === 'object' || type === 'unknown') return true
+  if (type.startsWith('Record<') || type.startsWith('Array<')) return true
+  return type.charCodeAt(0) === CH_LBRACE && type.includes('[') && type.includes(']:')
+}
+
 // Constructor parameter modifiers (hoisted to avoid per-call allocation)
 const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override'] as const
 
@@ -1804,9 +1811,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       // Initializer
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-        // An explicit annotation is the complete declaration contract in isolated
-        // mode. Do not inspect the initializer, even for broad/generic types.
-        if (isolatedDeclarations && typeAnnotation) {
+        // Concrete annotations need no initializer work. Broad annotations retain
+        // the initializer only so the processor can emit useful @defaultValue docs.
+        if (isolatedDeclarations && typeAnnotation && !isBroadAnnotation(typeAnnotation)) {
           skipToStatementEnd()
         }
         else {

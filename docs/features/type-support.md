@@ -461,7 +461,7 @@ Scalar `const` keeps literal types (truly immutable). Mutable container properti
 
 ## isolatedDeclarations (Optional)
 
-dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. When enabled, dtsx treats every explicit annotation as authoritative and skips its initializer expression entirely. This includes broad and generic annotations such as `Record<string, unknown>` and `Array<T>`.
+dtsx supports `isolatedDeclarations` as an **optional fast path**, not a requirement. Explicit annotations remain authoritative. Concrete annotations skip their initializer expressions entirely; broad containers such as `Record<string, unknown>` are read only to preserve initializer details through `@defaultValue` without narrowing away their indexable contract.
 
 When disabled (the default), dtsx reads every initializer and infers the correct type. This is the recommended mode for most projects.
 

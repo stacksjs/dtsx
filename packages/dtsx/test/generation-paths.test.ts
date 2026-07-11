@@ -13,26 +13,56 @@ afterEach(async () => {
 })
 
 describe('declaration generation paths', () => {
-  it('treats explicit annotations as authoritative in isolated mode', () => {
-    const source = `export const values: Record<string, string> = { answer: 'yes' };`
+  it('treats concrete annotations as authoritative in isolated mode', () => {
+    const source = `export const value: string = createVeryExpensiveValue({ answer: 'yes' });`
 
     const result = processSourceIsolated(source, 'isolated.ts')
 
-    expect(result).toContain('export declare const values: Record<string, string>;')
+    expect(result).toContain('export declare const value: string;')
     expect(result).not.toContain('answer:')
   })
 
   it('does not retain annotated initializers in isolated mode', () => {
     const source = `
-      export const values: Array<string> = createVeryExpensiveValue({
+      export const values: readonly string[] = createVeryExpensiveValue({
         deeply: { nested: ['implementation', 'details'] },
       });
     `
 
     const [declaration] = extractDeclarations(source, 'isolated.ts', true, true)
 
-    expect(declaration.typeAnnotation).toBe('Array<string>')
+    expect(declaration.typeAnnotation).toBe('readonly string[]')
     expect(declaration.value).toBeUndefined()
+  })
+
+  it('preserves broad contracts and documents their initializer values', () => {
+    const source = `
+      export const conf: { [key: string]: string } = {
+        apiUrl: 'https://api.stacksjs.org',
+        timeout: '5000',
+      };
+    `
+
+    const result = processSourceIsolated(source, 'config.ts')
+
+    expect(result).toContain("@defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: '5000' }`")
+    expect(result).toContain('export declare const conf: { [key: string]: string };')
+  })
+
+  it('documents as-const records without losing their indexable contract', () => {
+    const source = `
+      export const PHONE_PATTERNS: Record<string, number[]> = {
+        US: [3, 3, 4],
+        GB: [4, 3, 3],
+      } as const;
+    `
+
+    const result = processSourceIsolated(source, 'phone.ts')
+
+    expect(result).toContain('@defaultValue')
+    expect(result).toContain('US: [3, 3, 4]')
+    expect(result).toContain('GB: [4, 3, 3]')
+    expect(result).toContain('export declare const PHONE_PATTERNS: Record<string, number[]>;')
   })
 
   it('retains initializers for inference in semantic mode', () => {
@@ -87,6 +117,6 @@ describe('declaration generation paths', () => {
     expect(isolatedStats.generationMode).toBe('isolated')
     expect(semanticStats.generationMode).toBe('semantic')
     expect(await readFile(join(cwd, 'dist-isolated', 'index.d.ts'), 'utf8')).toContain('Record<string, string>')
-    expect(await readFile(join(cwd, 'dist-semantic', 'index.d.ts'), 'utf8')).toContain("answer: 'yes'")
+    expect(await readFile(join(cwd, 'dist-semantic', 'index.d.ts'), 'utf8')).toContain('Record<string, string>')
   })
 })
