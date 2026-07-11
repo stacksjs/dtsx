@@ -42,19 +42,19 @@ export declare const someObject: {
   someNestedArray: number[][];
   someNestedArray2: (number[] | string)[];
   someNestedArray3: (number[] | string)[];
-  someOtherNestedArray: ((string | number | unknown | (() => unknown))[] | number[])[];
+  someOtherNestedArray: ((string | number | (typeof console)["log"] | (() => unknown) | unknown)[] | number[])[];
   someComplexArray: ({
   /** @defaultValue 'value' */
   key: string
 }[] | ({
   /** @defaultValue 'value2' */
   key2: string
-} | string | number)[] | (string | unknown)[])[];
+} | string | number)[] | (string | (typeof console)["log"] | unknown)[])[];
   someObject: {
   /** @defaultValue 'value' */
   key: string
 };
-  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => void } };
+  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: ReturnType<typeof process.cwd>; nestedKey2: () => void } };
   someNestedObjectArray: ({
   /** @defaultValue 'value' */
   key: string
@@ -63,8 +63,8 @@ export declare const someObject: {
   key2: string
 })[];
   someOtherObject: unknown;
-  someInlineCall2: unknown;
-  someInlineCall3: unknown
+  someInlineCall2: (typeof console)["log"];
+  someInlineCall3: ReturnType<typeof console.log>
 };
 /** @defaultValue `{ 'Content-Type': 'application/json' }` */
 export declare const defaultHeaders: {
@@ -101,7 +101,7 @@ export declare const complexArrays: {
  *   },
  *   utils: {
  *     formatters: {
- *       date: (input: Date) => unknown,
+ *       date: (input: Date) => ReturnType<Date["toISOString"]>,
  *       currency: (amount: number, currency?) => unknown
  *     }
  *   }
@@ -110,7 +110,7 @@ export declare const complexArrays: {
  */
 export declare const complexObject: {
   handlers: { onSuccess<T>: (data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
-  utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?) => unknown } }
+  utils: { formatters: { date: (input: Date) => ReturnType<Date["toISOString"]>; currency: (amount: number, currency?) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
 export declare const methodDecorator: (

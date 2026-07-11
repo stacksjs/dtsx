@@ -142,11 +142,89 @@ fn isEntityName(value: []const u8) bool {
 
 fn isDeclarationType(value: []const u8) bool {
     if (value.len == 0) return false;
-    if (isEntityName(value)) return true;
     if (std.mem.eql(u8, value, "string") or std.mem.eql(u8, value, "number") or std.mem.eql(u8, value, "boolean") or
         std.mem.eql(u8, value, "bigint") or std.mem.eql(u8, value, "symbol") or std.mem.eql(u8, value, "unknown") or
         std.mem.eql(u8, value, "never") or std.mem.eql(u8, value, "void")) return true;
     return (value[0] == '{' and !ch.contains(value, "return")) or value[0] == '[' or ch.contains(value, " | ") or ch.contains(value, " & ");
+}
+
+fn isRegexLiteral(value: []const u8) bool {
+    if (value.len < 2 or value[0] != '/') return false;
+    var in_character_class = false;
+    var i: usize = 1;
+    while (i < value.len) : (i += 1) {
+        if (value[i] == '\\') {
+            i += 1;
+            continue;
+        }
+        if (value[i] == '[') in_character_class = true else if (value[i] == ']') in_character_class = false else if (value[i] == '/' and !in_character_class) {
+            for (value[i + 1 ..]) |flag| if (!ch.isIdentChar(flag)) return false;
+            return true;
+        }
+    }
+    return false;
+}
+
+fn inferAccessType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
+    if (value.len > 3 and value[value.len - 1] == ']') {
+        const bracket = std.mem.lastIndexOfScalar(u8, value, '[') orelse return null;
+        const base = trim(value[0..bracket]);
+        const index = trim(value[bracket + 1 .. value.len - 1]);
+        if (isEntityName(base) and index.len > 0) {
+            const index_type = if (isIdentifierName(index)) try std.fmt.allocPrint(alloc, "typeof {s}", .{index}) else index;
+            return try std.fmt.allocPrint(alloc, "(typeof {s})[{s}]", .{ base, index_type });
+        }
+    }
+
+    if (ch.indexOf(value, "?.", 0)) |optional_index| {
+        const base = trim(value[0..optional_index]);
+        const property = trim(value[optional_index + 2 ..]);
+        if (isIdentifierName(base) and isIdentifierName(property))
+            return try std.fmt.allocPrint(alloc, "NonNullable<typeof {s}>[\"{s}\"] | undefined", .{ base, property });
+    }
+
+    if (std.mem.lastIndexOfScalar(u8, value, '.')) |dot| {
+        const base = trim(value[0..dot]);
+        const property = trim(value[dot + 1 ..]);
+        if (isIdentifierName(base) and isIdentifierName(property))
+            return try std.fmt.allocPrint(alloc, "(typeof {s})[\"{s}\"]", .{ base, property });
+    }
+    return null;
+}
+
+fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
+    if (value.len < 3 or value[value.len - 1] != ')') return null;
+    const open = std.mem.indexOfScalar(u8, value, '(') orelse return null;
+    if (findMatchingBracket(value, open, '(', ')') != value.len - 1) return null;
+    const callee = trim(value[0..open]);
+    if (!isEntityName(callee)) return null;
+    const dot = std.mem.indexOfScalar(u8, callee, '.') orelse return null;
+    if (ch.indexOfChar(callee, '.', dot + 1) != null) return null;
+    return try std.fmt.allocPrint(alloc, "ReturnType<typeof {s}>", .{callee});
+}
+
+fn inferBodyCallType(alloc: std.mem.Allocator, value: []const u8, parameters: []const u8) InferError!?[]const u8 {
+    if (value.len < 3 or value[value.len - 1] != ')') return null;
+    const open = std.mem.indexOfScalar(u8, value, '(') orelse return null;
+    if (findMatchingBracket(value, open, '(', ')') != value.len - 1) return null;
+    const callee = trim(value[0..open]);
+    if (!isEntityName(callee)) return null;
+
+    const dot = std.mem.indexOfScalar(u8, callee, '.');
+    const root = if (dot) |index| callee[0..index] else callee;
+    const root_type = findParameterType(parameters, root) orelse return "unknown";
+    if (dot == null) return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{root_type});
+
+    var callable_type = std.array_list.Managed(u8).init(alloc);
+    try callable_type.appendSlice(root_type);
+    var properties = std.mem.splitScalar(u8, callee[dot.? + 1 ..], '.');
+    while (properties.next()) |property| {
+        if (!isIdentifierName(property)) return "unknown";
+        try callable_type.appendSlice("[\"");
+        try callable_type.appendSlice(property);
+        try callable_type.appendSlice("\"]");
+    }
+    return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{callable_type.items});
 }
 
 /// Parse array elements handling nested structures.
@@ -835,6 +913,7 @@ fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, par
         value = trim(value[1 .. value.len - 1]);
     }
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
+    if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
 
     var expression_depth: i32 = 0;
     var i = value.len;
@@ -930,6 +1009,23 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     const trimmed = trim(value);
     if (trimmed.len == 0) return "unknown";
+
+    while (trimmed.len >= 2 and trimmed[0] == '(' and trimmed[trimmed.len - 1] == ')' and findMatchingBracket(trimmed, 0, '(', ')') == trimmed.len - 1) {
+        return inferNarrowType(alloc, trim(trimmed[1 .. trimmed.len - 1]), is_const, in_union, depth + 1);
+    }
+
+    if (ch.startsWith(trimmed, "await ")) {
+        const awaited = try inferNarrowType(alloc, trim(trimmed[6..]), false, false, depth + 1);
+        if (ch.startsWith(awaited, "Promise<") and awaited.len > 9 and awaited[awaited.len - 1] == '>') return awaited[8 .. awaited.len - 1];
+        return awaited;
+    }
+    if (ch.startsWith(trimmed, "typeof ")) return "string";
+    if (ch.startsWith(trimmed, "void ")) return "undefined";
+    if (ch.startsWith(trimmed, "delete ")) return "boolean";
+    if (trimmed[0] == '!') return "boolean";
+    if ((trimmed[0] == '+' or trimmed[0] == '~') and trimmed.len > 1) return "number";
+    if (trimmed[0] == '-' and trimmed.len > 1 and !(trimmed[1] >= '0' and trimmed[1] <= '9')) return "number";
+    if (isRegexLiteral(trimmed)) return "RegExp";
 
     // Recognize functions before expression operators so the `>` in `=>` and
     // generic parameter lists cannot be mistaken for a comparison.
@@ -1057,9 +1153,6 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         return inferPromiseType(alloc, trimmed, is_const, depth);
     }
 
-    // Await expressions
-    if (ch.startsWith(trimmed, "await ")) return "unknown";
-
     // BigInt literals (digits followed by 'n')
     if (trimmed.len > 1 and trimmed[trimmed.len - 1] == 'n' and isBigIntDigits(trimmed)) {
         if (is_const) return trimmed;
@@ -1068,6 +1161,9 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Symbol
     if (ch.startsWith(trimmed, "Symbol(") or std.mem.eql(u8, trimmed, "Symbol.for")) return "symbol";
+
+    if (try inferCallType(alloc, trimmed)) |call_type| return call_type;
+    if (try inferAccessType(alloc, trimmed)) |access_type| return access_type;
 
     // Conditional expressions become the union of their possible result types.
     if (findTopLevelToken(trimmed, "?", 0)) |question| {
@@ -1096,6 +1192,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     inline for (.{ "===", "!==", "==", "!=", ">=", "<=", ">", "<" }) |operator| {
         if (findTopLevelToken(trimmed, operator, 0) != null) return "boolean";
     }
+    if (findTopLevelToken(trimmed, " instanceof ", 0) != null or findTopLevelToken(trimmed, " in ", 0) != null) return "boolean";
 
     return "unknown";
 }
@@ -2113,6 +2210,45 @@ test "mixed arrays retain nested arrow element types" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     try std.testing.expectEqualStrings("(number | (() => number))[]", try inferNarrowType(arena.allocator(), "[1, () => 2]", false, false, 0));
+}
+
+test "unary and await expressions retain semantic types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "!enabled", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "!!enabled", false, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "typeof value", false, false, 0));
+    try std.testing.expectEqualStrings("undefined", try inferNarrowType(alloc, "void run()", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "delete object.key", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "+value", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "-value", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "~value", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "await Promise.resolve(1)", false, false, 0));
+}
+
+test "access and call expressions use type queries" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("RegExp", try inferNarrowType(alloc, "/[a-z\\/]+/gi", false, false, 0));
+    try std.testing.expectEqualStrings("unknown", try inferNarrowType(alloc, "createValue()", false, false, 0));
+    try std.testing.expectEqualStrings("ReturnType<typeof Math.max>", try inferNarrowType(alloc, "Math.max(1, 2)", false, false, 0));
+    try std.testing.expectEqualStrings("(typeof values)[0]", try inferNarrowType(alloc, "values[0]", false, false, 0));
+    try std.testing.expectEqualStrings("(typeof values)[typeof index]", try inferNarrowType(alloc, "values[index]", false, false, 0));
+    try std.testing.expectEqualStrings("(typeof user)[\"name\"]", try inferNarrowType(alloc, "user.name", false, false, 0));
+    try std.testing.expectEqualStrings("NonNullable<typeof user>[\"name\"] | undefined", try inferNarrowType(alloc, "user?.name", false, false, 0));
+}
+
+test "parameter and relational expressions infer through arrows" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("(value?: number) => number", try inferNarrowType(alloc, "(value?: number) => value", false, false, 0));
+    try std.testing.expectEqualStrings("(...values: number[]) => number[]", try inferNarrowType(alloc, "(...values: number[]) => values", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "(((1)))", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "key in object", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "value instanceof Date", false, false, 0));
 }
 
 test "extractSatisfiesType" {
