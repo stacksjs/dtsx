@@ -17,6 +17,75 @@ afterEach(async () => {
 })
 
 describe('bun-plugin-dtsx', () => {
+  it('emits recursively reachable barrel declarations for issue 3090', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(join(srcDir, 'middleware'), { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), [
+      `export * from './router'`,
+      `export * from './middleware'`,
+      `export type { RouteConfig } from './types'`,
+    ].join('\n'))
+    await writeFile(join(srcDir, 'cli.ts'), `export const cli: string = 'ready'`)
+    await writeFile(join(srcDir, 'router.ts'), `import type { RouteConfig } from './types'; export class Router { register(_: RouteConfig): void {} }`)
+    await writeFile(join(srcDir, 'types.ts'), `export interface RouteConfig { path: string }`)
+    await writeFile(join(srcDir, 'middleware', 'index.ts'), `export interface Middleware { handle(): void }`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts'), join(srcDir, 'cli.ts')],
+      outdir: outDir,
+      splitting: true,
+      target: 'bun',
+      format: 'esm',
+      plugins: [dts({
+        cwd: tempDir,
+        root: './src',
+        outdir: './dist',
+        entrypoints: ['index.ts', 'cli.ts'],
+      })],
+    })
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(outDir, 'index.d.ts'), 'utf8')).toContain(`export * from './router'`)
+    expect(await readFile(join(outDir, 'router.d.ts'), 'utf8')).toContain('class Router')
+    expect(await readFile(join(outDir, 'types.d.ts'), 'utf8')).toContain('interface RouteConfig')
+    expect(await readFile(join(outDir, 'middleware', 'index.d.ts'), 'utf8')).toContain('interface Middleware')
+  })
+
+  it('bundles recursively reachable barrel declarations for issue 3090', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `export * from './router'; export * from './types';`)
+    await writeFile(join(srcDir, 'router.ts'), `import type { RouteConfig } from './types'; export class Router { register(_: RouteConfig): void {} }`)
+    await writeFile(join(srcDir, 'types.ts'), `export interface RouteConfig { path: string }`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts')],
+      outdir: outDir,
+      target: 'bun',
+      format: 'esm',
+      plugins: [dts({
+        cwd: tempDir,
+        root: './src',
+        outdir: './dist',
+        entrypoints: ['index.ts'],
+        bundle: true,
+      })],
+    })
+
+    expect(result.success).toBe(true)
+    const declaration = await readFile(join(outDir, 'index.d.ts'), 'utf8')
+    expect(declaration).toContain('class Router')
+    expect(declaration).toContain('interface RouteConfig')
+    expect(declaration).not.toContain(`from './router'`)
+    expect(declaration).not.toContain(`from './types'`)
+  })
+
   it('keeps default clean behavior and emits root entry declarations for src roots', async () => {
     const tempDir = await createTempDir()
     const srcDir = join(tempDir, 'src')
