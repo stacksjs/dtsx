@@ -1,4 +1,5 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
+import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
@@ -14,6 +15,8 @@ import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, resolveRelativeSpecifier, scanReExportSpecifiers } from './module-graph'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
+import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
+import { applyTypeMappings, createTypeMapper } from './type-mappings'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
 async function writeDeclarationMapFile(
@@ -65,6 +68,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   if (config.isolatedDeclarations === undefined) {
     config.isolatedDeclarations = await checkIsolatedDeclarationsConfig(config)
   }
+  const typeMapper = config.typeMappings ? createTypeMapper(config.typeMappings) : undefined
 
   // Initialize incremental build cache if enabled
   let buildCache: BuildCache | null = null
@@ -196,7 +200,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
             sourceCode = preReadSource ?? await readTextFile(file)
             await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd)
           }
-          await writeToFile(outputPath, cachedContent)
+          await writeToFile(outputPath, cachedContent, config.lineEnding)
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
           return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount: 0 }
         }
@@ -204,7 +208,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
       // Use pre-read source if available, otherwise read from disk
       sourceCode = preReadSource ?? await readTextFile(file)
-      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager)
+      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager, typeMapper)
 
       let validationErrorCount = 0
 
@@ -265,7 +269,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         }
 
         // Write the DTS file
-        await writeToFile(outputPath, finalDtsContent)
+        await writeToFile(outputPath, finalDtsContent, config.lineEnding)
 
         // Update cache for incremental builds
         if (buildCache && sourceCode) {
@@ -520,7 +524,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           : getOutputPath(entry, config)
 
         await mkdir(dirname(bundlePath), { recursive: true })
-        await writeToFile(bundlePath, bundleResult.content)
+        await writeToFile(bundlePath, bundleResult.content, config.lineEnding)
 
         logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
 
@@ -806,7 +810,8 @@ async function processFileWithStats(
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
   const sourceCode = await readTextFile(filePath)
-  return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager)
+  const typeMapper = config.typeMappings ? createTypeMapper(config.typeMappings) : undefined
+  return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager, typeMapper)
 }
 
 /**
@@ -817,6 +822,7 @@ async function processFileWithStatsFromSource(
   sourceCode: string,
   config: DtsGenerationConfig,
   pluginManager?: PluginManager,
+  typeMapper?: TypeMapper,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Run onBeforeFile hooks (may modify source)
   let processedSource = sourceCode
@@ -851,6 +857,20 @@ async function processFileWithStatsFromSource(
   // Process declarations to generate DTS
   let dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
   dtsContent = rewriteRelativeDeclarationSpecifiers(dtsContent, filePath, config)
+
+  if (typeMapper) {
+    dtsContent = applyTypeMappings(dtsContent, typeMapper, { filePath })
+  }
+  if (config.normalizeOutput === true || config.declarationOrder) {
+    dtsContent = normalizeDtsOutput(dtsContent, {
+      lineEnding: 'lf',
+      declarationOrder: config.declarationOrder,
+      indent: {
+        style: config.indentStyle ?? 'spaces',
+        size: config.indentSize ?? 2,
+      },
+    })
+  }
 
   // Run onAfterFile hooks (may modify output)
   if (pluginManager) {
@@ -970,7 +990,7 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
         const { content: dtsContent } = await processFileWithStats(filePath, config)
 
         await mkdir(dirname(outputPath), { recursive: true })
-        await writeToFile(outputPath, dtsContent)
+        await writeToFile(outputPath, dtsContent, config.lineEnding)
 
         logger.info(`  ✓ ${relative(config.cwd, outputPath)}`)
         successCount++

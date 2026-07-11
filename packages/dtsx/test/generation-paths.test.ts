@@ -169,4 +169,70 @@ describe('declaration generation paths', () => {
     await access(join(cwd, 'dist', 'index.d.ts.map'))
     expect(declaration).toContain('//# sourceMappingURL=index.d.ts.map')
   })
+
+  it('applies configured type mappings during generation', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-type-mapping-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: any = loadValue();`)
+
+    await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+      typeMappings: { rules: [], presets: ['strict'], includeDefaults: false },
+    })
+
+    expect(await readFile(join(cwd, 'dist', 'index.d.ts'), 'utf8')).toContain('value: unknown;')
+  })
+
+  it('writes configured CRLF line endings', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-crlf-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const first: string = 'a';\nexport const second: string = 'b';`)
+
+    await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+      lineEnding: 'crlf',
+    })
+
+    const output = await readFile(join(cwd, 'dist', 'index.d.ts'), 'utf8')
+    expect(output).toContain('\r\n')
+    expect(output).not.toMatch(/(?<!\r)\n/)
+  })
+
+  it('applies configured declaration ordering', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-ordering-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `
+      export function run(): void {}
+      export const value: string = 'test';
+    `)
+
+    await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+      declarationOrder: { kinds: ['variable', 'function'], groupExports: false },
+    })
+
+    const output = await readFile(join(cwd, 'dist', 'index.d.ts'), 'utf8')
+    expect(output.indexOf('declare const value')).toBeLessThan(output.indexOf('declare function run'))
+  })
 })
