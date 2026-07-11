@@ -1,5 +1,5 @@
 import type { DtsGenerationConfig } from './types'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { hashContent } from './extractor/hash'
 
@@ -127,6 +127,10 @@ export class BuildCache {
         return false
       }
 
+      if (!manifest.entries || typeof manifest.entries !== 'object' || Array.isArray(manifest.entries)) {
+        return false
+      }
+
       this.manifest = manifest
       return true
     }
@@ -156,7 +160,14 @@ export class BuildCache {
       mkdirSync(this.cacheDir, { recursive: true })
     }
 
-    writeFileSync(this.manifestPath, JSON.stringify(this.manifest, null, 2))
+    const temporaryPath = `${this.manifestPath}.${process.pid}.tmp`
+    try {
+      writeFileSync(temporaryPath, JSON.stringify(this.manifest, null, 2))
+      renameSync(temporaryPath, this.manifestPath)
+    }
+    finally {
+      if (existsSync(temporaryPath)) rmSync(temporaryPath, { force: true })
+    }
   }
 
   /**
@@ -186,6 +197,10 @@ export class BuildCache {
     const entry = this.manifest.entries[relativePath]
 
     if (!entry) {
+      return null
+    }
+
+    if (entry.configHash !== this.configHash || this.hashString(entry.dtsContent) !== entry.dtsHash) {
       return null
     }
 
@@ -343,8 +358,13 @@ export function ensureGitignore(cwd: string): void {
       content = readFileSync(gitignorePath, 'utf-8')
     }
 
-    if (!content.includes(CACHE_DIR)) {
-      const newContent = `${content.trimEnd()}\n\n# dtsx cache\n${CACHE_DIR}/\n`
+    const hasCacheEntry = content
+      .split(/\r?\n/)
+      .some(line => line.trim() === CACHE_DIR || line.trim() === `${CACHE_DIR}/`)
+
+    if (!hasCacheEntry) {
+      const prefix = content.trimEnd()
+      const newContent = `${prefix}${prefix ? '\n\n' : ''}# dtsx cache\n${CACHE_DIR}/\n`
       writeFileSync(gitignorePath, newContent)
     }
   }

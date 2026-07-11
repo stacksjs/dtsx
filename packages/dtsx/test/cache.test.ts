@@ -4,7 +4,7 @@
 
 import type { DtsGenerationConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -93,6 +93,18 @@ describe('BuildCache', () => {
       const cache = new BuildCache(makeConfig())
       expect(cache.load()).toBe(false)
     })
+
+    it('returns false when manifest entries have an invalid shape', () => {
+      const config = makeConfig()
+      const cache = new BuildCache(config)
+      cache.save()
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      manifest.entries = []
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      expect(new BuildCache(config).load()).toBe(false)
+    })
   })
 
   describe('save and load round-trip', () => {
@@ -125,6 +137,13 @@ describe('BuildCache', () => {
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')
       expect(typeof parsed.updatedAt).toBe('number')
+    })
+
+    it('does not leave temporary manifests after an atomic save', () => {
+      const cache = new BuildCache(makeConfig())
+      cache.save()
+
+      expect(readdirSync(join(tempDir, '.dtsx-cache'))).toEqual(['manifest.json'])
     })
   })
 
@@ -211,6 +230,42 @@ describe('BuildCache', () => {
 
       const result = cache.getCachedIfValid(filePath, tempDir)
       expect(result).toBeNull()
+    })
+
+    it('rejects cached declaration content that fails its integrity hash', () => {
+      const config = makeConfig()
+      const sourceContent = 'export const safe = true'
+      const filePath = writeSourceFile('src/integrity.ts', sourceContent)
+      const cache = new BuildCache(config)
+      cache.update(filePath, sourceContent, 'export declare const safe: true;', tempDir)
+      cache.save()
+
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      manifest.entries['src/integrity.ts'].dtsContent = 'corrupted declaration output'
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      const loaded = new BuildCache(config)
+      expect(loaded.load()).toBe(true)
+      expect(loaded.getCachedIfValid(filePath, tempDir)).toBeNull()
+    })
+
+    it('rejects entries written for a different configuration', () => {
+      const config = makeConfig()
+      const sourceContent = 'export const scoped = true'
+      const filePath = writeSourceFile('src/scoped.ts', sourceContent)
+      const cache = new BuildCache(config)
+      cache.update(filePath, sourceContent, 'export declare const scoped: true;', tempDir)
+      cache.save()
+
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      manifest.entries['src/scoped.ts'].configHash = 'foreign-config'
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      const loaded = new BuildCache(config)
+      expect(loaded.load()).toBe(true)
+      expect(loaded.getCachedIfValid(filePath, tempDir)).toBeNull()
     })
   })
 
@@ -545,6 +600,23 @@ describe('ensureGitignore', () => {
 
     const content = readFileSync(gitignorePath, 'utf-8')
     expect(content).toContain('.dtsx-cache/')
+  })
+
+  it('does not mistake similarly named paths for the cache directory', () => {
+    writeFileSync(join(tempDir, '.gitignore'), '.dtsx-cache-old/\n')
+
+    ensureGitignore(tempDir)
+
+    const content = readFileSync(join(tempDir, '.gitignore'), 'utf8')
+    expect(content).toContain('.dtsx-cache-old/')
+    expect(content).toContain('\n.dtsx-cache/\n')
+  })
+
+  it('does not add a leading blank line to a new gitignore', () => {
+    ensureGitignore(tempDir)
+
+    const content = readFileSync(join(tempDir, '.gitignore'), 'utf8')
+    expect(content).toStartWith('# dtsx cache\n')
   })
 
   it('appends .dtsx-cache to existing .gitignore', () => {
