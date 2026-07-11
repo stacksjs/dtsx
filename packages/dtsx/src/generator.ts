@@ -3,7 +3,7 @@ import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -448,7 +448,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           if (!r.resolved) {
             broken.push({ from: f, specifier: ref.specifier, reason: 'missing' })
           }
-          else if (!fileSet.has(r.resolved)) {
+          else if (!/\.d\.(?:ts|mts|cts)$/.test(r.resolved) && !fileSet.has(r.resolved)) {
             broken.push({ from: f, specifier: ref.specifier, reason: 'not-emitted' })
           }
         }
@@ -780,12 +780,14 @@ function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   }
 }
 
-function getDeclarationSpecifier(fromOutputPath: string, toOutputPath: string): string {
+function getDeclarationSpecifier(fromOutputPath: string, toOutputPath: string, runtimeExtension = ''): string {
   let specifier = relative(dirname(fromOutputPath), toOutputPath).replace(/\\/g, '/')
   specifier = specifier
     .replace(/\.d\.mts$/, '')
     .replace(/\.d\.cts$/, '')
     .replace(/\.d\.ts$/, '')
+
+  if (runtimeExtension) specifier += runtimeExtension
 
   if (!specifier.startsWith('.')) {
     specifier = `./${specifier}`
@@ -803,7 +805,13 @@ function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string,
       return specifier
     }
 
-    return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config))
+    if (/\.d\.(?:ts|mts|cts)$/.test(resolved.resolved)) return specifier
+
+    const suffix = specifier.match(/[?#].*$/)?.[0] ?? ''
+    const pathSpecifier = suffix ? specifier.slice(0, -suffix.length) : specifier
+    const writtenExtension = extname(pathSpecifier)
+    const runtimeExtension = /^(?:\.js|\.jsx|\.mjs|\.cjs)$/.test(writtenExtension) ? writtenExtension : ''
+    return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config), runtimeExtension) + suffix
   }
 
   return content

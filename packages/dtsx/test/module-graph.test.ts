@@ -107,6 +107,36 @@ describe('resolveRelativeSpecifier', () => {
     expect(r.resolved).toBeNull()
     expect(r.isRelative).toBe(true)
   })
+
+  it('maps NodeNext runtime extensions back to TypeScript sources', async () => {
+    await writeFiles(TMP, {
+      'src/index.ts': '',
+      'src/plain.ts': '',
+      'src/module.mts': '',
+      'src/common.cts': '',
+    })
+    const from = join(TMP, 'src/index.ts')
+
+    expect(resolveRelativeSpecifier('./plain.js', from).resolved).toBe(join(TMP, 'src/plain.ts'))
+    expect(resolveRelativeSpecifier('./module.mjs', from).resolved).toBe(join(TMP, 'src/module.mts'))
+    expect(resolveRelativeSpecifier('./common.cjs', from).resolved).toBe(join(TMP, 'src/common.cts'))
+  })
+
+  it('resolves relative specifiers with query and fragment suffixes', async () => {
+    await writeFiles(TMP, { 'src/index.ts': '', 'src/data.ts': '' })
+    const from = join(TMP, 'src/index.ts')
+
+    expect(resolveRelativeSpecifier('./data.js?raw', from).resolved).toBe(join(TMP, 'src/data.ts'))
+    expect(resolveRelativeSpecifier('./data#type', from).resolved).toBe(join(TMP, 'src/data.ts'))
+  })
+
+  it('resolves authored module declaration extensions', async () => {
+    await writeFiles(TMP, { 'src/index.ts': '', 'src/module.d.mts': '', 'src/common.d.cts': '' })
+    const from = join(TMP, 'src/index.ts')
+
+    expect(resolveRelativeSpecifier('./module', from).resolved).toBe(join(TMP, 'src/module.d.mts'))
+    expect(resolveRelativeSpecifier('./common', from).resolved).toBe(join(TMP, 'src/common.d.cts'))
+  })
 })
 
 describe('collectReachableViaReExports', () => {
@@ -145,6 +175,73 @@ describe('collectReachableViaReExports', () => {
 })
 
 describe('generate auto-includes reachable subpaths', () => {
+  it('preserves NodeNext runtime extensions while emitting their TypeScript sources', async () => {
+    await writeFiles(TMP, {
+      'src/index.mts': `export * from './dependency.mjs';`,
+      'src/dependency.mts': `export const dependency: string = 'ready';`,
+    })
+
+    await generate({
+      cwd: TMP,
+      root: 'src',
+      entrypoints: ['index.mts'],
+      outdir: 'dist',
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+    })
+
+    const declaration = await Bun.file(join(TMP, 'dist/index.d.mts')).text()
+    expect(declaration).toContain(`from './dependency.mjs'`)
+    expect(await Bun.file(join(TMP, 'dist/dependency.d.mts')).exists()).toBe(true)
+  })
+
+  it('preserves runtime extensions when flattening relocated declarations', async () => {
+    await writeFiles(TMP, {
+      'src/nested/index.ts': `export * from '../dependency.js';`,
+      'src/dependency.ts': `export const dependency: string = 'ready';`,
+    })
+
+    await generate({
+      cwd: TMP,
+      root: 'src',
+      entrypoints: ['nested/index.ts'],
+      outdir: 'dist',
+      outputStructure: 'flat',
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+    })
+
+    const declaration = await Bun.file(join(TMP, 'dist/index.d.ts')).text()
+    expect(declaration).toContain(`from './dependency.js'`)
+  })
+
+  it('preserves authored declaration references without requiring re-emission', async () => {
+    await writeFiles(TMP, {
+      'src/index.mts': `export type { Ambient } from './ambient.d.mts';`,
+      'src/ambient.d.mts': `export interface Ambient { value: string }`,
+    })
+
+    await generate({
+      cwd: TMP,
+      root: 'src',
+      entrypoints: ['index.mts'],
+      outdir: 'dist',
+      autoIncludeReExports: false,
+      failOnUnresolvedReExport: true,
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+    })
+
+    const declaration = await Bun.file(join(TMP, 'dist/index.d.mts')).text()
+    expect(declaration).toContain(`from './ambient.d.mts'`)
+    expect(await Bun.file(join(TMP, 'dist/ambient.d.d.mts')).exists()).toBe(false)
+  })
   it('emits .d.ts for siblings reached through re-exports', async () => {
     await writeFiles(TMP, {
       'src/index.ts': `export * from './router';\nexport * from './types';`,

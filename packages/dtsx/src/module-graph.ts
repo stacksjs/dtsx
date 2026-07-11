@@ -13,7 +13,7 @@
  */
 
 import { existsSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, resolve } from 'node:path'
 import { readTextFile } from './compat'
 
 /**
@@ -42,7 +42,14 @@ export interface ResolveResult {
  * Extensions tried, in order, when resolving an extensionless specifier.
  * `.d.ts` last so source files win over generated declarations.
  */
-const TS_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'] as const
+const TS_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.d.ts', '.d.mts', '.d.cts'] as const
+
+const RUNTIME_SOURCE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
+  '.js': ['.ts', '.tsx', '.d.ts'],
+  '.jsx': ['.tsx', '.ts', '.d.ts'],
+  '.mjs': ['.mts', '.d.mts'],
+  '.cjs': ['.cts', '.d.cts'],
+}
 
 function isFile(path: string): boolean {
   try {
@@ -60,17 +67,31 @@ function isFile(path: string): boolean {
  * specifiers (e.g. `react`, `@scope/foo`) return `{ resolved: null }`.
  */
 export function resolveRelativeSpecifier(specifier: string, fromFile: string): ResolveResult {
-  const isRel = specifier.startsWith('./') || specifier.startsWith('../') || specifier === '.' || specifier === '..'
-  if (!isRel && !isAbsolute(specifier)) {
+  const pathSpecifier = specifier.replace(/[?#].*$/, '')
+  const isRel = pathSpecifier.startsWith('./') || pathSpecifier.startsWith('../') || pathSpecifier === '.' || pathSpecifier === '..'
+  if (!isRel && !isAbsolute(pathSpecifier)) {
     return { resolved: null, isRelative: false }
   }
 
   const baseDir = dirname(fromFile)
-  const candidate = isAbsolute(specifier) ? specifier : resolve(baseDir, specifier)
+  const candidate = isAbsolute(pathSpecifier) ? pathSpecifier : resolve(baseDir, pathSpecifier)
 
   // 1. Specifier already includes its extension
   if (isFile(candidate)) {
     return { resolved: candidate, isRelative: true }
+  }
+
+  // NodeNext source commonly imports the runtime extension (`./x.js`) even
+  // though the file on disk is TypeScript (`x.ts`). Resolve those pairs before
+  // treating the written extension as part of the basename.
+  const runtimeExtension = extname(candidate)
+  const sourceExtensions = RUNTIME_SOURCE_EXTENSIONS[runtimeExtension]
+  if (sourceExtensions) {
+    const baseCandidate = candidate.slice(0, -runtimeExtension.length)
+    for (const sourceExtension of sourceExtensions) {
+      const sourceCandidate = baseCandidate + sourceExtension
+      if (isFile(sourceCandidate)) return { resolved: sourceCandidate, isRelative: true }
+    }
   }
 
   // 2. Try each known TS extension
