@@ -1135,9 +1135,8 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
         // Initializer
         if (s.pos < s.len and s.source[s.pos] == ch.CH_EQUAL) {
-            if (s.isolated_declarations and type_annotation.len > 0 and (!s.keep_comments or !type_inf.isGenericType(type_annotation))) {
-                s.skipToStatementEnd();
-            } else {
+            const skip_isolated_initializer = s.isolated_declarations and type_annotation.len > 0 and (!s.keep_comments or !type_inf.isGenericType(type_annotation));
+            {
                 s.pos += 1;
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
@@ -1204,7 +1203,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                     if (depth == 0 and s.checkASITopLevel()) break;
                     s.pos += 1;
                 }
-                initializer_text = s.sliceTrimmed(init_start, s.pos);
+                initializer_text = if (skip_isolated_initializer) "" else s.sliceTrimmed(init_start, s.pos);
                 if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
                     is_as_const = true;
                     if (type_annotation.len == 0) {
@@ -1230,7 +1229,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
             if (sc == ch.CH_SEMI) s.pos += 1;
         }
 
-        const comments = extractLeadingComments(s, decl_start);
+        const comments = if (results.items.len == 0) extractLeadingComments(s, decl_start) else null;
         const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
 
         // Build DTS text — direct alloc (no ArrayList overhead).
