@@ -405,6 +405,8 @@ export interface DtsError {
  * Generation statistics
  */
 export interface GenerationStats {
+  /** Declaration pipeline selected for this generation. */
+  generationMode: 'isolated' | 'semantic'
   filesProcessed: number
   filesGenerated: number
   filesFailed: number

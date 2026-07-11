@@ -55,9 +55,7 @@ export declare const computedObject: {
 /** Custom symbol */
 export declare const customSymbol: symbol;
 /** Object with symbol keys */
-export declare const symbolObject: {
-  [Symbol.toStringTag]: 'MyObject'
-};
+export declare const symbolObject: { [Symbol.toStringTag]: string };
 /** Type for import.meta properties */
 export declare interface ImportMeta {
   url: string

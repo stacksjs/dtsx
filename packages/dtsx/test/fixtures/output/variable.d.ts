@@ -1,10 +1,7 @@
 /**
  * Example of const declaration
  */
-export declare const conf: {
-  apiUrl: 'https://api.stacksjs.org';
-  timeout: '5000'
-};
+export declare const conf: { [key: string]: string };
 /** @defaultValue 'test' */
 export declare let test: string;
 /** @defaultValue 'Hello World' */

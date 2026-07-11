@@ -261,6 +261,7 @@ export async function generateWorkspace(config: WorkspaceConfig): Promise<Worksp
       results.push({
         name: project.name,
         stats: {
+          generationMode: project.config?.isolatedDeclarations || config.sharedConfig?.isolatedDeclarations ? 'isolated' : 'semantic',
           filesProcessed: 0,
           filesGenerated: 0,
           filesFailed: 0,

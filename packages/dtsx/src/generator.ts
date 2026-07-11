@@ -72,6 +72,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Statistics tracking
   const stats: GenerationStats = {
+    generationMode: config.isolatedDeclarations ? 'isolated' : 'semantic',
     filesProcessed: 0,
     filesGenerated: 0,
     filesFailed: 0,
@@ -89,6 +90,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Log start
   logger.debug('Starting DTS generation...')
+  logger.debug(`Using ${stats.generationMode} declaration generation path`)
   logger.debug('Config:', config)
 
   if (config.clean && !config.dryRun) {
@@ -781,7 +783,7 @@ export async function processFile(
  * Process TypeScript source code from a string (for stdin support)
  * Re-exported from process-source.ts for backward compatibility
  */
-export { clearResultCache, processSource } from './process-source'
+export { clearResultCache, processSource, processSourceIsolated, processSourceSemantic } from './process-source'
 
 /**
  * Process a single TypeScript file and return DTS with statistics

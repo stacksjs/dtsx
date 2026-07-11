@@ -1,7 +1,7 @@
 import type { ProcessingContext } from './types'
 import { extractDeclarations } from './extractor/extract'
 import { hashContent } from './extractor/hash'
-import { scanDeclarations } from './extractor/scanner'
+import { scanIsolatedDeclarations, scanSemanticDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
 
 // ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ export function processSource(
 ): string {
   // Check result cache first — avoids both extraction AND processing on hit
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filename}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
+  const cacheKey = `${filename}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}:${importOrder.join('\0')}`
   const cached = resultCache.get(cacheKey)
 
   if (cached && cached.contentHash === contentHash) {
@@ -66,6 +66,26 @@ export function processSource(
   return result
 }
 
+/** Generate declarations through the annotation-first isolated fast path. */
+export function processSourceIsolated(
+  sourceCode: string,
+  filename: string = 'stdin.ts',
+  keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
+): string {
+  return processSource(sourceCode, filename, keepComments, importOrder, true)
+}
+
+/** Generate declarations through the value-aware semantic inference path. */
+export function processSourceSemantic(
+  sourceCode: string,
+  filename: string = 'stdin.ts',
+  keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
+): string {
+  return processSource(sourceCode, filename, keepComments, importOrder, false)
+}
+
 export function clearResultCache(): void {
   resultCache.clear()
 }
@@ -81,7 +101,9 @@ export function processSourceDirect(
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
 ): string {
-  const declarations = scanDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
+  const declarations = isolatedDeclarations
+    ? scanIsolatedDeclarations(sourceCode, filename, keepComments)
+    : scanSemanticDeclarations(sourceCode, filename, keepComments)
   const context: ProcessingContext = {
     filePath: filename,
     sourceCode,

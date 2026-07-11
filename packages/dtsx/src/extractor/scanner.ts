@@ -48,31 +48,38 @@ function isIdentChar(ch: number): boolean {
   return isIdentStart(ch) || (ch >= 48 && ch <= 57)
 }
 
-/** Check if a type annotation is generic enough that value inference produces better results. */
-function isGenericAnnotation(type: string): boolean {
-  // Record<K, V>
-  if (type.charCodeAt(0) === 82 /* R */ && type.startsWith('Record<'))
-    return true
-  // Array<T>
-  if (type.charCodeAt(0) === 65 /* A */ && type.startsWith('Array<'))
-    return true
-  // { [key: ...]: ... } index signatures
-  if (type.charCodeAt(0) === CH_LBRACE && type.includes('[') && type.includes(']:'))
-    return true
-  // any, object, unknown
-  if (type === 'any' || type === 'object' || type === 'unknown')
-    return true
-  return false
-}
-
 // Constructor parameter modifiers (hoisted to avoid per-call allocation)
 const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override'] as const
 
 /**
- * Scan TypeScript source code and extract declarations without using the TypeScript parser.
- * This is the fast path that replaces createSourceFile() + AST walk.
+ * Select the declaration scanner explicitly from the configured generation mode.
+ * Kept for backwards compatibility with callers that pass a boolean mode flag.
  */
 export function scanDeclarations(_source: string, _filename: string, _keepComments: boolean = true, _isolatedDeclarations: boolean = false): Declaration[] {
+  return _isolatedDeclarations
+    ? scanIsolatedDeclarations(_source, _filename, _keepComments)
+    : scanSemanticDeclarations(_source, _filename, _keepComments)
+}
+
+/**
+ * Scan an isolated-declarations source file.
+ *
+ * Explicit annotations are authoritative in this mode, so initializer values are
+ * skipped instead of being parsed or used to narrow the public declaration type.
+ */
+export function scanIsolatedDeclarations(source: string, filename: string, keepComments: boolean = true): Declaration[] {
+  return scanDeclarationsInternal(source, filename, keepComments, true)
+}
+
+/**
+ * Scan a regular TypeScript source file and retain values needed by type inference.
+ */
+export function scanSemanticDeclarations(source: string, filename: string, keepComments: boolean = true): Declaration[] {
+  return scanDeclarationsInternal(source, filename, keepComments, false)
+}
+
+/** Scan TypeScript source code without constructing a TypeScript AST. */
+function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean): Declaration[] {
   const source = _source
   const keepComments = _keepComments
   const isolatedDeclarations = _isolatedDeclarations
@@ -1797,10 +1804,9 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
 
       // Initializer
       if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-        // Fast path: with isolatedDeclarations + explicit non-generic type, skip initializer.
-        // For generic types (Record<>, Array<>, index sigs), we still parse the initializer
-        // to produce narrower inferred types from the value.
-        if (isolatedDeclarations && typeAnnotation && !isGenericAnnotation(typeAnnotation)) {
+        // An explicit annotation is the complete declaration contract in isolated
+        // mode. Do not inspect the initializer, even for broad/generic types.
+        if (isolatedDeclarations && typeAnnotation) {
           skipToStatementEnd()
         }
         else {

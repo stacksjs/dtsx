@@ -175,6 +175,7 @@ describe('PluginManager', () => {
 
     await manager.runOnStart(mockConfig)
     await manager.runOnEnd({
+      generationMode: 'semantic',
       filesProcessed: 1,
       filesGenerated: 1,
       filesFailed: 0,

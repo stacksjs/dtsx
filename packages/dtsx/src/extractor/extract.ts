@@ -6,7 +6,7 @@
 
 import type { Declaration } from '../types'
 import { hashContent } from './hash'
-import { scanDeclarations } from './scanner'
+import { scanIsolatedDeclarations, scanSemanticDeclarations } from './scanner'
 
 const MAX_DECLARATION_CACHE_SIZE = 100
 let _accessCounter = 0
@@ -31,7 +31,9 @@ export function extractDeclarations(
     return cached.declarations
   }
 
-  const declarations = scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
+  const declarations = isolatedDeclarations
+    ? scanIsolatedDeclarations(sourceCode, filePath, keepComments)
+    : scanSemanticDeclarations(sourceCode, filePath, keepComments)
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
 
