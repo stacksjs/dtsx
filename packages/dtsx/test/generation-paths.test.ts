@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDeclarations } from '../src/extractor'
@@ -118,5 +118,30 @@ describe('declaration generation paths', () => {
     expect(semanticStats.generationMode).toBe('semantic')
     expect(await readFile(join(cwd, 'dist-isolated', 'index.d.ts'), 'utf8')).toContain('Record<string, string>')
     expect(await readFile(join(cwd, 'dist-semantic', 'index.d.ts'), 'utf8')).toContain('Record<string, string>')
+  })
+
+  it('restores declaration maps on clean incremental cache hits', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-cached-maps-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'test';`)
+    const config = {
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: true,
+      clean: true,
+      incremental: true,
+      declarationMap: true,
+      isolatedDeclarations: true,
+    }
+
+    await generate(config)
+    await generate(config)
+
+    const declaration = await readFile(join(cwd, 'dist', 'index.d.ts'), 'utf8')
+    await access(join(cwd, 'dist', 'index.d.ts.map'))
+    expect(declaration).toContain('//# sourceMappingURL=index.d.ts.map')
   })
 })

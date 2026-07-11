@@ -16,6 +16,26 @@ import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
 
+async function writeDeclarationMapFile(
+  outputPath: string,
+  sourcePath: string,
+  dtsContent: string,
+  sourceCode: string,
+  cwd: string,
+): Promise<string> {
+  const dtsFilename = outputPath.split('/').pop() || 'output.d.ts'
+  const sourceFilename = relative(dirname(outputPath), sourcePath)
+  const mapFilename = `${dtsFilename}.map`
+  const mapCommentIndex = dtsContent.lastIndexOf('\n//# sourceMappingURL=')
+  const contentToMap = mapCommentIndex === -1 ? dtsContent : dtsContent.slice(0, mapCommentIndex)
+  const sourceMap = generateDeclarationMap(contentToMap, dtsFilename, sourceFilename, sourceCode)
+  const mapPath = `${outputPath}.map`
+
+  await writeToFile(mapPath, JSON.stringify(sourceMap))
+  logger.debug(`  Generated source map: ${relative(cwd, mapPath)}`)
+  return mapFilename
+}
+
 /**
  * Generate DTS files from TypeScript source files
  */
@@ -172,6 +192,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         const cachedContent = buildCache.getCachedIfValid(file, config.cwd)
         if (cachedContent) {
           await mkdir(dirname(outputPath), { recursive: true })
+          if (config.declarationMap) {
+            sourceCode = preReadSource ?? await readTextFile(file)
+            await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd)
+          }
           await writeToFile(outputPath, cachedContent)
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
           return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount: 0 }
@@ -216,21 +240,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Generate declaration map if enabled
         let finalDtsContent = dtsContent
         if (config.declarationMap && sourceCode) {
-          const dtsFilename = outputPath.split('/').pop() || 'output.d.ts'
-          const sourceFilename = relative(dirname(outputPath), file)
-          const mapFilename = `${dtsFilename}.map`
-
-          // Generate the source map
-          const sourceMap = generateDeclarationMap(dtsContent, dtsFilename, sourceFilename, sourceCode)
-
-          // Write the source map file
-          const mapPath = `${outputPath}.map`
-          await writeToFile(mapPath, JSON.stringify(sourceMap))
-
-          // Add source map comment to the declaration file
+          const mapFilename = await writeDeclarationMapFile(outputPath, file, dtsContent, sourceCode, config.cwd)
           finalDtsContent = addSourceMapComment(dtsContent, mapFilename)
-
-          logger.debug(`  Generated source map: ${relative(config.cwd, mapPath)}`)
         }
 
         // Apply formatting if enabled
