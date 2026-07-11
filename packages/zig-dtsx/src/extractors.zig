@@ -1480,7 +1480,7 @@ pub fn extractEnum(s: *Scanner, decl_start: usize, is_exported: bool, is_const: 
 // ========================================================================
 
 /// Extract class declaration and build DTS
-pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstract: bool) Declaration {
+pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstract: bool, is_default: bool) Declaration {
     s.pos += 5; // skip 'class'
     s.skipWhitespaceAndComments();
 
@@ -1537,8 +1537,8 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
     const class_body = buildClassBodyDts(s);
 
     // Build DTS text — direct alloc + memcpy.
-    const export_prefix: []const u8 = if (is_exported) "export " else "";
-    const declare_kw = "declare ";
+    const export_prefix: []const u8 = if (is_default) "export default " else if (is_exported) "export " else "";
+    const declare_kw: []const u8 = if (is_default) "" else "declare ";
     const abstract_kw: []const u8 = if (is_abstract) "abstract " else "";
     const class_kw = "class ";
     const extends_sep: []const u8 = if (extends_clause.len > 0) " extends " else "";
@@ -1583,6 +1583,7 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
         .name = name,
         .text = text,
         .is_exported = is_exported,
+        .is_default = is_default,
         .extends_clause = extends_clause,
         .generics = generics,
         .leading_comments = comments,
@@ -1764,10 +1765,14 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             _ = extractParamList(s);
             s.skipWhitespaceAndComments();
             const ret_type_raw = extractReturnType(s);
-            const ret_type = if (ret_type_raw.len > 0) ret_type_raw else "unknown";
+            var ret_type = if (ret_type_raw.len > 0) ret_type_raw else "unknown";
             s.skipWhitespaceAndComments();
             if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
+                const body_start = s.pos;
                 _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
+                if (!s.isolated_declarations and ret_type_raw.len == 0) {
+                    ret_type = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], "()", 0) catch ret_type;
+                }
             } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
                 s.pos += 1;
             }
@@ -2024,8 +2029,10 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                 if (as_type) |t| {
                     prop_type = t;
                 } else {
-                    const is_const_like = is_static and is_readonly;
-                    prop_type = if (is_const_like) inferLiteralType(init_text) else inferTypeFromDefault(init_text);
+                    const has_const_assertion = ch.endsWith(init_text, " as const");
+                    const inferred_value = if (has_const_assertion) std.mem.trim(u8, init_text[0 .. init_text.len - " as const".len], " \t\r\n") else init_text;
+                    const is_const_like = has_const_assertion or (is_static and is_readonly);
+                    prop_type = if (is_const_like) inferLiteralType(inferred_value) else inferTypeFromDefault(inferred_value);
                 }
             } else {
                 prop_type = "unknown";
@@ -2993,13 +3000,13 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
             s.pos += 8;
             s.skipWhitespaceAndComments();
             if (s.matchWord("class")) {
-                const decl = extractClass(s, stmt_start, is_exported, true);
+                const decl = extractClass(s, stmt_start, is_exported, true, false);
                 s.declarations.append(decl) catch {};
             }
         }
     } else if (c0 == 'c') {
         if (s.matchWord("class")) {
-            const decl = extractClass(s, stmt_start, is_exported, false);
+            const decl = extractClass(s, stmt_start, is_exported, false, false);
             s.declarations.append(decl) catch {};
         } else if (s.matchWord("const")) {
             const saved_pos = s.pos;

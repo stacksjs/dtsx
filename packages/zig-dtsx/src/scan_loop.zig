@@ -59,7 +59,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
                 s.pos += 8;
                 s.skipWhitespaceAndComments();
                 if (s.matchWord("class")) {
-                    const decl = ext.extractClass(s, stmt_start, false, false);
+                    const decl = ext.extractClass(s, stmt_start, false, false, false);
                     s.putNonExportedType(decl.name, decl);
                     try s.declarations.append(decl);
                 } else {
@@ -71,7 +71,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
             }
         } else if (ch0 == 'c') {
             if (s.matchWord("class")) {
-                const decl = ext.extractClass(s, stmt_start, false, false);
+                const decl = ext.extractClass(s, stmt_start, false, false, false);
                 s.putNonExportedType(decl.name, decl);
                 try s.declarations.append(decl);
             } else if (s.matchWord("const")) {
@@ -149,7 +149,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
             const decl = ext.extractFunction(s, stmt_start, true, false, true);
             if (decl) |d| try s.declarations.append(d);
         } else if (dch == 'c' and s.matchWord("class")) {
-            const decl = ext.extractClass(s, stmt_start, true, false);
+            const decl = ext.extractClass(s, stmt_start, true, false, true);
             try s.declarations.append(decl);
         } else if (dch == 'a') {
             // Combined dispatch — both async and abstract start with 'a',
@@ -167,7 +167,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
                 s.pos += 8;
                 s.skipWhitespaceAndComments();
                 if (s.matchWord("class")) {
-                    const decl = ext.extractClass(s, stmt_start, true, true);
+                    const decl = ext.extractClass(s, stmt_start, true, true, true);
                     try s.declarations.append(decl);
                 }
             } else {
@@ -233,7 +233,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
             s.pos += 8;
             s.skipWhitespaceAndComments();
             if (s.matchWord("class")) {
-                const decl = ext.extractClass(s, stmt_start, true, true);
+                const decl = ext.extractClass(s, stmt_start, true, true, false);
                 try s.declarations.append(decl);
             }
         } else {
@@ -241,7 +241,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         }
     } else if (ech == 'c') {
         if (s.matchWord("class")) {
-            const decl = ext.extractClass(s, stmt_start, true, false);
+            const decl = ext.extractClass(s, stmt_start, true, false, false);
             try s.declarations.append(decl);
         } else if (s.matchWord("const")) {
             const saved_pos = s.pos;
