@@ -52,6 +52,7 @@
     "changelog:generate": "bun x logsmith --output CHANGELOG.md",
     "release": "bun x --bun bumpx prompt --recursive",
     "release:patch": "bun x --bun bumpx patch --recursive --yes",
+    "release:minor": "bun x --bun bumpx minor --recursive --yes",
     "typecheck": "bun x tsc --noEmit",
     "dev:docs": "bun --bun vitepress dev docs",
     "build:docs": "bun --bun vitepress build docs",
