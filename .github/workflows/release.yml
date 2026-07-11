@@ -76,23 +76,12 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Also publish the JS plugins to npm, where downstream tools install them
-      # from (e.g. better-dx depends on bun-plugin-dtsx). Dropping this in
-      # ee8c86e — when the Pantry upload was added for zig-dtsx — accidentally
-      # froze the npm packages at 0.9.26. `--skip zig-dtsx` keeps the native
-      # binary Pantry-only (it has no JS entry, so its npm tarball would be
-      # broken); the JS packages publish. Same `publish --npm` flow ts-cloud's
-      # release uses, so it works with the pantry the action ships today.
-      # Non-fatal: npm auth (a scoped NPM_TOKEN, or OIDC trusted publishers) may
-      # not cover every package. The Pantry upload, GitHub release, and binaries
-      # must still ship, so a partial npm failure only warns. Fix npm access
-      # with a broader NPM_TOKEN or `pantry publisher:add` per package.
+      # Publish the JavaScript packages to npm for downstream package-manager
+      # consumers. zig-dtsx remains Pantry-only because it ships native binaries
+      # instead of a JavaScript entrypoint. Every npm package uses this workflow
+      # as its trusted OIDC publisher, so a partial release must fail the job.
       - name: Publish to npm
-        continue-on-error: true
         run: pantry publish --npm --skip zig-dtsx --access public
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          BUN_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Attach Binaries
         uses: stacksjs/action-releaser@v1.2.9
