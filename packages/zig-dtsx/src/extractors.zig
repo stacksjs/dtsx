@@ -1092,190 +1092,199 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
     if (s.pos >= s.len) return results.toOwnedSlice() catch &.{};
 
-    const c = s.source[s.pos];
-    // Skip destructuring patterns
-    if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
-        s.skipToStatementEnd();
-        return results.toOwnedSlice() catch &.{};
-    }
-
-    const name = s.readIdent();
-    if (name.len == 0) {
-        s.skipToStatementEnd();
-        return results.toOwnedSlice() catch &.{};
-    }
-    s.skipWhitespaceAndComments();
-
-    var type_annotation: []const u8 = "";
-    var initializer_text: []const u8 = "";
-    var is_as_const = false;
-
-    // Type annotation
-    if (s.pos < s.len and s.source[s.pos] == ch.CH_COLON) {
-        s.pos += 1;
-        s.skipWhitespaceAndComments();
-        const type_start = s.pos;
-        var depth: isize = 0;
-        while (s.pos < s.len) {
-            if (s.skipNonCode()) continue;
-            const tc = s.source[s.pos];
-            if (tc == ch.CH_LPAREN or tc == ch.CH_LBRACE or tc == ch.CH_LBRACKET or tc == ch.CH_LANGLE) {
-                depth += 1;
-            } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
-                depth -= 1;
-            } else if (depth == 0 and (tc == ch.CH_EQUAL or tc == ch.CH_SEMI or tc == ch.CH_COMMA)) {
-                break;
-            }
-            if (depth == 0 and s.checkASITopLevel()) break;
-            s.pos += 1;
-        }
-        type_annotation = s.sliceTrimmed(type_start, s.pos);
-    }
-
-    // Initializer
-    if (s.pos < s.len and s.source[s.pos] == ch.CH_EQUAL) {
-        if (s.isolated_declarations and type_annotation.len > 0 and (!s.keep_comments or !type_inf.isGenericType(type_annotation))) {
+    while (s.pos < s.len) {
+        const c = s.source[s.pos];
+        // Skip destructuring patterns
+        if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
             s.skipToStatementEnd();
-        } else {
+            return results.toOwnedSlice() catch &.{};
+        }
+
+        const name = s.readIdent();
+        if (name.len == 0) {
+            s.skipToStatementEnd();
+            return results.toOwnedSlice() catch &.{};
+        }
+        s.skipWhitespaceAndComments();
+
+        var type_annotation: []const u8 = "";
+        var initializer_text: []const u8 = "";
+        var is_as_const = false;
+
+        // Type annotation
+        if (s.pos < s.len and s.source[s.pos] == ch.CH_COLON) {
             s.pos += 1;
             s.skipWhitespaceAndComments();
-            const init_start = s.pos;
+            const type_start = s.pos;
             var depth: isize = 0;
             while (s.pos < s.len) {
-                // SIMD fast-skip: bulk-skip bytes that can't be structural
-                if (depth > 0) {
-                    while (s.pos + 16 <= s.len) {
-                        const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
-                        const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH)));
-                        if (!@reduce(.Or, interesting)) {
-                            s.pos += 16;
-                        } else {
-                            break;
-                        }
-                    }
-                } else {
-                    while (s.pos + 16 <= s.len) {
-                        const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
-                        const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_COMMA))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
-                            (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
-                        if (!@reduce(.Or, interesting)) {
-                            s.pos += 16;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                if (s.pos >= s.len) break;
                 if (s.skipNonCode()) continue;
-                const ic = s.source[s.pos];
-                if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET or ic == ch.CH_LANGLE) {
+                const tc = s.source[s.pos];
+                if (tc == ch.CH_LPAREN or tc == ch.CH_LBRACE or tc == ch.CH_LBRACKET or tc == ch.CH_LANGLE) {
                     depth += 1;
-                } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET or (ic == ch.CH_RANGLE and !s.isArrowGT())) {
+                } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
                     depth -= 1;
-                } else if (depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                } else if (depth == 0 and (tc == ch.CH_EQUAL or tc == ch.CH_SEMI or tc == ch.CH_COMMA)) {
                     break;
                 }
                 if (depth == 0 and s.checkASITopLevel()) break;
                 s.pos += 1;
             }
-            initializer_text = s.sliceTrimmed(init_start, s.pos);
-            if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
-                is_as_const = true;
-                if (type_annotation.len == 0) {
-                    const val = if (ch.endsWith(initializer_text, " as const"))
-                        std.mem.trim(u8, initializer_text[0 .. initializer_text.len - 9], " \t\r\n")
-                    else
-                        initializer_text;
-                    const lit = inferLiteralType(val);
-                    if (!std.mem.eql(u8, lit, "unknown")) {
-                        type_annotation = lit;
+            type_annotation = s.sliceTrimmed(type_start, s.pos);
+        }
+
+        // Initializer
+        if (s.pos < s.len and s.source[s.pos] == ch.CH_EQUAL) {
+            if (s.isolated_declarations and type_annotation.len > 0 and (!s.keep_comments or !type_inf.isGenericType(type_annotation))) {
+                s.skipToStatementEnd();
+            } else {
+                s.pos += 1;
+                s.skipWhitespaceAndComments();
+                const init_start = s.pos;
+                var depth: isize = 0;
+                while (s.pos < s.len) {
+                    // SIMD fast-skip: bulk-skip bytes that can't be structural
+                    if (depth > 0) {
+                        while (s.pos + 16 <= s.len) {
+                            const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                            const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH)));
+                            if (!@reduce(.Or, interesting)) {
+                                s.pos += 16;
+                            } else {
+                                break;
+                            }
+                        }
+                    } else {
+                        while (s.pos + 16 <= s.len) {
+                            const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                            const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_COMMA))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
+                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
+                            if (!@reduce(.Or, interesting)) {
+                                s.pos += 16;
+                            } else {
+                                break;
+                            }
+                        }
                     }
+                    if (s.pos >= s.len) break;
+                    if (s.skipNonCode()) continue;
+                    const ic = s.source[s.pos];
+                    if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET or ic == ch.CH_LANGLE) {
+                        depth += 1;
+                    } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET or (ic == ch.CH_RANGLE and !s.isArrowGT())) {
+                        depth -= 1;
+                    } else if (depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                        break;
+                    }
+                    if (depth == 0 and s.checkASITopLevel()) break;
+                    s.pos += 1;
                 }
-            } else if (type_annotation.len == 0) {
-                const as_type = extractAssertion(initializer_text);
-                if (as_type) |t| type_annotation = t;
+                initializer_text = s.sliceTrimmed(init_start, s.pos);
+                if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
+                    is_as_const = true;
+                    if (type_annotation.len == 0) {
+                        const val = if (ch.endsWith(initializer_text, " as const"))
+                            std.mem.trim(u8, initializer_text[0 .. initializer_text.len - 9], " \t\r\n")
+                        else
+                            initializer_text;
+                        const lit = inferLiteralType(val);
+                        if (!std.mem.eql(u8, lit, "unknown")) {
+                            type_annotation = lit;
+                        }
+                    }
+                } else if (type_annotation.len == 0) {
+                    const as_type = extractAssertion(initializer_text);
+                    if (as_type) |t| type_annotation = t;
+                }
             }
         }
+
+        // Skip comma or semicolon
+        if (s.pos < s.len) {
+            const sc = s.source[s.pos];
+            if (sc == ch.CH_SEMI) s.pos += 1;
+        }
+
+        const comments = extractLeadingComments(s, decl_start);
+        const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
+
+        // Build DTS text — direct alloc (no ArrayList overhead).
+        const export_prefix: []const u8 = if (is_exported) "export " else "";
+        const declare_kw = "declare ";
+        const total = export_prefix.len + declare_kw.len + kind.len + 1 + name.len + 2 + final_type.len + 1;
+        const text_buf = blk: {
+            const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+            var tp: usize = 0;
+            @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
+            tp += export_prefix.len;
+            @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
+            tp += declare_kw.len;
+            @memcpy(buf[tp..][0..kind.len], kind);
+            tp += kind.len;
+            buf[tp] = ' ';
+            tp += 1;
+            @memcpy(buf[tp..][0..name.len], name);
+            tp += name.len;
+            @memcpy(buf[tp..][0..2], ": ");
+            tp += 2;
+            @memcpy(buf[tp..][0..final_type.len], final_type);
+            tp += final_type.len;
+            buf[tp] = ';';
+            break :blk @as([]const u8, buf);
+        };
+
+        // Store the variable kind in modifiers
+        const mods = s.allocator.alloc([]const u8, 1) catch null;
+        if (mods) |m| {
+            m[0] = kind;
+        }
+
+        results.append(.{
+            .kind = .variable_decl,
+            .name = name,
+            .text = text_buf,
+            .is_exported = is_exported,
+            .modifiers = mods,
+            .type_annotation = type_annotation,
+            .preserve_type_annotation = type_annotation.len > 0,
+            .value = initializer_text,
+            .leading_comments = comments,
+            .start = decl_start,
+            .end = s.pos,
+        }) catch {};
+
+        if (s.pos < s.len and s.source[s.pos] == ch.CH_COMMA) {
+            s.pos += 1;
+            s.skipWhitespaceAndComments();
+            continue;
+        }
+        break;
     }
-
-    // Skip comma or semicolon
-    if (s.pos < s.len) {
-        const sc = s.source[s.pos];
-        if (sc == ch.CH_SEMI) s.pos += 1;
-    }
-
-    const comments = extractLeadingComments(s, decl_start);
-    const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
-
-    // Build DTS text — direct alloc (no ArrayList overhead).
-    const export_prefix: []const u8 = if (is_exported) "export " else "";
-    const declare_kw = "declare ";
-    const total = export_prefix.len + declare_kw.len + kind.len + 1 + name.len + 2 + final_type.len + 1;
-    const text_buf = blk: {
-        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
-        var tp: usize = 0;
-        @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
-        tp += export_prefix.len;
-        @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
-        tp += declare_kw.len;
-        @memcpy(buf[tp..][0..kind.len], kind);
-        tp += kind.len;
-        buf[tp] = ' ';
-        tp += 1;
-        @memcpy(buf[tp..][0..name.len], name);
-        tp += name.len;
-        @memcpy(buf[tp..][0..2], ": ");
-        tp += 2;
-        @memcpy(buf[tp..][0..final_type.len], final_type);
-        tp += final_type.len;
-        buf[tp] = ';';
-        break :blk @as([]const u8, buf);
-    };
-
-    // Store the variable kind in modifiers
-    const mods = s.allocator.alloc([]const u8, 1) catch null;
-    if (mods) |m| {
-        m[0] = kind;
-    }
-
-    results.append(.{
-        .kind = .variable_decl,
-        .name = name,
-        .text = text_buf,
-        .is_exported = is_exported,
-        .modifiers = mods,
-        .type_annotation = type_annotation,
-        .preserve_type_annotation = type_annotation.len > 0,
-        .value = initializer_text,
-        .leading_comments = comments,
-        .start = decl_start,
-        .end = s.pos,
-    }) catch {};
 
     return results.toOwnedSlice() catch &.{};
 }

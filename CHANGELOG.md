@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.3...v0.10.4)
+
+### 🐛 Bug Fixes
+
+- **zig**: remove unstable run arguments API ([298bb64](https://github.com/stacksjs/dtsx/commit/298bb64)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.4 ([77c6e1f](https://github.com/stacksjs/dtsx/commit/77c6e1f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.2...v0.10.3)
 
 ### 🚀 Features
