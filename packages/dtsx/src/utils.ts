@@ -1,5 +1,5 @@
 import type { DtsGenerationConfig } from './types'
-import { existsSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
@@ -17,12 +17,13 @@ export function assertNever(value: never, message?: string): never {
   throw new Error(message || `Unexpected value: ${value}`)
 }
 
-export async function writeToFile(filePath: string, content: string): Promise<void> {
+export async function writeToFile(filePath: string, content: string, lineEnding: 'lf' | 'crlf' | 'auto' = 'lf'): Promise<void> {
   // Normalize line endings to LF and ensure trailing newline
   let normalized = content.replace(/\r\n/g, '\n')
   if (!normalized.endsWith('\n')) {
     normalized += '\n'
   }
+  if (lineEnding === 'crlf') normalized = normalized.replace(/\n/g, '\r\n')
   await write(filePath, normalized)
 }
 
@@ -87,7 +88,21 @@ function normalizeJsonConfig(_jsonText: string): string {
     }
     if (char === 44 /* , */) {
       let next = position + 1
-      while (next < _jsonText.length && _jsonText.charCodeAt(next) <= 32) next++
+      while (next < _jsonText.length) {
+        while (next < _jsonText.length && _jsonText.charCodeAt(next) <= 32) next++
+        if (_jsonText.charCodeAt(next) === 47 && _jsonText.charCodeAt(next + 1) === 47) {
+          next += 2
+          while (next < _jsonText.length && _jsonText.charCodeAt(next) !== 10) next++
+          continue
+        }
+        if (_jsonText.charCodeAt(next) === 47 && _jsonText.charCodeAt(next + 1) === 42) {
+          next += 2
+          while (next + 1 < _jsonText.length && !(_jsonText.charCodeAt(next) === 42 && _jsonText.charCodeAt(next + 1) === 47)) next++
+          next = Math.min(next + 2, _jsonText.length)
+          continue
+        }
+        break
+      }
       const nextChar = _jsonText.charCodeAt(next)
       if (nextChar === 93 /* ] */ || nextChar === 125 /* } */) {
         position++
@@ -106,7 +121,12 @@ function findConfigFile(path: string): string | null {
   if (!path.endsWith('.json')) candidates.push(`${path}.json`)
   candidates.push(join(path, 'tsconfig.json'))
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
+    try {
+      if (statSync(candidate).isFile()) return candidate
+    }
+    catch {
+      // Try the next supported config filename.
+    }
   }
   return null
 }

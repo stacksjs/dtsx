@@ -33,6 +33,16 @@ describe('utils — checkIsolatedDeclarationsConfig', () => {
     expect(await checkIsolatedDeclarationsConfig({ cwd: directory, tsconfigPath: 'tsconfig.json' })).toBe(true)
   })
 
+  test('allows comments between trailing commas and closing braces', async () => {
+    await writeFile(join(directory, 'tsconfig.json'), `{
+      "compilerOptions": {
+        "isolatedDeclarations": true, // keep this enabled
+      }, /* compiler options */
+    }`)
+
+    expect(await checkIsolatedDeclarationsConfig({ cwd: directory, tsconfigPath: 'tsconfig.json' })).toBe(true)
+  })
+
   test('follows deeply nested extends chains', async () => {
     await writeFile(join(directory, 'base.json'), `{"compilerOptions":{"isolatedDeclarations":true}}`)
     await writeFile(join(directory, 'middle-2.json'), `{"extends":"./base"}`)
@@ -40,6 +50,14 @@ describe('utils — checkIsolatedDeclarationsConfig', () => {
     await writeFile(join(directory, 'tsconfig.json'), `{"extends":"./middle-1"}`)
 
     expect(await checkIsolatedDeclarationsConfig({ cwd: directory, tsconfigPath: './tsconfig.json' })).toBe(true)
+  })
+
+  test('resolves directory extends to its tsconfig file', async () => {
+    await mkdir(join(directory, 'config'))
+    await writeFile(join(directory, 'config', 'tsconfig.json'), `{"compilerOptions":{"isolatedDeclarations":true}}`)
+    await writeFile(join(directory, 'tsconfig.json'), `{"extends":"./config"}`)
+
+    expect(await checkIsolatedDeclarationsConfig({ cwd: directory, tsconfigPath: 'tsconfig.json' })).toBe(true)
   })
 
   test('lets a child explicitly disable a base option', async () => {
