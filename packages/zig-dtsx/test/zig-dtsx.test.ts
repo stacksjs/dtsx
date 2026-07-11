@@ -1492,7 +1492,7 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
 
     test('types dotted default exports with typeof', () => {
       const result = dts(`const namespace = { value: 1 }; export default namespace.value`)
-      expect(result).toContain('typeof namespace.value')
+      expect(result).toContain('(typeof namespace)["value"]')
     })
 
     test('types async default-export arrows', () => {
