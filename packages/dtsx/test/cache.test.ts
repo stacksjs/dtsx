@@ -267,6 +267,25 @@ describe('BuildCache', () => {
       expect(loaded.load()).toBe(true)
       expect(loaded.getCachedIfValid(filePath, tempDir)).toBeNull()
     })
+
+    it('rejects malformed cached declaration fields without throwing', () => {
+      const config = makeConfig()
+      const sourceContent = 'export const malformed = true'
+      const filePath = writeSourceFile('src/malformed.ts', sourceContent)
+      const cache = new BuildCache(config)
+      cache.update(filePath, sourceContent, 'export declare const malformed: true;', tempDir)
+      cache.save()
+
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      manifest.entries['src/malformed.ts'].dtsContent = null
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      const loaded = new BuildCache(config)
+      expect(loaded.load()).toBe(true)
+      expect(() => loaded.getCachedIfValid(filePath, tempDir)).not.toThrow()
+      expect(loaded.getCachedIfValid(filePath, tempDir)).toBeNull()
+    })
   })
 
   describe('getCached', () => {

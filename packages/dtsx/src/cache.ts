@@ -200,7 +200,12 @@ export class BuildCache {
       return null
     }
 
-    if (entry.configHash !== this.configHash || this.hashString(entry.dtsContent) !== entry.dtsHash) {
+    if (
+      typeof entry.dtsContent !== 'string'
+      || typeof entry.dtsHash !== 'string'
+      || entry.configHash !== this.configHash
+      || this.hashString(entry.dtsContent) !== entry.dtsHash
+    ) {
       return null
     }
 
