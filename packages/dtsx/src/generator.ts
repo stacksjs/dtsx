@@ -695,7 +695,7 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
     if (isAbsolute(pattern) && isProcessableSourceFile(pattern)) {
       // It's an absolute file path
       if (!pattern.includes('node_modules')) {
-        if (!isWithinRoot(pattern, rootPath)) {
+        if (!isWithinRoot(pattern, rootPath) && config.outputStructure !== 'flat') {
           logger.warn(`Skipping entrypoint outside root: ${relative(config.cwd, pattern)}`)
         }
         else if (!isExcluded(pattern, excludePatterns, rootPath)) {
