@@ -215,3 +215,29 @@ export const api = {
     expect(declaration).not.toContain('=> ;')
   })
 })
+
+describe('bun-plugin-dtsx', () => {
+  it('mirrors Bun output paths and completes declarations before build returns', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const binDir = join(tempDir, 'bin')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await mkdir(binDir, { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `export const value = 'ok' as const\n`)
+    await writeFile(join(binDir, 'cli.ts'), `export const cli = true as const\n`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts'), join(binDir, 'cli.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir })],
+    })
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(outDir, 'src', 'index.d.ts'), 'utf8')).toContain(`export declare const value: 'ok';`)
+    expect(await readFile(join(outDir, 'bin', 'cli.d.ts'), 'utf8')).toContain('export declare const cli: true;')
+  })
+})

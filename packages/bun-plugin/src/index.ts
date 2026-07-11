@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@stacksjs/dtsx/generator'
 
 /**
  * Error codes for categorizing plugin errors

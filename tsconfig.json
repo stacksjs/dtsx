@@ -11,6 +11,9 @@
       "@stacksjs/dtsx": [
         "./packages/dtsx/src/index.ts"
       ],
+      "@stacksjs/dtsx/generator": [
+        "./packages/dtsx/src/generator.ts"
+      ],
       "bun-plugin-dtsx": [
         "./packages/bun-plugin/src/index.ts"
       ],
@@ -45,6 +48,12 @@
     "**/dist/**",
     "**/*.d.ts",
     "**/build/**",
-    "**/coverage/**"
+    "**/coverage/**",
+    "packages/dtsx/src/checker.ts",
+    "packages/dtsx/src/extractor/builders.ts",
+    "packages/dtsx/src/extractor/cache.ts",
+    "packages/dtsx/src/extractor/declarations.ts",
+    "packages/dtsx/src/extractor/helpers.ts",
+    "packages/dtsx/src/extractor/index.ts"
   ]
 }

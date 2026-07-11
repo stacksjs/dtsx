@@ -5,12 +5,14 @@ console.log('Building...')
 
 await fs.rm('./dist', { recursive: true, force: true })
 
+const sourceEntrypoints = await Array.fromAsync(new Bun.Glob('./src/*.ts').scan())
+const runtimeEntrypoints = sourceEntrypoints.filter(entrypoint => entrypoint !== './src/checker.ts')
+
 await Bun.build({
   entrypoints: [
-    './src/index.ts',
+    ...runtimeEntrypoints,
     './bin/cli.ts',
     './src/plugins/vite.ts',
-    './src/plugins/bun.ts',
     './src/plugins/esbuild.ts',
     './src/plugins/tsup.ts',
     './src/plugins/webpack.ts',

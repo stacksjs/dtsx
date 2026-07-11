@@ -347,7 +347,7 @@ export default {
 
 ```ts
 // build.ts
-import { dts } from '@stacksjs/dtsx/bun'
+import { dts } from 'bun-plugin-dtsx'
 
 await Bun.build({
   plugins: [dts()],
