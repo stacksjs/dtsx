@@ -34,7 +34,7 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-const CACHE_VERSION = 1
+const CACHE_VERSION = 2
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 
@@ -61,6 +61,15 @@ export class BuildCache {
       keepComments: config.keepComments,
       importOrder: config.importOrder,
       outputStructure: config.outputStructure,
+      isolatedDeclarations: config.isolatedDeclarations,
+      declarationMap: config.declarationMap,
+      indentStyle: config.indentStyle,
+      indentSize: config.indentSize,
+      prettier: config.prettier,
+      typeMappings: config.typeMappings,
+      lineEnding: config.lineEnding,
+      normalizeOutput: config.normalizeOutput,
+      declarationOrder: config.declarationOrder,
     }
     return String(hashContent(JSON.stringify(relevantConfig)))
   }

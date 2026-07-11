@@ -120,7 +120,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(1)
+      expect(parsed.version).toBe(2)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')
@@ -436,6 +436,16 @@ describe('BuildCache', () => {
       cache1.save()
 
       const config2 = makeConfig({ outputStructure: 'flat' })
+      const cache2 = new BuildCache(config2)
+      expect(cache2.load()).toBe(false)
+    })
+
+    it('invalidates cache when the declaration generation path changes', () => {
+      const config1 = makeConfig({ isolatedDeclarations: false })
+      const cache1 = new BuildCache(config1)
+      cache1.save()
+
+      const config2 = makeConfig({ isolatedDeclarations: true })
       const cache2 = new BuildCache(config2)
       expect(cache2.load()).toBe(false)
     })
