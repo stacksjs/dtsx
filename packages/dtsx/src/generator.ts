@@ -3,7 +3,7 @@ import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -26,7 +26,7 @@ async function writeDeclarationMapFile(
   sourceCode: string,
   cwd: string,
 ): Promise<string> {
-  const dtsFilename = outputPath.split('/').pop() || 'output.d.ts'
+  const dtsFilename = basename(outputPath) || 'output.d.ts'
   const sourceFilename = relative(dirname(outputPath), sourcePath)
   const mapFilename = `${dtsFilename}.map`
   const mapCommentIndex = dtsContent.lastIndexOf('\n//# sourceMappingURL=')
@@ -77,7 +77,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
     if (config.clearCache) {
       logger.debug('Clearing build cache...')
-      buildCache.clear()
+      if (!config.dryRun) buildCache.clear()
     }
     else {
       const loaded = buildCache.load()
@@ -91,7 +91,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
 
     // Ensure .dtsx-cache is in .gitignore
-    ensureGitignore(config.cwd)
+    if (!config.dryRun) ensureGitignore(config.cwd)
   }
 
   // Statistics tracking
@@ -166,7 +166,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   assertUniqueOutputPaths(files, config)
 
   // Prune cache of deleted files
-  if (buildCache) {
+  if (buildCache && !config.dryRun) {
     const pruned = buildCache.prune(new Set(files), config.cwd)
     if (pruned > 0) {
       logger.debug(`Pruned ${pruned} deleted files from cache`)
@@ -197,18 +197,65 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     try {
       const outputPath = getOutputPath(file, config)
 
+      const showDiff = async (content: string): Promise<void> => {
+        if (!config.diff) return
+        try {
+          const existingContent = await readTextFile(outputPath)
+          const diffOutput = createDiff(existingContent, content, relative(config.cwd, outputPath))
+          if (diffOutput) logger.info(`\n${diffOutput}`)
+          else logger.debug(`[no changes] ${outputPath}`)
+        }
+        catch {
+          logger.info(`[new file] ${relative(config.cwd, outputPath)}`)
+        }
+      }
+
+      const validateContent = (content: string): number => {
+        if (!config.validate) return 0
+        const validation = validateDtsContent(content, outputPath)
+        if (validation.isValid) {
+          logger.debug(`[validation] ${outputPath} - OK`)
+          return 0
+        }
+
+        logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
+        for (const err of validation.errors) {
+          let errMsg = `  Line ${err.line}:${err.column}`
+          if (err.code) errMsg += ` [${err.code}]`
+          errMsg += ` - ${err.message}`
+          logger.warn(errMsg)
+          if (err.suggestion) logger.warn(`    Suggestion: ${err.suggestion}`)
+        }
+        return validation.errors.length
+      }
+
+      const previewDryRun = (content: string): void => {
+        logger.info(`[dry-run] Would generate: ${outputPath}`)
+        logger.debug('--- Content preview ---')
+        logger.debug(content.slice(0, 500) + (content.length > 500 ? '\n...' : ''))
+        logger.debug('--- End preview ---')
+      }
+
       // Check cache for incremental builds
       if (buildCache) {
         const cachedContent = buildCache.getCachedIfValid(file, config.cwd)
         if (cachedContent) {
-          await mkdir(dirname(outputPath), { recursive: true })
-          if (config.declarationMap) {
-            sourceCode = preReadSource ?? await readTextFile(file)
-            await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd)
+          await showDiff(cachedContent)
+          const validationErrorCount = validateContent(cachedContent)
+
+          if (config.dryRun) {
+            previewDryRun(cachedContent)
           }
-          await writeToFile(outputPath, cachedContent, config.lineEnding)
+          else {
+            await mkdir(dirname(outputPath), { recursive: true })
+            if (config.declarationMap) {
+              sourceCode = preReadSource ?? await readTextFile(file)
+              await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd)
+            }
+            await writeToFile(outputPath, cachedContent, config.lineEnding)
+          }
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
-          return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount: 0 }
+          return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount }
         }
       }
 
@@ -216,93 +263,48 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       sourceCode = preReadSource ?? await readTextFile(file)
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager, typeMapper)
 
-      let validationErrorCount = 0
+      let finalDtsContent = dtsContent
+
+      // Formatting must happen before source-map generation so mappings describe
+      // the bytes that are actually written.
+      if (config.prettier || config.indentStyle || config.indentSize) {
+        const formatted = await formatDts(finalDtsContent, {
+          usePrettier: config.prettier,
+          builtIn: {
+            indentSize: config.indentSize || 2,
+            useTabs: config.indentStyle === 'tabs',
+            normalizeWhitespace: true,
+            sortImports: true,
+            trailingNewline: true,
+          },
+        }, outputPath)
+        finalDtsContent = formatted.content
+        for (const warning of formatted.warnings ?? []) logger.warn(`[format] ${warning}`)
+      }
+
+      if (config.declarationMap) {
+        const mapFilename = `${basename(outputPath) || 'output.d.ts'}.map`
+        finalDtsContent = addSourceMapComment(finalDtsContent, mapFilename)
+      }
+
+      await showDiff(finalDtsContent)
+      const validationErrorCount = validateContent(finalDtsContent)
 
       if (config.dryRun) {
-        // Dry run - just show what would be generated
-        logger.info(`[dry-run] Would generate: ${outputPath}`)
-        logger.debug('--- Content preview ---')
-        logger.debug(dtsContent.slice(0, 500) + (dtsContent.length > 500 ? '\n...' : ''))
-        logger.debug('--- End preview ---')
+        previewDryRun(finalDtsContent)
       }
       else {
-        // Show diff if enabled
-        if (config.diff) {
-          try {
-            const existingContent = await readTextFile(outputPath)
-            const diffOutput = createDiff(existingContent, dtsContent, relative(config.cwd, outputPath))
-            if (diffOutput) {
-              logger.info(`\n${diffOutput}`)
-            }
-            else {
-              logger.debug(`[no changes] ${outputPath}`)
-            }
-          }
-          catch {
-            // File doesn't exist yet, show as new file
-            logger.info(`[new file] ${relative(config.cwd, outputPath)}`)
-          }
-        }
-
-        // Ensure output directory exists
         await mkdir(dirname(outputPath), { recursive: true })
 
-        // Generate declaration map if enabled
-        let finalDtsContent = dtsContent
         if (config.declarationMap && sourceCode) {
-          const mapFilename = await writeDeclarationMapFile(outputPath, file, dtsContent, sourceCode, config.cwd)
-          finalDtsContent = addSourceMapComment(dtsContent, mapFilename)
+          await writeDeclarationMapFile(outputPath, file, finalDtsContent, sourceCode, config.cwd)
         }
 
-        // Apply formatting if enabled
-        if (config.prettier || config.indentStyle || config.indentSize) {
-          const formatted = await formatDts(finalDtsContent, {
-            usePrettier: config.prettier,
-            builtIn: {
-              indentSize: config.indentSize || 2,
-              useTabs: config.indentStyle === 'tabs',
-              normalizeWhitespace: true,
-              sortImports: true,
-              trailingNewline: true,
-            },
-          }, outputPath)
-          finalDtsContent = formatted.content
-          if (formatted.warnings?.length) {
-            for (const warn of formatted.warnings) {
-              logger.warn(`[format] ${warn}`)
-            }
-          }
-        }
-
-        // Write the DTS file
         await writeToFile(outputPath, finalDtsContent, config.lineEnding)
 
         // Update cache for incremental builds
         if (buildCache && sourceCode) {
           buildCache.update(file, sourceCode, finalDtsContent, config.cwd)
-        }
-
-        // Validate if enabled
-        if (config.validate) {
-          const validation = validateDtsContent(dtsContent, outputPath)
-          if (!validation.isValid) {
-            validationErrorCount = validation.errors.length
-            logger.warn(`[validation] ${relative(config.cwd, outputPath)} has ${validation.errors.length} error(s):`)
-            for (const err of validation.errors) {
-              let errMsg = `  Line ${err.line}:${err.column}`
-              if (err.code) {
-                errMsg += ` [${err.code}]`
-              }
-              errMsg += ` - ${err.message}`
-              logger.warn(errMsg)
-              if (err.suggestion) {
-                logger.warn(`    Suggestion: ${err.suggestion}`)
-              }
-            }
-          }
-          else {
-            logger.debug(`[validation] ${outputPath} - OK`)
-          }
         }
 
         logger.debug(`Generated: ${outputPath}`)
@@ -413,7 +415,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
 
   // Save incremental build cache
-  if (buildCache) {
+  if (buildCache && !config.dryRun) {
     buildCache.save()
     logger.debug('Saved build cache')
   }
@@ -529,10 +531,14 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           ? resolve(config.cwd, config.outdir, config.bundleOutput!)
           : getOutputPath(entry, config)
 
-        await mkdir(dirname(bundlePath), { recursive: true })
-        await writeToFile(bundlePath, bundleResult.content, config.lineEnding)
-
-        logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+        if (config.dryRun) {
+          logger.info(`[dry-run] Would bundle ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+        }
+        else {
+          await mkdir(dirname(bundlePath), { recursive: true })
+          await writeToFile(bundlePath, bundleResult.content, config.lineEnding)
+          logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+        }
 
         if (useLegacyOutput) break
       }

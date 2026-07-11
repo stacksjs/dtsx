@@ -170,6 +170,63 @@ describe('declaration generation paths', () => {
     expect(declaration).toContain('//# sourceMappingURL=index.d.ts.map')
   })
 
+  it('keeps incremental dry runs free of filesystem mutations', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-dry-run-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'test';`)
+    const baseConfig = {
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: false,
+      incremental: true,
+      isolatedDeclarations: true,
+      logLevel: 'silent' as const,
+    }
+
+    await generate(baseConfig)
+    const manifestPath = join(cwd, '.dtsx-cache', 'manifest.json')
+    const gitignorePath = join(cwd, '.gitignore')
+    const manifestBefore = await readFile(manifestPath, 'utf8')
+    const gitignoreBefore = await readFile(gitignorePath, 'utf8')
+    await rm(join(cwd, 'dist'), { recursive: true, force: true })
+
+    await generate({ ...baseConfig, dryRun: true, clearCache: true, declarationMap: true, bundle: true })
+
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
+    expect(await readFile(gitignorePath, 'utf8')).toBe(gitignoreBefore)
+    await expect(access(join(cwd, 'dist'))).rejects.toThrow()
+  })
+
+  it('validates cached declarations instead of trusting them blindly', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-cached-validation-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'test';`)
+    const config = {
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: false,
+      incremental: true,
+      isolatedDeclarations: true,
+      validate: true,
+      logLevel: 'silent' as const,
+    }
+
+    await generate(config)
+    const cached = await generate(config)
+
+    expect(cached.filesGenerated).toBe(0)
+    expect(cached.filesValidated).toBe(1)
+    expect(cached.validationErrors).toBe(0)
+  })
+
   it('discovers include patterns in addition to entrypoints without duplicates', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dtsx-include-patterns-'))
     tempDirectories.push(cwd)
