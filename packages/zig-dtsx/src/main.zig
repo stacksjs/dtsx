@@ -136,7 +136,7 @@ fn writeErr(data: []const u8) void {
 }
 
 fn readFile(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
-    const path_z = try alloc.dupeZ(u8, path);
+    const path_z = try alloc.dupeSentinel(u8, path, 0);
     defer alloc.free(path_z);
 
     const fp = c.fopen(path_z.ptr, "rb") orelse return error.FileNotFound;
@@ -165,7 +165,7 @@ fn readStdin(alloc: std.mem.Allocator) ![]const u8 {
 }
 
 fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void {
-    const path_z = try alloc.dupeZ(u8, path);
+    const path_z = try alloc.dupeSentinel(u8, path, 0);
     defer alloc.free(path_z);
 
     const fp = c.fopen(path_z.ptr, "wb") orelse return error.FileNotFound;
@@ -186,7 +186,7 @@ fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8) ![][]const u8 
     if (builtin.os.tag == .windows) {
         // Windows: use _findfirst/_findnext
         const pattern_str = try std.fmt.allocPrint(alloc, "{s}\\*.ts", .{dir_path});
-        const pattern = try alloc.dupeZ(u8, pattern_str);
+        const pattern = try alloc.dupeSentinel(u8, pattern_str, 0);
         alloc.free(pattern_str);
         defer alloc.free(pattern);
 
@@ -209,7 +209,7 @@ fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8) ![][]const u8 
         // struct shape for glibc/musl, Darwin, FreeBSD, DragonFly, etc.,
         // so we don't have to (and `readdir` is dispatched to the right
         // symbol on macOS x86_64 — `readdir$INODE64` — automatically).
-        const dir_z = try alloc.dupeZ(u8, dir_path);
+        const dir_z = try alloc.dupeSentinel(u8, dir_path, 0);
         defer alloc.free(dir_z);
 
         const dir = std.c.opendir(dir_z.ptr) orelse return files.toOwnedSlice();
@@ -336,7 +336,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     const sa = setup_arena.allocator();
 
     // Ensure output directory exists
-    const out_z = try sa.dupeZ(u8, out_dir);
+    const out_z = try sa.dupeSentinel(u8, out_dir, 0);
     if (builtin.os.tag == .windows) {
         _ = c._mkdir(out_z.ptr);
     } else {
@@ -347,7 +347,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     var input_dir_fd: c_int = -1;
     var output_dir_fd: c_int = -1;
     if (builtin.os.tag != .windows) {
-        const dir_z = try sa.dupeZ(u8, project_dir);
+        const dir_z = try sa.dupeSentinel(u8, project_dir, 0);
         input_dir_fd = c.open(dir_z.ptr, c.O_RDONLY);
         if (input_dir_fd < 0) return error.DirNotFound;
         output_dir_fd = c.open(out_z.ptr, c.O_RDONLY);
@@ -373,14 +373,14 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
             const stem = filename[0 .. filename.len - 3];
             const out_str = try std.fmt.allocPrint(sa, "{s}\\{s}.d.ts", .{ out_dir, stem });
             tasks[idx] = .{
-                .input_name_z = (try sa.dupeZ(u8, in_str)).ptr,
-                .output_name_z = (try sa.dupeZ(u8, out_str)).ptr,
+                .input_name_z = (try sa.dupeSentinel(u8, in_str, 0)).ptr,
+                .output_name_z = (try sa.dupeSentinel(u8, out_str, 0)).ptr,
                 .keep_comments = keep_comments,
             };
         }
     } else {
         for (filenames, 0..) |filename, idx| {
-            const name_z = try sa.dupeZ(u8, filename);
+            const name_z = try sa.dupeSentinel(u8, filename, 0);
             const stem = filename[0 .. filename.len - 3];
             const out_buf = try sa.alloc(u8, stem.len + 6);
             @memcpy(out_buf[0..stem.len], stem);
