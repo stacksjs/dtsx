@@ -9,7 +9,7 @@ import { logger } from './logger'
 export const defaultConfig: DtsGenerationConfig = {
   cwd: process.cwd(),
   root: './src',
-  entrypoints: ['**/*.ts'],
+  entrypoints: ['**/*.{ts,tsx,mts,cts}'],
   outdir: './dist',
   keepComments: true,
   clean: true,

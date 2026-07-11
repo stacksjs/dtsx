@@ -690,7 +690,9 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
   const rootPath = resolve(config.cwd, config.root)
   const excludePatterns = config.exclude || []
 
-  for (const pattern of config.entrypoints) {
+  const patterns = [...config.entrypoints, ...(config.include ?? [])]
+
+  for (const pattern of patterns) {
     // Check if pattern is an absolute path to a specific source file.
     if (isAbsolute(pattern) && isProcessableSourceFile(pattern)) {
       // It's an absolute file path

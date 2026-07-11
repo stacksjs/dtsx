@@ -170,6 +170,60 @@ describe('declaration generation paths', () => {
     expect(declaration).toContain('//# sourceMappingURL=index.d.ts.map')
   })
 
+  it('discovers include patterns in addition to entrypoints without duplicates', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-include-patterns-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const index: string = 'index';`)
+    await writeFile(join(cwd, 'src', 'extra.tsx'), `export const extra: string = 'extra';`)
+
+    const stats = await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts', '**/*.ts'],
+      include: ['**/*.tsx'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+      logLevel: 'silent',
+    })
+
+    expect(stats.filesProcessed).toBe(2)
+    await access(join(cwd, 'dist', 'index.d.ts'))
+    await access(join(cwd, 'dist', 'extra.d.ts'))
+  })
+
+  it('uses module-aware default entrypoints', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-default-entrypoints-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await Promise.all([
+      writeFile(join(cwd, 'src', 'index.ts'), `export const ts: string = 'ts';`),
+      writeFile(join(cwd, 'src', 'view.tsx'), `export const tsx: string = 'tsx';`),
+      writeFile(join(cwd, 'src', 'module.mts'), `export const mts: string = 'mts';`),
+      writeFile(join(cwd, 'src', 'common.cts'), `export const cts: string = 'cts';`),
+    ])
+
+    const stats = await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+      logLevel: 'silent',
+    })
+
+    expect(stats.filesProcessed).toBe(4)
+    await Promise.all([
+      access(join(cwd, 'dist', 'index.d.ts')),
+      access(join(cwd, 'dist', 'view.d.ts')),
+      access(join(cwd, 'dist', 'module.d.mts')),
+      access(join(cwd, 'dist', 'common.d.cts')),
+    ])
+  })
+
   it('applies configured type mappings during generation', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dtsx-type-mapping-'))
     tempDirectories.push(cwd)

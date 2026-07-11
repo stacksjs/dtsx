@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getConfig, resetConfig } from '../src/config'
+import { defaultConfig, getConfig, resetConfig } from '../src/config'
 
 const tempDirectories: string[] = []
 
@@ -20,6 +20,10 @@ async function createProject(name: string): Promise<string> {
 }
 
 describe('getConfig', () => {
+  it('discovers every TypeScript module source format by default', () => {
+    expect(defaultConfig.entrypoints).toEqual(['**/*.{ts,tsx,mts,cts}'])
+  })
+
   it('isolates cached configuration by project directory', async () => {
     const firstCwd = await createProject('first')
     const secondCwd = await createProject('second')
