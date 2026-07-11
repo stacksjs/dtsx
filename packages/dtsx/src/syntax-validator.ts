@@ -20,6 +20,7 @@ function getLocation(source: string, offset: number): { line: number, column: nu
 
 export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
   const issues: SyntaxIssue[] = []
+  const nonCodeRanges: Array<{ start: number, end: number }> = []
   const stack: Array<{ char: string, offset: number }> = []
   const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
   let quote = 0
@@ -31,6 +32,7 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
     const next = source.charCodeAt(index + 1)
     if (blockCommentStart !== -1) {
       if (char === 42 && next === 47) {
+        nonCodeRanges.push({ start: blockCommentStart, end: index + 2 })
         blockCommentStart = -1
         index++
       }
@@ -38,7 +40,10 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
     }
     if (quote) {
       if (char === 92) index++
-      else if (char === quote) quote = 0
+      else if (char === quote) {
+        nonCodeRanges.push({ start: quoteStart, end: index + 1 })
+        quote = 0
+      }
       continue
     }
     if (char === 47 && next === 42) {
@@ -47,7 +52,9 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
       continue
     }
     if (char === 47 && next === 47) {
+      const commentStart = index
       while (index < source.length && source.charCodeAt(index) !== 10) index++
+      nonCodeRanges.push({ start: commentStart, end: index })
       continue
     }
     if (char === 39 || char === 34 || char === 96) {
@@ -78,6 +85,7 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
   ]
   for (const [pattern, message] of malformed) {
     for (const match of source.matchAll(pattern)) {
+      if (nonCodeRanges.some(range => match.index >= range.start && match.index < range.end)) continue
       issues.push({ ...getLocation(source, match.index), message, code: 'DTSX1005' })
     }
   }
@@ -85,6 +93,7 @@ export function validateTypeScriptSyntax(source: string): SyntaxIssue[] {
   // A bare `type {` / `type =` is missing an alias name, but the same token
   // sequence is valid in `import type { ... }` and `export type { ... }`.
   for (const match of source.matchAll(/\btype\s*(?=[{=])/g)) {
+    if (nonCodeRanges.some(range => match.index >= range.start && match.index < range.end)) continue
     const prefix = source.slice(0, match.index).trimEnd()
     if (prefix.endsWith('import') || prefix.endsWith('export')) continue
     issues.push({ ...getLocation(source, match.index), message: 'Declaration name expected', code: 'DTSX1005' })
