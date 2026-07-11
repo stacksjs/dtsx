@@ -1,5 +1,6 @@
 import type { Declaration } from './types'
 import type { AsyncParseConfig, CachedSourceFile } from './source-cache'
+import { normalizeConcurrency } from './concurrency'
 import { batchParseSourceFiles, clearSourceFileCache as clearSourceCache, getPendingParseCount, getSourceFile, getSourceFileAsync, getSourceFileCacheSize, shouldUseAsyncParsing } from './source-cache'
 import { clearDeclarationCache, extractDeclarations as scanDeclarations } from './extractor/extract'
 
@@ -34,7 +35,7 @@ export async function batchExtractDeclarations(
   files: Array<{ filePath: string, sourceCode: string, keepComments?: boolean }>,
   config: AsyncParseConfig & { concurrency?: number } = {},
 ): Promise<Map<string, Declaration[]>> {
-  const concurrency = config.concurrency ?? 4
+  const concurrency = normalizeConcurrency(config.concurrency, 4)
   const results = new Map<string, Declaration[]>()
   for (let index = 0; index < files.length; index += concurrency) {
     const batch = files.slice(index, index + concurrency)

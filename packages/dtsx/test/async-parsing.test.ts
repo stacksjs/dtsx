@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { normalizeConcurrency } from '../src/concurrency'
 import {
   batchExtractDeclarations,
   batchParseSourceFiles,
@@ -16,6 +17,16 @@ import {
 } from '../src/extractor'
 
 describe('Async AST Parsing', () => {
+  describe('normalizeConcurrency', () => {
+    test('clamps invalid and fractional batch sizes', () => {
+      expect(normalizeConcurrency(0, 4)).toBe(1)
+      expect(normalizeConcurrency(-5, 4)).toBe(1)
+      expect(normalizeConcurrency(2.9, 4)).toBe(2)
+      expect(normalizeConcurrency(Number.NaN, 4)).toBe(4)
+      expect(normalizeConcurrency(Number.POSITIVE_INFINITY, 4)).toBe(4)
+    })
+  })
+
   describe('shouldUseAsyncParsing', () => {
     test('returns false for small files', () => {
       const smallCode = 'const x = 1;'
@@ -208,6 +219,15 @@ describe('Async AST Parsing', () => {
       const results = await batchParseSourceFiles(files, { concurrency: 2 })
       expect(results.size).toBe(10)
     })
+
+    test('makes progress with zero concurrency', async () => {
+      const results = await batchParseSourceFiles([
+        { filePath: 'zero-a.ts', sourceCode: 'export const a = true' },
+        { filePath: 'zero-b.ts', sourceCode: 'export const b = true' },
+      ], { concurrency: 0 })
+
+      expect(results.size).toBe(2)
+    })
   })
 
   describe('batchExtractDeclarations', () => {
@@ -257,6 +277,15 @@ describe('Async AST Parsing', () => {
       expect(userDecl).toBeDefined()
       expect(userDecl?.leadingComments).toBeDefined()
       expect(userDecl?.leadingComments?.join('\n') ?? '').toContain('User documentation')
+    })
+
+    test('makes progress with negative concurrency', async () => {
+      const results = await batchExtractDeclarations([
+        { filePath: 'negative-a.ts', sourceCode: 'export const a = true' },
+        { filePath: 'negative-b.ts', sourceCode: 'export const b = true' },
+      ], { concurrency: -2 })
+
+      expect(results.size).toBe(2)
     })
   })
 

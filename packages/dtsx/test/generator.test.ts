@@ -251,6 +251,26 @@ describe('generate with parallel processing', () => {
     expect(file3Content).toContain('export declare const c: boolean;')
   })
 
+  it('normalizes zero concurrency in parallel mode', async () => {
+    await setupTestFiles()
+
+    const stats = await generate({
+      cwd: tempDir,
+      root: 'input',
+      entrypoints: ['**/*.ts'],
+      outdir: outputDir,
+      clean: false,
+      keepComments: true,
+      tsconfigPath: join(__dirname, '..', 'tsconfig.json'),
+      parallel: true,
+      concurrency: 0,
+      logLevel: 'silent',
+    })
+
+    expect(stats.filesProcessed).toBe(3)
+    expect(stats.filesFailed).toBe(0)
+  })
+
   it('should produce same results in sequential and parallel mode', async () => {
     await setupTestFiles()
 

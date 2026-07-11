@@ -5,6 +5,7 @@
 import type { ClassDeclaration, EnumDeclaration, ExportAssignment, ExportDeclaration, FunctionDeclaration, ImportDeclaration, InterfaceDeclaration, ModuleDeclaration, Node, SourceFile, TypeAliasDeclaration, VariableStatement } from 'typescript'
 import type { Declaration } from '../types'
 import type { AsyncParseConfig } from './cache'
+import { normalizeConcurrency } from '../concurrency'
 import { forEachChild, SyntaxKind } from 'typescript'
 import { getSourceFileAsync } from './cache'
 // Re-export all public APIs
@@ -234,7 +235,7 @@ export async function batchExtractDeclarations(
   files: Array<{ filePath: string, sourceCode: string, keepComments?: boolean }>,
   config: AsyncParseConfig & { concurrency?: number } = {},
 ): Promise<Map<string, Declaration[]>> {
-  const concurrency = config.concurrency ?? 4
+  const concurrency = normalizeConcurrency(config.concurrency, 4)
   const results = new Map<string, Declaration[]>()
 
   // Process files in batches

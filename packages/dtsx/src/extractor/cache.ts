@@ -5,6 +5,7 @@
 
 import type { SourceFile } from 'typescript'
 import { createSourceFile, ScriptKind, ScriptTarget } from 'typescript'
+import { normalizeConcurrency } from '../concurrency'
 import { hashContent } from './hash'
 
 export { hashContent } from './hash'
@@ -247,7 +248,7 @@ export async function batchParseSourceFiles(
   files: Array<{ filePath: string, sourceCode: string }>,
   config: AsyncParseConfig & { concurrency?: number } = {},
 ): Promise<Map<string, SourceFile>> {
-  const concurrency = config.concurrency ?? 4
+  const concurrency = normalizeConcurrency(config.concurrency, 4)
   const results = new Map<string, SourceFile>()
   const errors: Array<{ filePath: string, error: Error }> = []
 

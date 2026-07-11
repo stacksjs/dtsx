@@ -1,4 +1,5 @@
 import { hashContent } from './extractor/hash'
+import { normalizeConcurrency } from './concurrency'
 
 export interface CachedSourceFile {
   fileName: string
@@ -79,7 +80,7 @@ export async function batchParseSourceFiles(
   config: AsyncParseConfig & { concurrency?: number } = {},
 ): Promise<Map<string, CachedSourceFile>> {
   const results = new Map<string, CachedSourceFile>()
-  const concurrency = config.concurrency ?? 4
+  const concurrency = normalizeConcurrency(config.concurrency, 4)
   for (let index = 0; index < files.length; index += concurrency) {
     const batch = await Promise.all(files.slice(index, index + concurrency).map(async item => ({
       path: item.filePath,

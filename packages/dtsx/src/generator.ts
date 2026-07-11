@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
+import { normalizeConcurrency } from './concurrency'
 import { config as defaultConfig } from './config'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
@@ -324,7 +325,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Auto-enable parallel processing for multiple files (unless explicitly set to false)
   const useParallel = config.parallel || (config.parallel !== false && files.length >= 10)
-  const concurrency = config.concurrency || (availableParallelism?.() ?? 8)
+  const concurrency = normalizeConcurrency(config.concurrency, availableParallelism?.() ?? 8)
 
   // Pre-read all file sources in parallel for faster I/O
   // This allows overlapping disk reads instead of sequential read-process-write
