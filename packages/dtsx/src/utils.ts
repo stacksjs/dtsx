@@ -1,8 +1,9 @@
 import type { DtsGenerationConfig } from './types'
-import { readdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { readFile, readdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 import { write } from './compat'
 import { config } from './config'
 import { validateTypeScriptSyntax } from './syntax-validator'
@@ -38,49 +39,123 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
   return (files as (string | string[])[]).flat(Infinity).filter((file): file is string => typeof file === 'string' && extname(file) === '.ts')
 }
 
-// only checks for 2 potentially nested levels
-export async function checkIsolatedDeclarationsConfig(options?: DtsGenerationConfig): Promise<boolean> {
+interface TypeScriptConfigFile {
+  extends?: string | string[]
+  compilerOptions?: {
+    isolatedDeclarations?: boolean
+  }
+}
+
+/** Remove JSONC comments and trailing commas without changing string contents. */
+function normalizeJsonConfig(_jsonText: string): string {
+  let result = ''
+  let position = 0
+  let stringQuote = 0
+
+  while (position < _jsonText.length) {
+    const char = _jsonText.charCodeAt(position)
+    if (stringQuote) {
+      result += _jsonText[position]
+      if (char === 92 /* \\ */ && position + 1 < _jsonText.length) {
+        result += _jsonText[position + 1]
+        position += 2
+        continue
+      }
+      if (char === stringQuote) stringQuote = 0
+      position++
+      continue
+    }
+
+    if (char === 34 /* " */) {
+      stringQuote = char
+      result += _jsonText[position++]
+      continue
+    }
+    if (char === 47 /* / */ && _jsonText.charCodeAt(position + 1) === 47 /* / */) {
+      position += 2
+      while (position < _jsonText.length && _jsonText.charCodeAt(position) !== 10 /* \n */) position++
+      continue
+    }
+    if (char === 47 /* / */ && _jsonText.charCodeAt(position + 1) === 42 /* * */) {
+      position += 2
+      while (position + 1 < _jsonText.length && !(_jsonText.charCodeAt(position) === 42 && _jsonText.charCodeAt(position + 1) === 47)) {
+        if (_jsonText.charCodeAt(position) === 10) result += '\n'
+        position++
+      }
+      position = Math.min(position + 2, _jsonText.length)
+      continue
+    }
+    if (char === 44 /* , */) {
+      let next = position + 1
+      while (next < _jsonText.length && _jsonText.charCodeAt(next) <= 32) next++
+      const nextChar = _jsonText.charCodeAt(next)
+      if (nextChar === 93 /* ] */ || nextChar === 125 /* } */) {
+        position++
+        continue
+      }
+    }
+
+    result += _jsonText[position++]
+  }
+
+  return result
+}
+
+function findConfigFile(path: string): string | null {
+  const candidates = [path]
+  if (!path.endsWith('.json')) candidates.push(`${path}.json`)
+  candidates.push(join(path, 'tsconfig.json'))
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+function resolveExtendedConfig(specifier: string, configPath: string): string | null {
+  if (isAbsolute(specifier) || specifier.startsWith('.')) {
+    return findConfigFile(resolve(dirname(configPath), specifier))
+  }
+
+  const require = createRequire(configPath)
+  for (const candidate of [specifier, `${specifier}/tsconfig.json`]) {
+    try {
+      const resolvedPath = findConfigFile(require.resolve(candidate))
+      if (resolvedPath) return resolvedPath
+    }
+    catch {
+      // Try the package's conventional tsconfig.json subpath next.
+    }
+  }
+  return null
+}
+
+async function readIsolatedDeclarationsOption(configPath: string, visited: Set<string>): Promise<boolean | undefined> {
+  const resolvedPath = findConfigFile(configPath)
+  if (!resolvedPath || visited.has(resolvedPath)) return undefined
+  visited.add(resolvedPath)
+
+  const source = await readFile(resolvedPath, 'utf8')
+  const config = JSON.parse(normalizeJsonConfig(source)) as TypeScriptConfigFile
+  const extendedConfigs = typeof config.extends === 'string' ? [config.extends] : config.extends ?? []
+  let inheritedValue: boolean | undefined
+
+  for (const specifier of extendedConfigs) {
+    const extendedPath = resolveExtendedConfig(specifier, resolvedPath)
+    if (!extendedPath) continue
+    const value = await readIsolatedDeclarationsOption(extendedPath, visited)
+    if (value !== undefined) inheritedValue = value
+  }
+
+  return config.compilerOptions?.isolatedDeclarations ?? inheritedValue
+}
+
+/** Resolve the effective isolatedDeclarations option across a tsconfig hierarchy. */
+export async function checkIsolatedDeclarationsConfig(options?: Pick<DtsGenerationConfig, 'cwd' | 'tsconfigPath'>): Promise<boolean> {
   try {
     const cwd = options?.cwd || process.cwd()
-    const tsconfigPath = options?.tsconfigPath || join(cwd, 'tsconfig.json')
-
-    // Convert to file URL for import()
-    const baseConfigPath = pathToFileURL(tsconfigPath).href
-    const baseConfig = await import(baseConfigPath)
-
-    if (baseConfig.compilerOptions?.isolatedDeclarations === true) {
-      return true
-    }
-
-    // If there's an extends property, we need to check the extended config
-    if (baseConfig.extends) {
-      // Make the extended path absolute relative to the base config
-      const extendedPath = makeAbsolute(tsconfigPath, baseConfig.extends)
-      // Add .json if not present
-      const fullExtendedPath = extendedPath.endsWith('.json') ? extendedPath : `${extendedPath}.json`
-      const extendedConfigPath = pathToFileURL(fullExtendedPath).href
-      const extendedConfig = await import(extendedConfigPath)
-
-      // Recursively check extended configs
-      if (extendedConfig.compilerOptions?.isolatedDeclarations === true) {
-        return true
-      }
-
-      // If the extended config also extends another config, check that too
-      if (extendedConfig.extends) {
-        // Make the next extended path absolute relative to the previous extended config
-        const nextExtendedPath = makeAbsolute(fullExtendedPath, extendedConfig.extends)
-        const fullNextExtendedPath = nextExtendedPath.endsWith('.json') ? nextExtendedPath : `${nextExtendedPath}.json`
-        const extendedExtendedConfigPath = pathToFileURL(fullNextExtendedPath).href
-        const extendedExtendedConfig = await import(extendedExtendedConfigPath)
-
-        if (extendedExtendedConfig.compilerOptions?.isolatedDeclarations === true) {
-          return true
-        }
-      }
-    }
-
-    return false
+    const configuredPath = options?.tsconfigPath || 'tsconfig.json'
+    const tsconfigPath = isAbsolute(configuredPath) ? configuredPath : resolve(cwd, configuredPath)
+    return await readIsolatedDeclarationsOption(tsconfigPath, new Set()) ?? false
   }
   catch {
     return false
@@ -164,21 +239,6 @@ export function createDiff(oldContent: string, newContent: string, filename: str
   for (let i = 0; i < removed.length; i++) output.push(`- ${removed[i]}`)
   for (let i = 0; i < added.length; i++) output.push(`+ ${added[i]}`)
   return output.join('\n')
-}
-
-function makeAbsolute(basePath: string, configPath: string): string {
-  // If it's already absolute, return as is
-  if (isAbsolute(configPath)) {
-    return configPath
-  }
-
-  // If it starts with a dot, resolve relative to base path
-  if (configPath.startsWith('.')) {
-    return resolve(dirname(basePath), configPath)
-  }
-
-  // For node_modules paths, resolve from cwd
-  return resolve(process.cwd(), 'node_modules', configPath)
 }
 
 /**
