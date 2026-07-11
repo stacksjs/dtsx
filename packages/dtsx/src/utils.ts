@@ -2,7 +2,7 @@ import type { DtsGenerationConfig } from './types'
 import { statSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
 import { write } from './compat'
 import { config } from './config'
@@ -37,7 +37,10 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
   }))
 
   // .flat() avoids the spread+concat pattern, which can stack-overflow on huge directories.
-  return (files as (string | string[])[]).flat(Infinity).filter((file): file is string => typeof file === 'string' && extname(file) === '.ts')
+  return (files as (string | string[])[]).flat(Infinity).filter((file): file is string => {
+    if (typeof file !== 'string') return false
+    return /\.(?:ts|tsx|mts|cts)$/.test(file) && !/\.d\.(?:ts|mts|cts)$/.test(file)
+  })
 }
 
 interface TypeScriptConfigFile {

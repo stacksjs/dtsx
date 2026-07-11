@@ -6,8 +6,9 @@
  */
 
 import type { DtsGenerationConfig, ProcessingContext } from './types'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { extractDeclarations } from './extractor'
 import { processDeclarations } from './processor'
 
@@ -134,17 +135,24 @@ function resolveImportPath(
 ): string | null {
   const basePath = resolve(fromDir, importPath)
 
-  // If path already has extension, return as-is (no node_modules)
-  if (importPath.endsWith('.ts') || importPath.endsWith('.tsx') || importPath.endsWith('.d.ts')) {
+  // If path already has a supported extension, return as-is (no node_modules).
+  if (/\.(?:ts|tsx|mts|cts)$/.test(importPath)) {
     return basePath.includes('node_modules') ? null : basePath
   }
 
-  // Default to .ts extension; the dependency graph treats missing files gracefully.
-  // Previously this loop returned on the first iteration unconditionally, making
-  // the rest of the extensions dead code — preserving that single-shot behavior
-  // since callers rely on a single canonical path per import.
-  const candidate = `${basePath}.ts`
-  return candidate.includes('node_modules') ? null : candidate
+  const extensions = ['.ts', '.tsx', '.mts', '.cts']
+  for (const extension of extensions) {
+    const candidate = `${basePath}${extension}`
+    if (existsSync(candidate)) return candidate
+  }
+  for (const extension of extensions) {
+    const candidate = join(basePath, `index${extension}`)
+    if (existsSync(candidate)) return candidate
+  }
+
+  // Keep a stable candidate for missing dependencies so graph diagnostics remain useful.
+  const fallback = `${basePath}.ts`
+  return fallback.includes('node_modules') ? null : fallback
 }
 
 /**

@@ -3,7 +3,7 @@ import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -149,6 +149,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       if (!isProcessableSourceFile(f)) continue
       if (f.endsWith('.d.ts')) continue
       if (f.includes('node_modules')) continue
+      if (!isWithinRoot(f, rootPath)) {
+        logger.warn(`Skipping auto-included source outside root: ${relative(config.cwd, f)}`)
+        continue
+      }
       if (isExcluded(f, excludePatterns, rootPath)) continue
       additions.push(f)
     }
@@ -158,6 +162,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       logger.debug(`Auto-included ${additions.length} file(s) reached via relative re-exports`)
     }
   }
+
+  assertUniqueOutputPaths(files, config)
 
   // Prune cache of deleted files
   if (buildCache) {
@@ -685,11 +691,14 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
   const excludePatterns = config.exclude || []
 
   for (const pattern of config.entrypoints) {
-    // Check if pattern is an absolute path to a specific file
-    if (pattern.startsWith('/') && pattern.endsWith('.ts')) {
+    // Check if pattern is an absolute path to a specific source file.
+    if (isAbsolute(pattern) && isProcessableSourceFile(pattern)) {
       // It's an absolute file path
-      if (!pattern.endsWith('.d.ts') && !pattern.includes('node_modules')) {
-        if (!isExcluded(pattern, excludePatterns, rootPath)) {
+      if (!pattern.includes('node_modules')) {
+        if (!isWithinRoot(pattern, rootPath)) {
+          logger.warn(`Skipping entrypoint outside root: ${relative(config.cwd, pattern)}`)
+        }
+        else if (!isExcluded(pattern, excludePatterns, rootPath)) {
           files.push(pattern)
         }
       }
@@ -715,11 +724,28 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
   }
 
   // Remove duplicates
-  return [...new Set(files)]
+  return [...new Set(files)].sort()
+}
+
+function isWithinRoot(filePath: string, rootPath: string): boolean {
+  const relativePath = relative(rootPath, filePath)
+  return relativePath !== '..' && !relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(relativePath)
+}
+
+function assertUniqueOutputPaths(files: string[], config: DtsGenerationConfig): void {
+  const sourceByOutput = new Map<string, string>()
+  for (const sourcePath of files) {
+    const outputPath = getOutputPath(sourcePath, config)
+    const existingSource = sourceByOutput.get(outputPath)
+    if (existingSource && existingSource !== sourcePath) {
+      throw new Error(`Output path collision: ${relative(config.cwd, existingSource)} and ${relative(config.cwd, sourcePath)} both emit ${relative(config.cwd, outputPath)}`)
+    }
+    sourceByOutput.set(outputPath, sourcePath)
+  }
 }
 
 function isProcessableSourceFile(filePath: string): boolean {
-  return /\.(m?tsx?|cts|jsx?|mjs|cjs)$/.test(filePath) && !filePath.endsWith('.d.ts')
+  return /\.(m?tsx?|cts|jsx?|mjs|cjs)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
 }
 
 /**
@@ -728,9 +754,9 @@ function isProcessableSourceFile(filePath: string): boolean {
 function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   const rootPath = resolve(config.cwd, config.root)
   const relativePath = relative(rootPath, inputPath)
-  const dtsPath = relativePath.replace(/\.(m?tsx?|cts)$/, (ext) => {
-    if (ext === '.mts') return '.d.mts'
-    if (ext === '.cts') return '.d.cts'
+  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs)$/, (ext) => {
+    if (ext === '.mts' || ext === '.mjs') return '.d.mts'
+    if (ext === '.cts' || ext === '.cjs') return '.d.cts'
     return '.d.ts'
   })
 

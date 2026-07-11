@@ -180,7 +180,9 @@ describe('utils — getAllTypeScriptFiles', () => {
     await writeFile(join(dir, 'ignore.txt'), '')
     await writeFile(join(dir, 'sub', 'b.ts'), '')
     await writeFile(join(dir, 'sub', 'deep', 'c.ts'), '')
-    // .d.ts and .tsx are intentionally excluded by the current filter contract
+    await writeFile(join(dir, 'component.tsx'), '')
+    await writeFile(join(dir, 'module.mts'), '')
+    await writeFile(join(dir, 'common.cts'), '')
     await writeFile(join(dir, 'sub', 'd.d.ts'), '')
   })
 
@@ -195,6 +197,10 @@ describe('utils — getAllTypeScriptFiles', () => {
     expect(names).toContain('a.ts')
     expect(names).toContain('sub/b.ts')
     expect(names).toContain('sub/deep/c.ts')
+    expect(names).toContain('component.tsx')
+    expect(names).toContain('module.mts')
+    expect(names).toContain('common.cts')
+    expect(names).not.toContain('sub/d.d.ts')
     expect(names.includes('ignore.txt')).toBe(false)
   })
 

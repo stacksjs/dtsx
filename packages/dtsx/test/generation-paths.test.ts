@@ -235,4 +235,101 @@ describe('declaration generation paths', () => {
     const output = await readFile(join(cwd, 'dist', 'index.d.ts'), 'utf8')
     expect(output.indexOf('declare const value')).toBeLessThan(output.indexOf('declare function run'))
   })
+
+  it('supports absolute TypeScript and JavaScript module entrypoints', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-module-formats-'))
+    tempDirectories.push(cwd)
+    const sourceDirectory = join(cwd, 'src')
+    await mkdir(sourceDirectory)
+    const sources = [
+      ['module.mts', `export const esm: string = 'esm';`],
+      ['common.cts', `export const common: string = 'common';`],
+      ['component.tsx', `export const component: string = 'component';`],
+      ['runtime.mjs', `export const runtime = 'runtime';`],
+      ['legacy.cjs', `export const legacy = 'legacy';`],
+    ] as const
+    await Promise.all(sources.map(([name, content]) => writeFile(join(sourceDirectory, name), content)))
+
+    const stats = await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: sources.map(([name]) => join(sourceDirectory, name)),
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })
+
+    expect(stats.filesProcessed).toBe(5)
+    await Promise.all([
+      access(join(cwd, 'dist', 'module.d.mts')),
+      access(join(cwd, 'dist', 'common.d.cts')),
+      access(join(cwd, 'dist', 'component.d.ts')),
+      access(join(cwd, 'dist', 'runtime.d.mts')),
+      access(join(cwd, 'dist', 'legacy.d.cts')),
+    ])
+  })
+
+  it('does not process declaration files matched by broad globs', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-ignore-declarations-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'source.mts'), `export const source: string = 'source';`)
+    await writeFile(join(cwd, 'src', 'existing.d.mts'), `export declare const existing: string;`)
+
+    const stats = await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['**/*'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })
+
+    expect(stats.filesProcessed).toBe(1)
+    await access(join(cwd, 'dist', 'source.d.mts'))
+  })
+
+  it('rejects output collisions instead of overwriting declarations', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-output-collision-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src', 'first'), { recursive: true })
+    await mkdir(join(cwd, 'src', 'second'), { recursive: true })
+    await writeFile(join(cwd, 'src', 'first', 'index.ts'), `export const first: string = 'first';`)
+    await writeFile(join(cwd, 'src', 'second', 'index.ts'), `export const second: string = 'second';`)
+
+    const generation = generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['**/*.ts'],
+      outputStructure: 'flat',
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })
+
+    await expect(generation).rejects.toThrow('Output path collision')
+  })
+
+  it('skips absolute entrypoints outside the configured root', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-root-boundary-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    const outsideFile = join(cwd, 'outside.ts')
+    await writeFile(outsideFile, `export const outside: string = 'outside';`)
+
+    const stats = await generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: [outsideFile],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })
+
+    expect(stats.filesProcessed).toBe(0)
+  })
 })

@@ -329,6 +329,11 @@ describe('Parallel Processor', () => {
       // Relative import with .tsx extension — must be preserved
       await writeFile(join(tmpDir, 'main-tsx.ts'), `import { Comp } from './widget.tsx'\nexport const w = Comp\n`)
       await writeFile(join(tmpDir, 'widget.tsx'), `export const Comp = null\n`)
+      await writeFile(join(tmpDir, 'main-mts.ts'), `import { value } from './module'\nexport const result = value\n`)
+      await writeFile(join(tmpDir, 'module.mts'), `export const value = 1\n`)
+      await mkdir(join(tmpDir, 'nested'))
+      await writeFile(join(tmpDir, 'nested', 'index.ts'), `export const nested = true\n`)
+      await writeFile(join(tmpDir, 'main-index.ts'), `import { nested } from './nested'\nexport { nested }\n`)
     })
 
     afterAll(async () => {
@@ -356,6 +361,18 @@ describe('Parallel Processor', () => {
       const node = graph.get(join(tmpDir, 'main-tsx.ts'))!
       const deps = Array.from(node.dependencies)
       expect(deps.some(d => d.endsWith('widget.tsx'))).toBe(true)
+    })
+
+    test('resolves extensionless imports to existing module formats', async () => {
+      const graph = await buildProcessingGraph(['main-mts.ts'], tmpDir)
+      const node = graph.get(join(tmpDir, 'main-mts.ts'))!
+      expect(Array.from(node.dependencies)).toContain(join(tmpDir, 'module.mts'))
+    })
+
+    test('resolves directory imports to index files', async () => {
+      const graph = await buildProcessingGraph(['main-index.ts'], tmpDir)
+      const node = graph.get(join(tmpDir, 'main-index.ts'))!
+      expect(Array.from(node.dependencies)).toContain(join(tmpDir, 'nested', 'index.ts'))
     })
   })
 })
