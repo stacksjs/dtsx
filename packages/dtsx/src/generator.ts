@@ -1,9 +1,9 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
-import { mkdir, readdir, rm } from 'node:fs/promises'
+import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, parse, relative, resolve } from 'node:path'
 import { bundleDeclarations } from './bundler'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -65,6 +65,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     // Run onStart hooks (may modify config)
     config = await pluginManager.runOnStart(config)
   }
+
+  await assertSafeOutputConfiguration(config)
 
   if (config.isolatedDeclarations === undefined) {
     config.isolatedDeclarations = await checkIsolatedDeclarationsConfig(config)
@@ -616,6 +618,42 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
  */
 const MAX_GLOB_CACHE_SIZE = 50
 const compiledGlobCache = new Map<string, Glob>()
+
+async function getCanonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  }
+  catch {
+    return resolve(path)
+  }
+}
+
+async function assertSafeOutputConfiguration(config: DtsGenerationConfig): Promise<void> {
+  const outdir = resolve(config.cwd, config.outdir)
+
+  if (config.bundle && config.bundleOutput) {
+    if (isAbsolute(config.bundleOutput)) {
+      throw new Error('bundleOutput must be relative to outdir')
+    }
+    const bundlePath = resolve(outdir, config.bundleOutput)
+    if (!isWithinRoot(bundlePath, outdir)) {
+      throw new Error('bundleOutput must stay within outdir')
+    }
+  }
+
+  if (!config.clean || config.dryRun) return
+  if (outdir === parse(outdir).root) {
+    throw new Error('Refusing to clean declarations from the filesystem root')
+  }
+
+  const [canonicalOutdir, canonicalRoot] = await Promise.all([
+    getCanonicalPath(outdir),
+    getCanonicalPath(resolve(config.cwd, config.root)),
+  ])
+  if (isWithinRoot(canonicalRoot, canonicalOutdir)) {
+    throw new Error('Refusing to clean an outdir that contains the source root')
+  }
+}
 
 function getCompiledGlob(pattern: string): Glob {
   let glob = compiledGlobCache.get(pattern)

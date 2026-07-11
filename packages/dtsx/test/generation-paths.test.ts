@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractDeclarations } from '../src/extractor'
@@ -13,6 +13,85 @@ afterEach(async () => {
 })
 
 describe('declaration generation paths', () => {
+  it('refuses destructive cleaning when outdir contains the source root', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-clean-boundary-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'safe';`)
+    await writeFile(join(cwd, 'src', 'authored.d.ts'), `export interface Authored { safe: true }`)
+
+    await expect(generate({
+      cwd,
+      root: 'src',
+      outdir: '.',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })).rejects.toThrow('contains the source root')
+
+    expect(await readFile(join(cwd, 'src', 'authored.d.ts'), 'utf8')).toContain('Authored')
+  })
+
+  it('detects source overlap through an outdir symlink', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-clean-symlink-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'safe';`)
+    await writeFile(join(cwd, 'src', 'authored.d.ts'), `export interface Authored { safe: true }`)
+    await symlink(join(cwd, 'src'), join(cwd, 'dist'))
+
+    await expect(generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      keepComments: false,
+      clean: true,
+      isolatedDeclarations: true,
+    })).rejects.toThrow('contains the source root')
+
+    expect(await readFile(join(cwd, 'src', 'authored.d.ts'), 'utf8')).toContain('Authored')
+  })
+
+  it('rejects bundle outputs that escape outdir', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-bundle-boundary-'))
+    tempDirectories.push(cwd)
+    await mkdir(join(cwd, 'src'))
+    await writeFile(join(cwd, 'src', 'index.ts'), `export const value: string = 'safe';`)
+
+    await expect(generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: ['index.ts'],
+      bundle: true,
+      bundleOutput: '../escaped.d.ts',
+      keepComments: false,
+      clean: false,
+      isolatedDeclarations: true,
+    })).rejects.toThrow('stay within outdir')
+
+    await expect(access(join(cwd, 'escaped.d.ts'))).rejects.toThrow()
+  })
+
+  it('rejects absolute bundle output paths', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dtsx-absolute-bundle-'))
+    tempDirectories.push(cwd)
+
+    await expect(generate({
+      cwd,
+      root: 'src',
+      outdir: 'dist',
+      entrypoints: [],
+      bundle: true,
+      bundleOutput: join(cwd, 'escaped.d.ts'),
+      keepComments: false,
+      clean: false,
+      isolatedDeclarations: true,
+    })).rejects.toThrow('relative to outdir')
+  })
+
   it('treats concrete annotations as authoritative in isolated mode', () => {
     const source = `export const value: string = createVeryExpensiveValue({ answer: 'yes' });`
 
