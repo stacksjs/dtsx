@@ -19,7 +19,6 @@ import { arch, cpus, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
-import ts from 'typescript'
 import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
 import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
@@ -89,27 +88,13 @@ const inputs: Array<{ name: string, filename: string, source: string }> = [
 ]
 
 // ---------------------------------------------------------------------------
-// tsc helper — uses ts.transpileDeclaration (TS 5.5+)
+// TypeScript 7 helper. TypeScript 7 exposes declaration emit through its CLI.
 // ---------------------------------------------------------------------------
 
-const tscOptions: ts.TranspileOptions = {
-  compilerOptions: {
-    declaration: true,
-    emitDeclarationOnly: true,
-    isolatedDeclarations: true,
-    strict: true,
-    target: ts.ScriptTarget.ESNext,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  },
-}
-
 function tscGenerate(source: string, filename: string): string {
-  const result = ts.transpileDeclaration(source, {
-    ...tscOptions,
-    fileName: filename,
-  })
-  return result.outputText
+  writeFileSync(join(cliBenchDir, filename), source)
+  tscGenerateCLI(filename)
+  return readFileSync(join(cliOutDir, filename.replace(/\.ts$/, '.d.ts')), 'utf8')
 }
 
 // ---------------------------------------------------------------------------
@@ -135,16 +120,8 @@ const oxcCliEnv = oxcNativeBinding
   ? { ...process.env, NAPI_RS_NATIVE_LIBRARY_PATH: oxcNativeBinding }
   : process.env
 
-const tsgoExe = join(
-  import.meta.dir,
-  '..',
-  'node_modules',
-  `@typescript/native-preview-${platform()}-${arch()}`,
-  'lib',
-  platform() === 'win32' ? 'tsgo.exe' : 'tsgo',
-)
-
 const tscExe = join(import.meta.dir, '..', 'node_modules', '.bin', 'tsc')
+const tsgoExe = tscExe
 
 const cliBenchDir = join(tmpdir(), 'dtsx-bench-cli')
 const cliOutDir = join(cliBenchDir, 'out')

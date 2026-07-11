@@ -14,7 +14,6 @@ import { performance } from 'node:perf_hooks'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { isolatedDeclarationSync } from 'oxc-transform'
-import ts from 'typescript'
 
 // ---------------------------------------------------------------------------
 // Parse args
@@ -159,21 +158,8 @@ crossToolInputs.push(
   { name: 'Huge (~5000 lines)', filename: 'huge.ts', source: generateSyntheticTS(5000) },
 )
 
-// tsc helper
-const tscOptions: ts.TranspileOptions = {
-  compilerOptions: {
-    declaration: true,
-    emitDeclarationOnly: true,
-    isolatedDeclarations: true,
-    strict: true,
-    target: ts.ScriptTarget.ESNext,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  },
-}
-
 function tscGenerate(source: string, filename: string): string {
-  return ts.transpileDeclaration(source, { ...tscOptions, fileName: filename }).outputText
+  return tsgoGenerate(source, filename)
 }
 
 // dtsx (Bun) — dynamic import
@@ -215,12 +201,9 @@ function zigDtsxGenerate(source: string): string {
   return zigProcessSource!(source, true, true)
 }
 
-// tsgo — CLI only (no in-process API)
+// TypeScript 7 is CLI-only.
 const tsgoBin = join(
-  import.meta.dir, '..', 'node_modules',
-  `@typescript/native-preview-${process.platform}-${process.arch}`,
-  'lib',
-  process.platform === 'win32' ? 'tsgo.exe' : 'tsgo',
+  import.meta.dir, '..', 'node_modules', 'typescript', 'bin', 'tsc',
 )
 const hasTsgo = existsSync(tsgoBin)
 if (hasTsgo) console.log('tsgo CLI available')
@@ -281,14 +264,11 @@ for (const input of crossToolInputs) {
   const dtsxNoCache = benchFn(() => dtsxGenerateNoCache(input.source, input.filename))
   const oxc = benchFn(() => isolatedDeclarationSync(input.filename, input.source, { sourcemap: false }))
   const tsc = benchFn(() => tscGenerate(input.source, input.filename))
-  const tsgo = hasTsgo
-    ? benchFn(() => tsgoGenerate(input.source, input.filename), 2, 20)
-    : null
+  const tsgo = null
 
   crossToolResults.push({ input: input.name, zigDtsx, dtsx, dtsxNoCache, oxc, tsc, tsgo })
   const zigStr = zigDtsx ? `zig-dtsx=${zigDtsx.avg.toFixed(3)}ms ` : ''
-  const tsgoStr = tsgo ? ` tsgo=${tsgo.avg.toFixed(3)}ms` : ''
-  console.log(`  ${input.name}: ${zigStr}dtsx=${dtsx.avg.toFixed(3)}ms oxc=${oxc.avg.toFixed(3)}ms tsc=${tsc.avg.toFixed(3)}ms${tsgoStr}`)
+  console.log(`  ${input.name}: ${zigStr}dtsx=${dtsx.avg.toFixed(3)}ms oxc=${oxc.avg.toFixed(3)}ms TypeScript7=${tsc.avg.toFixed(3)}ms`)
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +428,7 @@ const cachedTools: { name: string, getTime: (r: CrossToolResult) => number | nul
 if (hasZigDtsx) cachedTools.push({ name: 'zig-dtsx', getTime: r => r.zigDtsx?.avg ?? null })
 cachedTools.push(
   { name: 'oxc-transform', getTime: r => r.oxc.avg },
-  { name: 'tsc', getTime: r => r.tsc.avg },
+  { name: 'TypeScript 7 (CLI)', getTime: r => r.tsc.avg },
 )
 renderTable('In-Process API — Cached', 'Smart caching (hash check + cache hit) for watch mode, incremental builds, and CI.', cachedTools)
 
@@ -458,15 +438,15 @@ if (hasZigDtsx) noCacheTools.push({ name: '**zig-dtsx**', getTime: r => r.zigDts
 noCacheTools.push(
   { name: 'oxc-transform', getTime: r => r.oxc.avg },
   { name: 'dtsx (no-cache)', getTime: r => r.dtsxNoCache.avg },
-  { name: 'tsc', getTime: r => r.tsc.avg },
+  { name: 'TypeScript 7 (CLI)', getTime: r => r.tsc.avg },
 )
 renderTable('In-Process API — No Cache', 'Raw single-transform comparison (cache cleared every iteration).', noCacheTools)
 
 // --- tsgo note (CLI-only, not comparable to in-process tools) ---
 if (hasTsgo) {
-  md += '> **Note:** tsgo (`@typescript/native-preview`) is CLI-only — no in-process API is available yet. '
+  md += '> **Note:** TypeScript 7 is CLI-only. '
   md += 'Each measurement includes ~40ms process spawn overhead, so it is not directly comparable to the in-process tools above. '
-  md += 'Once tsgo ships an in-process API, it will be added to the tables.\n\n'
+  md += 'It is reported separately from the in-process tools.\n\n'
 }
 
 // --- Multi-file project table ---
