@@ -7,7 +7,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
-import ts from 'typescript'
+import { extractDeclarations } from './extractor'
 
 /**
  * A node in the dependency graph
@@ -115,14 +115,6 @@ export async function buildDependencyGraph(
 async function analyzeFile(filePath: string, rootDir: string): Promise<DependencyNode | null> {
   try {
     const content = await readFile(filePath, 'utf-8')
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      content,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    )
-
     const node: DependencyNode = {
       path: filePath,
       exports: new Set(),
@@ -131,103 +123,26 @@ async function analyzeFile(filePath: string, rootDir: string): Promise<Dependenc
       dependents: new Set(),
     }
 
-    // Analyze the AST
-    ts.forEachChild(sourceFile, (child) => {
-      analyzeNode(child, node, filePath, rootDir)
-    })
+    for (const declaration of extractDeclarations(content, filePath, false)) {
+      if (declaration.isExported && declaration.name) {
+        node.exports.add(declaration.isTypeOnly || declaration.kind === 'type' || declaration.kind === 'interface' ? 'type' : declaration.name)
+      }
+      if (!declaration.source) continue
+      const dependency = resolveImportPath(declaration.source, filePath, rootDir)
+      if (!dependency) continue
+      node.dependencies.add(dependency)
+      if (declaration.kind === 'import') {
+        for (const specifier of declaration.specifiers ?? []) {
+          node.imports.set(declaration.isTypeOnly || specifier.isType ? `type ${specifier.alias ?? specifier.name}` : specifier.alias ?? specifier.name, dependency)
+        }
+      }
+    }
 
     return node
   }
   catch {
     return null
   }
-}
-
-/**
- * Analyze an AST node for imports/exports
- */
-function analyzeNode(
-  node: ts.Node,
-  depNode: DependencyNode,
-  filePath: string,
-  rootDir: string,
-): void {
-  // Handle import declarations
-  if (ts.isImportDeclaration(node)) {
-    const moduleSpecifier = node.moduleSpecifier
-    if (ts.isStringLiteral(moduleSpecifier)) {
-      const importPath = resolveImportPath(moduleSpecifier.text, filePath, rootDir)
-      if (importPath) {
-        depNode.dependencies.add(importPath)
-
-        // Track imported symbols
-        const importClause = node.importClause
-        if (importClause) {
-          if (importClause.name) {
-            depNode.imports.set(importClause.name.text, importPath)
-          }
-          if (importClause.namedBindings) {
-            if (ts.isNamedImports(importClause.namedBindings)) {
-              for (const element of importClause.namedBindings.elements) {
-                depNode.imports.set(element.name.text, importPath)
-              }
-            }
-            else if (ts.isNamespaceImport(importClause.namedBindings)) {
-              depNode.imports.set(importClause.namedBindings.name.text, importPath)
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Handle export declarations
-  if (ts.isExportDeclaration(node)) {
-    if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      const exportPath = resolveImportPath(node.moduleSpecifier.text, filePath, rootDir)
-      if (exportPath) {
-        depNode.dependencies.add(exportPath)
-      }
-    }
-
-    if (node.exportClause && ts.isNamedExports(node.exportClause)) {
-      for (const element of node.exportClause.elements) {
-        depNode.exports.add(element.name.text)
-      }
-    }
-  }
-
-  // Handle named exports (export function, export class, etc.)
-  if (ts.isFunctionDeclaration(node) && node.name && hasExportModifier(node)) {
-    depNode.exports.add(node.name.text)
-  }
-  if (ts.isClassDeclaration(node) && node.name && hasExportModifier(node)) {
-    depNode.exports.add(node.name.text)
-  }
-  if (ts.isInterfaceDeclaration(node) && hasExportModifier(node)) {
-    depNode.exports.add(node.name.text)
-  }
-  if (ts.isTypeAliasDeclaration(node) && hasExportModifier(node)) {
-    depNode.exports.add(node.name.text)
-  }
-  if (ts.isEnumDeclaration(node) && hasExportModifier(node)) {
-    depNode.exports.add(node.name.text)
-  }
-  if (ts.isVariableStatement(node) && hasExportModifier(node)) {
-    for (const decl of node.declarationList.declarations) {
-      if (ts.isIdentifier(decl.name)) {
-        depNode.exports.add(decl.name.text)
-      }
-    }
-  }
-}
-
-/**
- * Check if a node has an export modifier
- */
-function hasExportModifier(node: ts.Node): boolean {
-  const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined
-  return modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
 }
 
 /**

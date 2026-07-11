@@ -9,10 +9,24 @@
  * processor/type-inference for type inference utilities.
  */
 
-export { extractJSDocComments as extractLeadingCommentsFromNode, getNodeText } from './extractor/helpers'
 export { formatComments } from './processor/comments'
 // Re-export commonly used utilities from their new locations
 export { findMatchingBracket } from './processor/type-inference'
+
+interface SourceRange {
+  pos?: number
+  end?: number
+  getText?: () => string
+  getFullText?: () => string
+}
+
+export function getNodeText(node: SourceRange, sourceCode: string): string {
+  return node.getText?.() ?? sourceCode.slice(node.pos ?? 0, node.end ?? sourceCode.length)
+}
+
+export function extractLeadingCommentsFromNode(node: SourceRange): string[] {
+  return node.getFullText?.().match(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g) ?? []
+}
 
 /**
  * @deprecated Use TypeScript AST-based extraction instead

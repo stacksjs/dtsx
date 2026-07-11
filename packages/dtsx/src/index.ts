@@ -22,7 +22,7 @@
 export * from './branded-types'
 export * from './bundler'
 export * from './cache'
-export * from './checker'
+export * from './native-checker'
 // Advanced features - larger bundle impact
 export * from './circular'
 export * from './compat'

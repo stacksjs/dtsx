@@ -8,7 +8,6 @@
 import type { DtsGenerationConfig, ProcessingContext } from './types'
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import ts from 'typescript'
 import { extractDeclarations } from './extractor'
 import { processDeclarations } from './processor'
 
@@ -100,7 +99,7 @@ export async function buildProcessingGraph(
 }
 
 /**
- * Extract file dependencies using TypeScript parser
+ * Extract file dependencies using dtsx declarations
  */
 async function extractFileDependencies(
   filePath: string,
@@ -110,49 +109,13 @@ async function extractFileDependencies(
 
   try {
     const content = await readFile(filePath, 'utf-8')
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      content,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    )
-
     const fileDir = dirname(filePath)
-
-    // Walk AST to find imports
-    function visit(node: ts.Node) {
-      if (ts.isImportDeclaration(node)) {
-        const moduleSpecifier = node.moduleSpecifier
-        if (ts.isStringLiteral(moduleSpecifier)) {
-          const importPath = moduleSpecifier.text
-
-          // Only track relative imports (local dependencies)
-          if (importPath.startsWith('.') || importPath.startsWith('/')) {
-            const resolved = resolveImportPath(importPath, fileDir, rootDir)
-            if (resolved) {
-              dependencies.add(resolved)
-            }
-          }
-        }
-      }
-      else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
-        if (ts.isStringLiteral(node.moduleSpecifier)) {
-          const exportPath = node.moduleSpecifier.text
-
-          if (exportPath.startsWith('.') || exportPath.startsWith('/')) {
-            const resolved = resolveImportPath(exportPath, fileDir, rootDir)
-            if (resolved) {
-              dependencies.add(resolved)
-            }
-          }
-        }
-      }
-
-      ts.forEachChild(node, visit)
+    for (const declaration of extractDeclarations(content, filePath, false)) {
+      const specifier = declaration.source
+      if (!specifier || (!specifier.startsWith('.') && !specifier.startsWith('/'))) continue
+      const resolved = resolveImportPath(specifier, fileDir, rootDir)
+      if (resolved) dependencies.add(resolved)
     }
-
-    visit(sourceFile)
   }
   catch {
     // If we can't read the file, return empty dependencies

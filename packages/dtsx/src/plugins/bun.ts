@@ -4,6 +4,8 @@
  */
 
 import type { DtsGenerationConfig, GenerationStats } from '../types'
+import { dirname, relative, resolve, sep } from 'node:path'
+import process from 'node:process'
 import { generate } from '../generator'
 
 /**
@@ -31,6 +33,12 @@ export interface BunPluginOptions extends Partial<DtsGenerationConfig> {
    * Callback on generation error
    */
   onError?: (error: Error) => void
+
+  /**
+   * Whether declaration errors fail the Bun build
+   * @default true
+   */
+  failOnError?: boolean
 }
 
 /**
@@ -45,8 +53,6 @@ interface BunPlugin {
  * Bun build interface (minimal type)
  */
 interface BunBuild {
-  onStart: (callback: () => void | Promise<void>) => void
-  onLoad: (options: { filter: RegExp }, callback: (args: { path: string }) => unknown) => void
   config: {
     entrypoints: string[]
     outdir?: string
@@ -80,12 +86,13 @@ export function dts(options: BunPluginOptions = {}): BunPlugin {
     postBuild = true,
     onGenerated,
     onError,
+    failOnError = true,
     ...generateOptions
   } = options
 
-  const runGenerate = async (): Promise<void> => {
+  const runGenerate = async (config: Partial<DtsGenerationConfig>): Promise<void> => {
     try {
-      const stats = await generate(generateOptions)
+      const stats = await generate(config)
       onGenerated?.(stats)
     }
     catch (error) {
@@ -94,6 +101,7 @@ export function dts(options: BunPluginOptions = {}): BunPlugin {
       if (!onError) {
         console.error('[dtsx] Generation failed:', err.message)
       }
+      if (failOnError) throw err
     }
   }
 
@@ -101,44 +109,41 @@ export function dts(options: BunPluginOptions = {}): BunPlugin {
     name: 'dtsx',
 
     async setup(build) {
-      // Get config from build if not provided
-      const config = build.config
-      if (!generateOptions.entrypoints && config.entrypoints) {
-        generateOptions.entrypoints = config.entrypoints
-      }
-      if (!generateOptions.outdir && config.outdir) {
-        generateOptions.outdir = config.outdir
-      }
-      if (!generateOptions.root && config.root) {
-        generateOptions.root = config.root
-      }
+      if (!preBuild && !postBuild) return
 
-      if (preBuild) {
-        build.onStart(async () => {
-          await runGenerate()
-        })
-      }
+      const cwd = generateOptions.cwd || process.cwd()
+      const buildEntrypoints = build.config.entrypoints || []
+      const absoluteEntrypoints = buildEntrypoints.map(entrypoint => resolve(cwd, entrypoint))
+      const root = generateOptions.root
+        || build.config.root
+        || (absoluteEntrypoints.length > 0 ? relative(cwd, commonParentDir(absoluteEntrypoints)) || '.' : './src')
+      const resolvedRoot = resolve(cwd, root)
+      const entrypoints = generateOptions.entrypoints || absoluteEntrypoints
+        .filter(entrypoint => entrypoint === resolvedRoot || entrypoint.startsWith(`${resolvedRoot}${sep}`))
+        .map(entrypoint => relative(resolvedRoot, entrypoint))
 
-      if (postBuild) {
-        // Bun doesn't have a native postBuild hook, so we use onLoad with a virtual module
-        // that triggers at the end of the build process
-        let hasRun = false
-        build.onLoad({ filter: /.*/ }, async (_args) => {
-          // This is a workaround - in practice, postBuild runs after all modules are loaded
-          if (!hasRun) {
-            // Schedule to run after build completes
-            queueMicrotask(async () => {
-              if (!hasRun) {
-                hasRun = true
-                await runGenerate()
-              }
-            })
-          }
-          return undefined
-        })
-      }
+      await runGenerate({
+        ...generateOptions,
+        cwd,
+        root,
+        entrypoints: entrypoints.length > 0 ? entrypoints : ['index.ts'],
+        outdir: generateOptions.outdir || build.config.outdir || './dist',
+      })
     },
   }
+}
+
+function commonParentDir(paths: string[]): string {
+  const directories = paths.map(path => dirname(path).split(sep))
+  let common = directories[0]
+
+  for (const parts of directories.slice(1)) {
+    let index = 0
+    while (index < common.length && index < parts.length && common[index] === parts[index]) index++
+    common = common.slice(0, index)
+  }
+
+  return common.join(sep) || sep
 }
 
 /**

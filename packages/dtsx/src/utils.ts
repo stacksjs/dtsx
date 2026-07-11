@@ -3,9 +3,9 @@ import { readdir } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import ts from 'typescript'
 import { write } from './compat'
 import { config } from './config'
+import { validateTypeScriptSyntax } from './syntax-validator'
 
 /**
  * Exhaustive check helper for switch statements
@@ -107,109 +107,22 @@ export interface ValidationResult {
 }
 
 /**
- * Validate a .d.ts file content against TypeScript compiler
+ * Validate declaration syntax with the dtsx scanner
  */
+// eslint-disable-next-line pickier/no-unused-vars
 export function validateDtsContent(content: string, filename: string): ValidationResult {
   const result: ValidationResult = {
     isValid: true,
     errors: [],
   }
 
-  // Create a source file from the content
-  const sourceFile = ts.createSourceFile(
-    filename,
-    content,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  )
-
-  // Create a minimal compiler host
-  const compilerHost: ts.CompilerHost = {
-    getSourceFile: (name) => {
-      if (name === filename)
-        return sourceFile
-      return undefined
-    },
-    getDefaultLibFileName: () => 'lib.d.ts',
-    writeFile: () => {},
-    getCurrentDirectory: () => '',
-    getCanonicalFileName: f => f,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => '\n',
-    fileExists: f => f === filename,
-    readFile: () => undefined,
-  }
-
-  // Create program with declaration-focused options
-  const program = ts.createProgram({
-    rootNames: [filename],
-    options: {
-      noEmit: true,
-      declaration: true,
-      skipLibCheck: true,
-      noLib: true,
-    },
-    host: compilerHost,
-  })
-
-  // Get diagnostics
-  const diagnostics = [
-    ...program.getSyntacticDiagnostics(sourceFile),
-  ]
-
-  for (const diagnostic of diagnostics) {
-    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
-    const code = `TS${diagnostic.code}`
-
-    // Generate suggestions based on common error codes
-    let suggestion: string | undefined
-    switch (diagnostic.code) {
-      case 1005: // ';' expected
-        suggestion = 'Add a semicolon at the end of the statement.'
-        break
-      case 1109: // Expression expected
-        suggestion = 'Check for missing or malformed expressions.'
-        break
-      case 1128: // Declaration or statement expected
-        suggestion = 'Ensure proper declaration syntax is used.'
-        break
-      case 2304: // Cannot find name
-        suggestion = 'Import or declare the missing type/value.'
-        break
-      case 2307: // Cannot find module
-        suggestion = 'Check that the module exists and is installed.'
-        break
-      case 2322: // Type is not assignable
-        suggestion = 'Check type compatibility between the values.'
-        break
-      case 2339: // Property does not exist
-        suggestion = 'Add the missing property to the type definition.'
-        break
-      case 2345: // Argument type not assignable
-        suggestion = 'Check the argument types match the expected parameters.'
-        break
-    }
-
-    if (diagnostic.file && diagnostic.start !== undefined) {
-      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start)
-      result.errors.push({
-        line: line + 1,
-        column: character + 1,
-        message,
-        code,
-        suggestion,
-      })
-    }
-    else {
-      result.errors.push({
-        line: 0,
-        column: 0,
-        message,
-        code,
-        suggestion,
-      })
-    }
+  for (const diagnostic of validateTypeScriptSyntax(content)) {
+    result.errors.push({
+      line: diagnostic.line,
+      column: diagnostic.column,
+      message: diagnostic.message,
+      code: diagnostic.code,
+    })
   }
 
   result.isValid = result.errors.length === 0

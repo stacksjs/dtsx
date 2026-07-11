@@ -1,6 +1,6 @@
 /**
  * Extractor module - re-exports from modular structure
- * @deprecated Import from './extractor/index' directly for better tree-shaking
+ * Powered by the dtsx scanner with no compiler dependency.
  */
 
-export * from './extractor/index'
+export * from './native-extractor'

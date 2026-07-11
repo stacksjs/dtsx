@@ -1,7 +1,7 @@
 import type { DtsGenerationConfig } from './types'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { hashContent } from './extractor/cache'
+import { hashContent } from './extractor/hash'
 
 /**
  * Cache entry for a single file

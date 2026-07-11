@@ -9,7 +9,7 @@ import {
   loadCompilerOptions,
   typeCheck,
   validateDeclarations,
-} from '../src/checker'
+} from '../src/native-checker'
 
 const TEST_DIR = join(import.meta.dir, '.checker-test-fixtures')
 
