@@ -41,7 +41,7 @@ pkgx install dtsx # wip
 
 There are two ways of using this ".d.ts generation" tool: _as a library or as a CLI._
 
-_dtsx works out of the box — no `isolatedDeclarations` required. It infers sound types directly from your source values, preserving original values via `@defaultValue` JSDoc. If you do enable `isolatedDeclarations`, dtsx uses it as a fast path to skip initializer parsing when explicit type annotations are present._
+_dtsx works out of the box — no `isolatedDeclarations` required. It infers sound types directly from your source values, preserving original values via `@defaultValue` JSDoc. If you do enable `isolatedDeclarations`, dtsx treats annotations as authoritative and skips their initializer expressions entirely._
 
 ```json
 {
