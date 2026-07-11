@@ -274,6 +274,35 @@ describe('Parallel Processor', () => {
       expect(result.failed.size).toBe(1)
       expect(errors.length).toBe(1)
     })
+
+    test('forwards declaration and formatting config', async () => {
+      const directory = join(tmpdir(), `dtsx-parallel-config-${Date.now()}`)
+      await mkdir(directory, { recursive: true })
+      const filePath = join(directory, 'index.ts')
+      await writeFile(filePath, `
+        import type { BunType } from 'bun';
+        import type { NodeType } from 'node:fs';
+        /** Public result */
+        export interface Result { bun: BunType; node: NodeType }
+      `)
+
+      try {
+        const result = await processInParallel([filePath], {
+          config: {
+            isolatedDeclarations: true,
+            keepComments: false,
+            importOrder: ['node:'],
+          },
+        })
+        const output = result.success.get(filePath) ?? ''
+
+        expect(output).not.toContain('Public result')
+        expect(output.indexOf("from 'node:fs'")).toBeLessThan(output.indexOf("from 'bun'"))
+      }
+      finally {
+        await rm(directory, { recursive: true, force: true })
+      }
+    })
   })
 
   // ----------------------------------------------------------------------

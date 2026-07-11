@@ -236,7 +236,7 @@ else {
                 ctx.filePath = filePath;
                 ctx.sourceCode = sourceCode;
                 ctx.declarations = declarations;
-                const content = processDeclarations(declarations, ctx, true, importOrder);
+                const content = processDeclarations(declarations, ctx, keepComments ?? true, importOrder);
 
                 if (writeOutput) {
                   if (!outPath) {
@@ -316,7 +316,7 @@ else if (results) {
               filePath: task.filePath,
               sourceCode: task.sourceCode,
               declarations,
-            }, true, importOrder);
+            }, keepComments ?? true, importOrder);
 
             return {
               id: task.id,

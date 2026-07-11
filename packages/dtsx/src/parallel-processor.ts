@@ -184,7 +184,8 @@ async function processFile(
   config: Partial<DtsGenerationConfig> = {},
 ): Promise<string> {
   const content = await readFile(filePath, 'utf-8')
-  const declarations = extractDeclarations(content, filePath, config.keepComments ?? true)
+  const keepComments = config.keepComments ?? true
+  const declarations = extractDeclarations(content, filePath, keepComments, config.isolatedDeclarations ?? false)
 
   const context: ProcessingContext = {
     filePath,
@@ -192,7 +193,7 @@ async function processFile(
     declarations,
   }
 
-  return processDeclarations(declarations, context)
+  return processDeclarations(declarations, context, keepComments, config.importOrder)
 }
 
 /**
