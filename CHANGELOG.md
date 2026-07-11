@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.0...v0.10.1)
+
+### 🐛 Bug Fixes
+
+- **zig**: preserve annotated declaration contracts ([59c1dde](https://github.com/stacksjs/dtsx/commit/59c1dde)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.1 ([e3cd9c9](https://github.com/stacksjs/dtsx/commit/e3cd9c9)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.35...v0.10.0)
 
 ### 🚀 Features
