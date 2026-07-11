@@ -307,17 +307,16 @@ export const config = { port: 3000, host: 'localhost' } satisfies Config
       expect(result).toContain('config: Config')
     })
 
-    test('generic type annotation replaced with narrow type', () => {
+    test('generic type annotation preserves its public contract', () => {
       const result = dts(`export const conf: { [key: string]: string } = { a: 'hello', b: 'world' }`)
-      expect(result).toContain("a: 'hello'")
-      expect(result).toContain("b: 'world'")
-      expect(result).not.toContain('[key: string]')
+      expect(result).toContain("@defaultValue `{ a: 'hello', b: 'world' }`")
+      expect(result).toContain('[key: string]')
     })
 
-    test('Record<> type replaced with narrow type', () => {
+    test('Record<> type preserves its public contract', () => {
       const result = dts(`export const map: Record<string, number> = { x: 1, y: 2 }`)
-      expect(result).toContain('x: 1')
-      expect(result).toContain('y: 2')
+      expect(result).toContain('@defaultValue `{ x: 1, y: 2 }`')
+      expect(result).toContain('Record<string, number>')
     })
 
     test('const with Promise.resolve', () => {
@@ -1344,14 +1343,14 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
       expect(result).toContain('x: 42')
     })
 
-    test('still infers for generic annotation', () => {
+    test('preserves broad annotations', () => {
       const result = normalizeOutput(processSource(
         `export const x: Record<string, number> = { a: 1 }`,
         true,
         true, // isolatedDeclarations ON
       ))
-      // Should still infer narrow type since Record<> is generic
-      expect(result).toContain('a: 1')
+      expect(result).toContain('@defaultValue `{ a: 1 }`')
+      expect(result).toContain('Record<string, number>')
     })
 
     test('uses annotation for non-generic type', () => {

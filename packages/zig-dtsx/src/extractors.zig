@@ -1103,7 +1103,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
     // Initializer
     if (s.pos < s.len and s.source[s.pos] == ch.CH_EQUAL) {
-        if (s.isolated_declarations and type_annotation.len > 0 and !type_inf.isGenericType(type_annotation)) {
+        if (s.isolated_declarations and type_annotation.len > 0 and (!s.keep_comments or !type_inf.isGenericType(type_annotation))) {
             s.skipToStatementEnd();
         } else {
             s.pos += 1;
@@ -1232,6 +1232,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
         .is_exported = is_exported,
         .modifiers = mods,
         .type_annotation = type_annotation,
+        .preserve_type_annotation = type_annotation.len > 0,
         .value = initializer_text,
         .leading_comments = comments,
         .start = decl_start,

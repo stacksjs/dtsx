@@ -224,14 +224,24 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
         if (type_inf.extractSatisfiesType(decl.value)) |sat_type| {
             type_annotation = sat_type;
         }
-    } else if (decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
+    } else if (!decl.preserve_type_annotation and type_annotation.len == 0 and decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
     } else if (type_annotation.len == 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const")) {
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
         const is_container = trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[');
         if (is_container) type_inf.enableCleanDefaultCollection();
         type_annotation = try type_inf.inferNarrowType(alloc, decl.value, !is_container, false, 0);
-    } else if (type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
+    } else if (decl.preserve_type_annotation and type_annotation.len > 0 and decl.value.len > 0 and type_inf.isGenericType(type_annotation)) {
+        const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
+        if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
+            type_inf.enableCleanDefaultCollection();
+            const value_for_default = if (ch.endsWith(trimmed_val, " as const"))
+                std.mem.trim(u8, trimmed_val[0 .. trimmed_val.len - 9], " \t\n\r")
+            else
+                trimmed_val;
+            _ = try type_inf.inferNarrowType(alloc, value_for_default, false, false, 0);
+        }
+    } else if (!decl.preserve_type_annotation and type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
         const inferred = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
         if (!std.mem.eql(u8, inferred, "unknown")) {
             type_annotation = inferred;
@@ -247,7 +257,8 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
     // Cache the trimmed value so we don't trim a second time below.
     const val_trimmed_for_check = std.mem.trim(u8, decl.value, " \t\n\r");
     const has_as_const = ch.endsWith(val_trimmed_for_check, "as const");
-    if (decl.value.len > 0 and decl.type_annotation.len == 0 and !has_as_const) {
+    const has_broad_annotation = decl.preserve_type_annotation and decl.type_annotation.len > 0 and type_inf.isGenericType(decl.type_annotation);
+    if (decl.value.len > 0 and (decl.type_annotation.len == 0 or has_broad_annotation) and (!has_as_const or has_broad_annotation)) {
         var default_val: ?[]const u8 = null;
         var is_container = false;
         const trimmed_val = val_trimmed_for_check;

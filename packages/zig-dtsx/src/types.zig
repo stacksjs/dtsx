@@ -62,6 +62,8 @@ pub const Declaration = struct {
     value: []const u8 = "",
     /// Type annotation text
     type_annotation: []const u8 = "",
+    /// Preserve an explicit public annotation instead of narrowing from its initializer
+    preserve_type_annotation: bool = false,
     /// Whether this is async
     is_async: bool = false,
     /// Whether this is a generator
