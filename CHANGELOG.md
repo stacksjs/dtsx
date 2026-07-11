@@ -1,4 +1,35 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.35...v0.10.0)
+
+### 🚀 Features
+
+- **generator**: split isolated and semantic paths ([7541914](https://github.com/stacksjs/dtsx/commit/7541914)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- **generator**: apply output configuration ([5a1e3cc](https://github.com/stacksjs/dtsx/commit/5a1e3cc)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **config**: harden tsconfig resolution ([a57b747](https://github.com/stacksjs/dtsx/commit/a57b747)) _(by Chris <chrisbreuer93@gmail.com>)_
+- harden declaration generation caches ([e13dcd8](https://github.com/stacksjs/dtsx/commit/e13dcd8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **cache**: restore maps on cache hits ([4c0ca32](https://github.com/stacksjs/dtsx/commit/4c0ca32)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **cache**: track plugin output identity ([7090b96](https://github.com/stacksjs/dtsx/commit/7090b96)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **parallel**: forward declaration config ([7eaa5d0](https://github.com/stacksjs/dtsx/commit/7eaa5d0)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **config**: resolve isolated mode recursively ([2ce1269](https://github.com/stacksjs/dtsx/commit/2ce1269)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **inference**: preserve broad annotated contracts ([a881e33](https://github.com/stacksjs/dtsx/commit/a881e33)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **cache**: invalidate output-sensitive builds ([7133a98](https://github.com/stacksjs/dtsx/commit/7133a98)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 📚 Documentation
+
+- **generator**: explain isolated fast path ([a84c51e](https://github.com/stacksjs/dtsx/commit/a84c51e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.0 ([706dfca](https://github.com/stacksjs/dtsx/commit/706dfca)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **release**: add minor release command ([9b7bc39](https://github.com/stacksjs/dtsx/commit/9b7bc39)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.9.34...v0.9.35)
 
 ### 🐛 Bug Fixes
