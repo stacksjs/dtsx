@@ -67,34 +67,44 @@ async function loadDtsxConfig(cwd: string = process.cwd()): Promise<DtsGeneratio
 
 // Get loaded config
 // Lazy-loaded config to avoid top-level await (enables bun --compile)
-let _config: DtsGenerationConfig | null = null
+const configCache = new Map<string, Promise<DtsGenerationConfig>>()
 
 /**
  * Get the configuration, loading from config file if available
  */
 export async function getConfig(cwd?: string): Promise<DtsGenerationConfig> {
-  if (!_config) {
-    // Try to load dtsx.config.ts first
-    const dtsxConfig = await loadDtsxConfig(cwd)
-    if (dtsxConfig) {
-      _config = dtsxConfig
-    }
-    else {
-      // Fall back to bunfig
-      _config = await loadConfig({
+  const resolvedCwd = resolve(cwd ?? process.cwd())
+  let pendingConfig = configCache.get(resolvedCwd)
+  if (!pendingConfig) {
+    pendingConfig = (async () => {
+      const dtsxConfig = await loadDtsxConfig(resolvedCwd)
+      if (dtsxConfig) return dtsxConfig
+
+      const loaded = await loadConfig({
         name: 'dts',
-        defaultConfig,
+        cwd: resolvedCwd,
+        defaultConfig: { ...defaultConfig, cwd: resolvedCwd },
       })
-    }
+      return { ...loaded, cwd: resolvedCwd }
+    })()
+    configCache.set(resolvedCwd, pendingConfig)
   }
-  return _config
+
+  try {
+    return await pendingConfig
+  }
+  catch (error) {
+    // A transient read or evaluation failure must not poison future calls.
+    configCache.delete(resolvedCwd)
+    throw error
+  }
 }
 
 /**
  * Reset the cached config (useful for testing)
  */
 export function resetConfig(): void {
-  _config = null
+  configCache.clear()
 }
 
 /**
