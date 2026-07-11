@@ -46,33 +46,30 @@ function readOutputFile(relativePath: string): string {
   return readFileSync(fullPath, 'utf-8')
 }
 
+beforeAll(() => {
+  if (existsSync(TEST_DIR)) {
+    rmSync(TEST_DIR, { recursive: true })
+  }
+  mkdirSync(TEST_DIR, { recursive: true })
+
+  writeFileSync(join(TEST_DIR, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ESNext',
+      module: 'ESNext',
+      moduleResolution: 'bundler',
+      strict: true,
+      declaration: true,
+    },
+  }, null, 2))
+})
+
+afterAll(() => {
+  if (existsSync(TEST_DIR)) {
+    rmSync(TEST_DIR, { recursive: true })
+  }
+})
+
 describe('CLI', () => {
-  beforeAll(() => {
-    // Create test directory
-    if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true })
-    }
-    mkdirSync(TEST_DIR, { recursive: true })
-
-    // Create a minimal tsconfig.json
-    writeFileSync(join(TEST_DIR, 'tsconfig.json'), JSON.stringify({
-      compilerOptions: {
-        target: 'ESNext',
-        module: 'ESNext',
-        moduleResolution: 'bundler',
-        strict: true,
-        declaration: true,
-      },
-    }, null, 2))
-  })
-
-  afterAll(() => {
-    // Clean up test directory
-    if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true })
-    }
-  })
-
   describe('version command', () => {
     it('should display version', async () => {
       const result = await runCli(['version'])
