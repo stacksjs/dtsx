@@ -49,7 +49,7 @@ vidx
 vite
 vitebook
 vitejs
-vitepress
+bunpress
 vue-demi
 vueus
 whois

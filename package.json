@@ -54,9 +54,9 @@
     "release:patch": "bun x --bun bumpx patch --recursive --commit --tag --push --yes",
     "release:minor": "bun x --bun bumpx minor --recursive --commit --tag --push --yes",
     "typecheck": "bun x tsc --noEmit",
-    "dev:docs": "bun --bun vitepress dev docs",
-    "build:docs": "bun --bun vitepress build docs",
-    "preview:docs": "bun --bun vitepress preview docs"
+    "dev:docs": "bun --bun bunpress dev docs",
+    "build:docs": "bun --bun bunpress build docs",
+    "preview:docs": "bun --bun bunpress preview docs"
   },
   "devDependencies": {
     "@stacksjs/bumpx": "^0.2.4",
