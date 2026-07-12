@@ -435,5 +435,12 @@ export function processDeclarations(
     result += defaultExport[i]
   }
 
+  // Type-only imports and private runtime statements can leave a module with
+  // no public declarations. Preserve its module boundary so consumers can
+  // resolve the generated entrypoint instead of treating an empty file as an
+  // ambient script.
+  if (!result && (imports.length > 0 || exports.length > 0))
+    return 'export {};'
+
   return result
 }

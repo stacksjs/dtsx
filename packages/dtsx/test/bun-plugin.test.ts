@@ -17,6 +17,32 @@ afterEach(async () => {
 })
 
 describe('bun-plugin-dtsx', () => {
+  it('preserves side-effect-only entrypoints as modules', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'server.ts'), `
+import type { ServerOptions } from 'bun'
+import { serve } from 'bun'
+
+const options: ServerOptions = { port: 3000 }
+serve(options)
+`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'server.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir, root: './src', outdir: './dist' })],
+    })
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(outDir, 'server.d.ts'), 'utf8')).toBe('export {};\n')
+  })
+
   it('emits recursively reachable barrel declarations for issue 3090', async () => {
     const tempDir = await createTempDir()
     const srcDir = join(tempDir, 'src')

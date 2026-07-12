@@ -346,11 +346,10 @@ describe('edge cases', () => {
     expect(result).toBe('')
   })
 
-  it('should handle source with only imports', () => {
+  it('should preserve the module boundary for source with only imports', () => {
     const source = `import { something } from 'somewhere';`
     const result = processSource(source)
-    // Unused imports should be filtered out
-    expect(result).toBe('')
+    expect(result).toBe('export {};')
   })
 
   it('should handle complex generic types', () => {

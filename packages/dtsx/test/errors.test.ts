@@ -202,14 +202,13 @@ describe('Error Handling', () => {
       expect(result).toBe('')
     })
 
-    it('should handle code with only imports', () => {
+    it('should preserve the module boundary for code with only imports', () => {
       const code = `
         import { something } from 'module'
         import type { Type } from 'types'
       `
       const result = processCode(code)
-      // Unused imports should be filtered out
-      expect(result).toBe('')
+      expect(result).toBe('export {};')
     })
 
     it('should handle Unicode content', () => {
