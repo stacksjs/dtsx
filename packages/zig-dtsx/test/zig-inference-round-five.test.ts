@@ -36,4 +36,29 @@ describeIf('Zig inference parity round five', () => {
   test('recursively unwraps nested promise types for await', () => {
     expect(dts('export const value = await Promise.resolve(Promise.resolve(1))')).toContain('value: number')
   })
+
+  test.each([
+    ['1 + 2', 'number'],
+    ['1 - 2', 'number'],
+    ['1 * 2', 'number'],
+    ['1 / 2', 'number'],
+    ['1 % 2', 'number'],
+    ['"left" + "right"', 'string'],
+    ['1n + 2n', 'bigint'],
+  ])('infers arithmetic expression %s as %s', (expression, expected) => {
+    expect(dts(`export const value = ${expression}`)).toContain(`value: ${expected}`)
+  })
+
+  test.each([
+    ['counter++', 'typeof counter'],
+    ['--counter', 'typeof counter'],
+  ])('retains the operand type for update expression %s', (expression, expected) => {
+    expect(dts(`declare let counter: bigint; export const value = ${expression}`)).toContain(`value: ${expected}`)
+  })
+
+  test('keeps arithmetic declarations syntactically valid', () => {
+    const output = dts('export const value = "left" + "right"; export const ratio = 1 / 2')
+    const transpiler = new Bun.Transpiler({ loader: 'ts' })
+    expect(() => transpiler.transformSync(output)).not.toThrow()
+  })
 })

@@ -119,14 +119,22 @@ fn isBigIntLiteral(s: []const u8) bool {
 
 const StaticTruthiness = enum { unknown, truthy, falsy };
 
+fn isQuotedLiteral(value: []const u8, quote: u8) bool {
+    if (value.len < 2 or value[0] != quote) return false;
+    var i: usize = 1;
+    while (i < value.len) : (i += 1) {
+        if (value[i] == quote and !ch.isEscaped(value, i)) return i == value.len - 1;
+    }
+    return false;
+}
+
 fn staticTruthiness(value: []const u8) StaticTruthiness {
     const expression = trim(value);
     if (std.mem.eql(u8, expression, "true")) return .truthy;
     if (std.mem.eql(u8, expression, "false") or std.mem.eql(u8, expression, "null") or
         std.mem.eql(u8, expression, "undefined") or std.mem.eql(u8, expression, "NaN")) return .falsy;
-    if ((expression.len >= 2 and expression[0] == '\'' and expression[expression.len - 1] == '\'') or
-        (expression.len >= 2 and expression[0] == '"' and expression[expression.len - 1] == '"') or
-        (expression.len >= 2 and expression[0] == '`' and expression[expression.len - 1] == '`' and !ch.contains(expression, "${")))
+    if (isQuotedLiteral(expression, '\'') or isQuotedLiteral(expression, '"') or
+        (isQuotedLiteral(expression, '`') and !ch.contains(expression, "${")))
         return if (expression.len == 2) .falsy else .truthy;
     if (isNumericLiteral(expression)) {
         var normalized = expression;
@@ -234,6 +242,13 @@ fn inferAccessType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]co
             return try std.fmt.allocPrint(alloc, "(typeof {s})[\"{s}\"]", .{ base, property });
     }
     return null;
+}
+
+fn inferUpdateType(alloc: std.mem.Allocator, operand_value: []const u8) InferError![]const u8 {
+    const operand = trim(operand_value);
+    if (isEntityName(operand)) return std.fmt.allocPrint(alloc, "typeof {s}", .{operand});
+    if (try inferAccessType(alloc, operand)) |access_type| return access_type;
+    return "number";
 }
 
 fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
@@ -1103,6 +1118,11 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     // element splitter so commas inside calls, arrays, and objects are ignored.
     if (findTopLevelComma(trimmed)) |comma| return inferNarrowType(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1);
 
+    if (trimmed.len > 2 and (ch.startsWith(trimmed, "++") or ch.startsWith(trimmed, "--")))
+        return inferUpdateType(alloc, trimmed[2..]);
+    if (trimmed.len > 2 and (ch.endsWith(trimmed, "++") or ch.endsWith(trimmed, "--")))
+        return inferUpdateType(alloc, trimmed[0 .. trimmed.len - 2]);
+
     if (ch.startsWith(trimmed, "await ")) {
         var awaited = try inferNarrowType(alloc, trim(trimmed[6..]), false, false, depth + 1);
         while (ch.startsWith(awaited, "Promise<") and awaited.len > 9 and awaited[awaited.len - 1] == '>')
@@ -1132,7 +1152,6 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         if (isBigIntLiteral(trimmed)) {
             return if (is_const) trimmed else "bigint";
         }
-        return "unknown";
     }
 
     // Fast path: negative numbers
@@ -1141,7 +1160,6 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         if (isNumericLiteral(trimmed)) {
             return if (!is_const) "number" else trimmed;
         }
-        return "unknown";
     }
 
     // BigInt expressions
@@ -1166,9 +1184,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     }
 
     // String literals
-    if ((trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') or
-        (trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\''))
-    {
+    if (isQuotedLiteral(trimmed, '"') or isQuotedLiteral(trimmed, '\'')) {
         if (!is_const) return "string";
         return trimmed;
     }
@@ -1306,6 +1322,24 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             const left = try inferNarrowType(alloc, trim(trimmed[0..index]), false, false, depth + 1);
             const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1);
             return if (std.mem.eql(u8, left, "bigint") or std.mem.eql(u8, right, "bigint")) "bigint" else "number";
+        }
+    }
+
+    // Arithmetic expressions widen literal operands to their runtime numeric
+    // result. Addition additionally models JavaScript string concatenation.
+    inline for (.{ "+", "-", "*", "/", "%" }) |operator| {
+        if (findTopLevelToken(trimmed, operator, 0)) |index| {
+            if (index > 0 and index + operator.len < trimmed.len) {
+                const previous = trimmed[index - 1];
+                const next = trimmed[index + operator.len];
+                if (next != '=' and next != operator[0] and previous != operator[0]) {
+                    const left = try inferNarrowType(alloc, trim(trimmed[0..index]), false, false, depth + 1);
+                    const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1);
+                    if (std.mem.eql(u8, operator, "+") and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
+                    if (std.mem.eql(u8, left, "bigint") or std.mem.eql(u8, right, "bigint")) return "bigint";
+                    return "number";
+                }
+            }
         }
     }
 
@@ -2514,6 +2548,18 @@ test "allSettled and nested promises infer awaited tuple members" {
     const alloc = arena.allocator();
     try std.testing.expectEqualStrings("Promise<[PromiseSettledResult<number>, PromiseSettledResult<string>]>", try inferNarrowType(alloc, "Promise.allSettled([Promise.resolve(1), 'ready'])", false, false, 0));
     try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "await Promise.resolve(Promise.resolve(1))", false, false, 0));
+}
+
+test "arithmetic and update expressions emit valid result types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    inline for (.{ "1 + 2", "1 - 2", "1 * 2", "1 / 2", "1 % 2" }) |expression|
+        try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, expression, true, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'left' + 'right'", true, false, 0));
+    try std.testing.expectEqualStrings("bigint", try inferNarrowType(alloc, "1n + 2n", true, false, 0));
+    try std.testing.expectEqualStrings("typeof counter", try inferNarrowType(alloc, "counter++", false, false, 0));
+    try std.testing.expectEqualStrings("typeof state.count", try inferNarrowType(alloc, "--state.count", false, false, 0));
 }
 
 test "extractSatisfiesType" {
