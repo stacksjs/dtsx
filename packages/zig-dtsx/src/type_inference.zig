@@ -77,10 +77,13 @@ pub fn isNumericLiteral(s: []const u8) bool {
             return consumeDigits(s, &i, b) and i == s.len;
         }
     }
-    if (!consumeDigits(s, &i, 10)) return false;
+    const has_integer_digits = consumeDigits(s, &i, 10);
     if (i < s.len and s[i] == '.') {
         i += 1;
-        if (!consumeDigits(s, &i, 10)) return false;
+        const has_fraction_digits = consumeDigits(s, &i, 10);
+        if (!has_integer_digits and !has_fraction_digits) return false;
+    } else if (!has_integer_digits) {
+        return false;
     }
     if (i < s.len and (s[i] == 'e' or s[i] == 'E')) {
         i += 1;
@@ -90,13 +93,54 @@ pub fn isNumericLiteral(s: []const u8) bool {
     return i == s.len;
 }
 
-/// Check if s (excluding last char 'n') is all digits — for BigInt literals
-fn isBigIntDigits(s: []const u8) bool {
+/// Check decimal, hexadecimal, binary, and octal BigInt literals, including a
+/// leading minus and numeric separators.
+fn isBigIntLiteral(s: []const u8) bool {
     if (s.len < 2) return false;
-    for (s[0 .. s.len - 1]) |c| {
-        if (c < '0' or c > '9') return false;
+    if (s[s.len - 1] != 'n') return false;
+    const digits = s[0 .. s.len - 1];
+    var i: usize = 0;
+    if (digits[i] == '-') i += 1;
+    if (i >= digits.len) return false;
+    if (i + 1 < digits.len and digits[i] == '0') {
+        const base: ?u8 = switch (digits[i + 1]) {
+            'x', 'X' => 16,
+            'b', 'B' => 2,
+            'o', 'O' => 8,
+            else => null,
+        };
+        if (base) |b| {
+            i += 2;
+            return consumeDigits(digits, &i, b) and i == digits.len;
+        }
     }
-    return true;
+    return consumeDigits(digits, &i, 10) and i == digits.len;
+}
+
+const StaticTruthiness = enum { unknown, truthy, falsy };
+
+fn staticTruthiness(value: []const u8) StaticTruthiness {
+    const expression = trim(value);
+    if (std.mem.eql(u8, expression, "true")) return .truthy;
+    if (std.mem.eql(u8, expression, "false") or std.mem.eql(u8, expression, "null") or
+        std.mem.eql(u8, expression, "undefined") or std.mem.eql(u8, expression, "NaN")) return .falsy;
+    if ((expression.len >= 2 and expression[0] == '\'' and expression[expression.len - 1] == '\'') or
+        (expression.len >= 2 and expression[0] == '"' and expression[expression.len - 1] == '"') or
+        (expression.len >= 2 and expression[0] == '`' and expression[expression.len - 1] == '`' and !ch.contains(expression, "${")))
+        return if (expression.len == 2) .falsy else .truthy;
+    if (isNumericLiteral(expression)) {
+        var normalized = expression;
+        if (normalized[0] == '-') normalized = normalized[1..];
+        for (normalized) |c| if (c != '0' and c != '.' and c != '_') return .truthy;
+        return .falsy;
+    }
+    if (isBigIntLiteral(expression)) {
+        var normalized = expression[0 .. expression.len - 1];
+        if (normalized[0] == '-') normalized = normalized[1..];
+        for (normalized) |c| if (c != '0' and c != '_' and c != 'x' and c != 'X' and c != 'b' and c != 'B' and c != 'o' and c != 'O') return .truthy;
+        return .falsy;
+    }
+    return .unknown;
 }
 
 /// Trim whitespace from both ends
@@ -1060,8 +1104,9 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     if (findTopLevelComma(trimmed)) |comma| return inferNarrowType(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1);
 
     if (ch.startsWith(trimmed, "await ")) {
-        const awaited = try inferNarrowType(alloc, trim(trimmed[6..]), false, false, depth + 1);
-        if (ch.startsWith(awaited, "Promise<") and awaited.len > 9 and awaited[awaited.len - 1] == '>') return awaited[8 .. awaited.len - 1];
+        var awaited = try inferNarrowType(alloc, trim(trimmed[6..]), false, false, depth + 1);
+        while (ch.startsWith(awaited, "Promise<") and awaited.len > 9 and awaited[awaited.len - 1] == '>')
+            awaited = awaited[8 .. awaited.len - 1];
         return awaited;
     }
     if (ch.startsWith(trimmed, "typeof ")) return "string";
@@ -1084,7 +1129,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             return if (!is_const) "number" else trimmed;
         }
         // BigInt literal: digits followed by 'n'
-        if (trimmed.len > 1 and trimmed[trimmed.len - 1] == 'n' and isBigIntDigits(trimmed)) {
+        if (isBigIntLiteral(trimmed)) {
             return if (is_const) trimmed else "bigint";
         }
         return "unknown";
@@ -1092,6 +1137,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Fast path: negative numbers
     if (trimmed[0] == '-' and trimmed.len > 1 and trimmed[1] >= '0' and trimmed[1] <= '9') {
+        if (isBigIntLiteral(trimmed)) return if (is_const) trimmed else "bigint";
         if (isNumericLiteral(trimmed)) {
             return if (!is_const) "number" else trimmed;
         }
@@ -1199,7 +1245,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     }
 
     // BigInt literals (digits followed by 'n')
-    if (trimmed.len > 1 and trimmed[trimmed.len - 1] == 'n' and isBigIntDigits(trimmed)) {
+    if (isBigIntLiteral(trimmed)) {
         if (is_const) return trimmed;
         return "bigint";
     }
@@ -1214,6 +1260,11 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     if (findTopLevelToken(trimmed, "?", 0)) |question| {
         if (question + 1 < trimmed.len and trimmed[question + 1] != '?' and trimmed[question + 1] != '.') {
             if (findTopLevelToken(trimmed, ":", question + 1)) |colon| {
+                switch (staticTruthiness(trimmed[0..question])) {
+                    .truthy => return inferNarrowType(alloc, trim(trimmed[question + 1 .. colon]), is_const, in_union, depth + 1),
+                    .falsy => return inferNarrowType(alloc, trim(trimmed[colon + 1 ..]), is_const, in_union, depth + 1),
+                    .unknown => {},
+                }
                 const when_true = try inferNarrowType(alloc, trim(trimmed[question + 1 .. colon]), true, true, depth + 1);
                 const when_false = try inferNarrowType(alloc, trim(trimmed[colon + 1 ..]), true, true, depth + 1);
                 if (std.mem.eql(u8, when_true, when_false)) return when_true;
@@ -1226,9 +1277,22 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     // collapsing the whole expression to unknown.
     inline for (.{ "??", "||", "&&" }) |operator| {
         if (findTopLevelToken(trimmed, operator, 0)) |index| {
-            const left = try inferNarrowType(alloc, trim(trimmed[0..index]), is_const, true, depth + 1);
+            const left_expression = trim(trimmed[0..index]);
+            const right_expression = trim(trimmed[index + operator.len ..]);
+            const left = try inferNarrowType(alloc, left_expression, is_const, true, depth + 1);
             const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), is_const, true, depth + 1);
             if (std.mem.eql(u8, operator, "??") and (std.mem.eql(u8, left, "null") or std.mem.eql(u8, left, "undefined"))) return right;
+            if (std.mem.eql(u8, operator, "??") and staticTruthiness(left_expression) != .unknown) return left;
+            if (std.mem.eql(u8, operator, "&&")) switch (staticTruthiness(left_expression)) {
+                .truthy => return inferNarrowType(alloc, right_expression, is_const, in_union, depth + 1),
+                .falsy => return left,
+                .unknown => {},
+            };
+            if (std.mem.eql(u8, operator, "||")) switch (staticTruthiness(left_expression)) {
+                .truthy => return left,
+                .falsy => return inferNarrowType(alloc, right_expression, is_const, in_union, depth + 1),
+                .unknown => {},
+            };
             if (std.mem.eql(u8, left, right)) return left;
             return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
         }
@@ -1875,6 +1939,34 @@ fn inferPromiseRaceType(alloc: std.mem.Allocator, value: []const u8, depth: usiz
     return result.toOwnedSlice();
 }
 
+fn unwrapPromiseType(value: []const u8) []const u8 {
+    var result = value;
+    while (ch.startsWith(result, "Promise<") and result.len > 9 and result[result.len - 1] == '>')
+        result = result[8 .. result.len - 1];
+    return result;
+}
+
+fn inferPromiseAllSettledType(alloc: std.mem.Allocator, value: []const u8, depth: usize) InferError![]const u8 {
+    const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<PromiseSettledResult<unknown>[]>";
+    const paren_end = std.mem.lastIndexOfScalar(u8, value, ')') orelse return "Promise<PromiseSettledResult<unknown>[]>";
+    if (paren_end <= paren_start + 1) return "Promise<[]>";
+    const argument = trim(value[paren_start + 1 .. paren_end]);
+    if (argument.len < 2 or argument[0] != '[' or argument[argument.len - 1] != ']') return "Promise<PromiseSettledResult<unknown>[]>";
+    const elements = try parseArrayElements(alloc, argument[1 .. argument.len - 1]);
+
+    var result = std.array_list.Managed(u8).init(alloc);
+    try result.appendSlice("Promise<[");
+    for (elements, 0..) |element, index| {
+        if (index > 0) try result.appendSlice(", ");
+        const element_type = unwrapPromiseType(try inferNarrowType(alloc, element, false, false, depth + 1));
+        try result.appendSlice("PromiseSettledResult<");
+        try result.appendSlice(element_type);
+        try result.append('>');
+    }
+    try result.appendSlice("]>");
+    return result.toOwnedSlice();
+}
+
 /// Infer type from Promise expression
 fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
     if (ch.startsWith(value, "Promise.resolve(")) {
@@ -1895,6 +1987,7 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
     }
     if (ch.startsWith(value, "Promise.reject(")) return "Promise<never>";
     if (ch.startsWith(value, "Promise.race(") or ch.startsWith(value, "Promise.any(")) return inferPromiseRaceType(alloc, value, depth);
+    if (ch.startsWith(value, "Promise.allSettled(")) return inferPromiseAllSettledType(alloc, value, depth);
     if (ch.startsWith(value, "Promise.all(")) {
         // Extract the array argument and infer element types
         const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown[]>";
@@ -2227,7 +2320,8 @@ test "isNumericLiteral" {
     try std.testing.expect(!isNumericLiteral(""));
     try std.testing.expect(!isNumericLiteral("abc"));
     try std.testing.expect(!isNumericLiteral("-"));
-    try std.testing.expect(!isNumericLiteral("3."));
+    try std.testing.expect(isNumericLiteral("3."));
+    try std.testing.expect(isNumericLiteral(".5"));
     try std.testing.expect(isNumericLiteral("0xff"));
     try std.testing.expect(isNumericLiteral("0b1010"));
     try std.testing.expect(isNumericLiteral("0o755"));
@@ -2395,6 +2489,31 @@ test "constructor and comma expressions preserve final types" {
     try std.testing.expectEqualStrings("widgets.Item", try inferNarrowType(alloc, "new widgets.Item()", false, false, 0));
     try std.testing.expectEqualStrings("InstanceType<typeof constructor>", try inferNarrowType(alloc, "new constructor()", false, false, 0));
     try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "(1, 'last')", false, false, 0));
+}
+
+test "literal edge cases and static branches preserve precise types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, ".5", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "3.", false, false, 0));
+    try std.testing.expectEqualStrings("bigint", try inferNarrowType(alloc, "-1n", false, false, 0));
+    try std.testing.expectEqualStrings("bigint", try inferNarrowType(alloc, "0xffn", false, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "true ? 'yes' : 0", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "false ? 'no' : 1", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "true && 1", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "false && 1", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "true || 'fallback'", false, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "false || 'fallback'", false, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'ready' ?? 0", false, false, 0));
+}
+
+test "allSettled and nested promises infer awaited tuple members" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("Promise<[PromiseSettledResult<number>, PromiseSettledResult<string>]>", try inferNarrowType(alloc, "Promise.allSettled([Promise.resolve(1), 'ready'])", false, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "await Promise.resolve(Promise.resolve(1))", false, false, 0));
 }
 
 test "extractSatisfiesType" {
