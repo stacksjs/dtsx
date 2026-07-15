@@ -1,4 +1,21 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.6...v0.10.7)
+
+### 🐛 Bug Fixes
+
+- **zig**: infer arithmetic expression results ([7f1cd8c](https://github.com/stacksjs/dtsx/commit/7f1cd8c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: refine advanced expression inference ([fe339f6](https://github.com/stacksjs/dtsx/commit/fe339f6)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.7 ([f108995](https://github.com/stacksjs/dtsx/commit/f108995)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **pkg**: publint clean — sideEffects:false + executable bin shebang ([d538afb](https://github.com/stacksjs/dtsx/commit/d538afb)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([82059fe](https://github.com/stacksjs/dtsx/commit/82059fe)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.4...v0.10.5)
 
 ### 🐛 Bug Fixes
