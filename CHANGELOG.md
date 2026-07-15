@@ -1,4 +1,15 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.7...v0.10.8)
+
+### 🧹 Chores
+
+- release v0.10.8 ([c535414](https://github.com/stacksjs/dtsx/commit/c535414)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **pkg**: add sideEffects:false to bun-plugin-dtsx (publint) ([6ee53dd](https://github.com/stacksjs/dtsx/commit/6ee53dd)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.6...v0.10.7)
 
 ### 🐛 Bug Fixes
