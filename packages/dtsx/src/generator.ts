@@ -18,7 +18,7 @@ import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { applyTypeMappings, createTypeMapper } from './type-mappings'
-import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, validateDtsContent, writeToFile } from './utils'
+import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, sourceMapCommentPrefix, validateDtsContent, writeToFile } from './utils'
 
 async function writeDeclarationMapFile(
   outputPath: string,
@@ -30,7 +30,7 @@ async function writeDeclarationMapFile(
   const dtsFilename = basename(outputPath) || 'output.d.ts'
   const sourceFilename = relative(dirname(outputPath), sourcePath)
   const mapFilename = `${dtsFilename}.map`
-  const mapCommentIndex = dtsContent.lastIndexOf('\n//# sourceMappingURL=')
+  const mapCommentIndex = dtsContent.lastIndexOf(`\n${sourceMapCommentPrefix()}`)
   const contentToMap = mapCommentIndex === -1 ? dtsContent : dtsContent.slice(0, mapCommentIndex)
   const sourceMap = generateDeclarationMap(contentToMap, dtsFilename, sourceFilename, sourceCode)
   const mapPath = `${outputPath}.map`

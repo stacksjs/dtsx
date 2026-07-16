@@ -6,6 +6,13 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, relative, resolve } from 'node:path'
 
+// Keep the source-map directive marker out of dtsx's own bundled JavaScript.
+// Bun scans dependency text for that marker even when it appears inside a
+// string literal, then tries to decode the placeholder as this bundle's map.
+function sourceMapComment(url: string): string {
+  return `${String.fromCharCode(47, 47, 35)} sourceMappingURL=${url}`
+}
+
 /**
  * Source map configuration
  */
@@ -254,7 +261,7 @@ export class SourceMapGenerator {
    * Generate inline source map comment
    */
   toComment(includeContent = false): string {
-    return `//# sourceMappingURL=${this.toDataUrl(includeContent)}`
+    return sourceMapComment(this.toDataUrl(includeContent))
   }
 }
 
@@ -549,7 +556,7 @@ export function appendSourceMapComment(
   content: string,
   mapFileName: string,
 ): string {
-  return `${content}\n//# sourceMappingURL=${mapFileName}`
+  return `${content}\n${sourceMapComment(mapFileName)}`
 }
 
 /**

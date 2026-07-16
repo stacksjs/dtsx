@@ -9,6 +9,14 @@ import { config } from './config'
 import { validateTypeScriptSyntax } from './syntax-validator'
 
 /**
+ * Build the source-map directive without embedding the complete marker in
+ * dtsx's own bundle, where Bun can mistake a string literal for a real map.
+ */
+export function sourceMapCommentPrefix(): string {
+  return `${String.fromCharCode(47, 47, 35)} sourceMappingURL=`
+}
+
+/**
  * Exhaustive check helper for switch statements
  * This function should never be called if all cases are handled
  * TypeScript will error if a case is missing
@@ -367,5 +375,5 @@ export function generateDeclarationMap(
  * Add source map URL comment to declaration content
  */
 export function addSourceMapComment(dtsContent: string, mapFilename: string): string {
-  return `${dtsContent}\n//# sourceMappingURL=${mapFilename}\n`
+  return `${dtsContent}\n${sourceMapCommentPrefix()}${mapFilename}\n`
 }
