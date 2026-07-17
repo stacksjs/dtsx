@@ -1,4 +1,20 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.8...v0.10.9)
+
+### 🐛 Bug Fixes
+
+- emit valid declarations for generic methods and heritage clauses ([0a0015f](https://github.com/stacksjs/dtsx/commit/0a0015f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **sourcemap**: avoid false source map detection ([96bf4ca](https://github.com/stacksjs/dtsx/commit/96bf4ca)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.10.9 ([c7985f6](https://github.com/stacksjs/dtsx/commit/c7985f6)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **deps**: declare bun ^1.3.14 in deps.yaml ([c825db7](https://github.com/stacksjs/dtsx/commit/c825db7)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.7...v0.10.8)
 
 ### 🧹 Chores
