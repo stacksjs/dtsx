@@ -1035,6 +1035,10 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   for (const [key, val] of properties) {
     const { comments: keyComments, key: propertyKey } = splitLeadingCommentsFromKey(key)
     const commentPrefix = keyComments ? `${keyComments}\n  ` : ''
+    // The key actually emitted: a generic method shorthand (`merge<T, U>(…)`)
+    // has its type parameters moved onto the function type, see below.
+    let emitKey = propertyKey
+    let wasMethodShorthand = false
 
     if (propertyKey === '...') {
       const spreadValue = val.trim()
@@ -1061,7 +1065,23 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     // Method definitions (method shorthand syntax) — convert directly to function type
     // to avoid double-processing through inferNarrowType which loses return type info
     else if (isMethodDefinition(trimVal)) {
-      valueType = convertMethodToFunctionType(propertyKey, trimVal)
+      wasMethodShorthand = true
+      // A generic method shorthand (`merge<T, U>(…)`) parses with its type
+      // parameters glued to the key. Move them onto the function type —
+      // `merge: <T, U>(…) => …` is valid, `merge<T, U>: (…) => …` is not.
+      const genericKey = splitKeyTypeParameters(propertyKey)
+      if (genericKey) {
+        emitKey = genericKey.name
+        // Keep any `async`/`*` modifiers (moved onto the value by the property
+        // parser) in front of the re-attached type parameters.
+        let modifiers = ''
+        if (trimVal.startsWith('async ')) modifiers = 'async '
+        if (trimVal.charCodeAt(modifiers.length) === 42 /* * */) modifiers += '*'
+        valueType = convertMethodToFunctionType(genericKey.name, modifiers + genericKey.typeParams + trimVal.slice(modifiers.length))
+      }
+      else {
+        valueType = convertMethodToFunctionType(propertyKey, trimVal)
+      }
     }
     else {
       valueType = inferNarrowType(val, isConst, false, _depth + 1)
@@ -1094,16 +1114,16 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
 
     if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-      propTypes.push(`${commentPrefix}/** @defaultValue ${rawVal} */\n  ${propertyKey}: ${valueType}`)
+      propTypes.push(`${commentPrefix}/** @defaultValue ${rawVal} */\n  ${emitKey}: ${valueType}`)
     }
     else {
-      propTypes.push(`${commentPrefix}${propertyKey}: ${valueType}`)
+      propTypes.push(`${commentPrefix}${emitKey}: ${valueType}`)
     }
 
     // Build clean default inline (same pass, no re-parse)
     // Strip block/JSDoc comments from key to prevent nested */ in @defaultValue code blocks
     if (trackDefaults) {
-      const cleanKey = stripBlockComments(propertyKey)
+      const cleanKey = stripBlockComments(emitKey)
       if (rawVal.endsWith('as const')) {
         // skip — type already narrow
       }
@@ -1115,6 +1135,11 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       }
       else if (rawVal.startsWith('{')) {
         if (nestedDefault) cleanProps.push(`${cleanKey}: ${nestedDefault}`)
+      }
+      else if (wasMethodShorthand) {
+        // Reuse the converted function type: re-inferring from the raw method
+        // shorthand loses the parameter list and the generic parameters.
+        cleanProps.push(`${cleanKey}: ${collapseWhitespace(valueType)}`)
       }
       else if (!rawVal.startsWith('[') && (rawVal.includes('=>') || rawVal.startsWith('function') || rawVal.startsWith('async'))) {
         const fnType = inferFunctionType(rawVal, false, 0, true)
@@ -1591,7 +1616,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       current += char
     }
     else if (!inString && !inComment) {
-      if (cc === 40 /* ( */ && depth === 0 && inKey) {
+      if (cc === 40 /* ( */ && depth === 0 && inKey && typeArgumentDepth === 0) {
         // Method definition like: methodName(params) or async methodName<T>(params).
         // Must be checked BEFORE general bracket tracking so ( isn't swallowed.
         currentKey = current.trim()
@@ -1644,7 +1669,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
           }
         }
       }
-      else if (cc === 58 /* : */ && depth === 0 && inKey) {
+      else if (cc === 58 /* : */ && depth === 0 && inKey && typeArgumentDepth === 0) {
         currentKey = current.trim()
         current = ''
         inKey = false
@@ -1654,6 +1679,13 @@ function parseObjectProperties(content: string): Array<[string, string]> {
         current += char
       }
       else if (cc === 60 /* < */ && inArrowReturnType) {
+        typeArgumentDepth++
+        current += char
+      }
+      else if (cc === 60 /* < */ && inKey && depth === 0) {
+        // Generic type parameters on a method-shorthand key, e.g.
+        // `merge<T, U = Partial<T>>(…)`. Track them so a comma inside the
+        // parameter list doesn't split the property mid-key.
         typeArgumentDepth++
         current += char
       }
@@ -1801,6 +1833,48 @@ function isMethodDefinition(value: string): boolean {
 }
 
 /**
+ * Split a generic method-shorthand key (`merge<T, U = Partial<T>>`) into its
+ * plain name and its type parameter list. Returns null when the key carries
+ * no type parameters. The object property parser splits a method shorthand at
+ * its parameter list, so the generics stay glued to the key; the caller moves
+ * them onto the converted function type because `name<T>: (…) => …` is not
+ * valid TypeScript — `name: <T>(…) => …` is.
+ */
+function splitKeyTypeParameters(key: string): { name: string, typeParams: string } | null {
+  const trimmed = key.trimEnd()
+  if (!trimmed.endsWith('>'))
+    return null
+
+  // Scan backwards to find the '<' that opens the trailing type parameter
+  // list, skipping the '>' of arrow types inside constraints
+  // (e.g. `T extends () => void`).
+  let depth = 0
+  let openIndex = -1
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    const c = trimmed.charCodeAt(i)
+    if (c === 62 /* > */) {
+      if (i > 0 && trimmed.charCodeAt(i - 1) === 61 /* = */)
+        continue
+      depth++
+    }
+    else if (c === 60 /* < */) {
+      depth--
+      if (depth === 0) {
+        openIndex = i
+        break
+      }
+    }
+  }
+  if (openIndex === -1)
+    return null
+
+  const name = trimmed.slice(0, openIndex).trimEnd()
+  if (!name)
+    return null
+  return { name, typeParams: trimmed.slice(openIndex) }
+}
+
+/**
  * Convert method definition to function type signature
  */
 function convertMethodToFunctionType(_methodName: string, _methodDef: string): string {
@@ -1825,7 +1899,8 @@ function convertMethodToFunctionType(_methodName: string, _methodDef: string): s
     let gEnd = -1
     for (let gi = 0; gi < cleaned.length; gi++) {
       if (cleaned.charCodeAt(gi) === 60) depth++
-      else if (cleaned.charCodeAt(gi) === 62) { depth--; if (depth === 0) { gEnd = gi; break } }
+      // Skip the '>' of arrow types inside constraints (`T extends () => void`)
+      else if (cleaned.charCodeAt(gi) === 62 && !(gi > 0 && cleaned.charCodeAt(gi - 1) === 61)) { depth--; if (depth === 0) { gEnd = gi; break } }
     }
     if (gEnd !== -1) {
       generics = cleaned.slice(0, gEnd + 1)
@@ -1919,7 +1994,7 @@ function findReturnTypeBoundary(value: string, start: number): ReturnTypeBoundar
     else if (current === 91 /* [ */) bracketDepth++
     else if (current === 93 /* ] */ && bracketDepth > 0) bracketDepth--
     else if (current === 60 /* < */) angleDepth++
-    else if (current === 62 /* > */ && angleDepth > 0) angleDepth--
+    else if (current === 62 /* > */ && angleDepth > 0 && value.charCodeAt(i - 1) !== 61 /* = */) angleDepth--
     else if (current === 125 /* } */ && objectTypeDepth > 0) objectTypeDepth--
     else if (current === 123 /* { */) {
       const nested = parenDepth > 0 || bracketDepth > 0 || angleDepth > 0 || objectTypeDepth > 0
@@ -1961,6 +2036,8 @@ export function findMatchingBracket(str: string, start: number, openChar: string
       depth++
     }
     else if (str[i] === closeChar) {
+      // Don't treat the '>' of an arrow type (`=>`) as closing an angle bracket
+      if (closeChar === '>' && i > 0 && str[i - 1] === '=') continue
       depth--
       if (depth === 0) {
         return i
@@ -2197,7 +2274,8 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       while (pos < len && depth > 0) {
         const c = trimmed.charCodeAt(pos)
         if (c === 60) depth++
-        else if (c === 62) depth--
+        // Skip the '>' of arrow types inside constraints (`T extends () => void`)
+        else if (c === 62 && trimmed.charCodeAt(pos - 1) !== 61) depth--
         pos++
       }
       generics = trimmed.substring(genStart, pos)

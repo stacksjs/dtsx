@@ -2817,19 +2817,34 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         skipWhitespaceAndComments()
         const generics = extractGenerics()
         skipWhitespaceAndComments()
-        // extends clause
+        // Extends clause. Consume the keyword and scan the heritage types with
+        // angle-depth tracking — the same shape as the top-level
+        // extractInterface — so `Container<{ x: number }>` doesn't end the
+        // clause at the '{' inside its type arguments. The previous scan
+        // sliced the raw `extends …` text and re-emitted it without a
+        // separating space, producing `Nameextends Base`.
         let ext = ''
         if (matchWord('extends')) {
+          pos += 7
+          skipWhitespaceAndComments()
           const extStart = pos
-          while (pos < len && source.charCodeAt(pos) !== CH_LBRACE) {
+          let depth = 0
+          while (pos < len) {
             if (skipNonCode())
               continue
+            const ch = source.charCodeAt(pos)
+            if (ch === CH_LANGLE)
+              depth++
+            else if (ch === CH_RANGLE && !isArrowGT())
+              depth--
+            else if (ch === CH_LBRACE && depth === 0)
+              break
             pos++
           }
-          ext = source.slice(extStart, pos)
+          ext = sliceTrimmed(extStart, pos)
         }
         const body = cleanBraceBlock(extractBraceBlock())
-        lines.push(`${indent}${prefix}interface ${iname}${generics}${ext} ${body}`)
+        lines.push(`${indent}${prefix}interface ${iname}${generics}${ext ? ` extends ${ext}` : ''} ${body}`)
       }
       else if (matchWord('type')) {
         pos += 4
@@ -2871,9 +2886,19 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         const generics = extractGenerics()
         skipWhitespaceAndComments()
         const hStart = pos
-        while (pos < len && source.charCodeAt(pos) !== CH_LBRACE) {
+        // Angle-depth-aware scan so heritage types like `Container<{ x: number }>`
+        // don't end the clause at the '{' inside their type arguments.
+        let hDepth = 0
+        while (pos < len) {
           if (skipNonCode())
             continue
+          const hch = source.charCodeAt(pos)
+          if (hch === CH_LANGLE)
+            hDepth++
+          else if (hch === CH_RANGLE && !isArrowGT())
+            hDepth--
+          else if (hch === CH_LBRACE && hDepth === 0)
+            break
           pos++
         }
         const heritage = sliceTrimmed(hStart, pos)
@@ -2910,9 +2935,19 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           const generics = extractGenerics()
           skipWhitespaceAndComments()
           const hStart = pos
-          while (pos < len && source.charCodeAt(pos) !== CH_LBRACE) {
+          // Angle-depth-aware scan so heritage types like `Container<{ x: number }>`
+          // don't end the clause at the '{' inside their type arguments.
+          let hDepth = 0
+          while (pos < len) {
             if (skipNonCode())
               continue
+            const hch = source.charCodeAt(pos)
+            if (hch === CH_LANGLE)
+              hDepth++
+            else if (hch === CH_RANGLE && !isArrowGT())
+              hDepth--
+            else if (hch === CH_LBRACE && hDepth === 0)
+              break
             pos++
           }
           const heritage = sliceTrimmed(hStart, pos)
