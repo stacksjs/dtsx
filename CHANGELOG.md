@@ -1,4 +1,19 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.0...v0.11.1)
+
+### 🐛 Bug Fixes
+
+- **vue**: keep collapsed props types valid when they contain comments ([60a11e5](https://github.com/stacksjs/dtsx/commit/60a11e5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- emit valid types for string-literal concatenations and numeric arithmetic ([1f1cc7e](https://github.com/stacksjs/dtsx/commit/1f1cc7e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.1 ([446a4a3](https://github.com/stacksjs/dtsx/commit/446a4a3)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.9...v0.11.0)
 
 ### 🚀 Features
