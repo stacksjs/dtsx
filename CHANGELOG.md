@@ -1,4 +1,22 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.9...v0.11.0)
+
+### 🚀 Features
+
+- generate declarations for Vue SFCs ([6c3a63c](https://github.com/stacksjs/dtsx/commit/6c3a63c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- **bun-plugin**: clean each outdir only once per process ([c3f4e2d](https://github.com/stacksjs/dtsx/commit/c3f4e2d)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.0 ([3e5d383](https://github.com/stacksjs/dtsx/commit/3e5d383)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.10.8...v0.10.9)
 
 ### 🐛 Bug Fixes
