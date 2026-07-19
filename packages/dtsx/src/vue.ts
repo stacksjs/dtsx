@@ -498,19 +498,100 @@ function mapEmitsArray(text: string): string | null {
   return `[${names.map(n => JSON.stringify(unquoteKey(n))).join(', ')}]`
 }
 
-/** Map an emits object literal (validators) to call signatures keyed by event. */
+/** Map an emits object literal (validators) to handler signatures keyed by event. */
 function mapEmitsObject(text: string): string | null {
   const trimmed = text.trim()
   if (!trimmed.startsWith('{')) return null
   const entries = parseObjectEntries(trimmed)
   if (entries.length === 0) return '{}'
-  const signatures = entries.map(entry => `(e: ${JSON.stringify(entry.key)}, ...args: any[]) => void`)
-  return `{ ${signatures.join(', ')} }`
+  const handlers = entries.map(entry => `${JSON.stringify(entry.key)}: (...args: any[]) => void`)
+  return `{ ${handlers.join(', ')} }`
 }
 
 /** Map a runtime emits argument (array or object) to an EmitsOptions type. */
 function mapRuntimeEmits(argText: string): string | null {
   return mapEmitsArray(argText) ?? mapEmitsObject(argText)
+}
+
+/** Split a type literal body into members (`;`, `,` and newlines all separate). */
+function splitTypeMembers(body: string): string[] {
+  const members: string[] = []
+  let depth = 0
+  let current = ''
+  let i = 0
+  while (i < body.length) {
+    const ch = body[i]
+    if (ch === '"' || ch === '\'') {
+      const end = skipString(body, i)
+      current += body.slice(i, end)
+      i = end
+      continue
+    }
+    if (ch === '`') {
+      const end = skipTemplate(body, i)
+      current += body.slice(i, end)
+      i = end
+      continue
+    }
+    if (ch === '/' && (body[i + 1] === '/' || body[i + 1] === '*')) {
+      const end = skipComment(body, i)
+      current += body.slice(i, end)
+      i = end
+      continue
+    }
+    if (ch === '=' && body[i + 1] === '>') {
+      current += '=>'
+      i += 2
+      continue
+    }
+    if (ch === '{' || ch === '[' || ch === '(' || ch === '<') depth++
+    else if (ch === '}' || ch === ']' || ch === ')' || ch === '>') depth--
+    if ((ch === ';' || ch === ',' || ch === '\n') && depth === 0) {
+      if (current.trim() !== '') members.push(current.trim())
+      current = ''
+      i++
+      continue
+    }
+    current += ch
+    i++
+  }
+  if (current.trim() !== '') members.push(current.trim())
+  return members
+}
+
+/**
+ * Convert a call-signature emits type (`{ (e: 'a', v: number): void }`) to
+ * the record form (`{ "a": (v: number) => void }`) Vue's EmitsOptions
+ * constraint accepts. Returns null when any member is not a call signature.
+ */
+function convertEmitsCallSignatures(typeText: string): string | null {
+  const trimmed = typeText.trim()
+  if (!trimmed.startsWith('{')) return null
+  const close = findMatching(trimmed, 0, '{', '}')
+  if (close === -1 || trimmed.slice(close + 1).trim() !== '') return null
+  const members = splitTypeMembers(trimmed.slice(1, close))
+  if (members.length === 0) return '{}'
+  const handlers: string[] = []
+  for (const member of members) {
+    // (e: 'name', ...params): return
+    const m = /^\(\s*\w+\s*:\s*/.exec(member)
+    if (!m) return null
+    let i = m[0].length
+    const quote = member[i]
+    if (quote !== '\'' && quote !== '"' && quote !== '`') return null
+    const nameEnd = skipString(member, i)
+    const eventName = member.slice(i + 1, nameEnd - 1)
+    const parenClose = findMatching(member, member.indexOf('(', 0), '(', ')')
+    if (parenClose === -1) return null
+    // Params after the event-name argument.
+    const argsText = member.slice(i, parenClose)
+    const params = splitTopLevel(argsText).slice(1)
+    let returnType = member.slice(parenClose + 1).trim()
+    if (returnType.startsWith(':')) returnType = returnType.slice(1).trim()
+    if (returnType === '') returnType = 'void'
+    handlers.push(`${JSON.stringify(eventName)}: (${params.map(p => p.trim()).join(', ')}) => ${returnType}`)
+  }
+  return `{ ${handlers.join(', ')} }`
 }
 
 // ---------------------------------------------------------------------------
@@ -821,10 +902,13 @@ function collapseTypeText(text: string): string {
       continue
     }
     if (ch === '/' && text[i + 1] === '/') {
-      // Line comment runs to the newline; the newline itself is handled below.
+      // Line comments cannot survive single-line collapsing — everything
+      // after them on the line would become a comment — so re-emit them as
+      // block comments (or drop them when the body cannot be re-quoted).
       let j = i + 2
       while (j < text.length && text[j] !== '\n') j++
-      out += text.slice(i, j)
+      const body = text.slice(i + 2, j).trim()
+      if (body !== '' && !body.includes('*/')) out += `/* ${body} */`
       i = j
       continue
     }
@@ -835,8 +919,14 @@ function collapseTypeText(text: string): string {
         i++
         continue
       }
-      if ('{;,(<:=['.includes(prev) || '}),]>;|&'.includes(next)) {
+      // A leading block comment belongs to the member that follows it, so
+      // the newline after the comment is a space, not a member separator.
+      const commentLeading = endsWithLeadingComment(out)
+      if (!commentLeading && ('{;,(<:=['.includes(prev) || '}),]>;|&'.includes(next))) {
         if (!out.endsWith(' ') && !out.endsWith(';')) out += ' '
+      }
+      else if (commentLeading) {
+        if (!out.endsWith(' ')) out += ' '
       }
       else {
         if (out.endsWith(' ')) out = out.slice(0, -1)
@@ -851,6 +941,25 @@ function collapseTypeText(text: string): string {
     i++
   }
   return out
+}
+
+/**
+ * Check whether the output accumulated so far ends with a block comment that
+ * sits at a member boundary (start, or after `{`, `;`, `,`, `(`, `<`, `:`) —
+ * i.e. a leading doc comment for the member that follows it.
+ */
+function endsWithLeadingComment(out: string): boolean {
+  let end = out.length - 1
+  while (end >= 0 && /\s/.test(out[end])) end--
+  if (end < 1 || out[end] !== '/' || out[end - 1] !== '*') return false
+  const open = out.lastIndexOf('/*', end)
+  if (open === -1) return false
+  for (let j = open - 1; j >= 0; j--) {
+    const ch = out[j]
+    if (/\s/.test(ch)) continue
+    return '{;,(<:'.includes(ch)
+  }
+  return true
 }
 
 function resolvePropsType(scriptSetup: string | null, script: string | null): PropsResolution | null {
@@ -889,7 +998,12 @@ function resolveEmitsType(scriptSetup: string | null, script: string | null): st
   for (const source of sources) {
     const call = findMacroCall(source, 'defineEmits')
     if (!call) continue
-    if (call.generic) return call.generic
+    if (call.generic) {
+      // Call-signature emits (`{ (e: 'a', v: number): void }`) must become
+      // the record form — Vue's EmitsOptions constraint rejects bare call
+      // signatures under tsc.
+      return convertEmitsCallSignatures(call.generic) ?? call.generic
+    }
     if (call.arg) {
       const mapped = mapRuntimeEmits(call.arg)
       if (mapped !== null) return mapped

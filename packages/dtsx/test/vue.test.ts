@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generate } from '../src/generator'
@@ -19,6 +19,36 @@ async function createTempDir(): Promise<string> {
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
+
+/** Minimal `vue` module shim so emitted component declarations typecheck. */
+const vueShim = `declare module 'vue' {
+  export type ComputedOptions = Record<string, any>
+  export type MethodOptions = Record<string, (...args: any[]) => any>
+  export type ComponentOptionsMixin = Record<string, any>
+  export type EmitsOptions = string[] | Record<string, ((...args: any[]) => any) | null>
+  export interface DefineComponent<
+    PropsOrPropOptions = {},
+    RawBindings = {},
+    D = {},
+    C extends ComputedOptions = ComputedOptions,
+    M extends MethodOptions = MethodOptions,
+    Mixin extends ComponentOptionsMixin = ComponentOptionsMixin,
+    Extends extends ComponentOptionsMixin = ComponentOptionsMixin,
+    E extends EmitsOptions = {},
+  > {}
+}
+`
+
+/** Assert a declaration file passes `tsc --noEmit --strict` (with the vue shim). */
+async function expectParsesUnderTsc(dts: string): Promise<void> {
+  const tempDir = await createTempDir()
+  await writeFile(join(tempDir, 'out.d.ts'), dts)
+  await writeFile(join(tempDir, 'vue.d.ts'), vueShim)
+  const tscBin = join(import.meta.dir, '..', '..', '..', 'node_modules', '.bin', 'tsc')
+  const proc = Bun.spawnSync([tscBin, '--noEmit', '--strict', 'out.d.ts', 'vue.d.ts'], { cwd: tempDir })
+  const output = `${proc.stdout.toString()}${proc.stderr.toString()}`
+  expect(proc.exitCode === 0 ? '' : output).toBe('')
+}
 
 /** Copy the vue fixtures into a temp src dir and run a full generation pass. */
 async function generateFixtures(entrypoints: string[]): Promise<{ outDir: string }> {
@@ -91,8 +121,8 @@ describe('vue sfc declaration transform', () => {
     expect(dts).toContain(`import type { DefineComponent } from 'vue';`)
     expect(dts).toContain('label: string')
     expect(dts).toContain('disabled?: boolean')
-    expect(dts).toContain(`(e: 'increment', value: number): void`)
-    expect(dts).toContain(`(e: 'reset'): void`)
+    expect(dts).toContain('"increment": (value: number) => void')
+    expect(dts).toContain('"reset": () => void')
     expect(dts).toContain('DefineComponent<')
     expect(dts).toContain('export default __dtsx_component__;')
     // Setup internals must not leak into the declaration
@@ -147,6 +177,45 @@ describe('vue sfc declaration transform', () => {
     expect(isolated).toContain('export default __dtsx_component__;')
     // sanity: both paths agree on the component name
     expect(semantic).toContain('export default __dtsx_component__;')
+  })
+})
+
+describe('comments inside collapsed props types', () => {
+  it('keeps JSDoc comments valid in collapsed props types', async () => {
+    const source = await readFile(join(fixturesDir, 'NFTBurnButton.vue'), 'utf8')
+    const dts = processSource(source, 'NFTBurnButton.vue')
+    // the collapsed props type retains the member and its type
+    expect(dts).toContain('onBurn: (mint: string) => Promise<string>')
+    // JSDoc survives as a block comment
+    expect(dts).toContain('/**')
+    // the comment must not be followed by a stray `;` (was: `*/;` → TS1131)
+    expect(dts).not.toMatch(/\*\/;/)
+    // and the whole declaration file must still typecheck
+    await expectParsesUnderTsc(dts)
+  })
+
+  it('converts line comments in props types to block comments', () => {
+    const source = [
+      '<script setup lang="ts">',
+      'defineProps<{',
+      '  mint: string // the mint address',
+      '}>()',
+      '</script>',
+      '<template><div /></template>',
+      '',
+    ].join('\n')
+    const dts = processSource(source, 'LineComment.vue')
+    // a `//` comment would swallow the rest of the collapsed type
+    expect(dts).not.toContain('// the mint address')
+    expect(dts).toContain('/* the mint address */')
+    expect(dts).toContain('mint: string')
+    return expectParsesUnderTsc(dts)
+  })
+
+  it('produces a CounterButton declaration that typechecks against the vue shim', async () => {
+    const source = await readFile(join(fixturesDir, 'CounterButton.vue'), 'utf8')
+    const dts = processSource(source, 'CounterButton.vue')
+    await expectParsesUnderTsc(dts)
   })
 })
 
