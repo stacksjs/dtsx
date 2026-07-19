@@ -335,4 +335,111 @@ describe('bun-plugin-dtsx', () => {
     expect(await readFile(join(outDir, 'src', 'index.d.ts'), 'utf8')).toContain(`export declare const value: 'ok';`)
     expect(await readFile(join(outDir, 'bin', 'cli.d.ts'), 'utf8')).toContain('export declare const cli: true;')
   })
+
+  it('emits declarations for every sequential Bun.build call in one process', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await writeFile(join(srcDir, 'alpha.ts'), `export const alpha: number = 1\n`)
+    await writeFile(join(srcDir, 'beta.ts'), `export const beta: string = 'b'\n`)
+
+    const first = await Bun.build({
+      entrypoints: [join(srcDir, 'alpha.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir })],
+    })
+    const second = await Bun.build({
+      entrypoints: [join(srcDir, 'beta.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir })],
+    })
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    // Both builds must emit — and the second build must not wipe the first
+    // build's declarations from the shared outdir.
+    expect(await readFile(join(outDir, 'alpha.d.ts'), 'utf8')).toContain('export declare const alpha: number;')
+    expect(await readFile(join(outDir, 'beta.d.ts'), 'utf8')).toContain(`export declare const beta: string;`)
+  })
+
+  it('still cleans stale declarations on the first build of an outdir', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(srcDir, { recursive: true })
+    await mkdir(outDir, { recursive: true })
+    await writeFile(join(srcDir, 'fresh.ts'), `export const fresh = true\n`)
+    await writeFile(join(outDir, 'stale.d.ts'), `export interface Stale {}\n`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'fresh.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir })],
+    })
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(outDir, 'fresh.d.ts'), 'utf8')).toContain('export declare const fresh: true;')
+    await expect(readFile(join(outDir, 'stale.d.ts'), 'utf8')).rejects.toThrow()
+  })
+
+  it('roots per-module outdirs at the entrypoint parent without doubled segments', async () => {
+    // Sequential single-entry builds into dist/<mod>/ (the layout that
+    // produced dist/token/token/index.d.ts with root ./src).
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+
+    await mkdir(join(srcDir, 'token'), { recursive: true })
+    await mkdir(join(srcDir, 'nft'), { recursive: true })
+    await writeFile(join(srcDir, 'token', 'index.ts'), `export const tokenName: string = 'token'\n`)
+    await writeFile(join(srcDir, 'nft', 'index.ts'), `export interface Nft { id: number }\n`)
+
+    for (const mod of ['token', 'nft']) {
+      const result = await Bun.build({
+        entrypoints: [join(srcDir, mod, 'index.ts')],
+        outdir: join(tempDir, 'dist', mod),
+        format: 'esm',
+        target: 'bun',
+        plugins: [dts({ cwd: tempDir })],
+      })
+      expect(result.success).toBe(true)
+    }
+
+    expect(await readFile(join(tempDir, 'dist', 'token', 'index.d.ts'), 'utf8')).toContain('tokenName')
+    expect(await readFile(join(tempDir, 'dist', 'nft', 'index.d.ts'), 'utf8')).toContain('interface Nft')
+    // No doubled mirror of the module directory.
+    await expect(readFile(join(tempDir, 'dist', 'token', 'token', 'index.d.ts'), 'utf8')).rejects.toThrow()
+    await expect(readFile(join(tempDir, 'dist', 'nft', 'nft', 'index.d.ts'), 'utf8')).rejects.toThrow()
+  })
+
+  it('mirrors nested entry directories without doubled segments', async () => {
+    const tempDir = await createTempDir()
+    const srcDir = join(tempDir, 'src')
+    const outDir = join(tempDir, 'dist')
+
+    await mkdir(join(srcDir, 'deep', 'nested'), { recursive: true })
+    await writeFile(join(srcDir, 'index.ts'), `export const root = 1\n`)
+    await writeFile(join(srcDir, 'deep', 'nested', 'mod.ts'), `export const mod = 2\n`)
+
+    const result = await Bun.build({
+      entrypoints: [join(srcDir, 'index.ts'), join(srcDir, 'deep', 'nested', 'mod.ts')],
+      outdir: outDir,
+      format: 'esm',
+      target: 'bun',
+      plugins: [dts({ cwd: tempDir })],
+    })
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(outDir, 'index.d.ts'), 'utf8')).toContain('export declare const root: 1;')
+    expect(await readFile(join(outDir, 'deep', 'nested', 'mod.d.ts'), 'utf8')).toContain('export declare const mod: 2;')
+    await expect(readFile(join(outDir, 'deep', 'nested', 'deep', 'nested', 'mod.d.ts'), 'utf8')).rejects.toThrow()
+  })
 })

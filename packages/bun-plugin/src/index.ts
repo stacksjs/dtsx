@@ -277,6 +277,13 @@ function computeConfigHash(config: DtsGenerationOption): string {
 }
 
 /**
+ * Outdirs whose stale declarations were already cleaned by a dts build in
+ * this process. Tracked at module level because Bun plugins are stateless
+ * across builds.
+ */
+const cleanedOutdirs = new Set<string>()
+
+/**
  * Creates a Bun plugin for generating TypeScript declaration files
  * @param options - Configuration options for DTS generation
  * @returns BunPlugin instance
@@ -317,6 +324,21 @@ export function dts(options: PluginConfig = {}): BunPlugin {
       try {
         const config = normalizeConfig(dtsOptions, build)
         const configHash = computeConfigHash(config)
+
+        // Sequential Bun.build calls in one process frequently share an
+        // outdir (one build per entrypoint). Cleaning on every call would
+        // delete the declarations previous builds in the same process just
+        // wrote — within a single process, nothing written this run can be
+        // stale. Only the first build for a given outdir performs the clean.
+        if (config.clean) {
+          const outdirPath = resolve(config.cwd ?? process.cwd(), config.outdir ?? './dist')
+          if (cleanedOutdirs.has(outdirPath)) {
+            config.clean = false
+          }
+          else {
+            cleanedOutdirs.add(outdirPath)
+          }
+        }
 
         // Initialize incremental cache
         if (incremental) {
