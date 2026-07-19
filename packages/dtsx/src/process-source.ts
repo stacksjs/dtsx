@@ -3,6 +3,7 @@ import { extractDeclarations } from './extractor/extract'
 import { hashContent } from './extractor/hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
+import { isVueFile, transformVueSfcToTs } from './vue'
 
 // ---------------------------------------------------------------------------
 // Result-level cache: caches the FINAL DTS output string, not just declarations.
@@ -101,6 +102,10 @@ export function processSourceDirect(
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
 ): string {
+  // Vue SFCs are transformed into a virtual TS module before scanning.
+  if (isVueFile(filename)) {
+    sourceCode = transformVueSfcToTs(sourceCode)
+  }
   const declarations = isolatedDeclarations
     ? scanIsolatedDeclarations(sourceCode, filename, keepComments)
     : scanSemanticDeclarations(sourceCode, filename, keepComments)

@@ -5,6 +5,7 @@
  */
 
 import type { Declaration } from '../types'
+import { isVueFile, transformVueSfcToTs } from '../vue'
 import { hashContent } from './hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './scanner'
 
@@ -22,6 +23,11 @@ export function extractDeclarations(
   keepComments: boolean = true,
   isolatedDeclarations: boolean = false,
 ): Declaration[] {
+  // Vue SFCs are transformed into a virtual TS module before scanning.
+  if (isVueFile(filePath)) {
+    sourceCode = transformVueSfcToTs(sourceCode)
+  }
+
   const contentHash = hashContent(sourceCode)
   const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
   const cached = declarationCache.get(cacheKey)

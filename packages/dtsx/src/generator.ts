@@ -792,7 +792,7 @@ function assertUniqueOutputPaths(files: string[], config: DtsGenerationConfig): 
 }
 
 function isProcessableSourceFile(filePath: string): boolean {
-  return /\.(m?tsx?|cts|jsx?|mjs|cjs)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
+  return /\.(m?tsx?|cts|jsx?|mjs|cjs|vue)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
 }
 
 /**
@@ -801,7 +801,7 @@ function isProcessableSourceFile(filePath: string): boolean {
 function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   const rootPath = resolve(config.cwd, config.root)
   const relativePath = relative(rootPath, inputPath)
-  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs)$/, (ext) => {
+  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue)$/, (ext) => {
     if (ext === '.mts' || ext === '.mjs') return '.d.mts'
     if (ext === '.cts' || ext === '.cjs') return '.d.cts'
     return '.d.ts'
