@@ -1616,9 +1616,122 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       return v
     if (isNumericLiteral(v))
       return v
-    if ((v.startsWith('\'') && v.endsWith('\'')) || (v.startsWith('"') && v.endsWith('"')))
-      return v
+    // String-literal concatenations: `'a' + 'b'` narrows to the joined
+    // literal, `'a' + expr` widens to string, and purely numeric arithmetic
+    // (`60 * 1000`) widens to number. Anything else composed of quotes is
+    // only a literal type when it is exactly one string literal.
+    const expressionType = inferLiteralExpressionType(v)
+    if (expressionType !== null)
+      return expressionType
     return 'unknown'
+  }
+
+  /**
+   * Classify a literal-ish initializer expression. Returns the literal/type
+   * to emit, or null when the expression is not recognizable.
+   */
+  function inferLiteralExpressionType(v: string): string | null {
+    if (v === '') return null
+    // Exactly one string literal?
+    if (v.charCodeAt(0) === CH_SQUOTE || v.charCodeAt(0) === CH_DQUOTE) {
+      if (findQuotedValueEnd(v, 0, v.charCodeAt(0)) === v.length)
+        return v
+    }
+    // Split top-level `+` parts to detect string concatenation.
+    const plusParts = splitTopLevelOperator(v, '+')
+    if (plusParts.length > 1) {
+      let hasStringPart = false
+      let allStringParts = true
+      const evaluated: string[] = []
+      for (const part of plusParts) {
+        const p = part.trim()
+        const code = p.charCodeAt(0)
+        if ((code === CH_SQUOTE || code === CH_DQUOTE) && findQuotedValueEnd(p, 0, code) === p.length) {
+          hasStringPart = true
+          evaluated.push(unquoteStringLiteral(p))
+        }
+        else {
+          allStringParts = false
+        }
+      }
+      if (allStringParts)
+        return quoteStringLiteral(evaluated.join(''))
+      // `+` with at least one string literal operand always produces a string.
+      if (hasStringPart)
+        return 'string'
+      return null
+    }
+    // Purely numeric arithmetic (`60 * 1000`, `(1 / 2) * 60`) widens to number.
+    if (/^[\d\s()+*/%.\-]+$/.test(v) && /\d/.test(v) && /[+*/%\-\s]/.test(v))
+      return 'number'
+    return null
+  }
+
+  /** Split an expression on a top-level binary operator (strings/comments aware). */
+  function splitTopLevelOperator(text: string, operator: string): string[] {
+    const parts: string[] = []
+    let depth = 0
+    let current = ''
+    let i = 0
+    while (i < text.length) {
+      const code = text.charCodeAt(i)
+      if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) {
+        const end = findQuotedValueEnd(text, i, code)
+        current += text.slice(i, end)
+        i = end
+        continue
+      }
+      if (code === CH_SLASH && (text.charCodeAt(i + 1) === CH_SLASH || text.charCodeAt(i + 1) === 42 /* * */)) {
+        // Keep comments attached to their part; find their end.
+        if (text.charCodeAt(i + 1) === CH_SLASH) {
+          const nl = text.indexOf('\n', i + 2)
+          const end = nl === -1 ? text.length : nl
+          current += text.slice(i, end)
+          i = end
+          continue
+        }
+        const close = text.indexOf('*/', i + 2)
+        const end = close === -1 ? text.length : close + 2
+        current += text.slice(i, end)
+        i = end
+        continue
+      }
+      if (code === CH_LPAREN || code === CH_LBRACKET || code === CH_LBRACE) depth++
+      else if (code === CH_RPAREN || code === CH_RBRACKET || code === CH_RBRACE) depth--
+      if (text[i] === operator && depth === 0) {
+        parts.push(current)
+        current = ''
+        i++
+        continue
+      }
+      current += text[i]
+      i++
+    }
+    parts.push(current)
+    return parts
+  }
+
+  /** Decode a single-quoted or double-quoted string literal to its value. */
+  function unquoteStringLiteral(literal: string): string {
+    const body = literal.slice(1, -1)
+    return body.replace(/\\(.)/g, (_m, ch: string) => {
+      if (ch === 'n') return '\n'
+      if (ch === 't') return '\t'
+      if (ch === 'r') return '\r'
+      if (ch === '0') return '\0'
+      return ch
+    })
+  }
+
+  /** Encode a string value as a single-quoted string literal type. */
+  function quoteStringLiteral(value: string): string {
+    const escaped = value
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, '\\\'')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t')
+    return `'${escaped}'`
   }
 
   /** Extract type from `as Type` assertion in initializer */

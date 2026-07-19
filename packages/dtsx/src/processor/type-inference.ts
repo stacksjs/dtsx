@@ -192,11 +192,18 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return trimmed
   }
 
-  // String literals
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"'))
-    || (trimmed.startsWith('\'') && trimmed.endsWith('\''))) {
-    if (!isConst) return 'string'
-    return trimmed
+  // String literals — only when the text is exactly one literal. Multi-part
+  // concatenations ('a' + 'b') evaluate to the joined literal for const
+  // (string otherwise), and any `+` with a string-literal operand widens to
+  // string. Purely numeric arithmetic (`60 * 1000`) widens to number.
+  if (trimmed.charCodeAt(0) === 39 || trimmed.charCodeAt(0) === 34) { // single or double quote
+    const stringExpr = classifyStringExpression(trimmed)
+    if (stringExpr !== null) {
+      if (stringExpr === 'string' || !isConst) return 'string'
+      return stringExpr
+    }
+    // Not a plain string expression (e.g. `'x' as const`, `'x'.repeat(3)`) —
+    // fall through so assertions and other wrappers are still handled below.
   }
 
   // Number literals
@@ -293,8 +300,114 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
 
   if (hasTopLevelComparison(trimmed)) return 'boolean'
 
+  // Purely numeric arithmetic (`60 * 1000`, `(1 / 2) * 60`) widens to number.
+  if (isNumericArithmetic(trimmed)) return 'number'
+
   // Other expressions (method calls, property access, etc.)
   return 'unknown'
+}
+
+/** Check if the text is a single string literal with nothing after it. */
+function isSingleStringLiteral(value: string): boolean {
+  const quote = value.charCodeAt(0)
+  if (quote !== 39 && quote !== 34) return false
+  return skipQuotedValue(value, 0, quote) === value.length
+}
+
+/**
+ * Classify an expression that starts with a string literal: exactly one
+ * literal, a concatenation of literals (evaluated to the joined literal), or
+ * a `+` with at least one string operand (widens to string). Returns null
+ * when the expression is not recognizable.
+ */
+function classifyStringExpression(value: string): string | null {
+  if (isSingleStringLiteral(value)) return value
+  const parts = splitTopLevelPlus(value)
+  if (parts.length < 2) return null
+  let hasStringPart = false
+  let allStringParts = true
+  let joined = ''
+  for (const part of parts) {
+    const p = part.trim()
+    if (isSingleStringLiteral(p)) {
+      hasStringPart = true
+      joined += unquoteStringLiteral(p)
+    }
+    else {
+      allStringParts = false
+    }
+  }
+  if (allStringParts) return quoteStringLiteral(joined)
+  if (hasStringPart) return 'string'
+  return null
+}
+
+/** Split an expression on top-level `+` operators (strings/comments aware). */
+function splitTopLevelPlus(text: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  let i = 0
+  while (i < text.length) {
+    const char = text.charCodeAt(i)
+    if (char === 39 || char === 34 || char === 96) {
+      i = skipQuotedValue(text, i, char)
+      continue
+    }
+    if (char === 40 || char === 91 || char === 123) depth++
+    else if (char === 41 || char === 93 || char === 125) depth--
+    else if (char === 43 /* + */ && depth === 0) {
+      parts.push(text.slice(start, i))
+      start = i + 1
+    }
+    i++
+  }
+  parts.push(text.slice(start))
+  return parts
+}
+
+/** Decode a quoted string literal to its raw value. */
+function unquoteStringLiteral(literal: string): string {
+  const body = literal.slice(1, -1)
+  return body.replace(/\\(.)/g, (_m, ch: string) => {
+    if (ch === 'n') return '\n'
+    if (ch === 't') return '\t'
+    if (ch === 'r') return '\r'
+    if (ch === '0') return '\0'
+    return ch
+  })
+}
+
+/** Encode a raw string value as a single-quoted string literal type. */
+function quoteStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, '\\\'')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+  return `'${escaped}'`
+}
+
+/** Check if the expression is composed solely of numeric literals and arithmetic operators. */
+function isNumericArithmetic(value: string): boolean {
+  if (value === '') return false
+  let hasDigit = false
+  let hasOperator = false
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i)
+    if (c >= 48 && c <= 57) {
+      hasDigit = true
+      continue
+    }
+    if (c === 43 || c === 45 || c === 42 || c === 47 || c === 37) { // + - * / %
+      hasOperator = true
+      continue
+    }
+    if (c === 46 || c === 40 || c === 41 || c <= 32) continue // . ( ) whitespace
+    return false
+  }
+  return hasDigit && hasOperator
 }
 
 /** Check for a comparison operator outside nested expressions and strings. */
