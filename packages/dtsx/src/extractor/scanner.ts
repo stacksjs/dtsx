@@ -1979,6 +1979,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // in value expressions (comparisons like <=, >=, and plain < >)
         let depth = 0
         let angleDepth = 0
+        let jsxDepth = 0
         while (pos < len) {
           if (skipNonCode())
             continue
@@ -1988,20 +1989,18 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
             depth--
           else if (ic === CH_LANGLE && depth === 0) {
-            // Only track angle brackets at depth 0 (top-level generics like Map<K,V>).
-            // Inside braces (function bodies), < and > are comparison operators.
-            // Don't count <= as opening angle bracket
-            if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL)
-              angleDepth++
+            const jsxDelta = jsxTagDeltaAt(pos)
+            if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
+            else if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL) angleDepth++
           }
-          else if (ic === CH_RANGLE && depth === 0 && !isArrowGT()) {
+          else if (ic === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
             // Don't count >= as closing angle bracket, and prevent going negative
             if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
               angleDepth--
           }
-          else if (depth === 0 && angleDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
+          else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
             break
-          if (depth === 0 && angleDepth === 0 && checkASITopLevel())
+          if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && checkASITopLevel())
             break
           pos++
         }
@@ -2049,6 +2048,47 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     } while (pos < len)
 
     return results
+  }
+
+  /** Return the JSX nesting delta for a tag beginning at index, or null. */
+  function jsxTagDeltaAt(index: number): number | null {
+    if (source.charCodeAt(index) !== CH_LANGLE || index + 1 >= len) return null
+    const next = source.charCodeAt(index + 1)
+    if (next === CH_RANGLE) return 1 // fragment open: <>
+    if (next === CH_SLASH) return -1 // element or fragment close
+    if (!isIdentStart(next)) return null
+
+    let nameEnd = index + 2
+    while (nameEnd < len) {
+      const code = source.charCodeAt(nameEnd)
+      if (!isIdentChar(code) && code !== CH_DOT && code !== 58 /* : */ && code !== 45 /* - */) break
+      nameEnd++
+    }
+    const tagName = source.slice(index + 1, nameEnd)
+    const delimiter = source.charCodeAt(nameEnd)
+    if (delimiter > 32 && delimiter !== CH_RANGLE && delimiter !== CH_SLASH) return null
+
+    let braceDepth = 0
+    let quote = 0
+    let tagEnd = nameEnd
+    for (; tagEnd < len; tagEnd++) {
+      const code = source.charCodeAt(tagEnd)
+      if (quote !== 0) {
+        if (code === CH_BACKSLASH) tagEnd++
+        else if (code === quote) quote = 0
+        continue
+      }
+      if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) quote = code
+      else if (code === CH_LBRACE) braceDepth++
+      else if (code === CH_RBRACE && braceDepth > 0) braceDepth--
+      else if (code === CH_RANGLE && braceDepth === 0) break
+    }
+    if (tagEnd >= len) return null
+
+    let beforeEnd = tagEnd - 1
+    while (beforeEnd > index && source.charCodeAt(beforeEnd) <= 32) beforeEnd--
+    if (source.charCodeAt(beforeEnd) === CH_SLASH) return 0
+    return source.indexOf(`</${tagName}`, tagEnd + 1) === -1 ? null : 1
   }
 
   /**

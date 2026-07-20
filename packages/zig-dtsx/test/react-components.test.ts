@@ -43,4 +43,15 @@ describeIf('Zig React component declarations', () => {
     expect(output).toContain('Card: ReturnType<typeof memo>;')
     expect(output).toContain('LazyPanel: ReturnType<typeof lazy>;')
   })
+
+  test('emits default-exported local arrow components', () => {
+    const output = dts(`
+      export interface PanelProps { title: string }
+      const Panel = ({ title }: PanelProps) => <section>{title}, ready</section>
+      export default Panel
+    `)
+
+    expect(output).toContain('declare const Panel: ({ title }: PanelProps) => JSX.Element;')
+    expect(output).toContain('export default Panel;')
+  })
 })

@@ -1152,6 +1152,10 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     if (isJsxExpression(trimmed)) return "JSX.Element";
 
+    // Recognize an outer arrow before comma-operator handling because JSX text
+    // and children may contain commas that are not JavaScript operators.
+    if (findMainArrowIndex(trimmed) != null) return inferFunctionType(alloc, trimmed, in_union, depth, is_const);
+
     // The comma operator evaluates to its final operand. Reuse the balanced
     // element splitter so commas inside calls, arrays, and objects are ignored.
     if (findTopLevelComma(trimmed)) |comma| return inferNarrowType(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1);

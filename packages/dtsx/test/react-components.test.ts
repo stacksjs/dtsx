@@ -98,4 +98,25 @@ describe('React and JSX component declarations', () => {
     expect(output).toContain("import type { FC } from 'react';")
     expect(output).toContain('Greeting: FC<GreetingProps>;')
   })
+
+  test('emits local arrow components referenced by default exports', () => {
+    const output = processSource(`
+      export interface PanelProps { title: string }
+      const Panel = ({ title }: PanelProps) => <section>{title}, ready</section>
+      export default Panel
+    `)
+
+    expect(output).toContain('declare const Panel: ({ title }: PanelProps) => JSX.Element;')
+    expect(output).toContain('export default Panel;')
+  })
+
+  test('stops JSX initializers before following exports', () => {
+    const output = processSource(`
+      export const Header = () => <header>Hello, world</header>
+      export const footerLabel = 'Footer'
+    `)
+
+    expect(output).toContain('Header: () => JSX.Element;')
+    expect(output).toContain("footerLabel: 'Footer';")
+  })
 })
