@@ -140,7 +140,8 @@ describe('React and JSX component declarations', () => {
       ))
     `)
 
-    expect(output).toContain("import { forwardRef, memo } from 'react';")
+    expect(output).toContain("import { memo } from 'react';")
+    expect(output).not.toContain('forwardRef')
     expect(output).toContain('MemoField: ReturnType<typeof memo>;')
     expect(output).toContain('RefField: ReturnType<typeof memo>;')
   })

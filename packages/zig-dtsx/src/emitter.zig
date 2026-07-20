@@ -883,10 +883,11 @@ pub fn processDeclarations(
                 .variable_decl => {
                     if (d.is_exported) {
                         extractWords(&combined_words, d.text);
-                        if (d.type_annotation.len > 0)
+                        if (d.type_annotation.len > 0) {
                             extractWords(&combined_words, d.type_annotation);
-                        if (d.value.len > 0)
-                            extractWords(&combined_words, d.value);
+                        } else if (d.value.len > 0) {
+                            extractWords(&combined_words, try type_inf.inferNarrowType(alloc, d.value, true, false, 0));
+                        }
                     }
                 },
                 .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {

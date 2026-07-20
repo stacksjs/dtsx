@@ -1378,7 +1378,9 @@ function inferCallType(value: string): string | null {
   const hasInlineFunction = findMainArrowIndex(argumentsText) !== -1
     || argumentsText.startsWith('function')
     || argumentsText.startsWith('async function')
-  if (!entity.includes('.') && !hasTypeArguments && !isOptional && !hasInlineFunction && argumentsText.length === 0) return null
+  const hasReferenceArgument = isEntityName(argumentsText)
+  const hasNestedCall = !hasInlineFunction && argumentsText.endsWith(')') && inferCallType(argumentsText) !== null
+  if (!hasTypeArguments && !isOptional && !hasInlineFunction && !hasReferenceArgument && !hasNestedCall) return null
 
   const type = `ReturnType<typeof ${callee}>`
   return isOptional ? `${type} | undefined` : type
