@@ -217,6 +217,34 @@ fn isRegexLiteral(value: []const u8) bool {
     return false;
 }
 
+fn isJsxTagNameChar(c: u8) bool {
+    return ch.isIdentChar(c) or c == '.' or c == ':' or c == '-';
+}
+
+/// Detect a complete JSX element or fragment without assuming a particular JSX
+/// runtime. This deliberately requires a matching outer close or a self-close,
+/// keeping angle-bracket assertions and generic arrow functions distinct.
+fn isJsxExpression(value: []const u8) bool {
+    const expression = trim(value);
+    if (expression.len < 3 or expression[0] != '<') return false;
+    if (ch.startsWith(expression, "<>")) return ch.endsWith(expression, "</>");
+    if (!ch.isIdentStart(expression[1])) return false;
+
+    var tag_end: usize = 2;
+    while (tag_end < expression.len and isJsxTagNameChar(expression[tag_end])) tag_end += 1;
+    const tag_name = expression[1..tag_end];
+    if (tag_name.len == 0 or tag_end >= expression.len) return false;
+    const delimiter = expression[tag_end];
+    if (!ch.isWhitespace(delimiter) and delimiter != '>' and delimiter != '/') return false;
+    if (ch.endsWith(expression, "/>")) return true;
+
+    const close_start = std.mem.lastIndexOf(u8, expression, "</") orelse return false;
+    var close_end = close_start + 2;
+    while (close_end < expression.len and isJsxTagNameChar(expression[close_end])) close_end += 1;
+    return std.mem.eql(u8, expression[close_start + 2 .. close_end], tag_name) and
+        close_end < expression.len and expression[close_end] == '>' and close_end == expression.len - 1;
+}
+
 fn inferAccessType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
     if (value.len > 3 and value[value.len - 1] == ']') {
         const bracket = std.mem.lastIndexOfScalar(u8, value, '[') orelse return null;
@@ -990,6 +1018,11 @@ pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, p
                 if (expression_depth == 0) break;
                 expression_depth -= 1;
             } else if (c == ';' and expression_depth == 0) break;
+            if ((c == '\n' or c == '\r') and expression_depth == 0) {
+                var next = i + 1;
+                while (next < content.len and ch.isWhitespace(content[next])) next += 1;
+                if (ch.startsWith(content[next..], "return") and (next + 6 >= content.len or !ch.isIdentChar(content[next + 6]))) break;
+            }
         }
         const expression = trim(content[expression_start..i]);
         const inferred = try inferBodyExpressionType(alloc, expression, parameters, depth + 1);
@@ -1012,6 +1045,7 @@ fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, par
     while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
         value = trim(value[1 .. value.len - 1]);
     }
+    if (isJsxExpression(value)) return "JSX.Element";
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
     if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
 
@@ -1113,6 +1147,8 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     while (trimmed.len >= 2 and trimmed[0] == '(' and trimmed[trimmed.len - 1] == ')' and findMatchingBracket(trimmed, 0, '(', ')') == trimmed.len - 1) {
         return inferNarrowType(alloc, trim(trimmed[1 .. trimmed.len - 1]), is_const, in_union, depth + 1);
     }
+
+    if (isJsxExpression(trimmed)) return "JSX.Element";
 
     // The comma operator evaluates to its final operand. Reuse the balanced
     // element splitter so commas inside calls, arrays, and objects are ignored.
@@ -2560,6 +2596,18 @@ test "arithmetic and update expressions emit valid result types" {
     try std.testing.expectEqualStrings("bigint", try inferNarrowType(alloc, "1n + 2n", true, false, 0));
     try std.testing.expectEqualStrings("typeof counter", try inferNarrowType(alloc, "counter++", false, false, 0));
     try std.testing.expectEqualStrings("typeof state.count", try inferNarrowType(alloc, "--state.count", false, false, 0));
+}
+
+test "JSX expressions infer portable element types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("JSX.Element", try inferNarrowType(alloc, "<button>Save</button>", false, false, 0));
+    try std.testing.expectEqualStrings("JSX.Element", try inferNarrowType(alloc, "<Form.Field name='email' />", false, false, 0));
+    try std.testing.expectEqualStrings("JSX.Element", try inferNarrowType(alloc, "<><span>One</span><span>Two</span></>", false, false, 0));
+    try std.testing.expectEqualStrings("JSX.Element", try inferFunctionBodyReturnType(alloc, "{ return <Card title={title} /> }", "(title: string)", 0));
+    try std.testing.expectEqualStrings("null | JSX.Element", try inferFunctionBodyReturnType(alloc, "{ if (hidden) return null; return <Panel /> }", "(hidden: boolean)", 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "<Value>input", false, false, 0));
 }
 
 test "extractSatisfiesType" {
