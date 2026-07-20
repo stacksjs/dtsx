@@ -54,4 +54,16 @@ describeIf('Zig React component declarations', () => {
     expect(output).toContain('declare const Panel: ({ title }: PanelProps) => JSX.Element;')
     expect(output).toContain('export default Panel;')
   })
+
+  test('supports semicolon props and named component wrappers', () => {
+    const output = dts(`
+      import { memo } from 'react'
+      export interface FieldProps { value: string };
+      const Field = ({ value }: FieldProps) => <span>{value}</span>
+      export const MemoField = memo(Field)
+    `)
+
+    expect(output).toContain("import { memo } from 'react';")
+    expect(output).toContain('MemoField: ReturnType<typeof memo>;')
+  })
 })

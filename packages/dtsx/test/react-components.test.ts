@@ -119,4 +119,47 @@ describe('React and JSX component declarations', () => {
     expect(output).toContain('Header: () => JSX.Element;')
     expect(output).toContain("footerLabel: 'Footer';")
   })
+
+  test('supports semicolon-terminated props followed by components', () => {
+    const output = processSource(`
+      export interface ButtonProps { label: string };
+      export const Button = ({ label }: ButtonProps) => <button>{label}</button>
+    `)
+
+    expect(output).toContain('Button: ({ label }: ButtonProps) => JSX.Element;')
+  })
+
+  test('infers wrappers around named and nested components', () => {
+    const output = processSource(`
+      import { forwardRef, memo } from 'react'
+      export interface FieldProps { value: string };
+      const Field = ({ value }: FieldProps) => <span>{value}</span>
+      export const MemoField = memo(Field)
+      export const RefField = memo(forwardRef<HTMLDivElement, FieldProps>(
+        (props, ref) => <div ref={ref}>{props.value}</div>
+      ))
+    `)
+
+    expect(output).toContain("import { forwardRef, memo } from 'react';")
+    expect(output).toContain('MemoField: ReturnType<typeof memo>;')
+    expect(output).toContain('RefField: ReturnType<typeof memo>;')
+  })
+
+  test('handles generic components and class components', () => {
+    const output = processSource(`
+      import * as React from 'react'
+      export interface ListProps<T> { items: T[]; render: (item: T) => React.ReactNode };
+      export function List<T>({ items, render }: ListProps<T>) {
+        return <ul>{items.map(render)}</ul>
+      }
+      export class Boundary extends React.Component<{ children?: React.ReactNode }> {
+        render() { return <section>{this.props.children}</section> }
+      }
+    `)
+
+    expect(output).toContain("import * as React from 'react';")
+    expect(output).toContain('function List<T>({ items, render }: ListProps<T>): JSX.Element;')
+    expect(output).toContain('class Boundary extends React.Component<{ children?: React.ReactNode }>')
+    expect(output).toContain('render(): JSX.Element;')
+  })
 })

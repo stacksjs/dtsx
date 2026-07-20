@@ -3605,7 +3605,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     else {
       // Skip unknown top-level content (string expressions like 'use strict', decorators, etc.)
       const ch = source.charCodeAt(pos)
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+      if (ch === CH_SEMI) {
+        pos++
+      }
+      else if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
         skipString(ch)
         if (pos < len && source.charCodeAt(pos) === CH_SEMI)
           pos++
