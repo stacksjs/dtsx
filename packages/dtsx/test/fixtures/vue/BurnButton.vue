@@ -1,6 +1,6 @@
 <template>
   <button type="button" :disabled="disabled" @click="onBurn(mint)">
-    Burn NFT
+    Burn
   </button>
 </template>
 
