@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { processSource } from '../src/generator'
+import { processSourceIsolated } from '../src/process-source'
 
 describe('React and JSX component declarations', () => {
   test('infers JSX returns for function components', () => {
@@ -49,5 +50,52 @@ describe('React and JSX component declarations', () => {
   test('does not mistake angle-bracket assertions for JSX', () => {
     const output = processSource('export const value = <string>input')
     expect(output).not.toContain('value: JSX.Element')
+  })
+
+  test('preserves typed forwardRef wrappers and their imports', () => {
+    const output = processSource(`
+      import { forwardRef } from 'react'
+      export interface InputProps { invalid?: boolean }
+      export const Input = forwardRef<HTMLInputElement, InputProps>(
+        ({ invalid }, ref) => <input ref={ref} aria-invalid={invalid} />
+      )
+    `)
+
+    expect(output).toContain("import { forwardRef } from 'react';")
+    expect(output).toContain('Input: ReturnType<typeof forwardRef<HTMLInputElement, InputProps>>;')
+  })
+
+  test('preserves memo wrappers around inline components', () => {
+    const output = processSource(`
+      import { memo } from 'react'
+      export interface CardProps { title: string }
+      export const Card = memo(function Card({ title }: CardProps) {
+        return <article>{title}</article>
+      })
+    `)
+
+    expect(output).toContain("import { memo } from 'react';")
+    expect(output).toContain('Card: ReturnType<typeof memo>;')
+  })
+
+  test('preserves lazy wrappers around dynamic imports', () => {
+    const output = processSource(`
+      import { lazy } from 'react'
+      export const LazyPanel = lazy(() => import('./Panel'))
+    `)
+
+    expect(output).toContain("import { lazy } from 'react';")
+    expect(output).toContain('LazyPanel: ReturnType<typeof lazy>;')
+  })
+
+  test('keeps explicit component contracts on the isolated path', () => {
+    const output = processSourceIsolated(`
+      import type { FC } from 'react'
+      export interface GreetingProps { name: string }
+      export const Greeting: FC<GreetingProps> = ({ name }) => <div>{name}</div>
+    `, 'Greeting.tsx')
+
+    expect(output).toContain("import type { FC } from 'react';")
+    expect(output).toContain('Greeting: FC<GreetingProps>;')
   })
 })

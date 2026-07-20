@@ -258,6 +258,7 @@ export function processDeclarations(
       // them, so their type references must participate in import retention.
       textParts.push(variable.text)
       if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
+      if (variable.isExported && variable.value) textParts.push(String(variable.value))
     }
     for (const iface of interfaces) {
       if (iface.isExported || interfaceReferences.has(iface.name)) textParts.push(iface.text)

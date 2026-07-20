@@ -307,7 +307,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   // Function expressions. Check these after `as const` so an asserted
   // object or array containing arrow-function properties is inferred as a
   // container instead of treating the complete initializer as one function.
-  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+  if (findMainArrowIndex(trimmed) !== -1 || trimmed.startsWith('function') || trimmed.startsWith('async')) {
     return inferFunctionType(trimmed, inUnion, _depth, isConst)
   }
 
@@ -338,6 +338,9 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
     return 'symbol'
   }
+
+  const callType = inferCallType(trimmed)
+  if (callType !== null) return callType
 
   if (hasTopLevelComparison(trimmed)) return 'boolean'
 
@@ -1345,6 +1348,40 @@ function isIdentifierName(value: string): boolean {
 function isEntityName(value: string): boolean {
   const parts = value.split('.')
   return parts.length > 0 && parts.every(isIdentifierName)
+}
+
+/** Infer calls whose callee can be referenced safely from declaration syntax. */
+function inferCallType(value: string): string | null {
+  if (value.length < 3 || !value.endsWith(')')) return null
+  const open = value.indexOf('(')
+  if (open === -1 || findMatchingBracket(value, open, '(', ')') !== value.length - 1) return null
+
+  let callee = value.slice(0, open).trim()
+  let isOptional = false
+  if (callee.endsWith('?.')) {
+    isOptional = true
+    callee = callee.slice(0, -2).trim()
+  }
+
+  let entity = callee
+  let hasTypeArguments = false
+  const genericStart = callee.indexOf('<')
+  if (genericStart !== -1) {
+    const genericEnd = findMatchingBracket(callee, genericStart, '<', '>')
+    if (genericEnd !== callee.length - 1) return null
+    entity = callee.slice(0, genericStart).trim()
+    hasTypeArguments = true
+  }
+  if (!isEntityName(entity)) return null
+
+  const argumentsText = value.slice(open + 1, -1).trim()
+  const hasInlineFunction = findMainArrowIndex(argumentsText) !== -1
+    || argumentsText.startsWith('function')
+    || argumentsText.startsWith('async function')
+  if (!entity.includes('.') && !hasTypeArguments && !isOptional && !hasInlineFunction) return null
+
+  const type = `ReturnType<typeof ${callee}>`
+  return isOptional ? `${type} | undefined` : type
 }
 
 /**

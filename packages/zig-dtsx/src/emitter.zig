@@ -147,6 +147,8 @@ const ParsedImportResult = struct {
     named_items: []const []const u8,
     source: []const u8,
     is_type_only: bool,
+    is_namespace: bool,
+    namespace_name: ?[]const u8,
 };
 
 /// Get parsed import components from a declaration's cached parsed_import.
@@ -157,6 +159,8 @@ fn getParsedImport(decl: Declaration) ?ParsedImportResult {
         .named_items = pi.named_items,
         .source = pi.source,
         .is_type_only = pi.is_type_only,
+        .is_namespace = pi.is_namespace,
+        .namespace_name = pi.namespace_name,
     };
 }
 
@@ -881,6 +885,8 @@ pub fn processDeclarations(
                         extractWords(&combined_words, d.text);
                         if (d.type_annotation.len > 0)
                             extractWords(&combined_words, d.type_annotation);
+                        if (d.value.len > 0)
+                            extractWords(&combined_words, d.value);
                     }
                 },
                 .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {
@@ -951,6 +957,7 @@ pub fn processDeclarations(
             const parsed = getParsedImport(imp) orelse continue;
 
             const used_default = if (parsed.default_name) |dn| used_import_items.contains(dn) else false;
+            const used_namespace = if (parsed.namespace_name) |name| used_import_items.contains(name) else false;
             used_named.clearRetainingCapacity();
 
             for (parsed.named_items) |item| {
@@ -966,7 +973,7 @@ pub fn processDeclarations(
                 }
             }
 
-            if (used_default or used_named.items.len > 0) {
+            if (used_default or used_namespace or used_named.items.len > 0) {
                 import_buf.clearRetainingCapacity();
                 if (parsed.is_type_only) {
                     try import_buf.appendSlice("import type ");
@@ -974,7 +981,10 @@ pub fn processDeclarations(
                     try import_buf.appendSlice("import ");
                 }
 
-                if (used_default) {
+                if (used_namespace and parsed.is_namespace) {
+                    try import_buf.appendSlice("* as ");
+                    try import_buf.appendSlice(parsed.namespace_name.?);
+                } else if (used_default) {
                     if (parsed.default_name) |dn| try import_buf.appendSlice(dn);
                     if (used_named.items.len > 0) {
                         try import_buf.appendSlice(", { ");

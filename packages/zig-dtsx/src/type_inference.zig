@@ -299,10 +299,12 @@ fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]cons
         has_type_arguments = true;
     }
     if (!isEntityName(entity)) return null;
+    const arguments = trim(value[open + 1 .. value.len - 1]);
+    const has_inline_function = findMainArrowIndex(arguments) != null or ch.startsWith(arguments, "function") or ch.startsWith(arguments, "async function");
     const dot = std.mem.indexOfScalar(u8, entity, '.');
     if (dot) |index| {
         if (ch.indexOfChar(entity, '.', index + 1) != null) return null;
-    } else if (!has_type_arguments and !is_optional) return null;
+    } else if (!has_type_arguments and !is_optional and !has_inline_function) return null;
 
     const call_type = try std.fmt.allocPrint(alloc, "ReturnType<typeof {s}>", .{callee});
     if (is_optional) return try std.fmt.allocPrint(alloc, "{s} | undefined", .{call_type});
