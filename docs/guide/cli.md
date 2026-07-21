@@ -3,6 +3,7 @@ title: CLI Commands
 description: Complete reference for dtsx command-line interface.
 ---
 
+```bash
 dtsx --help
 dtsx generate --help
 dtsx watch --help
@@ -23,7 +24,7 @@ dtsx --version
 
 ### Text Output (Default)
 
-```
+```text
 
 dtsx v1.0.0
 
@@ -67,7 +68,7 @@ dtsx generate --verbose --stats
 
 ```
 
-```
+```text
 
 dtsx v1.0.0
 
@@ -98,7 +99,7 @@ dtsx generate --dry-run --diff
 
 ```
 
-```
+```text
 
 dtsx v1.0.0
 
