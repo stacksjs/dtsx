@@ -5,6 +5,7 @@
  */
 
 import type { Declaration } from '../types'
+import { isStxFile, transformStxToTs } from '../stx'
 import { isVueFile, transformVueSfcToTs } from '../vue'
 import { hashContent } from './hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './scanner'
@@ -23,9 +24,12 @@ export function extractDeclarations(
   keepComments: boolean = true,
   isolatedDeclarations: boolean = false,
 ): Declaration[] {
-  // Vue SFCs are transformed into a virtual TS module before scanning.
+  // Component files are transformed into virtual TS modules before scanning.
   if (isVueFile(filePath)) {
     sourceCode = transformVueSfcToTs(sourceCode)
+  }
+  else if (isStxFile(filePath)) {
+    sourceCode = transformStxToTs(sourceCode)
   }
 
   const contentHash = hashContent(sourceCode)

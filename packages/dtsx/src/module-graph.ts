@@ -42,7 +42,7 @@ export interface ResolveResult {
  * Extensions tried, in order, when resolving an extensionless specifier.
  * `.d.ts` last so source files win over generated declarations.
  */
-const TS_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.d.ts', '.d.mts', '.d.cts'] as const
+const TS_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.vue', '.stx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts', '.d.mts', '.d.cts'] as const
 
 const RUNTIME_SOURCE_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   '.js': ['.ts', '.tsx', '.d.ts'],

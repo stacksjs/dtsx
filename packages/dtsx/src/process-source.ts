@@ -3,6 +3,7 @@ import { extractDeclarations } from './extractor/extract'
 import { hashContent } from './extractor/hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
+import { isStxFile, transformStxToTs } from './stx'
 import { isVueFile, transformVueSfcToTs } from './vue'
 
 // ---------------------------------------------------------------------------
@@ -102,9 +103,12 @@ export function processSourceDirect(
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
 ): string {
-  // Vue SFCs are transformed into a virtual TS module before scanning.
+  // Component files are transformed into virtual TS modules before scanning.
   if (isVueFile(filename)) {
     sourceCode = transformVueSfcToTs(sourceCode)
+  }
+  else if (isStxFile(filename)) {
+    sourceCode = transformStxToTs(sourceCode)
   }
   const declarations = isolatedDeclarations
     ? scanIsolatedDeclarations(sourceCode, filename, keepComments)
