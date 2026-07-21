@@ -114,6 +114,47 @@ describe('declaration generation paths', () => {
     expect(declaration.value).toBeUndefined()
   })
 
+  it('fast-skips terminated single-line literals without consuming following declarations', () => {
+    const source = [
+      `export const object: { nested: { value: string }, callback: () => number } = { nested: { value: ';' }, callback: () => 42 };`,
+      `export const array: readonly string[] = ['one', ';', 'three'];`,
+      `export const quoted: string = 'a value with ; and } delimiters';`,
+      'export const template: string = `a template with ; and ] delimiters`;',
+      `export const after: number = 42;`,
+      `export const sameLineObject: { value: string } = { value: 'one' }; export const sameLineAfter: { value: string } = { value: 'two' };`,
+    ].join('\n')
+
+    const isolated = processSourceIsolated(source, 'terminated.ts', false)
+    const semantic = processSourceSemantic(source, 'terminated.ts', false)
+
+    expect(isolated).toBe(semantic)
+    expect(isolated).toContain('export declare const object: { nested: { value: string }, callback: () => number };')
+    expect(isolated).toContain('export declare const array: readonly string[];')
+    expect(isolated).toContain('export declare const quoted: string;')
+    expect(isolated).toContain('export declare const template: string;')
+    expect(isolated).toContain('export declare const after: number;')
+    expect(isolated).toContain('export declare const sameLineObject: { value: string };')
+    expect(isolated).toContain('export declare const sameLineAfter: { value: string };')
+  })
+
+  it('falls back to balanced scanning for multiline and semicolonless initializers', () => {
+    const source = [
+      'export const multiline: { value: string } = {',
+      `  value: 'kept private',`,
+      '};',
+      `export const semicolonless: readonly number[] = [1, 2, 3]`,
+      `export const after: boolean = true`,
+    ].join('\n')
+
+    const isolated = processSourceIsolated(source, 'fallback.ts', false)
+    const semantic = processSourceSemantic(source, 'fallback.ts', false)
+
+    expect(isolated).toBe(semantic)
+    expect(isolated).toContain('export declare const multiline: { value: string };')
+    expect(isolated).toContain('export declare const semicolonless: readonly number[];')
+    expect(isolated).toContain('export declare const after: boolean;')
+  })
+
   it('preserves broad contracts and documents their initializer values', () => {
     const source = `
       export const conf: { [key: string]: string } = {

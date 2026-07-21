@@ -724,6 +724,67 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /**
+   * Skip an annotated variable initializer without capturing its text.
+   *
+   * Unlike the general statement skipper this hot path walks each byte once
+   * and only tracks delimiters that can keep a variable initializer open.
+   * Isolated declarations call it for every explicitly annotated value.
+   */
+  function skipAnnotatedVariableInitializer(): void {
+    pos++ // skip =
+    while (pos < len && (source.charCodeAt(pos) === CH_SPACE || source.charCodeAt(pos) === CH_TAB)) pos++
+
+    // Common isolated-declarations output is one explicitly annotated value
+    // per line. A terminated single-line literal can jump directly to its
+    // semicolon without inspecting the initializer's properties/elements.
+    const lineEnd = source.indexOf('\n', pos)
+    const physicalEnd = lineEnd === -1 ? len : lineEnd
+    const terminator = source.indexOf(';', pos)
+    if (terminator !== -1 && terminator < physicalEnd) {
+      let valueEnd = terminator - 1
+      while (valueEnd >= pos && (source.charCodeAt(valueEnd) === CH_SPACE || source.charCodeAt(valueEnd) === CH_TAB)) valueEnd--
+      const first = source.charCodeAt(pos)
+      const final = source.charCodeAt(valueEnd)
+      const isClosedLiteral = (first === CH_LBRACE && final === CH_RBRACE)
+        || (first === CH_LBRACKET && final === CH_RBRACKET)
+        || (first === CH_SQUOTE && final === CH_SQUOTE)
+        || (first === CH_DQUOTE && final === CH_DQUOTE)
+        || (first === CH_BACKTICK && final === CH_BACKTICK)
+      if (isClosedLiteral) {
+        pos = terminator + 1
+        return
+      }
+    }
+
+    let depth = 0
+    let angleDepth = 0
+    let jsxDepth = 0
+    while (pos < len) {
+      if (skipNonCode()) continue
+      const ch = source.charCodeAt(pos)
+      if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET) {
+        depth++
+      }
+      else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET) {
+        depth--
+      }
+      else if (ch === CH_LANGLE && depth === 0) {
+        const jsxDelta = jsxTagDeltaAt(pos)
+        if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
+        else if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL) angleDepth++
+      }
+      else if (ch === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
+        if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL)) angleDepth--
+      }
+      else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ch === CH_SEMI || ch === CH_COMMA)) {
+        return
+      }
+      if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && checkASITopLevel()) return
+      pos++
+    }
+  }
+
+  /**
    * Skip an export re-export: { ... } [from '...'] [;]
    * pos should be at the opening {
    */
@@ -1983,7 +2044,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // Concrete annotations need no initializer work. Broad annotations retain
         // the initializer only so the processor can emit useful @defaultValue docs.
         if (isolatedDeclarations && typeAnnotation && (!keepComments || !isBroadAnnotation(typeAnnotation))) {
-          skipToStatementEnd()
+          skipAnnotatedVariableInitializer()
         }
         else {
         pos++ // skip =
