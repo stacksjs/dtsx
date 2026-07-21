@@ -125,6 +125,33 @@ function skipComment(text: string, i: number): number {
   return i + 1
 }
 
+/** Return the end of a string/template/comment at `i`, or `i` for normal code. */
+export function skipNonCode(text: string, i: number): number {
+  const ch = text[i]
+  if (ch === '"' || ch === '\'') return skipString(text, i)
+  if (ch === '`') return skipTemplate(text, i)
+  if (ch === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) return skipComment(text, i)
+  return i
+}
+
+/** Replace strings, template literals and comments with spaces, preserving offsets and newlines. */
+export function maskNonCode(text: string): string {
+  const chars = text.split('')
+  let i = 0
+  while (i < text.length) {
+    const end = skipNonCode(text, i)
+    if (end > i) {
+      for (let j = i; j < end; j++) {
+        if (chars[j] !== '\n' && chars[j] !== '\r') chars[j] = ' '
+      }
+      i = end
+      continue
+    }
+    i++
+  }
+  return chars.join('')
+}
+
 /**
  * Find the index of the closer matching the opener at `start`
  * (`text[start]` must be the opener). Returns -1 when unbalanced.
@@ -303,7 +330,7 @@ function typeKey(key: string): string {
 // Compiler-macro extraction (defineProps / defineEmits / defineExpose)
 // ---------------------------------------------------------------------------
 
-interface MacroCall {
+export interface MacroCall {
   /** Generic type argument text (`defineProps<T>`), when present. */
   generic: string | null
   /** First argument text, when the call has arguments. */
@@ -311,7 +338,7 @@ interface MacroCall {
 }
 
 /** Locate the first `name(...)` / `name<T>(...)` call in `text`. */
-function findMacroCall(text: string, name: string): MacroCall | null {
+export function findMacroCall(text: string, name: string): MacroCall | null {
   const pattern = new RegExp(`\\b${name}\\b`, 'g')
   let match: RegExpExecArray | null
   // eslint-disable-next-line no-cond-assign
@@ -599,7 +626,8 @@ function convertEmitsCallSignatures(typeText: string): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Remove `defineProps` / `defineEmits` / `defineExpose` / `defineOptions`
+ * Remove `defineProps` / `defineEmits` / `defineExpose` / `defineSlots` /
+ * `defineOptions`
  * statements (including `withDefaults(defineProps(), ...)` wrappers) from
  * `<script setup>` content. Their type information has already been captured
  * in the synthesized component type; keeping the calls would only add noise
@@ -608,7 +636,7 @@ function convertEmitsCallSignatures(typeText: string): string | null {
  */
 export function stripMacroStatements(content: string): string {
   let result = content
-  for (const name of ['defineProps', 'defineEmits', 'defineExpose', 'defineOptions']) {
+  for (const name of ['defineProps', 'defineEmits', 'defineExpose', 'defineSlots', 'defineOptions']) {
     result = stripMacro(result, name)
   }
   return result
@@ -668,7 +696,7 @@ function stripMacro(text: string, name: string): string {
 // Options API default-export extraction
 // ---------------------------------------------------------------------------
 
-interface OptionsExtraction {
+export interface OptionsExtraction {
   /** The options object literal text, when a component options object was found. */
   options: string | null
   /** The script with the default export removed (kept only when options were found). */
@@ -679,11 +707,11 @@ interface OptionsExtraction {
 
 /** Extract the options object from `export default {...}` / `export default defineComponent({...})`. */
 export function extractDefaultExportOptions(script: string): OptionsExtraction {
-  const pattern = /\bexport\s+default\b/g
-  let match: RegExpExecArray | null
-  // eslint-disable-next-line no-cond-assign
-  while ((match = pattern.exec(script)) !== null) {
-    let i = match.index + match[0].length
+  const exportIndex = findTopLevelExportDefault(script)
+  if (exportIndex !== -1) {
+    const exportText = /^export\s+default\b/.exec(script.slice(exportIndex))?.[0]
+    if (!exportText) return { options: null, script, passthrough: false }
+    let i = exportIndex + exportText.length
     while (i < script.length && /\s/.test(script[i])) i++
 
     let objectStart = -1
@@ -716,14 +744,47 @@ export function extractDefaultExportOptions(script: string): OptionsExtraction {
 
     let end = statementEnd + 1
     if (script[end] === ';') end++
-    const cleaned = (script.slice(0, match.index) + script.slice(end)).trim()
+    const cleaned = (script.slice(0, exportIndex) + script.slice(end)).trim()
     return { options: script.slice(objectStart, objectEnd + 1), script: cleaned, passthrough: false }
   }
   return { options: null, script, passthrough: false }
 }
 
+/** Find a top-level `export default` outside strings, templates and comments. */
+function findTopLevelExportDefault(script: string): number {
+  let depth = 0
+  let i = 0
+  while (i < script.length) {
+    const ch = script[i]
+    if (ch === '"' || ch === '\'') {
+      i = skipString(script, i)
+      continue
+    }
+    if (ch === '`') {
+      i = skipTemplate(script, i)
+      continue
+    }
+    if (ch === '/' && (script[i + 1] === '/' || script[i + 1] === '*')) {
+      i = skipComment(script, i)
+      continue
+    }
+    if (ch === '{' || ch === '[' || ch === '(') depth++
+    else if (ch === '}' || ch === ']' || ch === ')') depth = Math.max(0, depth - 1)
+    else if (depth === 0 && script.startsWith('export', i)) {
+      const before = i === 0 ? '' : script[i - 1]
+      const after = script[i + 6] ?? ''
+      if (!/[\w$]/.test(before) && !/[\w$]/.test(after)) {
+        const match = /^export\s+default\b/.exec(script.slice(i))
+        if (match) return i
+      }
+    }
+    i++
+  }
+  return -1
+}
+
 /** Pull a named option (`props`, `emits`) out of an options object literal. */
-function getOptionValue(options: string, name: string): string | null {
+export function getOptionValue(options: string, name: string): string | null {
   const entry = parseObjectEntries(options).find(e => e.key === name)
   return entry && entry.value !== '' ? entry.value : null
 }
@@ -741,18 +802,47 @@ function getOptionValue(options: string, name: string): string | null {
  * source or in the synthesized component type (e.g. via `typeof sizes`) are
  * kept, as are exported declarations.
  */
-function filterLocalValueStatements(content: string, componentType: string): string {
+export function filterLocalValueStatements(content: string, componentType: string): string {
   const spans = findLocalValueStatements(content)
   // Remove from the end backwards so earlier spans stay valid.
   let result = content
   for (let i = spans.length - 1; i >= 0; i--) {
     const span = spans[i]
     const rest = result.slice(0, span.start) + result.slice(span.end)
-    if (new RegExp(`\\b${span.name}\\b`).test(rest)) continue
+    if (containsIdentifierReference(rest, span.name)) continue
     if (new RegExp(`\\btypeof\\s+${span.name}\\b`).test(componentType)) continue
     result = rest
   }
   return result
+}
+
+/** Check for an identifier outside strings and comments. */
+function containsIdentifierReference(content: string, name: string): boolean {
+  let i = 0
+  while (i < content.length) {
+    const ch = content[i]
+    if (ch === '"' || ch === '\'') {
+      i = skipString(content, i)
+      continue
+    }
+    if (ch === '`') {
+      i = skipTemplate(content, i)
+      continue
+    }
+    if (ch === '/' && (content[i + 1] === '/' || content[i + 1] === '*')) {
+      i = skipComment(content, i)
+      continue
+    }
+    if (/[A-Za-z_$]/.test(ch)) {
+      let end = i + 1
+      while (end < content.length && /[\w$]/.test(content[end])) end++
+      if (content.slice(i, end) === name) return true
+      i = end
+      continue
+    }
+    i++
+  }
+  return false
 }
 
 interface LocalValueStatement {
@@ -769,12 +859,14 @@ interface LocalValueStatement {
  */
 function findLocalValueStatements(content: string): LocalValueStatement[] {
   const spans: LocalValueStatement[] = []
+  const topLevelLineStarts = findTopLevelLineStarts(content)
   const pattern = /^[ \t]*(const|let|var|(?:async[ \t]+)?function)[ \t]+([A-Za-z_$][\w$]*)[ \t]*(?::[^=\n]+)?=?/gm
   let match: RegExpExecArray | null
   // eslint-disable-next-line no-cond-assign
   while ((match = pattern.exec(content)) !== null) {
     // Never touch exported declarations.
     const lineStart = content.lastIndexOf('\n', match.index) + 1
+    if (!topLevelLineStarts.has(lineStart)) continue
     if (/\bexport\b/.test(content.slice(lineStart, match.index))) continue
 
     const keyword = match[1]
@@ -839,11 +931,38 @@ function findLocalValueStatements(content: string): LocalValueStatement[] {
   return spans
 }
 
+/** Collect line starts whose code is outside every brace/paren/bracket pair. */
+function findTopLevelLineStarts(content: string): Set<number> {
+  const starts = new Set<number>([0])
+  let depth = 0
+  let i = 0
+  while (i < content.length) {
+    const ch = content[i]
+    if (ch === '"' || ch === '\'') {
+      i = skipString(content, i)
+      continue
+    }
+    if (ch === '`') {
+      i = skipTemplate(content, i)
+      continue
+    }
+    if (ch === '/' && (content[i + 1] === '/' || content[i + 1] === '*')) {
+      i = skipComment(content, i)
+      continue
+    }
+    if (ch === '{' || ch === '[' || ch === '(') depth++
+    else if (ch === '}' || ch === ']' || ch === ')') depth = Math.max(0, depth - 1)
+    if (ch === '\n' && depth === 0) starts.add(i + 1)
+    i++
+  }
+  return starts
+}
+
 /**
  * Remove an inlined interface/alias declaration from script content, unless
  * the name is still referenced elsewhere or the declaration is exported.
  */
-function removeInlinedDeclaration(content: string, name: string, declText: string): string {
+export function removeInlinedDeclaration(content: string, name: string, declText: string): string {
   const index = content.indexOf(declText)
   if (index === -1) return content
   // Never remove exported declarations — they are part of the module API.
@@ -855,7 +974,7 @@ function removeInlinedDeclaration(content: string, name: string, declText: strin
   return rest
 }
 
-interface PropsResolution {
+export interface PropsResolution {
   type: string
   /** A local interface/alias that was inlined into the props type. */
   inlinedLocal?: { name: string, declText: string }
@@ -866,7 +985,7 @@ interface PropsResolution {
  * literal members become `;`, continuation newlines (after an opener, comma,
  * colon, or before a closer, comma, union/intersection bar) become spaces.
  */
-function collapseTypeText(text: string): string {
+export function collapseTypeText(text: string): string {
   let out = ''
   let i = 0
   const prevSignificant = (): string => {
@@ -962,7 +1081,7 @@ function endsWithLeadingComment(out: string): boolean {
   return true
 }
 
-function resolvePropsType(scriptSetup: string | null, script: string | null): PropsResolution | null {
+export function resolvePropsType(scriptSetup: string | null, script: string | null): PropsResolution | null {
   const sources = [scriptSetup, script].filter((s): s is string => s !== null)
   for (const source of sources) {
     const call = findMacroCall(source, 'defineProps')
@@ -993,7 +1112,7 @@ function resolvePropsType(scriptSetup: string | null, script: string | null): Pr
   return null
 }
 
-function resolveEmitsType(scriptSetup: string | null, script: string | null): string | null {
+export function resolveEmitsType(scriptSetup: string | null, script: string | null): string | null {
   const sources = [scriptSetup, script].filter((s): s is string => s !== null)
   for (const source of sources) {
     const call = findMacroCall(source, 'defineEmits')
@@ -1012,7 +1131,7 @@ function resolveEmitsType(scriptSetup: string | null, script: string | null): st
   return null
 }
 
-function resolveExposedType(scriptSetup: string | null, script: string | null): string | null {
+export function resolveExposedType(scriptSetup: string | null, script: string | null): string | null {
   const sources = [scriptSetup, script].filter((s): s is string => s !== null)
   for (const source of sources) {
     const call = findMacroCall(source, 'defineExpose')
@@ -1020,6 +1139,9 @@ function resolveExposedType(scriptSetup: string | null, script: string | null): 
     const entries = parseObjectEntries(call.arg)
     if (entries.length === 0) return null
     const props = entries.map((entry) => {
+      if (entry.value === '' && /^[A-Za-z_$][\w$]*$/.test(entry.key)) {
+        return `${typeKey(entry.key)}: typeof ${entry.key}`
+      }
       const isFunction = entry.isMethod || /=>|^\s*function\b/.test(entry.value)
       return `${typeKey(entry.key)}: ${isFunction ? '(...args: any[]) => any' : 'unknown'}`
     })
