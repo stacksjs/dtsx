@@ -2245,6 +2245,12 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
                 return_type = try inferFunctionBodyReturnType(alloc, body, params, depth + 1);
             } else if (isDeclarationType(body)) {
                 return_type = body;
+            } else if (isJsxExpression(body) or (body.len >= 2 and body[0] == '(' and body[body.len - 1] == ')' and
+                findMatchingBracket(body, 0, '(', ')') == body.len - 1 and isJsxExpression(trim(body[1 .. body.len - 1]))))
+            {
+                // An arrow inside JSX attributes or children is an
+                // implementation detail, not a higher-order return value.
+                return_type = "JSX.Element";
             } else if (ch.contains(body, "=>")) {
                 // Higher-order function returning another function
                 // Try to extract the outer function signature: (params) =>
@@ -2615,6 +2621,9 @@ test "JSX expressions infer portable element types" {
     try std.testing.expectEqualStrings("JSX.Element", try inferNarrowType(alloc, "<><span>One</span><span>Two</span></>", false, false, 0));
     try std.testing.expectEqualStrings("JSX.Element", try inferFunctionBodyReturnType(alloc, "{ return <Card title={title} /> }", "(title: string)", 0));
     try std.testing.expectEqualStrings("null | JSX.Element", try inferFunctionBodyReturnType(alloc, "{ if (hidden) return null; return <Panel /> }", "(hidden: boolean)", 0));
+    try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => (<List render={item => <span>{item}</span>} />)", false, false, 0));
+    try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => <List render={item => <span>{item}</span>} />", false, false, 0));
+    try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => (\n<List title=\"score > threshold\" render={item => item.score > 0 ? <strong>{item.label}</strong> : <em>none</em>} />\n)", false, false, 0));
     try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "<Value>input", false, false, 0));
 }
 

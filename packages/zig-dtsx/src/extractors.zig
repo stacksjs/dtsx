@@ -4,7 +4,8 @@ const std = @import("std");
 const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
-const Scanner = @import("scanner.zig").Scanner;
+const scanner = @import("scanner.zig");
+const Scanner = scanner.Scanner;
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
@@ -1082,64 +1083,6 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 // Variable extraction
 // ========================================================================
 
-const JsxTagInfo = struct { delta: isize, end: usize };
-
-fn jsxTagAt(source: []const u8, index: usize) ?JsxTagInfo {
-    if (index + 1 >= source.len or source[index] != ch.CH_LANGLE) return null;
-    const next = source[index + 1];
-    if (next == ch.CH_RANGLE) return .{ .delta = 1, .end = index + 1 };
-    if (next == ch.CH_SLASH) {
-        const close_end = ch.indexOfChar(source, ch.CH_RANGLE, index + 2) orelse return null;
-        return .{ .delta = -1, .end = close_end };
-    }
-    if (!ch.isIdentStart(next)) return null;
-
-    var name_end = index + 2;
-    while (name_end < source.len) : (name_end += 1) {
-        const code = source[name_end];
-        if (!ch.isIdentChar(code) and code != ch.CH_DOT and code != ':' and code != '-') break;
-    }
-    const tag_name = source[index + 1 .. name_end];
-    if (name_end >= source.len) return null;
-    const delimiter = source[name_end];
-    if (!ch.isWhitespace(delimiter) and delimiter != ch.CH_RANGLE and delimiter != ch.CH_SLASH) return null;
-
-    var brace_depth: usize = 0;
-    var quote: u8 = 0;
-    var tag_end = name_end;
-    while (tag_end < source.len) : (tag_end += 1) {
-        const code = source[tag_end];
-        if (quote != 0) {
-            if (code == ch.CH_BACKSLASH) tag_end += 1 else if (code == quote) quote = 0;
-            continue;
-        }
-        if (code == ch.CH_SQUOTE or code == ch.CH_DQUOTE or code == ch.CH_BACKTICK) {
-            quote = code;
-        } else if (code == ch.CH_LBRACE) {
-            brace_depth += 1;
-        } else if (code == ch.CH_RBRACE and brace_depth > 0) {
-            brace_depth -= 1;
-        } else if (code == ch.CH_RANGLE and brace_depth == 0) {
-            break;
-        }
-    }
-    if (tag_end >= source.len) return null;
-
-    var before_end = tag_end - 1;
-    while (before_end > index and ch.isWhitespace(source[before_end])) before_end -= 1;
-    if (source[before_end] == ch.CH_SLASH) return .{ .delta = 0, .end = tag_end };
-
-    var search_from = tag_end + 1;
-    while (ch.indexOf(source, "</", search_from)) |close_start| {
-        const close_name_start = close_start + 2;
-        const close_name_end = close_name_start + tag_name.len;
-        if (close_name_end <= source.len and std.mem.eql(u8, source[close_name_start..close_name_end], tag_name) and
-            close_name_end < source.len and (source[close_name_end] == ch.CH_RANGLE or ch.isWhitespace(source[close_name_end]))) return .{ .delta = 1, .end = tag_end };
-        search_from = close_start + 2;
-    }
-    return null;
-}
-
 /// Extract variable declaration(s)
 pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_exported: bool) []const Declaration {
     s.pos += kind.len; // skip const/let/var
@@ -1199,6 +1142,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
                 var depth: isize = 0;
+                var angle_depth: isize = 0;
                 var jsx_depth: isize = 0;
                 var jsx_tag_end: ?usize = null;
                 while (s.pos < s.len) {
@@ -1251,29 +1195,30 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                         }
                     }
                     if (s.pos >= s.len) break;
-                    if (s.skipNonCode()) continue;
+                    // The slash in a JSX closing tag has already been
+                    // classified by jsxTagAt at the preceding `<`. Do not let
+                    // regex detection consume through a later closing tag.
+                    const jsx_closing_slash = s.source[s.pos] == ch.CH_SLASH and s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE;
+                    if (!jsx_closing_slash and s.skipNonCode()) continue;
                     const ic = s.source[s.pos];
-                    if (ic == ch.CH_LANGLE) {
-                        if (jsxTagAt(s.source, s.pos)) |tag| {
+                    if (ic == ch.CH_LANGLE and depth == 0) {
+                        if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
                             jsx_depth = @max(0, jsx_depth + tag.delta);
                             jsx_tag_end = tag.end;
-                        } else {
-                            depth += 1;
-                        }
+                        } else if (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL) angle_depth += 1;
                     } else if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET) {
                         depth += 1;
                     } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET) {
                         depth -= 1;
-                    } else if (ic == ch.CH_RANGLE) {
+                    } else if (ic == ch.CH_RANGLE and depth == 0) {
                         if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
                             jsx_tag_end = null;
-                        } else if (jsx_depth == 0 and !s.isArrowGT() and depth > 0) {
-                            depth -= 1;
-                        }
-                    } else if (depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                        } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
+                            (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
+                    } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
                         break;
                     }
-                    if (depth == 0 and jsx_depth == 0 and s.checkASITopLevel()) break;
+                    if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and s.checkASITopLevel()) break;
                     s.pos += 1;
                 }
                 initializer_text = if (skip_isolated_initializer) "" else s.sliceTrimmed(init_start, s.pos);
