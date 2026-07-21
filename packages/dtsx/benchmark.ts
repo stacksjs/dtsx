@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks'
 import { extractDeclarations } from './src/extractor'
 import { generate } from './src/generator'
 import { createStreamingProcessor, formatMemoryStats } from './src/memory'
+import { processSourceDirect } from './src/process-source'
 import { processDeclarations } from './src/processor'
 
 /**
@@ -37,6 +38,22 @@ interface BenchmarkResult {
 interface SuiteResult {
   name: string
   results: BenchmarkResult[]
+  totalTimeMs: number
+}
+
+/** Paired end-to-end timings for the two declaration generation paths. */
+interface GenerationModeComparison {
+  name: string
+  inputSize: number
+  isolated: BenchmarkResult
+  semantic: BenchmarkResult
+  /** Semantic time divided by isolated time. Values above 1 favor isolated mode. */
+  speedup: number
+}
+
+interface GenerationModeSuiteResult {
+  name: string
+  comparisons: GenerationModeComparison[]
   totalTimeMs: number
 }
 
@@ -277,6 +294,76 @@ async function runGenerationBenchmarks(config: BenchmarkConfig): Promise<SuiteRe
   return {
     name: 'Generation',
     results,
+    totalTimeMs: performance.now() - suiteStart,
+  }
+}
+
+/**
+ * Generate valid isolated-declarations input with expensive but fully typed
+ * initializers. The public contract is identical in both modes; only semantic
+ * mode needs to inspect the initializer values.
+ */
+function generateAnnotatedInitializerFile(declarations: number, entriesPerInitializer: number): string {
+  const entries = Array.from({ length: entriesPerInitializer }, (_, index) => `'tag-${index}'`).join(', ')
+  const lines = ['export interface BenchmarkItem { id: number; tags: readonly string[] }']
+  for (let index = 0; index < declarations; index++) {
+    lines.push(`export const item${index}: BenchmarkItem = { id: ${index}, tags: [${entries}] };`)
+  }
+  return lines.join('\n')
+}
+
+/** Compare uncached end-to-end isolated and semantic declaration generation. */
+async function runGenerationModeBenchmarks(config: BenchmarkConfig): Promise<GenerationModeSuiteResult> {
+  log('\n⚡ isolatedDeclarations vs Semantic Benchmarks\n', config.verbose)
+
+  const suiteStart = performance.now()
+  const comparisons: GenerationModeComparison[] = []
+  const workloads = [
+    { name: 'Small typed initializers', declarations: 100, entries: 50 },
+    { name: 'Medium typed initializers', declarations: 500, entries: 100 },
+    { name: 'Large typed initializers', declarations: 1000, entries: 250 },
+  ]
+
+  for (const workload of workloads) {
+    const source = generateAnnotatedInitializerFile(workload.declarations, workload.entries)
+    const filename = `generation-mode-${workload.declarations}.ts`
+    const isolatedOutput = processSourceDirect(source, filename, false, ['bun'], true)
+    const semanticOutput = processSourceDirect(source, filename, false, ['bun'], false)
+    if (isolatedOutput !== semanticOutput) {
+      throw new Error(`${workload.name} produced different public declarations between generation modes`)
+    }
+
+    const modeConfig = {
+      ...config,
+      warmupIterations: Math.max(3, config.warmupIterations),
+      benchmarkIterations: Math.max(10, Math.min(config.benchmarkIterations, 30)),
+    }
+    const isolated = await runBenchmark(
+      `${workload.name} (isolated)`,
+      () => processSourceDirect(source, filename, false, ['bun'], true),
+      modeConfig,
+      source.length,
+    )
+    const semantic = await runBenchmark(
+      `${workload.name} (semantic)`,
+      () => processSourceDirect(source, filename, false, ['bun'], false),
+      modeConfig,
+      source.length,
+    )
+    const speedup = semantic.avgTimeMs / isolated.avgTimeMs
+    comparisons.push({
+      name: workload.name,
+      inputSize: source.length,
+      isolated,
+      semantic,
+      speedup,
+    })
+    log(`  ${workload.name}: isolated ${isolated.avgTimeMs.toFixed(3)}ms, semantic ${semantic.avgTimeMs.toFixed(3)}ms — ${speedup.toFixed(1)}x faster`, config.verbose)
+  }
+
+  return {
+    name: 'Generation Modes',
+    comparisons,
     totalTimeMs: performance.now() - suiteStart,
   }
 }
@@ -720,6 +807,7 @@ interface BenchmarkOutput {
   platform: string
   nodeVersion: string
   suites: SuiteResult[]
+  generationModes: GenerationModeSuiteResult
   phaseTimings: PhaseTimingSuiteResult[]
   summary: {
     totalTimeMs: number
@@ -766,6 +854,7 @@ async function main() {
   }
 
   const suites: SuiteResult[] = []
+  let generationModes: GenerationModeSuiteResult = { name: 'Generation Modes', comparisons: [], totalTimeMs: 0 }
   let phaseTimings: PhaseTimingSuiteResult[] = []
 
   try {
@@ -773,6 +862,7 @@ async function main() {
     suites.push(await runExtractionBenchmarks(config))
     suites.push(await runSyntheticBenchmarks(config))
     suites.push(await runMemoryBenchmarks(config))
+    generationModes = await runGenerationModeBenchmarks(config)
 
     // Run real-world benchmarks unless skipped
     if (!args.includes('--skip-real-world')) {
@@ -789,9 +879,12 @@ async function main() {
     }
 
     // Calculate summary
-    const totalTimeMs = suites.reduce((sum, s) => sum + s.totalTimeMs, 0)
-    const totalBenchmarks = suites.reduce((sum, s) => sum + s.results.length, 0)
-    const avgTimeMs = suites.flatMap(s => s.results).reduce((sum, r) => sum + r.avgTimeMs, 0) / totalBenchmarks
+    const modeResults = generationModes.comparisons.flatMap(comparison => [comparison.isolated, comparison.semantic])
+    const suiteResults = suites.flatMap(suite => suite.results)
+    const allResults = [...suiteResults, ...modeResults]
+    const totalTimeMs = suites.reduce((sum, suite) => sum + suite.totalTimeMs, generationModes.totalTimeMs)
+    const totalBenchmarks = allResults.length
+    const avgTimeMs = allResults.reduce((sum, result) => sum + result.avgTimeMs, 0) / totalBenchmarks
 
     // Output results
     if (jsonOutput) {
@@ -800,6 +893,7 @@ async function main() {
         platform: `${process.platform} ${process.arch}`,
         nodeVersion: process.version,
         suites,
+        generationModes,
         phaseTimings,
         summary: {
           totalTimeMs,
@@ -821,6 +915,13 @@ async function main() {
     else {
       // Print summary
       printSummary(suites)
+
+      if (generationModes.comparisons.length > 0) {
+        console.log('\n⚡ isolatedDeclarations Speedup')
+        for (const comparison of generationModes.comparisons) {
+          console.log(`  ${comparison.name}: ${comparison.speedup.toFixed(1)}x`)
+        }
+      }
 
       // Print phase timing summary
       if (phaseTimings.length > 0) {
@@ -846,12 +947,16 @@ export {
   type BenchmarkConfig,
   type BenchmarkOutput,
   type BenchmarkResult,
+  generateAnnotatedInitializerFile,
   generateLargeTypeScriptFile,
+  type GenerationModeComparison,
+  type GenerationModeSuiteResult,
   type PhaseTimingResult,
   type PhaseTimingSuiteResult,
   runBenchmark,
   runExtractionBenchmarks,
   runGenerationBenchmarks,
+  runGenerationModeBenchmarks,
   runMemoryBenchmarks,
   runPhaseTimingBenchmarks,
   runRealWorldBenchmarks,
@@ -859,5 +964,5 @@ export {
   type SuiteResult,
 }
 
-// Run if executed directly
-main().catch(console.error)
+// Run only when executed directly; importing benchmark helpers must be side-effect free.
+if (import.meta.main) main().catch(console.error)
