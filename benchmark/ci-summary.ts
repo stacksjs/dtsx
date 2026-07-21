@@ -62,11 +62,26 @@ interface PhaseTimingSuiteResult {
   fileSize: number
 }
 
+interface GenerationModeComparison {
+  name: string
+  inputSize: number
+  isolated: BenchmarkResult
+  semantic: BenchmarkResult
+  speedup: number
+}
+
+interface GenerationModeSuiteResult {
+  name: string
+  comparisons: GenerationModeComparison[]
+  totalTimeMs: number
+}
+
 interface BenchmarkOutput {
   timestamp: string
   platform: string
   nodeVersion: string
   suites: SuiteResult[]
+  generationModes?: GenerationModeSuiteResult
   phaseTimings: PhaseTimingSuiteResult[]
   summary: { totalTimeMs: number, totalBenchmarks: number, avgTimeMs: number }
 }
@@ -417,6 +432,18 @@ function renderTable(title: string, subtitle: string, tools: { name: string, get
 let md = '## Benchmark Results\n\n'
 const runtime = typeof globalThis.Bun !== 'undefined' ? `Bun ${(globalThis as any).Bun.version}` : results.nodeVersion
 md += `**Platform:** ${results.platform} | **Runtime:** ${runtime} | **Date:** ${results.timestamp.split('T')[0]}\n\n`
+
+if (results.generationModes?.comparisons.length) {
+  md += '### isolatedDeclarations vs Semantic Generation\n\n'
+  md += '_Uncached end-to-end declaration generation over identical, fully annotated sources._\n\n'
+  md += '| Workload | Input | isolatedDeclarations | Semantic | Speedup |\n'
+  md += '|----------|-------|----------------------|----------|---------|\n'
+  for (const comparison of results.generationModes.comparisons) {
+    const status = comparison.speedup >= 2 ? ':green_circle:' : comparison.speedup >= 1 ? ':yellow_circle:' : ':red_circle:'
+    md += `| ${comparison.name} | ${(comparison.inputSize / 1024).toFixed(0)} KiB | ${fmt(comparison.isolated.avgTimeMs)} | ${fmt(comparison.semantic.avgTimeMs)} | ${status} **${comparison.speedup.toFixed(1)}x** |\n`
+  }
+  md += '\n'
+}
 
 // --- Cached table ---
 const cachedTools: { name: string, getTime: (r: CrossToolResult) => number | null }[] = [

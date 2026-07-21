@@ -724,6 +724,42 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /**
+   * Skip an annotated variable initializer without capturing its text.
+   *
+   * Isolated declarations call it for every explicitly annotated value. Safe
+   * single-line literals take the direct path; complex syntax falls back to
+   * the general JSX-aware statement scanner.
+   */
+  function skipAnnotatedVariableInitializer(): void {
+    pos++ // skip =
+    while (pos < len && (source.charCodeAt(pos) === CH_SPACE || source.charCodeAt(pos) === CH_TAB)) pos++
+
+    // Common isolated-declarations output is one explicitly annotated value
+    // per line. A terminated single-line literal can jump directly to its
+    // semicolon without inspecting the initializer's properties/elements.
+    const lineEnd = source.indexOf('\n', pos)
+    const physicalEnd = lineEnd === -1 ? len : lineEnd
+    const terminator = source.indexOf(';', pos)
+    if (terminator !== -1 && terminator < physicalEnd) {
+      let valueEnd = terminator - 1
+      while (valueEnd >= pos && (source.charCodeAt(valueEnd) === CH_SPACE || source.charCodeAt(valueEnd) === CH_TAB)) valueEnd--
+      const first = source.charCodeAt(pos)
+      const final = source.charCodeAt(valueEnd)
+      const isClosedLiteral = (first === CH_LBRACE && final === CH_RBRACE)
+        || (first === CH_LBRACKET && final === CH_RBRACKET)
+        || (first === CH_SQUOTE && final === CH_SQUOTE)
+        || (first === CH_DQUOTE && final === CH_DQUOTE)
+        || (first === CH_BACKTICK && final === CH_BACKTICK)
+      if (isClosedLiteral) {
+        pos = terminator + 1
+        return
+      }
+    }
+
+    skipToStatementEnd()
+  }
+
+  /**
    * Skip an export re-export: { ... } [from '...'] [;]
    * pos should be at the opening {
    */
@@ -1983,7 +2019,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // Concrete annotations need no initializer work. Broad annotations retain
         // the initializer only so the processor can emit useful @defaultValue docs.
         if (isolatedDeclarations && typeAnnotation && (!keepComments || !isBroadAnnotation(typeAnnotation))) {
-          skipToStatementEnd()
+          skipAnnotatedVariableInitializer()
         }
         else {
         pos++ // skip =
