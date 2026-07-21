@@ -726,9 +726,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   /**
    * Skip an annotated variable initializer without capturing its text.
    *
-   * Unlike the general statement skipper this hot path walks each byte once
-   * and only tracks delimiters that can keep a variable initializer open.
-   * Isolated declarations call it for every explicitly annotated value.
+   * Isolated declarations call it for every explicitly annotated value. Safe
+   * single-line literals take the direct path; complex syntax falls back to
+   * the general JSX-aware statement scanner.
    */
   function skipAnnotatedVariableInitializer(): void {
     pos++ // skip =
@@ -756,32 +756,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
     }
 
-    let depth = 0
-    let angleDepth = 0
-    let jsxDepth = 0
-    while (pos < len) {
-      if (skipNonCode()) continue
-      const ch = source.charCodeAt(pos)
-      if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET) {
-        depth++
-      }
-      else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET) {
-        depth--
-      }
-      else if (ch === CH_LANGLE && depth === 0) {
-        const jsxDelta = jsxTagDeltaAt(pos)
-        if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
-        else if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL) angleDepth++
-      }
-      else if (ch === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
-        if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL)) angleDepth--
-      }
-      else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ch === CH_SEMI || ch === CH_COMMA)) {
-        return
-      }
-      if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && checkASITopLevel()) return
-      pos++
-    }
+    skipToStatementEnd()
   }
 
   /**
