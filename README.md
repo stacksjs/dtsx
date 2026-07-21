@@ -52,7 +52,7 @@ import { generate, processSource } from '@stacksjs/dtsx'
 const options: DtsGenerationOptions = {
   cwd: './', // default: process.cwd()
   root: './src', // default: './src'
-  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
+  entrypoints: ['**/*.{ts,tsx,mts,cts,vue,stx}'], // default
   outdir: './dist', // default: './dist'
   clean: true, // default: false
   verbose: true, // default: false
@@ -79,6 +79,31 @@ console.log(dtsContent)
 // export declare const greeting: string;
 // export declare function greet(name: string): string;
 ```
+
+### STX Components
+
+`.stx` files are declaration entrypoints alongside TypeScript and Vue files.
+dtsx reads Vue-style `<script server|client>` blocks and Blade-style `@ts`
+blocks, then emits an `@stacksjs/stx` `DefineComponent` declaration. Props are
+derived from typed macros, runtime prop schemas, explicit `props as Props`
+assertions, and legacy `$props.name` access:
+
+```stx
+<script server lang="ts">
+interface CardProps {
+  title: string
+  count?: number
+}
+
+const props = withDefaults(defineProps<CardProps>(), { count: 0 })
+</script>
+
+<article>{{ props.title }}</article>
+```
+
+This emits `Card.d.ts` with `{ title: string; count?: number }` as its `$props`
+contract. The same transform feeds the semantic inference path and the
+annotation-first `isolatedDeclarations` path.
 
 Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js`)_ file, automatically loaded when running `./dtsx` _(or `bunx dtsx`)_ and when calling `generate()` unless custom options are provided.
 
@@ -185,7 +210,7 @@ cat src/utils.ts | dtsx stdin > dist/utils.d.ts
 
 - `--cwd <path>`: Set the current working directory _(default: current directory)_
 - `--root <path>`: Specify the root directory of the project _(default: './src')_
-- `--entrypoints <files>`: Define entry point files _(comma-separated, default: '**/*.ts')_
+- `--entrypoints <files>`: Define entry point files _(comma-separated, default: `**/*.{ts,tsx,mts,cts,vue,stx}`)_
 - `--outdir <path>`: Set the output directory for generated .d.ts files _(default: './dist')_
 - `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
 - `--clean`: Clean output directory before generation _(default: false)_
