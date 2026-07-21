@@ -8,6 +8,68 @@ const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
 
+pub const JsxTagInfo = struct { delta: isize, end: usize };
+
+/// Recognize a JSX tag while skipping an implementation statement. Requiring
+/// a matching close for non-self-closing tags keeps comparisons, assertions,
+/// and generic type parameters out of JSX depth accounting.
+pub fn jsxTagAt(source: []const u8, index: usize) ?JsxTagInfo {
+    if (index + 1 >= source.len or source[index] != ch.CH_LANGLE) return null;
+    const next = source[index + 1];
+    if (next == ch.CH_RANGLE) return .{ .delta = 1, .end = index + 1 };
+    if (next == ch.CH_SLASH) {
+        const close_end = ch.indexOfChar(source, ch.CH_RANGLE, index + 2) orelse return null;
+        return .{ .delta = -1, .end = close_end };
+    }
+    if (!ch.isIdentStart(next)) return null;
+
+    var name_end = index + 2;
+    while (name_end < source.len) : (name_end += 1) {
+        const code = source[name_end];
+        if (!ch.isIdentChar(code) and code != ch.CH_DOT and code != ':' and code != '-') break;
+    }
+    if (name_end >= source.len) return null;
+    const tag_name = source[index + 1 .. name_end];
+    const delimiter = source[name_end];
+    if (!ch.isWhitespace(delimiter) and delimiter != ch.CH_RANGLE and delimiter != ch.CH_SLASH) return null;
+
+    var brace_depth: usize = 0;
+    var quote: u8 = 0;
+    var tag_end = name_end;
+    while (tag_end < source.len) : (tag_end += 1) {
+        const code = source[tag_end];
+        if (quote != 0) {
+            if (code == ch.CH_BACKSLASH) tag_end += 1 else if (code == quote) quote = 0;
+            continue;
+        }
+        if (code == ch.CH_SQUOTE or code == ch.CH_DQUOTE or code == ch.CH_BACKTICK) {
+            quote = code;
+        } else if (code == ch.CH_LBRACE) {
+            brace_depth += 1;
+        } else if (code == ch.CH_RBRACE and brace_depth > 0) {
+            brace_depth -= 1;
+        } else if (code == ch.CH_RANGLE and brace_depth == 0) {
+            break;
+        }
+    }
+    if (tag_end >= source.len) return null;
+
+    var before_end = tag_end - 1;
+    while (before_end > index and ch.isWhitespace(source[before_end])) before_end -= 1;
+    if (source[before_end] == ch.CH_SLASH) return .{ .delta = 0, .end = tag_end };
+
+    var search_from = tag_end + 1;
+    while (ch.indexOf(source, "</", search_from)) |close_start| {
+        const close_name_start = close_start + 2;
+        const close_name_end = close_name_start + tag_name.len;
+        if (close_name_end < source.len and std.mem.eql(u8, source[close_name_start..close_name_end], tag_name) and
+            (source[close_name_end] == ch.CH_RANGLE or ch.isWhitespace(source[close_name_end])))
+            return .{ .delta = 1, .end = tag_end };
+        search_from = close_start + 2;
+    }
+    return null;
+}
+
 /// Comptime-optimized word comparison: uses integer casts for power-of-2 sizes (1/2/4/8 bytes).
 inline fn comptime_match(comptime N: usize, src: *const [N]u8, comptime word: []const u8) bool {
     // Use integer comparison for power-of-2 sizes (u8, u16, u32, u64)
@@ -580,6 +642,10 @@ pub const Scanner = struct {
     /// Uses SIMD to skip 16 non-structural bytes at a time.
     pub fn skipToStatementEnd(self: *Scanner) void {
         var brace_depth: isize = 0;
+        var paren_depth: isize = 0;
+        var bracket_depth: isize = 0;
+        var jsx_depth: isize = 0;
+        const terminate_on_balanced_brace = self.pos < self.len and self.source[self.pos] == ch.CH_LBRACE;
         while (self.pos < self.len) {
             // SIMD fast-skip: bulk-skip bytes that can't be structural.
             if (brace_depth > 0) {
@@ -588,6 +654,11 @@ pub const Scanner = struct {
                     const chunk: @Vector(16, u8) = self.source[self.pos..][0..16].*;
                     const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
@@ -604,6 +675,11 @@ pub const Scanner = struct {
                     const chunk: @Vector(16, u8) = self.source[self.pos..][0..16].*;
                     const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                        (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
                         (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
@@ -631,7 +707,19 @@ pub const Scanner = struct {
                 continue;
             }
             if (c == ch.CH_SLASH) {
+                // JSX closing tags are not regex literals. Preserving the scan
+                // position here lets ASI terminate at the declaration after the
+                // complete element instead of consuming the following export.
+                if (self.pos > 0 and self.source[self.pos - 1] == ch.CH_LANGLE) {
+                    self.pos += 1;
+                    continue;
+                }
                 if (self.skipNonCode()) continue;
+                self.pos += 1;
+                continue;
+            }
+            if (c == ch.CH_LANGLE) {
+                if (jsxTagAt(self.source, self.pos)) |tag| jsx_depth = @max(0, jsx_depth + tag.delta);
                 self.pos += 1;
                 continue;
             }
@@ -640,20 +728,41 @@ pub const Scanner = struct {
                 self.pos += 1;
                 continue;
             }
+            if (c == ch.CH_LPAREN) {
+                paren_depth += 1;
+                self.pos += 1;
+                continue;
+            }
+            if (c == ch.CH_RPAREN) {
+                if (paren_depth > 0) paren_depth -= 1;
+                self.pos += 1;
+                continue;
+            }
+            if (c == ch.CH_LBRACKET) {
+                bracket_depth += 1;
+                self.pos += 1;
+                continue;
+            }
+            if (c == ch.CH_RBRACKET) {
+                if (bracket_depth > 0) bracket_depth -= 1;
+                self.pos += 1;
+                continue;
+            }
             if (c == ch.CH_RBRACE) {
-                brace_depth -= 1;
-                if (brace_depth <= 0) {
+                const closes_nested_brace = brace_depth > 0;
+                if (closes_nested_brace) brace_depth -= 1;
+                if ((!closes_nested_brace or terminate_on_balanced_brace) and brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) {
                     self.pos += 1;
                     return;
                 }
                 self.pos += 1;
                 continue;
             }
-            if (c == ch.CH_SEMI and brace_depth == 0) {
+            if (c == ch.CH_SEMI and brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) {
                 self.pos += 1;
                 return;
             }
-            if ((c == ch.CH_LF or c == ch.CH_CR) and brace_depth == 0) {
+            if ((c == ch.CH_LF or c == ch.CH_CR) and brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) {
                 if (self.checkASITopLevel()) return;
             }
             self.pos += 1;
@@ -1092,6 +1201,48 @@ test "scanner template literals balance nested interpolation braces" {
     defer s.deinit();
     s.skipTemplateLiteral();
     try std.testing.expectEqualStrings(" rest", source[s.pos..]);
+}
+
+test "scanner statement skipping does not treat JSX closing tags as regex" {
+    const source = "({ value }) => (<div>{value}</div>)\nexport const next = 1";
+    var s = Scanner.init(std.testing.allocator, source, true, true);
+    defer s.deinit();
+    s.skipToStatementEnd();
+    try std.testing.expectEqual(std.mem.indexOfScalar(u8, source, '\n').?, s.pos);
+
+    const unwrapped = "({ value }) => <div>{value}</div>\nexport const next = 1";
+    var unwrapped_scanner = Scanner.init(std.testing.allocator, unwrapped, true, true);
+    defer unwrapped_scanner.deinit();
+    unwrapped_scanner.skipToStatementEnd();
+    try std.testing.expectEqual(std.mem.indexOfScalar(u8, unwrapped, '\n').?, unwrapped_scanner.pos);
+
+    const punctuation = "({ value }) => <div>{value}; ready</div>\nexport const next = 1";
+    var punctuation_scanner = Scanner.init(std.testing.allocator, punctuation, true, true);
+    defer punctuation_scanner.deinit();
+    punctuation_scanner.skipToStatementEnd();
+    try std.testing.expectEqual(std.mem.indexOfScalar(u8, punctuation, '\n').?, punctuation_scanner.pos);
+}
+
+test "scanner keeps exports after nested JSX callback attributes" {
+    const source =
+        \\export const Results = () => (
+        \\  <List render={item => item.score > 0 ? <strong>{item.label}</strong> : <em>none</em>} />
+        \\)
+        \\export const resultCount = 2
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var s = Scanner.init(arena.allocator(), source, true, false);
+    defer s.deinit();
+    _ = try s.scan();
+    try std.testing.expect(s.declarations.items.len > 0);
+    try std.testing.expectEqualStrings("Results", s.declarations.items[0].name);
+    try std.testing.expectEqualStrings(
+        "() => (\n  <List render={item => item.score > 0 ? <strong>{item.label}</strong> : <em>none</em>} />\n)",
+        s.declarations.items[0].value,
+    );
+    try std.testing.expectEqual(@as(usize, 2), s.declarations.items.len);
+    try std.testing.expectEqualStrings("resultCount", s.declarations.items[1].name);
 }
 
 // --- Tests added for performance/fix patches ---

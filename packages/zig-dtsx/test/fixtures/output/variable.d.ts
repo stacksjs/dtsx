@@ -1,3 +1,4 @@
+import process from 'node:process';
 /**
  * Example of const declaration
  * @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: '5000' }`

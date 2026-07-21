@@ -110,6 +110,45 @@ function countOccurrences(str: string, sub: string): number {
   return count
 }
 
+function isJsxTagNameChar(code: number): boolean {
+  return (code >= 65 && code <= 90)
+    || (code >= 97 && code <= 122)
+    || (code >= 48 && code <= 57)
+    || code === 36 || code === 95 || code === 46 || code === 58 || code === 45
+}
+
+/**
+ * Detect a complete JSX element or fragment without assuming React as the JSX
+ * runtime. A matching outer close prevents generic arrows and type assertions
+ * from being classified as JSX.
+ */
+function isJsxExpression(value: string): boolean {
+  const expression = value.trim()
+  if (expression.length < 3 || expression.charCodeAt(0) !== 60) return false
+  if (expression.startsWith('<>')) return expression.endsWith('</>')
+
+  const firstTagCode = expression.charCodeAt(1)
+  const isIdentifierStart = (firstTagCode >= 65 && firstTagCode <= 90)
+    || (firstTagCode >= 97 && firstTagCode <= 122)
+    || firstTagCode === 36 || firstTagCode === 95
+  if (!isIdentifierStart) return false
+
+  let tagEnd = 2
+  while (tagEnd < expression.length && isJsxTagNameChar(expression.charCodeAt(tagEnd))) tagEnd++
+  const tagName = expression.slice(1, tagEnd)
+  const delimiter = expression.charCodeAt(tagEnd)
+  if (delimiter > 32 && delimiter !== 62 && delimiter !== 47) return false
+  if (expression.endsWith('/>')) return true
+
+  const closeStart = expression.lastIndexOf('</')
+  if (closeStart === -1) return false
+  let closeEnd = closeStart + 2
+  while (closeEnd < expression.length && isJsxTagNameChar(expression.charCodeAt(closeEnd))) closeEnd++
+  return expression.slice(closeStart + 2, closeEnd) === tagName
+    && expression.charCodeAt(closeEnd) === 62
+    && closeEnd === expression.length - 1
+}
+
 /** Collapse runs of whitespace to single spaces (no regex) */
 function collapseWhitespace(s: string): string {
   const len = s.length
@@ -168,6 +207,8 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'unknown'
 
   const trimmed = value.trim()
+
+  if (isJsxExpression(trimmed)) return 'JSX.Element'
 
   // BigInt expressions (check early)
   if (trimmed.startsWith('BigInt(')) {
@@ -266,7 +307,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   // Function expressions. Check these after `as const` so an asserted
   // object or array containing arrow-function properties is inferred as a
   // container instead of treating the complete initializer as one function.
-  if (trimmed.includes('=>') || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+  if (findMainArrowIndex(trimmed) !== -1 || trimmed.startsWith('function') || trimmed.startsWith('async')) {
     return inferFunctionType(trimmed, inUnion, _depth, isConst)
   }
 
@@ -297,6 +338,9 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   if (trimmed.startsWith('Symbol(') || trimmed === 'Symbol.for') {
     return 'symbol'
   }
+
+  const callType = inferCallType(trimmed)
+  if (callType !== null) return callType
 
   if (hasTopLevelComparison(trimmed)) return 'boolean'
 
@@ -536,6 +580,11 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
           braceDepth--
         }
         else if (expressionChar === 59 && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) break
+        else if ((expressionChar === 10 || expressionChar === 13) && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+          let next = i + 1
+          while (next < body.length && body.charCodeAt(next) <= 32) next++
+          if (body.startsWith('return', next) && !isWordChar(body.charCodeAt(next + 6))) break
+        }
         i++
       }
 
@@ -586,6 +635,7 @@ function collectParameterTypes(parameters: string): Map<string, string> {
 function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>): string {
   let value = expression.trim()
   while (hasBalancedOuterParentheses(value)) value = value.slice(1, -1).trim()
+  if (isJsxExpression(value)) return 'JSX.Element'
   if (value.startsWith('await ')) {
     const awaited = inferBodyExpressionType(value.slice(6), parameterTypes)
     return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
@@ -1298,6 +1348,42 @@ function isIdentifierName(value: string): boolean {
 function isEntityName(value: string): boolean {
   const parts = value.split('.')
   return parts.length > 0 && parts.every(isIdentifierName)
+}
+
+/** Infer calls whose callee can be referenced safely from declaration syntax. */
+function inferCallType(value: string): string | null {
+  if (value.length < 3 || !value.endsWith(')')) return null
+  const open = value.indexOf('(')
+  if (open === -1 || findMatchingBracket(value, open, '(', ')') !== value.length - 1) return null
+
+  let callee = value.slice(0, open).trim()
+  let isOptional = false
+  if (callee.endsWith('?.')) {
+    isOptional = true
+    callee = callee.slice(0, -2).trim()
+  }
+
+  let entity = callee
+  let hasTypeArguments = false
+  const genericStart = callee.indexOf('<')
+  if (genericStart !== -1) {
+    const genericEnd = findMatchingBracket(callee, genericStart, '<', '>')
+    if (genericEnd !== callee.length - 1) return null
+    entity = callee.slice(0, genericStart).trim()
+    hasTypeArguments = true
+  }
+  if (!isEntityName(entity)) return null
+
+  const argumentsText = value.slice(open + 1, -1).trim()
+  const hasInlineFunction = findMainArrowIndex(argumentsText) !== -1
+    || argumentsText.startsWith('function')
+    || argumentsText.startsWith('async function')
+  const hasReferenceArgument = isEntityName(argumentsText)
+  const hasNestedCall = !hasInlineFunction && argumentsText.endsWith(')') && inferCallType(argumentsText) !== null
+  if (!hasTypeArguments && !isOptional && !hasInlineFunction && !hasReferenceArgument && !hasNestedCall) return null
+
+  const type = `ReturnType<typeof ${callee}>`
+  return isOptional ? `${type} | undefined` : type
 }
 
 /**
@@ -2312,6 +2398,11 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     }
     else if (body.startsWith('{')) {
       returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), false, params)
+    }
+    else if (isJsxExpression(body) || (hasBalancedOuterParentheses(body) && isJsxExpression(body.slice(1, -1).trim()))) {
+      // Nested callbacks inside parenthesized JSX are implementation details,
+      // not evidence that the component returns a higher-order function.
+      returnType = 'JSX.Element'
     }
     else if (body.includes('=>')) {
       // This is a higher-order function returning another function

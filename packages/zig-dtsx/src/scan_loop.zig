@@ -104,7 +104,9 @@ pub fn scanMainLoop(s: *Scanner) !void {
             try s.declarations.append(decl);
         } else {
             // Skip unknown top-level content
-            if (ch0 == ch.CH_SQUOTE or ch0 == ch.CH_DQUOTE) {
+            if (ch0 == ch.CH_SEMI) {
+                s.pos += 1;
+            } else if (ch0 == ch.CH_SQUOTE or ch0 == ch.CH_DQUOTE) {
                 s.skipString(ch0);
                 if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
             } else if (ch0 == ch.CH_BACKTICK) {

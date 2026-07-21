@@ -275,3 +275,17 @@ test "result_length stays within the null-terminated allocation" {
     const empty = [_]u8{0};
     try std.testing.expectEqual(@as(usize, 0), result_length(&empty));
 }
+
+test "processSourceInternal preserves nested JSX declarations end to end" {
+    const source =
+        \\export const Results = () => (
+        \\  <List title="score > threshold" render={item => item.score > 0 ? <strong>{item.label}</strong> : <em>none</em>} />
+        \\)
+        \\export const resultCount = 2
+    ;
+    const result = try processSourceInternal(source.ptr, source.len, true, false);
+    defer std.heap.c_allocator.free(@constCast(result.ptr)[0 .. result.len + 1]);
+    const output = result.ptr[0..result.len];
+    try std.testing.expect(std.mem.indexOf(u8, output, "Results: () => JSX.Element;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "resultCount: 2;") != null);
+}

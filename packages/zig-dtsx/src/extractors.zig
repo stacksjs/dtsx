@@ -4,7 +4,8 @@ const std = @import("std");
 const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
-const Scanner = @import("scanner.zig").Scanner;
+const scanner = @import("scanner.zig");
+const Scanner = scanner.Scanner;
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
@@ -1141,6 +1142,9 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
                 var depth: isize = 0;
+                var angle_depth: isize = 0;
+                var jsx_depth: isize = 0;
+                var jsx_tag_end: ?usize = null;
                 while (s.pos < s.len) {
                     // SIMD fast-skip: bulk-skip bytes that can't be structural
                     if (depth > 0) {
@@ -1191,16 +1195,30 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                         }
                     }
                     if (s.pos >= s.len) break;
-                    if (s.skipNonCode()) continue;
+                    // The slash in a JSX closing tag has already been
+                    // classified by jsxTagAt at the preceding `<`. Do not let
+                    // regex detection consume through a later closing tag.
+                    const jsx_closing_slash = s.source[s.pos] == ch.CH_SLASH and s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE;
+                    if (!jsx_closing_slash and s.skipNonCode()) continue;
                     const ic = s.source[s.pos];
-                    if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET or ic == ch.CH_LANGLE) {
+                    if (ic == ch.CH_LANGLE and depth == 0) {
+                        if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
+                            jsx_depth = @max(0, jsx_depth + tag.delta);
+                            jsx_tag_end = tag.end;
+                        } else if (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL) angle_depth += 1;
+                    } else if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET) {
                         depth += 1;
-                    } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET or (ic == ch.CH_RANGLE and !s.isArrowGT())) {
+                    } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET) {
                         depth -= 1;
-                    } else if (depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                    } else if (ic == ch.CH_RANGLE and depth == 0) {
+                        if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
+                            jsx_tag_end = null;
+                        } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
+                            (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
+                    } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
                         break;
                     }
-                    if (depth == 0 and s.checkASITopLevel()) break;
+                    if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and s.checkASITopLevel()) break;
                     s.pos += 1;
                 }
                 initializer_text = if (skip_isolated_initializer) "" else s.sliceTrimmed(init_start, s.pos);
