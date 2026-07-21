@@ -25,7 +25,7 @@ import { generate } from '@stacksjs/dtsx'
 const config: DtsGenerationConfig = {
   cwd: './', // default: process.cwd()
   root: './src', // default: './src'
-  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
+  entrypoints: ['**/*.{ts,tsx,mts,cts,vue,stx}'], // default
   outdir: './dist', // default: './dist'
   keepComments: true, // default: true
   clean: true, // default: true
@@ -134,7 +134,7 @@ dtsx generate --output-structure flat
 |--------|------|---------|-------------|
 | `--cwd <path>` | `string` | current directory | Set the current working directory |
 | `--root <path>` | `string` | `'./src'` | Specify the root directory of the project |
-| `--entrypoints <files>` | `string` | `'**/*.ts'` | Define entry point files (comma-separated) |
+| `--entrypoints <files>` | `string` | `'**/*.{ts,tsx,mts,cts,vue,stx}'` | Define entry point files (comma-separated) |
 | `--outdir <path>` | `string` | `'./dist'` | Set the output directory for generated .d.ts files |
 | `--keep-comments [value]` | `boolean` | `true` | Keep comments in generated .d.ts files |
 | `--clean` | `boolean` | `true` | Clean output directory before generation |

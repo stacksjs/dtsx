@@ -64,7 +64,7 @@ import { generate } from '@stacksjs/dtsx'
 const options: DtsGenerationOptions = {
   cwd: './', // default: process.cwd()
   root: './src', // default: './src'
-  entrypoints: ['**/*.ts'], // default: ['**/*.ts']
+  entrypoints: ['**/*.{ts,tsx,mts,cts,vue,stx}'], // default
   outdir: './dist', // default: './dist'
   clean: true, // default: false
   verbose: true, // default: false
@@ -73,6 +73,13 @@ const options: DtsGenerationOptions = {
 
 await generate(options)
 ```
+
+### STX Components
+
+`.stx` entrypoints support Vue-style script blocks, Blade-style `@ts` blocks,
+typed and runtime `defineProps`, `props as Props`, and legacy `$props.name`
+contracts. dtsx emits the default component as
+`DefineComponent<Props>` from `@stacksjs/stx` in semantic and isolated modes.
 
 ### Configuration File
 
@@ -269,7 +276,7 @@ echo "export function foo(): string { return 'bar' }" | dtsx stdin
 #### Generate Options
 
 - `--root <path>`: Specify the root directory of the project _(default: './src')_
-- `--entrypoints <files>`: Define entry point files _(comma-separated, default: '**/*.ts')_
+- `--entrypoints <files>`: Define entry point files _(comma-separated, default: `**/*.{ts,tsx,mts,cts,vue,stx}`)_
 - `--outdir <path>`: Set the output directory for generated .d.ts files _(default: './dist')_
 - `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
 - `--clean`: Clean output directory before generation _(default: false)_

@@ -19,7 +19,7 @@ export interface WatchConfig {
 
   /**
    * File patterns to watch (glob-like)
-   * @default ['**\/*.ts', '**\/*.tsx']
+   * @default ['**\/*.ts', '**\/*.tsx', '**\/*.vue', '**\/*.stx']
    */
   include?: string[]
 
@@ -126,7 +126,7 @@ export function createWatcher(
 ): Watcher {
   const {
     root,
-    include = ['**/*.ts', '**/*.tsx'],
+    include = ['**/*.ts', '**/*.tsx', '**/*.vue', '**/*.stx'],
     exclude = ['**/node_modules/**', '**/*.d.ts', '**/dist/**'],
     debounce = 100,
     initialBuild = true,

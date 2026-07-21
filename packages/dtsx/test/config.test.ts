@@ -20,8 +20,8 @@ async function createProject(name: string): Promise<string> {
 }
 
 describe('getConfig', () => {
-  it('discovers every TypeScript module source format by default', () => {
-    expect(defaultConfig.entrypoints).toEqual(['**/*.{ts,tsx,mts,cts}'])
+  it('discovers supported module and component source formats by default', () => {
+    expect(defaultConfig.entrypoints).toEqual(['**/*.{ts,tsx,mts,cts,vue,stx}'])
   })
 
   it('isolates cached configuration by project directory', async () => {

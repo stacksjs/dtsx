@@ -792,7 +792,7 @@ function assertUniqueOutputPaths(files: string[], config: DtsGenerationConfig): 
 }
 
 function isProcessableSourceFile(filePath: string): boolean {
-  return /\.(m?tsx?|cts|jsx?|mjs|cjs|vue)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
+  return /\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
 }
 
 /**
@@ -801,7 +801,7 @@ function isProcessableSourceFile(filePath: string): boolean {
 function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   const rootPath = resolve(config.cwd, config.root)
   const relativePath = relative(rootPath, inputPath)
-  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue)$/, (ext) => {
+  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/, (ext) => {
     if (ext === '.mts' || ext === '.mjs') return '.d.mts'
     if (ext === '.cts' || ext === '.cjs') return '.d.cts'
     return '.d.ts'
@@ -1125,7 +1125,7 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
     const rootPath = '${rootPath}';
 
     fs.watch(rootPath, { recursive: true }, (eventType, filename) => {
-      if (filename && filename.endsWith('.ts') && !filename.endsWith('.d.ts')) {
+      if (filename && /\.(?:[cm]?[jt]sx?|vue|stx)$/.test(filename) && !/\.d\.(?:ts|mts|cts)$/.test(filename)) {
         console.log(\`CHANGED:\${filename}\`);
       }
     });
