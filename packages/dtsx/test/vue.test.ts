@@ -182,8 +182,8 @@ describe('vue sfc declaration transform', () => {
 
 describe('comments inside collapsed props types', () => {
   it('keeps JSDoc comments valid in collapsed props types', async () => {
-    const source = await readFile(join(fixturesDir, 'NFTBurnButton.vue'), 'utf8')
-    const dts = processSource(source, 'NFTBurnButton.vue')
+    const source = await readFile(join(fixturesDir, 'BurnButton.vue'), 'utf8')
+    const dts = processSource(source, 'BurnButton.vue')
     // the collapsed props type retains the member and its type
     expect(dts).toContain('onBurn: (mint: string) => Promise<string>')
     // JSDoc survives as a block comment
