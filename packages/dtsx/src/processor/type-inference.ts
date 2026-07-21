@@ -2399,6 +2399,11 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     else if (body.startsWith('{')) {
       returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), false, params)
     }
+    else if (isJsxExpression(body) || (hasBalancedOuterParentheses(body) && isJsxExpression(body.slice(1, -1).trim()))) {
+      // Nested callbacks inside parenthesized JSX are implementation details,
+      // not evidence that the component returns a higher-order function.
+      returnType = 'JSX.Element'
+    }
     else if (body.includes('=>')) {
       // This is a higher-order function returning another function
       // For complex nested functions, try to extract just the outer function signature

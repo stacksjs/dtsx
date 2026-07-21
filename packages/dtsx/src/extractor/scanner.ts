@@ -633,11 +633,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /** Skip to statement end (semicolon at depth 0, matching brace, or ASI) */
-  const STMT_DELIM_RE = /[{};'"`\/\n\r()[\]]/g
+  const STMT_DELIM_RE = /[<{};'"`\/\n\r()[\]]/g
   function skipToStatementEnd(): void {
     let braceDepth = 0
     let parenDepth = 0
     let bracketDepth = 0
+    let jsxDepth = 0
+    const terminateOnBalancedBrace = source.charCodeAt(pos) === CH_LBRACE
     STMT_DELIM_RE.lastIndex = pos
     let match
     while ((match = STMT_DELIM_RE.exec(source)) !== null) {
@@ -657,11 +659,23 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         continue
       }
       if (ch === CH_SLASH) {
+        // A JSX closing tag (`</Tag>` or `</>`) is not a regex literal.
+        if (idx > 0 && source.charCodeAt(idx - 1) === CH_LANGLE) {
+          STMT_DELIM_RE.lastIndex = idx + 1
+          continue
+        }
         pos = idx
         if (skipNonCode()) {
           STMT_DELIM_RE.lastIndex = pos
           continue
         }
+        STMT_DELIM_RE.lastIndex = idx + 1
+        continue
+      }
+
+      if (ch === CH_LANGLE) {
+        const jsxDelta = jsxTagDeltaAt(idx)
+        if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
         STMT_DELIM_RE.lastIndex = idx + 1
         continue
       }
@@ -692,14 +706,15 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         continue
       }
       if (ch === CH_RBRACE) {
-        braceDepth--
-        if (braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) { pos = idx + 1; return }
+        const closesNestedBrace = braceDepth > 0
+        if (closesNestedBrace) braceDepth--
+        if ((!closesNestedBrace || terminateOnBalancedBrace) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx + 1; return }
         STMT_DELIM_RE.lastIndex = idx + 1
         continue
       }
-      if (ch === CH_SEMI && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) { pos = idx + 1; return }
+      if (ch === CH_SEMI && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx + 1; return }
       // ASI: newline at depth 0 + keyword = end of statement
-      if ((ch === CH_LF || ch === CH_CR) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
+      if ((ch === CH_LF || ch === CH_CR) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) {
         pos = idx
         if (checkASITopLevel()) return
       }
