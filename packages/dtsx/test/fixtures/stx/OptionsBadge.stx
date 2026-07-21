@@ -1,0 +1,14 @@
+<script lang="ts">
+import type { BadgeMeta } from './types'
+
+export default {
+  props: {
+    label: { type: String, required: true },
+    count: Number,
+    active: Boolean,
+    meta: Object as PropType<BadgeMeta>,
+  },
+}
+</script>
+
+<span>{{ label }}</span>

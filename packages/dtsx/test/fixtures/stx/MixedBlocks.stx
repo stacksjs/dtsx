@@ -1,0 +1,16 @@
+@ts
+export type ServerStatus = 'ready' | 'busy'
+export const STATUS_ATTRIBUTE = 'data-status' as const
+@endts
+
+<script client lang="ts">
+interface Props {
+  status: ServerStatus
+  retries?: number
+}
+
+const props = defineProps<Props>()
+const retries = state(props.retries ?? 0)
+</script>
+
+<div data-status="{{ props.status }}">{{ retries }}</div>

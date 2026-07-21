@@ -1,0 +1,18 @@
+{{-- This is the same typed-props convention used by STX's Blade examples. --}}
+@ts
+export interface AlertProps {
+  type: 'success' | 'info' | 'warning' | 'error'
+  message: string
+  dismissible?: boolean
+}
+
+const { type, message, dismissible = false } = props as AlertProps
+const getAlertClass = () => `alert-${type}`
+@endts
+
+<div class="alert {{ getAlertClass() }}">
+  <p>{{ message }}</p>
+  @if(dismissible)
+    <button>Close</button>
+  @endif
+</div>

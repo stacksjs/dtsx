@@ -1,0 +1,36 @@
+<script server lang="ts">
+import type { PanelTone } from './types'
+
+export const PANEL_VERSION = 2 as const
+
+interface PanelProps {
+  /** Visible heading. */
+  title: string
+  tone?: PanelTone
+  count?: number
+}
+
+interface PanelEmits {
+  (event: 'close'): void
+  (event: 'select', id: number): void
+}
+
+interface PanelSlots {
+  default: () => unknown
+  header?: (props: { title: string }) => unknown
+}
+
+const props = withDefaults(defineProps<PanelProps>(), {
+  tone: 'neutral',
+  count: 0,
+})
+const emit = defineEmits<PanelEmits>()
+const slots = defineSlots<PanelSlots>()
+const close = () => emit('close')
+defineExpose({ close })
+</script>
+
+<section data-tone="{{ props.tone }}">
+  <slot name="header" :title="props.title"></slot>
+  <slot></slot>
+</section>
