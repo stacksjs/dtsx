@@ -319,9 +319,9 @@ async function runGenerationModeBenchmarks(config: BenchmarkConfig): Promise<Gen
   const suiteStart = performance.now()
   const comparisons: GenerationModeComparison[] = []
   const workloads = [
-    { name: 'Small typed initializers', declarations: 100, entries: 50 },
-    { name: 'Medium typed initializers', declarations: 500, entries: 100 },
-    { name: 'Large typed initializers', declarations: 1000, entries: 250 },
+    { name: 'Small typed initializers', declarations: 250, entries: 100 },
+    { name: 'Medium typed initializers', declarations: 500, entries: 250 },
+    { name: 'Large typed initializers', declarations: 1000, entries: 500 },
   ]
 
   for (const workload of workloads) {
