@@ -186,7 +186,7 @@ If you encounter issues:
 1. Check the [troubleshooting guide](./advanced/troubleshooting.md)
 2. Search existing [GitHub issues](https://github.com/stacksjs/dtsx/issues)
 3. Create a new issue with reproduction steps
-4. Join our [Discord community](https://discord.gg/stacksjs)
+4. Join our [Discord community](https://stacksjs.com/discord)
 
 ## Next Steps
 
