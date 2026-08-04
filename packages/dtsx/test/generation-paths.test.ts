@@ -101,6 +101,22 @@ describe('declaration generation paths', () => {
     expect(result).not.toContain('answer:')
   })
 
+  it('preserves an annotated local record referenced by a default export', () => {
+    const source = `
+      declare const formatRounded: (x: number, p?: number) => string
+      const formatTypes: Record<string, (x: number, p?: number) => string> = {
+        rounded: formatRounded as (x: number, p?: number) => string,
+      }
+      export default formatTypes
+    `
+
+    const result = processSourceIsolated(source, 'formatTypes.ts', false)
+
+    expect(result).toContain('declare const formatTypes: Record<string, (x: number, p?: number) => string>;')
+    expect(result).toContain('export default formatTypes;')
+    expect(result).not.toContain('formatRounded as')
+  })
+
   it('does not retain annotated initializers in isolated mode', () => {
     const source = `
       export const values: readonly string[] = createVeryExpensiveValue({
