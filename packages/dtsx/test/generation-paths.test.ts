@@ -273,6 +273,29 @@ describe('declaration generation paths', () => {
     expect(result).not.toContain('export default {')
   })
 
+  it('uses the contract from asserted default-export expressions', () => {
+    const source = `
+      type ColorSpecifier = string | null
+      declare function hcl(): unknown
+      export default hcl() as (start: ColorSpecifier, end: ColorSpecifier) => (t: number) => string
+    `
+
+    const result = processSourceIsolated(source, 'asserted-default.ts', false)
+
+    expect(result).toContain('declare const __dtsx_default_export__: (start: ColorSpecifier, end: ColorSpecifier) => (t: number) => string;')
+    expect(result).toContain('export default __dtsx_default_export__;')
+    expect(result).not.toContain('hcl() as')
+  })
+
+  it('emits valid anonymous default function declarations', () => {
+    const source = 'export default function (name: string): string { return name }'
+
+    const result = processSourceIsolated(source, 'anonymous-default.ts', false)
+
+    expect(result).toContain('export default function (name: string): string;')
+    expect(result).not.toContain('function default')
+  })
+
   it('keeps result caches separate across import orders', () => {
     clearResultCache()
     const source = `

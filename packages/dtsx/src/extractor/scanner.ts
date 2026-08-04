@@ -1930,7 +1930,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const exportPrefix = isExported
       ? (isDefault ? 'export default function ' : 'export declare function ')
       : 'declare function '
-    const text = `${exportPrefix}${name || 'default'}${generics}${dtsParams}: ${returnType};`
+    const declarationName = name || (isDefault ? '' : 'default')
+    const text = `${exportPrefix}${declarationName}${generics}${dtsParams}: ${returnType};`
     const comments = extractLeadingComments(declStart)
 
     // Record index if this function had a body (implementation signature for overloads)
@@ -3278,7 +3279,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let helperName = '__dtsx_default_export__'
     let suffix = 1
     while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
-    const inferredType = inferNarrowType(expression, false)
+    const assertedType = extractAssertion(expression)
+    const inferredType = assertedType || inferNarrowType(expression, false)
     const type = inferredType === 'unknown' && isEntityNameText(expression)
       ? `typeof ${expression}`
       : inferredType
