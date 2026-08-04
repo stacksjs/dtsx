@@ -1,4 +1,63 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.1...v0.11.2)
+
+### 🚀 Features
+
+- **generator**: discover stx component sources ([18ade38](https://github.com/stacksjs/dtsx/commit/18ade38)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **stx**: generate component declarations ([8d19443](https://github.com/stacksjs/dtsx/commit/8d19443)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- **generator**: emit valid default declarations ([070dc24](https://github.com/stacksjs/dtsx/commit/070dc24)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **isolated**: retain complex JSX scan boundaries ([ec11d48](https://github.com/stacksjs/dtsx/commit/ec11d48)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: balance jsx initializer syntax ([3c5e4a5](https://github.com/stacksjs/dtsx/commit/3c5e4a5)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: harden jsx expression boundaries ([5fa7599](https://github.com/stacksjs/dtsx/commit/5fa7599)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: narrow wrapper dependency inference ([5d8fc55](https://github.com/stacksjs/dtsx/commit/5d8fc55)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: support component wrapper patterns ([38150d7](https://github.com/stacksjs/dtsx/commit/38150d7)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: scan jsx component initializers ([6901cac](https://github.com/stacksjs/dtsx/commit/6901cac)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: preserve wrapped component types ([2856c9c](https://github.com/stacksjs/dtsx/commit/2856c9c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **react**: infer jsx component returns ([d47aaa6](https://github.com/stacksjs/dtsx/commit/d47aaa6)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### ⚡ Performance Improvements
+
+- **isolated**: skip annotated single-line literals ([ab657d5](https://github.com/stacksjs/dtsx/commit/ab657d5)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 📚 Documentation
+
+- link the community as stacksjs.com/discord ([d2bf3c1](https://github.com/stacksjs/dtsx/commit/d2bf3c1)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **stx**: document component declarations ([51594bd](https://github.com/stacksjs/dtsx/commit/51594bd)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **cli**: label command output fences ([aee2894](https://github.com/stacksjs/dtsx/commit/aee2894)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧪 Tests
+
+- **generator**: cover annotated default export records ([bcca75a](https://github.com/stacksjs/dtsx/commit/bcca75a)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **stx**: cover component declaration syntax ([3e0729c](https://github.com/stacksjs/dtsx/commit/3e0729c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **vue**: follow renamed burn fixture ([ef79503](https://github.com/stacksjs/dtsx/commit/ef79503)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🤖 Continuous Integration
+
+- **benchmark**: report isolated mode speedup ([edeb9ac](https://github.com/stacksjs/dtsx/commit/edeb9ac)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.2 ([bd88ad7](https://github.com/stacksjs/dtsx/commit/bd88ad7)) _(by Chris <chrisbreuer93@gmail.com>)_
+- wip ([a76b183](https://github.com/stacksjs/dtsx/commit/a76b183)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 📄 Miscellaneous
+
+- Merge pull request #3106 from stacksjs/codex/isolated-mode-benchmarks ([be1c8c2](https://github.com/stacksjs/dtsx/commit/be1c8c2)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#3106](https://github.com/stacksjs/dtsx/issues/3106), [#3106](https://github.com/stacksjs/dtsx/issues/3106))
+- Merge pull request #3105 from stacksjs/codex/stx-component-declarations ([30310cf](https://github.com/stacksjs/dtsx/commit/30310cf)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#3105](https://github.com/stacksjs/dtsx/issues/3105), [#3105](https://github.com/stacksjs/dtsx/issues/3105))
+- Merge pull request #3104 from stacksjs/agent/react-component-declarations ([787d732](https://github.com/stacksjs/dtsx/commit/787d732)) _(by Chris <chrisbreuer93@gmail.com>)_ ([#3104](https://github.com/stacksjs/dtsx/issues/3104), [#3104](https://github.com/stacksjs/dtsx/issues/3104))
+
+### bench
+
+- **isolated**: stabilize mode comparison workloads ([c1b2e49](https://github.com/stacksjs/dtsx/commit/c1b2e49)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **isolated**: compare generation paths ([1582d5e](https://github.com/stacksjs/dtsx/commit/1582d5e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.0...v0.11.1)
 
 ### 🐛 Bug Fixes
