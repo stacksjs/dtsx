@@ -1350,10 +1350,53 @@ function isEntityName(value: string): boolean {
   return parts.length > 0 && parts.every(isIdentifierName)
 }
 
+/**
+ * Index of the `(` that opens a call's argument list.
+ *
+ * Not `indexOf('(')`: type arguments can contain parentheses of their own, as in
+ * `k<{ go: (p: string) => void }>('a')`. Taking the first `(` there lands inside
+ * the type argument, the call then looks unbalanced, and the caller falls
+ * through to arrow-function inference — which emits a signature truncated at
+ * that paren (`(k<{ go: (p: string)) => unknown`). So skip balanced `<...>`
+ * regions before looking for the call.
+ *
+ * An unbalanced `<` is a comparison operator rather than type arguments
+ * (`a < b(c)`), so it is left to scan past as an ordinary character.
+ */
+function findCallParenIndex(value: string): number {
+  let inString = false
+  let quote = ''
+
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i]
+
+    if (inString) {
+      if (char === '\\') i++
+      else if (char === quote) inString = false
+      continue
+    }
+
+    if (char === '"' || char === '\'' || char === '`') {
+      inString = true
+      quote = char
+      continue
+    }
+
+    if (char === '(') return i
+
+    if (char === '<') {
+      const end = findMatchingBracket(value, i, '<', '>')
+      if (end !== -1) i = end
+    }
+  }
+
+  return -1
+}
+
 /** Infer calls whose callee can be referenced safely from declaration syntax. */
 function inferCallType(value: string): string | null {
   if (value.length < 3 || !value.endsWith(')')) return null
-  const open = value.indexOf('(')
+  const open = findCallParenIndex(value)
   if (open === -1 || findMatchingBracket(value, open, '(', ')') !== value.length - 1) return null
 
   let callee = value.slice(0, open).trim()
@@ -2270,6 +2313,19 @@ function findMainArrowIndex(str: string): number {
     }
 
     if (!inString) {
+      // Skip over a balanced `<...>`. An arrow inside a TYPE argument is not the
+      // value's main arrow — `k<{ go: (p: string) => void }>('a')` is a call, not
+      // a function — and counting it made the caller infer a function type and
+      // truncate the signature at that paren. Only balanced runs are skipped, so
+      // a bare comparison (`a < b`) still scans through as ordinary characters.
+      if (char === '<') {
+        const end = findMatchingBracket(str, i, '<', '>')
+        if (end !== -1) {
+          i = end
+          continue
+        }
+      }
+
       // Track nesting depth - only parentheses and square brackets
       // Don't track < > as they can be comparison operators or part of generics
       if (char === '(') {
