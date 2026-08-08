@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
 import { write } from './compat'
 import { config } from './config'
+import { findDanglingTypeReferences } from './dangling-refs'
 import { validateTypeScriptSyntax } from './syntax-validator'
 
 /**
@@ -228,6 +229,24 @@ export function validateDtsContent(content: string, filename: string): Validatio
       column: diagnostic.column,
       message: diagnostic.message,
       code: diagnostic.code,
+    })
+  }
+
+  /*
+   * Balanced brackets are not the same as a usable declaration. A file can be
+   * perfectly well-formed and still name a type it never defines — which is
+   * what happens when the source relied on an ambient global that does not
+   * travel with the package. It builds, it publishes, and it resolves to
+   * `never` for whoever installs it.
+   *
+   * Reported per name rather than once per file: the fix is per import.
+   */
+  for (const dangling of findDanglingTypeReferences(content)) {
+    result.errors.push({
+      line: dangling.line,
+      column: 1,
+      message: `'${dangling.name}' is used but never declared or imported here, so it resolves to an error type for anything consuming this file. It is most likely an ambient global in the source project — import it explicitly. Referenced by: ${dangling.context}`,
+      code: 'dangling-type-reference',
     })
   }
 

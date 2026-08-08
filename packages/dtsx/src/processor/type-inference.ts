@@ -859,27 +859,24 @@ function inferNewExpressionType(value: string): string {
 }
 
 /**
- * Infer type from class expression used as a value.
- * For `class Foo { ... }`, extracts the class name and returns `typeof Foo`.
- * For anonymous classes, returns a basic constructor type.
+ * Infer the type of a class expression used as a value.
+ *
+ * Both the named and the anonymous form get a constructor type, because a
+ * class expression's name is bound only inside its own body:
+ *
+ *     export const Constructor = class Named { value = 1 }
+ *
+ * `Named` is a real binding within the class — it is how the class refers to
+ * itself — but it is not in scope anywhere else, and it is not something the
+ * declaration file can name. Emitting `typeof Named` produced a `.d.ts` that
+ * referenced an identifier it never declared, so every consumer resolved
+ * `Constructor` to an error type. The declaration-validation pass reports that
+ * now, which is how this was found.
+ *
+ * A class *declaration* is a different thing and keeps its name; this is only
+ * reached for expressions.
  */
-function inferClassExpressionType(value: string): string {
-  // Extract class name: class Name or class Name extends ...
-  const trimmed = value.trimStart()
-  let i = 5 // skip 'class'
-  // Skip whitespace
-  while (i < trimmed.length && trimmed.charCodeAt(i) <= 32) i++
-
-  // Check if there's a name (identifier starting char)
-  const nameStart = i
-  if (i < trimmed.length && isWordChar(trimmed.charCodeAt(i))) {
-    while (i < trimmed.length && isWordChar(trimmed.charCodeAt(i))) i++
-    const className = trimmed.slice(nameStart, i)
-    // Named class expression — use typeof ClassName
-    return `typeof ${className}`
-  }
-
-  // Anonymous class expression
+function inferClassExpressionType(_value: string): string {
   return '{ new (...args: any[]): any }'
 }
 

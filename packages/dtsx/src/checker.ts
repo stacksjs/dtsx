@@ -101,12 +101,44 @@ export interface IsolatedDeclarationsIssue {
 }
 
 /**
+ * Fail early, and say what is actually wrong.
+ *
+ * This module drives the real TypeScript compiler API, and `typescript` is not
+ * a declared dependency of dtsx — it resolves to whatever the host project
+ * happens to have hoisted. TypeScript 7, the native port, exposes none of the
+ * API used here: `ts.sys`, `ts.createProgram`, `ts.readConfigFile` and the rest
+ * are all undefined.
+ *
+ * Without this the first call died on `undefined is not an object (evaluating
+ * 'ts.sys.readFile')` — a stack trace pointing into dtsx's internals for what
+ * is really a missing peer. Type checking is optional; generation does not
+ * need it, and the dangling-reference pass in `dangling-refs.ts` runs without
+ * TypeScript at all.
+ */
+function assertTypeScriptApi(): void {
+  if (typeof ts?.sys !== 'undefined' && typeof ts?.createProgram === 'function')
+    return
+
+  const version = (ts as { version?: string } | undefined)?.version
+  const found = version ? `found ${version}` : 'none resolved'
+
+  throw new TypeError(
+    `Type checking needs the TypeScript 5.x compiler API, but ${found}. `
+    + 'TypeScript 7 (the native port) does not expose `ts.sys` or `ts.createProgram`. '
+    + 'Install typescript@^5 to use `dtsx check`, or drop the flag — generation and '
+    + 'declaration validation both work without it.',
+  )
+}
+
+/**
  * Load TypeScript compiler options from tsconfig.json
  */
 export function loadCompilerOptions(
   tsconfigPath: string,
   overrides?: Partial<ts.CompilerOptions>,
 ): ts.CompilerOptions {
+  assertTypeScriptApi()
+
   const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
 
   if (configFile.error) {
@@ -250,6 +282,10 @@ export async function typeCheck(
   files: string[],
   config: TypeCheckConfig = {},
 ): Promise<TypeCheckResult> {
+  // Both branches below reach into the compiler API, so check once up front
+  // rather than failing on whichever property is touched first.
+  assertTypeScriptApi()
+
   const startTime = Date.now()
 
   // Load compiler options

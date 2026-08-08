@@ -887,7 +887,9 @@ cli
       process.exit(result.success ? 0 : 1)
     }
     catch (error) {
-      console.error('Error during type checking:', error)
+      // A message is more useful than a code frame when the cause is a missing
+      // or incompatible peer rather than a bug in the file being checked.
+      console.error(error instanceof Error ? `Error during type checking: ${error.message}` : `Error during type checking: ${String(error)}`)
       process.exit(1)
     }
   })
