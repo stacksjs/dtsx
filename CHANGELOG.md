@@ -1,4 +1,23 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.2...v0.11.3)
+
+### 🚀 Features
+
+- catch declarations that reference types they never define ([9adde7f](https://github.com/stacksjs/dtsx/commit/9adde7f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🐛 Bug Fixes
+
+- **inference**: don't read a paren inside type arguments as an arrow function ([86c8858](https://github.com/stacksjs/dtsx/commit/86c8858)) _(by glennmichael123 <gtorregosa@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.3 ([a110357](https://github.com/stacksjs/dtsx/commit/a110357)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+- _glennmichael123 <gtorregosa@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.1...v0.11.2)
 
 ### 🚀 Features
