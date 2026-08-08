@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { generate } from '../src/generator'
 import { processSource } from '../src/process-source'
 import { isStxFile, parseStxScripts, transformStxToTs } from '../src/stx'
+import { runTsc } from './helpers/tsc'
 
 const fixturesDir = join(import.meta.dir, 'fixtures', 'stx')
 const tempDirs: string[] = []
@@ -34,10 +35,8 @@ async function expectParsesUnderTsc(dts: string, dependencies: Record<string, st
   await writeFile(join(tempDir, 'out.d.ts'), dts)
   await writeFile(join(tempDir, 'stx.d.ts'), stxShim)
   await Promise.all(Object.entries(dependencies).map(([name, content]) => writeFile(join(tempDir, name), content)))
-  const tscBin = join(import.meta.dir, '..', '..', '..', 'node_modules', '.bin', 'tsc')
-  const proc = Bun.spawnSync([tscBin, '--noEmit', '--strict', 'out.d.ts', 'stx.d.ts', ...Object.keys(dependencies)], { cwd: tempDir })
-  const output = `${proc.stdout.toString()}${proc.stderr.toString()}`
-  expect(proc.exitCode === 0 ? '' : output).toBe('')
+  const { ok, output } = runTsc(tempDir, ['out.d.ts', 'stx.d.ts', ...Object.keys(dependencies)])
+  expect(ok ? '' : output).toBe('')
 }
 
 async function generateFixtures(entrypoints: string[], isolatedDeclarations: boolean): Promise<string> {

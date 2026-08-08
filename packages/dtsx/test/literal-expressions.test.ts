@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { processSource } from '../src/process-source'
+import { runTsc } from './helpers/tsc'
 
 const tempDirs: string[] = []
 
@@ -22,10 +23,8 @@ async function expectParsesUnderTsc(files: Record<string, string>): Promise<void
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(tempDir, name), content)
   }
-  const tscBin = join(import.meta.dir, '..', '..', '..', 'node_modules', '.bin', 'tsc')
-  const proc = Bun.spawnSync([tscBin, '--noEmit', '--strict', ...Object.keys(files)], { cwd: tempDir })
-  const output = `${proc.stdout.toString()}${proc.stderr.toString()}`
-  expect(proc.exitCode === 0 ? '' : output).toBe('')
+  const { ok, output } = runTsc(tempDir, Object.keys(files))
+  expect(ok ? '' : output).toBe('')
 }
 
 describe('literal expression inference', () => {

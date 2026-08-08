@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { generate } from '../src/generator'
 import { processSource } from '../src/process-source'
 import { isVueFile, mapRuntimeProps, parseVueSfc, stripMacroStatements, transformVueSfcToTs } from '../src/vue'
+import { runTsc } from './helpers/tsc'
 
 const fixturesDir = join(import.meta.dir, 'fixtures', 'vue')
 
@@ -44,10 +45,8 @@ async function expectParsesUnderTsc(dts: string): Promise<void> {
   const tempDir = await createTempDir()
   await writeFile(join(tempDir, 'out.d.ts'), dts)
   await writeFile(join(tempDir, 'vue.d.ts'), vueShim)
-  const tscBin = join(import.meta.dir, '..', '..', '..', 'node_modules', '.bin', 'tsc')
-  const proc = Bun.spawnSync([tscBin, '--noEmit', '--strict', 'out.d.ts', 'vue.d.ts'], { cwd: tempDir })
-  const output = `${proc.stdout.toString()}${proc.stderr.toString()}`
-  expect(proc.exitCode === 0 ? '' : output).toBe('')
+  const { ok, output } = runTsc(tempDir, ['out.d.ts', 'vue.d.ts'])
+  expect(ok ? '' : output).toBe('')
 }
 
 /** Copy the vue fixtures into a temp src dir and run a full generation pass. */
