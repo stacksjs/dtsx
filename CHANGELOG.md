@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.3...v0.11.4)
+
+### 🐛 Bug Fixes
+
+- **test**: type-check the output without needing Node installed ([12231d3](https://github.com/stacksjs/dtsx/commit/12231d3)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.4 ([12afc58](https://github.com/stacksjs/dtsx/commit/12afc58)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.2...v0.11.3)
 
 ### 🚀 Features
