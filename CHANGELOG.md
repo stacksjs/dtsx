@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.4...v0.11.5)
+
+### 🧪 Tests
+
+- **inference**: a generic call must not collapse to boolean ([2689d48](https://github.com/stacksjs/dtsx/commit/2689d48)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.5 ([ff7f44a](https://github.com/stacksjs/dtsx/commit/ff7f44a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.3...v0.11.4)
 
 ### 🐛 Bug Fixes
