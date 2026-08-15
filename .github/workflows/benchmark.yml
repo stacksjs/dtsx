@@ -82,7 +82,7 @@ jobs:
         working-directory: packages/dtsx
 
       - name: Download Previous Benchmark
-        uses: dawidd6/action-download-artifact@v14
+        uses: dawidd6/action-download-artifact@v23
         with:
           workflow: benchmark.yml
           branch: main
