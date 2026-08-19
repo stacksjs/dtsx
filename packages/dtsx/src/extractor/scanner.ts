@@ -580,6 +580,54 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /**
+   * Check for an ASI boundary while reading a TYPE annotation.
+   *
+   * Stricter than {@link checkASITopLevel}, which only breaks on a top-level
+   * keyword. A type is finished at a newline unless what follows can actually
+   * continue one - `|`, `&`, a conditional's `extends`/`?`/`:`, an index or
+   * array `[`, or a qualified name's `.`. Anything else on the next line is the
+   * next statement.
+   *
+   * Without this, an uninitialized `export let x: (s: string) => string` with no
+   * trailing semicolon - the house style everywhere here - swallowed whatever
+   * followed it and emitted that statement into the `.d.ts`, where TypeScript
+   * rejects it with TS1036 "Statements are not allowed in ambient contexts".
+   *
+   * Does NOT consume characters.
+   */
+  function checkASIAfterType(): boolean {
+    const ch = source.charCodeAt(pos)
+    if (ch !== CH_LF && ch !== CH_CR)
+      return false
+    const saved = pos
+    pos++
+    while (pos < len) {
+      const c = source.charCodeAt(pos)
+      if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { pos++; continue }
+      if (c === CH_SLASH && pos + 1 < len) {
+        const next = source.charCodeAt(pos + 1)
+        if (next === CH_SLASH) {
+          const nl = source.indexOf('\n', pos + 2)
+          pos = nl === -1 ? len : nl + 1
+          continue
+        }
+        if (next === CH_STAR) {
+          const end = source.indexOf('*/', pos + 2)
+          pos = end === -1 ? len : end + 2
+          continue
+        }
+      }
+      break
+    }
+    const c = pos < len ? source[pos] : ''
+    const continuesType = c === '|' || c === '&' || c === '[' || c === '.'
+      || c === '?' || c === ':' || c === '>' || c === ')' || c === ','
+      || matchWord('extends')
+    pos = saved
+    return !continuesType
+  }
+
+  /**
    * Check for ASI boundary in class member context: newline followed by a
    * member-starting token (not a type continuation like | or &).
    * Does NOT consume characters.
@@ -2075,7 +2123,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             break
           else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
             break
-          if (depth === 0 && checkASITopLevel())
+          if (depth === 0 && (checkASITopLevel() || checkASIAfterType()))
             break
           pos++
         }
