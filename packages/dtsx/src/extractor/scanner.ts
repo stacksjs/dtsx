@@ -2687,6 +2687,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /** Handle method or property after reading the member name */
+  // eslint-disable-next-line pickier/no-unused-vars -- `isAbstract` is positional; the callers pass it and `isAsync` follows it
   function handleMethodOrPropertyAfterName(memberName: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isGenerator: boolean, isAbstract: boolean, isAsync: boolean, members: string[]): void {
     skipWhitespaceAndComments()
     if (pos >= len)
@@ -2744,8 +2745,12 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       const dtsParams = buildDtsParams(rawParams)
       const optMark = isOptional ? '?' : ''
-      const genText = isGenerator ? '*' : ''
-      members.push(`${modPrefix}${genText}${memberName}${optMark}${generics}${dtsParams}: ${retType};`)
+      // No `*` on a generator method. A declaration file is an ambient context
+      // and TypeScript rejects `*method(): Generator<T>` there with TS1221 -
+      // which fails the whole file, so one generator method takes out every type
+      // the package ships. Nothing is lost: `retType` above is already resolved
+      // to Generator<...> / AsyncGenerator<...> when the source did not annotate.
+      members.push(`${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${retType};`)
     }
     else if (nextCh === CH_COLON || nextCh === CH_EQUAL || nextCh === CH_SEMI || nextCh === CH_RBRACE || nextCh === CH_LF || nextCh === CH_CR) {
       // Property

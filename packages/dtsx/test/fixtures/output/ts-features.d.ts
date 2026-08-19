@@ -90,7 +90,7 @@ export type Status = typeof STATUSES[number];
 /** Class with symbol properties */
 export declare class SymbolClass {
   [Symbol.toStringTag]: string;
-  *[Symbol.iterator](): Generator<number>;
+  [Symbol.iterator](): Generator<number>;
   get [customSymbol](): string;
 }
 /** Class with private fields */

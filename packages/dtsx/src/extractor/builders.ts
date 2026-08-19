@@ -457,10 +457,12 @@ export function buildClassBody(node: ClassDeclaration, sf: SourceFile): string {
 
       const parts: string[] = [mods]
 
-      // For generator methods, add the asterisk (including for symbol-named methods)
-      if (isGenerator) {
-        parts.push('*')
-      }
+      // No asterisk, even for a generator. A declaration file is an ambient
+      // context, and TypeScript rejects `*method(): Generator<T>` there with
+      // TS1221 - the whole file then fails to parse, so one generator method
+      // takes out every type the package ships. The generator-ness is not lost:
+      // it lives in the return type, which is filled in as Generator<...> or
+      // AsyncGenerator<...> below when the source did not annotate one.
 
       parts.push(name)
 

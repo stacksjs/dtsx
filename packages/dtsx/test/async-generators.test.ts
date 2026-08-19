@@ -116,7 +116,10 @@ describe('Async Generator Return Types', () => {
       const classDecl = decls.find(d => d.name === 'MyClass')
 
       expect(classDecl).toBeDefined()
-      expect(classDecl?.text).toContain('*values()')
+      // No `*`: a declaration file is an ambient context and TypeScript rejects
+      // a generator method there (TS1221). The return type carries the meaning.
+      expect(classDecl?.text).toContain('values()')
+      expect(classDecl?.text).not.toContain('*values()')
       expect(classDecl?.text).toContain('Generator')
     })
 
@@ -134,7 +137,10 @@ describe('Async Generator Return Types', () => {
       const classDecl = decls.find(d => d.name === 'AsyncClass')
 
       expect(classDecl).toBeDefined()
-      expect(classDecl?.text).toContain('*asyncValues()')
+      // No `*`: a declaration file is an ambient context and TypeScript rejects
+      // a generator method there (TS1221). The return type carries the meaning.
+      expect(classDecl?.text).toContain('asyncValues()')
+      expect(classDecl?.text).not.toContain('*asyncValues()')
       expect(classDecl?.text).toContain('AsyncGenerator')
     })
 

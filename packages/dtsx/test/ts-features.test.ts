@@ -175,7 +175,10 @@ describe('TypeScript Features', () => {
 
       expect(classDecl).toBeDefined()
       expect(classDecl?.text).toContain('[Symbol.toStringTag]')
-      expect(classDecl?.text).toContain('*[Symbol.iterator](): Generator<number>')
+      // No `*`: a declaration file is an ambient context and TypeScript rejects
+      // a generator method there (TS1221). The return type carries the meaning.
+      expect(classDecl?.text).toContain('[Symbol.iterator](): Generator<number>')
+      expect(classDecl?.text).not.toContain('*[Symbol.iterator]')
       expect(classDecl?.text).toContain('[Symbol.dispose](): void')
     })
 
@@ -284,8 +287,11 @@ describe('TypeScript Features', () => {
       const classDecl = decls.find(d => d.name === 'GeneratorClass')
 
       expect(classDecl).toBeDefined()
-      expect(classDecl?.text).toContain('*values(): Generator<number>')
-      expect(classDecl?.text).toContain('*asyncValues(): AsyncGenerator<string>')
+      // No `*`: a declaration file is an ambient context and TypeScript rejects
+      // a generator method there (TS1221). The return type carries the meaning.
+      expect(classDecl?.text).not.toContain('*values')
+      expect(classDecl?.text).toContain('values(): Generator<number>')
+      expect(classDecl?.text).toContain('asyncValues(): AsyncGenerator<string>')
     })
   })
 
