@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.5...v0.11.6)
+
+### 🐛 Bug Fixes
+
+- **scanner**: read a regex as a regex when a comment precedes it ([fc699f8](https://github.com/stacksjs/dtsx/commit/fc699f8)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.6 ([c0d6455](https://github.com/stacksjs/dtsx/commit/c0d6455)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.4...v0.11.5)
 
 ### 🧪 Tests
