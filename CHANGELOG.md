@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.6...v0.11.7)
+
+### 🐛 Bug Fixes
+
+- **extractor**: stop emitting the generator asterisk in declarations ([88366c5](https://github.com/stacksjs/dtsx/commit/88366c5)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.7 ([519fe96](https://github.com/stacksjs/dtsx/commit/519fe96)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.5...v0.11.6)
 
 ### 🐛 Bug Fixes
