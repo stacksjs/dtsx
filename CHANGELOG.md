@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.8...v0.11.9)
+
+### 🐛 Bug Fixes
+
+- **scanner**: end an initializer at the newline that ends it ([6ff9d6e](https://github.com/stacksjs/dtsx/commit/6ff9d6e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.9 ([686a400](https://github.com/stacksjs/dtsx/commit/686a400)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.7...v0.11.8)
 
 ### 🐛 Bug Fixes
