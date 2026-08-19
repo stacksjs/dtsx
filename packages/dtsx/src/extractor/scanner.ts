@@ -360,13 +360,80 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     return false
   }
 
+  /**
+   * The previous character that actually is code, skipping whitespace AND
+   * comments backwards from `from`.
+   *
+   * Comments are the part that was missing. Scanning back over whitespace only,
+   * a `/` on the line after `// Bind/call/apply (execution context)` sees `)`
+   * — or, more often, an ordinary letter — as its predecessor, decides the
+   * slash is division, and walks into the regex body as if it were code. Every
+   * bracket in the pattern then counts towards the enclosing declaration's
+   * depth, so `/\.(bind|call|apply)\s*\(/` opens two parens that never close
+   * and the declaration swallows the rest of the file. dtsx emitted four of
+   * stx's sixteen exports for exactly this reason, and the result parsed
+   * cleanly, so nothing downstream noticed.
+   *
+   * Returns -1 when there is nothing but whitespace and comments before it,
+   * which is the start-of-input case where a slash can only be a regex.
+   */
+  function previousCodeIndex(from: number): number {
+    let p = from
+    for (;;) {
+      while (p >= 0 && (source.charCodeAt(p) === CH_SPACE || source.charCodeAt(p) === CH_TAB
+        || source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
+      if (p < 0)
+        return -1
+
+      // End of a block comment: jump to just before its opening.
+      if (source.charCodeAt(p) === CH_SLASH && p > 0 && source.charCodeAt(p - 1) === CH_STAR) {
+        const open = source.lastIndexOf('/*', p - 2)
+        if (open === -1)
+          return -1
+        p = open - 1
+        continue
+      }
+
+      // Inside a line comment: the comment runs to the end of its line, so `p`
+      // is in one when its line has a `//` before it. Quotes on that line are
+      // checked so a `//` inside a string literal — a URL, most often — is not
+      // mistaken for the start of a comment.
+      const lineStart = source.lastIndexOf('\n', p) + 1
+      const commentStart = lineCommentStart(lineStart, p)
+      if (commentStart !== -1) {
+        p = commentStart - 1
+        continue
+      }
+
+      return p
+    }
+  }
+
+  /** Index of the `//` that comments out `upTo` on this line, or -1. */
+  function lineCommentStart(lineStart: number, upTo: number): number {
+    let quote = 0
+    for (let i = lineStart; i <= upTo; i++) {
+      const ch = source.charCodeAt(i)
+      if (quote) {
+        if (ch === CH_BACKSLASH) { i++; continue }
+        if (ch === quote) quote = 0
+        continue
+      }
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+        quote = ch
+        continue
+      }
+      if (ch === CH_SLASH && i + 1 <= upTo && source.charCodeAt(i + 1) === CH_SLASH)
+        return i
+    }
+    return -1
+  }
+
   /** Check if `/` at current pos is the start of a regex literal (not division) */
   function isRegexStart(): boolean {
-    // Look backward for the previous non-whitespace character
-    let p = pos - 1
-    while (p >= 0 && (source.charCodeAt(p) === CH_SPACE || source.charCodeAt(p) === CH_TAB || source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
+    const p = previousCodeIndex(pos - 1)
     if (p < 0)
-      return true // start of file
+      return true // nothing but whitespace and comments before it
     const prev = source.charCodeAt(p)
     // After these chars, `/` starts a regex (not division)
     // = ( [ ! & | ? : , ; { } ^ ~ + - * % < > \n
