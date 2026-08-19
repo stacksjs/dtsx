@@ -48,3 +48,42 @@ export default function setup(opts: { a: number }): void {
     expect(processCode(code)).toContain(expected)
   })
 })
+
+/**
+ * The same ASI problem in the INITIALIZER loop rather than the type loop:
+ *
+ *   const number = Object.create(base) as EnhancedNumber
+ *   number.int = (o) => ...
+ *
+ * emitted the assignments below the declaration into the `.d.ts`. Surfaced from
+ * @stacksjs/faker, whose `dist/index.d.ts` shipped 12 syntax errors.
+ */
+describe('initializer ASI', () => {
+  it('does not swallow assignments that follow an unterminated initializer', () => {
+    const dts = processCode(`
+interface Enhanced { int: (n: number) => number }
+const base = { int: (n: number) => n }
+export const num = Object.create(base) as Enhanced
+num.int = (n: number): number => n + 1
+`)
+    expect(dts).not.toContain('num.int =')
+  })
+
+  // Both halves of ASI: the statement must also be complete for a newline to end
+  // it, so a line ending in an operator continues regardless of what follows.
+  it.each([
+    ['assignment at end of line', 'export const MSG =\n  \'one \' +\n  \'two\'\n', 'MSG'],
+    ['arithmetic across lines', 'export const T = 60\n  * 1000\n', 'T'],
+    ['method chain', 'export const C = [1, 2]\n  .map(n => n)\n', 'C'],
+    ['ternary across lines', 'export const X = cond\n  ? 1\n  : 2\n', 'X'],
+  ])('keeps a multi-line initializer: %s', (_label, code, name) => {
+    const dts = processCode(code)
+    // The declaration survives and nothing from the continuation lines leaks out
+    // as a statement. How well the initializer is then *inferred* is a separate
+    // question - a chain and a ternary both resolve to `unknown` here, before
+    // this change as well as after - so it is not asserted.
+    expect(dts).toContain(name)
+    expect(dts).not.toContain('.map(')
+    expect(dts).not.toContain('? 1')
+  })
+})

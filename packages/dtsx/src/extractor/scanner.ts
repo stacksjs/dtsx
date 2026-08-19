@@ -580,6 +580,109 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /**
+   * Whether what has been read so far ends mid-expression, so a newline after it
+   * cannot be a statement boundary.
+   *
+   * ASI has two halves and looking only at the next line covers one of them:
+   *
+   *     export const MSG =
+   *       'first part ' +
+   *       'second part'
+   *
+   * Both newlines here follow an operator - `=` and `+` - and the next lines
+   * open with a quote, which continues nothing on its own. Reading forward only,
+   * the initializer ends up empty. A statement can only end where the expression
+   * is complete.
+   *
+   * Does NOT consume characters.
+   */
+  function endsMidExpression(from: number): boolean {
+    let i = from - 1
+    while (i >= 0) {
+      const c = source.charCodeAt(i)
+      if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { i--; continue }
+      break
+    }
+    if (i < 0)
+      return true
+    const ch = source[i]
+    if ('+-*/%=<>&|^!~?:,.([{'.includes(ch))
+      return true
+    // Inside an unclosed JSX opening tag, where the next line holds attributes:
+    //     export const C = () => <List
+    //       render={item => ...}
+    //     />
+    // The line ends on an identifier, so nothing above catches it, and the tag
+    // depth tracking does not see a delta until the tag closes.
+    let lineStart = i
+    while (lineStart > 0 && source.charCodeAt(lineStart - 1) !== CH_LF) lineStart--
+    const line = source.slice(lineStart, i + 1)
+    const lastOpen = line.lastIndexOf('<')
+    if (lastOpen !== -1 && /^<[A-Za-z]/.test(line.slice(lastOpen)) && !line.slice(lastOpen).includes('>'))
+      return true
+    // a trailing keyword operator: `as`, `in`, `of`, `new`, `typeof`, `extends`, ...
+    let j = i
+    while (j >= 0 && /[a-z]/i.test(source[j])) j--
+    const word = source.slice(j + 1, i + 1)
+    return ['as', 'in', 'of', 'new', 'typeof', 'keyof', 'extends', 'instanceof', 'satisfies', 'await', 'return', 'yield', 'void'].includes(word)
+  }
+
+  /**
+   * Check for an ASI boundary while reading an INITIALIZER expression.
+   *
+   * Same problem as {@link checkASIAfterType}, one loop over: `checkASITopLevel`
+   * only breaks on a top-level keyword, so
+   *
+   *     const number = Object.create(base) as EnhancedNumber
+   *     number.int = (o) => ...
+   *
+   * read the assignments below as part of the initializer and emitted them into
+   * the `.d.ts`. This is ordinary ASI: an expression is finished at a newline
+   * unless the next line opens with something that can continue it - a member
+   * access, an operator, a closing bracket, or one of the type-assertion
+   * keywords. A bare identifier cannot, so it starts a new statement.
+   *
+   * Does NOT consume characters.
+   */
+  function checkASIAfterInitializer(): boolean {
+    const ch = source.charCodeAt(pos)
+    if (ch !== CH_LF && ch !== CH_CR)
+      return false
+    if (endsMidExpression(pos))
+      return false
+    const saved = pos
+    pos++
+    while (pos < len) {
+      const c = source.charCodeAt(pos)
+      if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { pos++; continue }
+      if (c === CH_SLASH && pos + 1 < len) {
+        const next = source.charCodeAt(pos + 1)
+        if (next === CH_SLASH) {
+          const nl = source.indexOf('\n', pos + 2)
+          pos = nl === -1 ? len : nl + 1
+          continue
+        }
+        if (next === CH_STAR) {
+          const end = source.indexOf('*/', pos + 2)
+          pos = end === -1 ? len : end + 2
+          continue
+        }
+      }
+      break
+    }
+    const c = pos < len ? source[pos] : ''
+    const two = source.slice(pos, pos + 2)
+    const continuesExpression
+      = c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
+      || c === ',' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%'
+      || c === '<' || c === '>' || c === '=' || c === '&' || c === '|' || c === '^'
+      || c === '`' || two === '=>'
+      || matchWord('as') || matchWord('satisfies') || matchWord('instanceof') || matchWord('in')
+    pos = saved
+    return !continuesExpression
+  }
+
+  /**
    * Check for an ASI boundary while reading a TYPE annotation.
    *
    * Stricter than {@link checkASITopLevel}, which only breaks on a top-level
@@ -598,6 +701,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   function checkASIAfterType(): boolean {
     const ch = source.charCodeAt(pos)
     if (ch !== CH_LF && ch !== CH_CR)
+      return false
+    if (endsMidExpression(pos))
       return false
     const saved = pos
     pos++
@@ -2167,8 +2272,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
           else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
             break
-          if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && checkASITopLevel())
+          if (depth === 0 && angleDepth === 0 && jsxDepth === 0
+            && (checkASITopLevel() || checkASIAfterInitializer())) {
             break
+          }
           pos++
         }
         initializerText = sliceTrimmed(initStart, pos)
