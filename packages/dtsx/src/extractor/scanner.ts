@@ -2456,7 +2456,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         depth--
       else if (depth === 0 && ch === CH_SEMI)
         break
-      if (depth === 0 && checkASITopLevel())
+      if (depth === 0 && (checkASITopLevel() || checkASIAfterType()))
         break
       pos++
     }

@@ -87,3 +87,33 @@ num.int = (n: number): number => n + 1
     expect(dts).not.toContain('? 1')
   })
 })
+
+/**
+ * The third read loop with the same blind spot. A type alias whose body ran to
+ * the end of the line, with no trailing semicolon, swallowed the statement after
+ * it - so a file with a top-level `await` between two declarations emitted the
+ * await into the `.d.ts`, where TypeScript rejects it with TS1036.
+ *
+ * Surfaced from `@stacksjs/search-engine`, which bound its driver that way.
+ */
+describe('type alias ASI', () => {
+  it('does not swallow a statement after an unterminated type alias', () => {
+    const dts = processCode(`
+import { ready } from './dep'
+export type Driver = 'a' | 'b'
+await ready
+export function go(): void {}
+`)
+    expect(dts).not.toContain('await ready')
+    expect(dts).toContain('export type Driver')
+  })
+
+  it.each([
+    ['leading union', 'export type U =\n  | \'a\'\n  | \'b\'\n', '| \'b\''],
+    ['trailing union', 'export type T = \'a\' |\n  \'b\'\n', '\'b\''],
+    ['conditional', 'export type C = string extends string\n  ? 1\n  : 2\n', ': 2'],
+    ['object across lines', 'export type O = {\n  a: number\n}\n', 'a: number'],
+  ])('keeps a multi-line type alias: %s', (_label, code, expected) => {
+    expect(processCode(code)).toContain(expected)
+  })
+})
