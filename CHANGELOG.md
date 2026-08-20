@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.9...v0.11.10)
+
+### 🐛 Bug Fixes
+
+- **scanner**: end a type alias at the newline that ends it ([ca5612f](https://github.com/stacksjs/dtsx/commit/ca5612f)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.10 ([04343d0](https://github.com/stacksjs/dtsx/commit/04343d0)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.8...v0.11.9)
 
 ### 🐛 Bug Fixes
