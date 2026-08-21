@@ -98,7 +98,7 @@
     "@stacksjs/clapp": "^0.2.0"
   },
   "devDependencies": {
-    "bunfig": "^0.15.6"
+    "bunfig": "^0.15.19"
   },
   "git-hooks": {
     "pre-commit": {
