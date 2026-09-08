@@ -61,7 +61,7 @@
   "devDependencies": {
     "@stacksjs/bumpx": "^0.2.4",
     "@stacksjs/bunpress": "^0.1.4",
-    "@stacksjs/clapp": "^0.2.0",
+    "@stacksjs/clapp": "^0.2.16",
     "pickier": "^0.1.20",
     "@stacksjs/gitlint": "^0.1.5",
     "@stacksjs/logsmith": "^0.2.1",

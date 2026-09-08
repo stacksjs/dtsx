@@ -1,6 +1,7 @@
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
+import { existsSync } from 'node:fs'
 import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { basename, dirname, extname, isAbsolute, parse, relative, resolve } from 'node:path'
@@ -126,6 +127,16 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Find all TypeScript files based on entrypoints
   const entryFiles = await findFiles(config)
+
+  /*
+   * Matching nothing is never what the caller meant, and staying quiet about
+   * it is worse than failing: the run reports success, writes no `.d.ts`, and
+   * the package publishes its `.js` with no types at all. That is what a
+   * mistyped or unsplit entrypoint (`--entrypoints "a.ts,b.ts"` read as one
+   * path) looked like from the outside — a green build with types missing.
+   */
+  assertEntrypointsResolve(config, entryFiles)
+
   let files = entryFiles.slice()
 
   // Auto-expand the file set through relative re-exports AND imports so:
@@ -725,6 +736,56 @@ function isExcluded(filePath: string, excludePatterns: string[], rootPath: strin
   }
 
   return false
+}
+
+/** Glob metacharacters — a pattern without any of these names exactly one file. */
+const GLOB_META_RE = /[*?[\]{}!]/
+
+/**
+ * Fail when an entrypoint names nothing.
+ *
+ * Producing no declarations is never what the caller meant, and saying
+ * nothing about it is worse than failing: the run reports success, the
+ * package publishes its `.js`, and consumers get no types at all. Two shapes
+ * of that were reachable — every entrypoint missing (a mistyped root, or the
+ * comma form `--entrypoints "a.ts,b.ts"` read as one literal path), and one
+ * of several missing, which quietly emitted declarations for the survivors.
+ *
+ * A literal path that resolves to no file is unambiguously a mistake and is
+ * reported on its own. A glob is not: `**\/*.vue` legitimately matches
+ * nothing in a project with no Vue files, so a glob only counts toward the
+ * all-entrypoints-missing case.
+ */
+function assertEntrypointsResolve(config: DtsGenerationConfig, entryFiles: string[]): void {
+  const rootPath = resolve(config.cwd, config.root)
+  const context = `  root:        ${rootPath}\n`
+    + `  entrypoints: ${config.entrypoints.map(p => JSON.stringify(p)).join(', ') || '(none)'}\n`
+    + (config.exclude?.length ? `  exclude:     ${config.exclude.map(p => JSON.stringify(p)).join(', ')}\n` : '')
+    + `Entrypoints are resolved relative to --root. Pass several by repeating `
+    + `--entrypoints or separating them with commas.`
+
+  if (entryFiles.length === 0) {
+    // An entrypoint outside the root is dropped on purpose and warned about
+    // one by one, so a run that consists only of those has already said what
+    // happened — re-reporting it as a hard failure would be wrong.
+    const droppedOutsideRoot = config.entrypoints.filter(pattern =>
+      isAbsolute(pattern) && existsSync(pattern) && !isWithinRoot(pattern, rootPath),
+    )
+    if (droppedOutsideRoot.length === config.entrypoints.length) return
+
+    throw new Error(`No source files matched. Nothing was generated.\n${context}`)
+  }
+
+  const missing = config.entrypoints.filter((pattern) => {
+    if (GLOB_META_RE.test(pattern)) return false
+    return !existsSync(isAbsolute(pattern) ? pattern : resolve(rootPath, pattern))
+  })
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Entrypoint${missing.length > 1 ? 's' : ''} not found: ${missing.map(p => JSON.stringify(p)).join(', ')}\n${context}`,
+    )
+  }
 }
 
 /**

@@ -210,7 +210,7 @@ cat src/utils.ts | dtsx stdin > dist/utils.d.ts
 
 - `--cwd <path>`: Set the current working directory _(default: current directory)_
 - `--root <path>`: Specify the root directory of the project _(default: './src')_
-- `--entrypoints <files>`: Define entry point files _(comma-separated, default: `**/*.{ts,tsx,mts,cts,vue,stx}`)_
+- `--entrypoints <files>`: Define entry point files. Pass several by repeating the flag or separating them with commas _(default: `**/*.{ts,tsx,mts,cts,vue,stx}`)_
 - `--outdir <path>`: Set the output directory for generated .d.ts files _(default: './dist')_
 - `--keep-comments`: Keep comments in generated .d.ts files _(default: true)_
 - `--clean`: Clean output directory before generation _(default: false)_

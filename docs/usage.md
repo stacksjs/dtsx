@@ -134,7 +134,7 @@ dtsx generate --output-structure flat
 |--------|------|---------|-------------|
 | `--cwd <path>` | `string` | current directory | Set the current working directory |
 | `--root <path>` | `string` | `'./src'` | Specify the root directory of the project |
-| `--entrypoints <files>` | `string` | `'**/*.{ts,tsx,mts,cts,vue,stx}'` | Define entry point files (comma-separated) |
+| `--entrypoints <files>` | `string` | `'**/*.{ts,tsx,mts,cts,vue,stx}'` | Define entry point files. Pass several by repeating the flag or separating them with commas |
 | `--outdir <path>` | `string` | `'./dist'` | Set the output directory for generated .d.ts files |
 | `--keep-comments [value]` | `boolean` | `true` | Keep comments in generated .d.ts files |
 | `--clean` | `boolean` | `true` | Clean output directory before generation |

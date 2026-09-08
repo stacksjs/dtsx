@@ -324,12 +324,31 @@ const defaultOptions: DtsGenerationConfig = {
   concurrency: 4,
 }
 
+/**
+ * Normalize a list-valued flag into the array the config expects.
+ *
+ * Both documented spellings have to reach the config as several entries:
+ * `--entrypoints a.ts --entrypoints b.ts` arrives as an array, and
+ * `--entrypoints a.ts,b.ts` as one comma-joined string. Passing either
+ * through untouched used to leave a single entrypoint — the comma form as
+ * one literal path that matches no file at all — and the build carried on
+ * emitting declarations for whichever entry survived. Returns undefined
+ * when the flag was absent so a config file's value still applies.
+ */
+function normalizeListOption(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined
+  const items = (Array.isArray(value) ? value : [value])
+    .flatMap(entry => String(entry).split(','))
+    .map(entry => entry.trim())
+    .filter(Boolean)
+  return items.length > 0 ? [...new Set(items)] : undefined
+}
+
 cli
   .command('generate', 'Generate TypeScript declaration files')
   .option('--cwd <path>', 'Current working directory', { default: defaultOptions.cwd })
   .option('--root <path>', 'Root directory of the project', { default: defaultOptions.root })
-  .option('--entrypoints <files>', 'Entry point files (comma-separated)', {
-    default: defaultOptions.entrypoints?.join(','),
+  .option('--entrypoints <files>', `Entry point files; repeat the flag or comma-separate (default: ${defaultOptions.entrypoints?.join(',')})`, {
     type: [String],
   })
   .option('--outdir <path>', 'Output directory for generated .d.ts files', { default: defaultOptions.outdir })
@@ -366,6 +385,7 @@ cli
   .option('--prettier', 'Use Prettier for output formatting if available', { default: false })
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
+  .example('dtsx generate --entrypoints index.ts --entrypoints mime/index.ts --root src')
   .example('dtsx generate --import-order "node:,bun,@myorg/"')
   .example('dtsx generate --dry-run --stats')
   .example('dtsx generate --exclude "**/*.test.ts,**/__tests__/**"')
@@ -379,7 +399,7 @@ cli
 
       // Merge: defaultOptions < fileConfig < CLI options
       const config: DtsGenerationConfig = {
-        entrypoints: options.entrypoints ? options.entrypoints : (fileConfig.entrypoints || defaultOptions.entrypoints),
+        entrypoints: normalizeListOption(options.entrypoints) ?? fileConfig.entrypoints ?? defaultOptions.entrypoints,
         cwd,
         root: resolve(options.root || fileConfig.root || defaultOptions.root),
         outdir: resolve(options.outdir || fileConfig.outdir || defaultOptions.outdir),
@@ -424,7 +444,12 @@ cli
       // Success - exit code 0 (default)
     }
     catch (error) {
-      console.error('Error generating .d.ts files:', error)
+      // A usage error (an entrypoint that matches nothing, a bad root) is the
+      // common case here; a stack trace buries the one line that says what to
+      // change. The stack is still available behind --verbose.
+      console.error(`Error generating .d.ts files: ${error instanceof Error ? error.message : String(error)}`)
+      if (options.verbose && error instanceof Error && error.stack)
+        console.error(error.stack)
       process.exit(1)
     }
   })
@@ -433,8 +458,7 @@ cli
   .command('watch', 'Watch for changes and regenerate .d.ts files')
   .option('--cwd <path>', 'Current working directory', { default: defaultOptions.cwd })
   .option('--root <path>', 'Root directory of the project', { default: defaultOptions.root })
-  .option('--entrypoints <files>', 'Entry point files (comma-separated)', {
-    default: defaultOptions.entrypoints?.join(','),
+  .option('--entrypoints <files>', `Entry point files; repeat the flag or comma-separate (default: ${defaultOptions.entrypoints?.join(',')})`, {
     type: [String],
   })
   .option('--outdir <path>', 'Output directory for generated .d.ts files', { default: defaultOptions.outdir })
@@ -449,7 +473,7 @@ cli
   .action(async (options: DtsGenerationOption) => {
     try {
       const config: Partial<DtsGenerationConfig> = {
-        entrypoints: options.entrypoints ? options.entrypoints : defaultOptions.entrypoints,
+        entrypoints: normalizeListOption(options.entrypoints) ?? defaultOptions.entrypoints,
         cwd: resolve(options.cwd || defaultOptions.cwd),
         root: resolve(options.root || defaultOptions.root),
         outdir: resolve(options.outdir || defaultOptions.outdir),
