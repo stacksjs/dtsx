@@ -82,6 +82,13 @@ describe('formatter — wrapping a long module clause', () => {
     expect(out).toContain('\n};')
   })
 
+  it('carries an import-attributes clause through the wrap intact', async () => {
+    const out = await builtIn(`export { ${LONG_NAMES.join(', ')} } from './x' with { type: 'json' };\n`)
+
+    expect(out).toContain(`} from './x' with { type: 'json' };`)
+    expect(out).toContain(`  ${LONG_NAMES[0]},`)
+  })
+
   it('leaves a short clause on one line', async () => {
     const out = await builtIn(`export { a, b } from './x';\n`)
     expect(out.trim()).toBe(`export { a, b } from './x';`)

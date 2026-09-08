@@ -416,8 +416,10 @@ function wrapLongLines(content: string, maxWidth: number, indent: string): strin
  * Matches a whole-line `import`/`export` statement whose bindings are a braced
  * specifier list: `export { a, b } from './x';`, `export type { A } from './x'`,
  * `import { a as b } from './x';`, and the bare `export { a, b };` re-export.
+ * An import-attributes clause (`with { type: 'json' }`) is carried along
+ * whole — it is an object, not part of the specifier list.
  */
-const MODULE_CLAUSE_RE = /^\s*(export|import)(\s+type)?\s*\{([^{}]*)\}\s*(from\s*(?:'[^']*'|"[^"]*"))?\s*;?\s*$/
+const MODULE_CLAUSE_RE = /^\s*(export|import)(\s+type)?\s*\{([^{}]*)\}\s*(from\s*(?:'[^']*'|"[^"]*")(?:\s*(?:with|assert)\s*\{[^{}]*\})?)?\s*;?\s*$/
 
 /**
  * Wrap a long `import`/`export` specifier list across lines.
