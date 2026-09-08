@@ -127,14 +127,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Find all TypeScript files based on entrypoints
   const entryFiles = await findFiles(config)
-
-  /*
-   * Matching nothing is never what the caller meant, and staying quiet about
-   * it is worse than failing: the run reports success, writes no `.d.ts`, and
-   * the package publishes its `.js` with no types at all. That is what a
-   * mistyped or unsplit entrypoint (`--entrypoints "a.ts,b.ts"` read as one
-   * path) looked like from the outside — a green build with types missing.
-   */
   assertEntrypointsResolve(config, entryFiles)
 
   let files = entryFiles.slice()
