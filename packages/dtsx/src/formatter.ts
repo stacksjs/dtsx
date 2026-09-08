@@ -377,6 +377,20 @@ function wrapLongLines(content: string, maxWidth: number, indent: string): strin
     const currentIndent = line.match(/^(\s*)/)?.[1] || ''
     const nextIndent = currentIndent + indent
 
+    /*
+     * A module clause is a comma-separated list, not a body of members.
+     * `wrapObjectLiteral` terminates every part it emits with `;`, which is
+     * right for an interface and invalid for `export { a, b } from './x'` —
+     * it produced `export {\n  a;\n  b;\n} from './x'`, which no TypeScript
+     * parser accepts. Only the wrapped form was affected, so the break was
+     * invisible until an export list grew past the width limit.
+     */
+    const exportClause = wrapModuleClause(line, currentIndent, nextIndent)
+    if (exportClause) {
+      result.push(...exportClause)
+      continue
+    }
+
     // Try to break at commas in object/interface definitions
     if (line.includes('{') && line.includes('}')) {
       const wrapped = wrapObjectLiteral(line, maxWidth, currentIndent, nextIndent)
@@ -396,6 +410,46 @@ function wrapLongLines(content: string, maxWidth: number, indent: string): strin
   }
 
   return result.join('\n')
+}
+
+/**
+ * Matches a whole-line `import`/`export` statement whose bindings are a braced
+ * specifier list: `export { a, b } from './x';`, `export type { A } from './x'`,
+ * `import { a as b } from './x';`, and the bare `export { a, b };` re-export.
+ */
+const MODULE_CLAUSE_RE = /^\s*(export|import)(\s+type)?\s*\{([^{}]*)\}\s*(from\s*(?:'[^']*'|"[^"]*"))?\s*;?\s*$/
+
+/**
+ * Wrap a long `import`/`export` specifier list across lines.
+ *
+ * Returns null when the line is not a module clause, so the caller falls
+ * through to the object/union wrappers.
+ */
+function wrapModuleClause(
+  line: string,
+  currentIndent: string,
+  nextIndent: string,
+): string[] | null {
+  const match = line.match(MODULE_CLAUSE_RE)
+  if (!match)
+    return null
+
+  const [, keyword, typeModifier, body, fromClause] = match
+  const specifiers = body.split(',').map(s => s.trim()).filter(Boolean)
+
+  // Nothing to gain from wrapping a single specifier, and an empty clause
+  // (`export {}`) must keep its braces on one line to stay meaningful.
+  if (specifiers.length <= 1)
+    return [line]
+
+  const head = `${currentIndent}${keyword}${typeModifier ?? ''} {`
+  const tail = fromClause ? `${currentIndent}} ${fromClause};` : `${currentIndent}};`
+
+  return [
+    head,
+    ...specifiers.map(s => `${nextIndent}${s},`),
+    tail,
+  ]
 }
 
 /**
