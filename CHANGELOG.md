@@ -1,4 +1,19 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.10...v0.11.11)
+
+### 🐛 Bug Fixes
+
+- **cli**: several entrypoints could not be passed, and a miss exited 0 ([f23e59f](https://github.com/stacksjs/dtsx/commit/f23e59f)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **emit**: a wrapped export clause separated specifiers with semicolons ([0c19a9e](https://github.com/stacksjs/dtsx/commit/0c19a9e)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.11 ([649f19c](https://github.com/stacksjs/dtsx/commit/649f19c)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.9...v0.11.10)
 
 ### 🐛 Bug Fixes
