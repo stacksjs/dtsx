@@ -1,4 +1,19 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.11...v0.11.12)
+
+### 🐛 Bug Fixes
+
+- **emit**: an import-attributes clause fell back to the object wrapper ([5be9618](https://github.com/stacksjs/dtsx/commit/5be9618)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.12 ([c55e52c](https://github.com/stacksjs/dtsx/commit/c55e52c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **generator**: drop a call-site comment the function already carries ([6e7e324](https://github.com/stacksjs/dtsx/commit/6e7e324)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.10...v0.11.11)
 
 ### 🐛 Bug Fixes
