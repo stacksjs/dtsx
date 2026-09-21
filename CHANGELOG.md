@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.12...v0.11.13)
+
+### 🐛 Bug Fixes
+
+- **extractor**: stop an unbalanced `<` swallowing the rest of the file ([1ad3bfa](https://github.com/stacksjs/dtsx/commit/1ad3bfa)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.13 ([3829883](https://github.com/stacksjs/dtsx/commit/3829883)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.11...v0.11.12)
 
 ### 🐛 Bug Fixes
