@@ -2246,37 +2246,66 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         pos++ // skip =
         skipWhitespaceAndComments()
         const initStart = pos
-        // Read initializer until ; or , at depth 0, or ASI
-        // Track <> separately from (){}[] because < and > are overloaded
-        // in value expressions (comparisons like <=, >=, and plain < >)
+        // Read initializer until ; or , at depth 0, or ASI.
+        //
+        // `<` is genuinely ambiguous in a value position: it opens a generic in
+        // `new Map<string, number>()`, and it compares or shifts in `a < b` and
+        // `1 << 0`. Treating it as a generic is right for the first and
+        // catastrophic for the second - an angle depth that never closes means
+        // the `;` and ASI breaks below, which all require depth 0, never fire.
+        // The scan then runs to end-of-file and swallows every later
+        // declaration into this one initializer. The .d.ts silently omits them
+        // and the build still exits 0: one `const FLAG = 1 << 0` cost a
+        // 5974-line file in stacks 21 of its 29 exports, and the truncation
+        // only surfaced once a subpath re-exported that file.
+        //
+        // No local rule tells the two apart - `a < b` and `Foo<Bar>` differ
+        // only in what the names mean. So scan optimistically and let the
+        // outcome decide: angles left open at the end were operators all along,
+        // so rescan from the same point ignoring them. Balanced generics finish
+        // on the first pass and never reach the second.
         let depth = 0
         let angleDepth = 0
         let jsxDepth = 0
-        while (pos < len) {
-          if (skipNonCode())
+        let trackAngles = true
+        for (;;) {
+          pos = initStart
+          depth = 0
+          angleDepth = 0
+          jsxDepth = 0
+          while (pos < len) {
+            if (skipNonCode())
+              continue
+            const ic = source.charCodeAt(pos)
+            if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
+              depth++
+            else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
+              depth--
+            else if (ic === CH_LANGLE && depth === 0) {
+              const jsxDelta = jsxTagDeltaAt(pos)
+              if (jsxDelta !== null)
+                jsxDepth = Math.max(0, jsxDepth + jsxDelta)
+              else if (trackAngles && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
+                angleDepth++
+            }
+            else if (ic === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
+              // Don't count >= as closing angle bracket, and prevent going negative
+              if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
+                angleDepth--
+            }
+            else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
+              break
+            if (depth === 0 && angleDepth === 0 && jsxDepth === 0
+              && (checkASITopLevel() || checkASIAfterInitializer())) {
+              break
+            }
+            pos++
+          }
+          if (angleDepth > 0 && trackAngles) {
+            trackAngles = false
             continue
-          const ic = source.charCodeAt(pos)
-          if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
-            depth++
-          else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
-            depth--
-          else if (ic === CH_LANGLE && depth === 0) {
-            const jsxDelta = jsxTagDeltaAt(pos)
-            if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
-            else if (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL) angleDepth++
           }
-          else if (ic === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
-            // Don't count >= as closing angle bracket, and prevent going negative
-            if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
-              angleDepth--
-          }
-          else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
-            break
-          if (depth === 0 && angleDepth === 0 && jsxDepth === 0
-            && (checkASITopLevel() || checkASIAfterInitializer())) {
-            break
-          }
-          pos++
+          break
         }
         initializerText = sliceTrimmed(initStart, pos)
         if (initializerText.endsWith(' as const') || initializerText === 'const') {

@@ -365,3 +365,62 @@ describe('Edge Cases', () => {
     })
   })
 })
+
+describe('shift operators in value initializers', () => {
+  /*
+   * `<` opens a generic in a type and shifts a number in a value, and the
+   * initializer scanner has to tell them apart. It counted each `<` of a `<<`
+   * as a generic opener, so `1 << 0` parked the scan two levels deep with
+   * nothing that could ever close it. The loop only breaks on `;` or ASI at
+   * depth 0, so it ran to end-of-file and swallowed every later declaration
+   * into one initializer - emitting a .d.ts missing most of its exports while
+   * the build still exited 0.
+   *
+   * Found in stacks: `router/src/stacks-router.ts` is 5974 lines, extraction
+   * stopped at line 517 on `const ROUTE_ACCEPTS_CSRF = 1 << 0`, and the
+   * published `@stacksjs/router/runtime` typed 8 of its 29 exports.
+   */
+  test('a shifted flag does not swallow the rest of the file', () => {
+    const code = `
+export function before(): string { return 'a' }
+const FLAG_A = 1 << 0
+const FLAG_B = 1 << 1
+export function after(): string { return 'b' }
+`
+    const names = extractDeclarations(code, 'shift.ts').map(d => d.name)
+
+    expect(names).toContain('before')
+    expect(names).toContain('after')
+  })
+
+  test('every shift form keeps later declarations visible', () => {
+    for (const shift of ['1 << 0', '1 << 8', 'base << offset', 'a >> 2', 'a >>> 2']) {
+      const code = `const value = ${shift}\nexport function after(): string { return 'b' }\n`
+      const names = extractDeclarations(code, 'shift-form.ts').map(d => d.name)
+
+      // `value` is unexported and unreferenced, so it is correctly absent
+      // from the public surface; what matters is that `after` survived.
+      expect({ shift, names }).toEqual({ shift, names: ['after'] })
+    }
+  })
+
+  test('still reads a real generic in an initializer', () => {
+    // The guard must not cost the thing angle-depth tracking exists for: a
+    // generic call in a value, whose `>` must still close what `<` opened.
+    const code = `
+export const map = new Map<string, Array<number>>()
+export function after(): string { return 'b' }
+`
+    const decls = extractDeclarations(code, 'generic.ts')
+
+    expect(decls.map(d => d.name)).toEqual(['map', 'after'])
+  })
+
+  test('a less-than comparison still terminates', () => {
+    const code = `
+export const isSmaller = 1 < 2
+export function after(): string { return 'b' }
+`
+    expect(extractDeclarations(code, 'lt.ts').map(d => d.name)).toEqual(['isSmaller', 'after'])
+  })
+})
