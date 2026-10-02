@@ -53,6 +53,7 @@ const standardFixtures = [
   'mixed-exports',
   'module',
   'namespace',
+  'parameter-properties',
   'private-members',
   // TODO: re-enable once zig-dtsx emits non-exported decls referenced by
   // exported ones (e.g. `typeof X` against a private const). The Bun

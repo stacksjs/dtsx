@@ -45,6 +45,7 @@ describe('dts-generation', () => {
     'mixed-exports',
     'module',
     'namespace',
+    'parameter-properties',
     'private-members',
     'ts-features',
     'type',

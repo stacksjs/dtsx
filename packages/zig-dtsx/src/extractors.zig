@@ -485,6 +485,77 @@ pub fn extractAssertion(init_text: []const u8) ?[]const u8 {
 }
 
 /// Build DTS-safe parameter text from raw parameter text
+/// A parameter's text without its comments. The splitters keep a JSDoc block
+/// that precedes a parameter as part of it, and everything downstream reads the
+/// text positionally: a commented `public readonly body?: string` was dropped as
+/// a property and written into the constructor signature with its modifiers and
+/// prose, a declaration file TypeScript cannot parse.
+fn stripParamComments(s: *Scanner, text: []const u8) []const u8 {
+    if (ch.indexOfChar(text, '/', 0) == null) return text;
+    const out = s.allocator.alloc(u8, text.len) catch return text;
+    var n: usize = 0;
+    var in_str = false;
+    var str_ch: u8 = 0;
+    var i: usize = 0;
+    while (i < text.len) : (i += 1) {
+        const c = text[i];
+        if (in_str) {
+            out[n] = c;
+            n += 1;
+            if (c == ch.CH_BACKSLASH and i + 1 < text.len) {
+                i += 1;
+                out[n] = text[i];
+                n += 1;
+                continue;
+            }
+            if (c == str_ch) in_str = false;
+            continue;
+        }
+        if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE or c == ch.CH_BACKTICK) {
+            in_str = true;
+            str_ch = c;
+            out[n] = c;
+            n += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len) {
+            if (text[i + 1] == '*') {
+                if (ch.indexOf(text, "*/", i + 2)) |end| {
+                    i = end + 1;
+                } else {
+                    i = text.len;
+                }
+                out[n] = ' ';
+                n += 1;
+                continue;
+            }
+            if (text[i + 1] == '/') {
+                while (i + 1 < text.len and text[i + 1] != '\n') i += 1;
+                continue;
+            }
+        }
+        out[n] = c;
+        n += 1;
+    }
+    return std.mem.trim(u8, out[0..n], " \t\r\n");
+}
+
+/// Whether a parameter has an initializer at depth 0 (`x: T = d`, not `x: (a?: T) => U`).
+fn hasTopLevelDefault(param: []const u8) bool {
+    var depth: isize = 0;
+    for (param, 0..) |c, i| {
+        if (c == ch.CH_LPAREN or c == ch.CH_LBRACE or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
+            depth += 1;
+        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !(i > 0 and param[i - 1] == ch.CH_EQUAL))) {
+            depth -= 1;
+        } else if (c == ch.CH_EQUAL and depth == 0) {
+            const next: u8 = if (i + 1 < param.len) param[i + 1] else 0;
+            if (next != ch.CH_RANGLE and next != ch.CH_EQUAL) return true;
+        }
+    }
+    return false;
+}
+
 pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     if (raw_params.len < 2) return "()";
     const inner = std.mem.trim(u8, raw_params[1 .. raw_params.len - 1], " \t\r\n");
@@ -503,7 +574,10 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             const c = inner[fp_i];
             if (c == ch.CH_LPAREN or c == ch.CH_LANGLE) {
                 depth += 1;
-            } else if (c == ch.CH_RPAREN or c == ch.CH_RANGLE) {
+            } else if (c == ch.CH_RPAREN or (c == ch.CH_RANGLE and !(fp_i > 0 and inner[fp_i - 1] == ch.CH_EQUAL))) {
+                // The `>` of an arrow (`=>`) closes nothing; counting it left a
+                // default after an arrow type at depth -1, so the passthrough
+                // emitted `cb: () => void = () => {}` into a declaration.
                 depth -= 1;
             } else if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
                 if (depth == 0 and !seen_colon) {
@@ -609,14 +683,15 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
         }
         if (c == ch.CH_LPAREN or c == ch.CH_LBRACE or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
             depth += 1;
-        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or c == ch.CH_RANGLE) {
+        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !(i > 0 and inner[i - 1] == ch.CH_EQUAL))) {
+            // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (c == ch.CH_COMMA and depth == 0) {
-            params.append(std.mem.trim(u8, inner[param_start..i], " \t\r\n")) catch {};
+            params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..i], " \t\r\n"))) catch {};
             param_start = i + 1;
         }
     }
-    params.append(std.mem.trim(u8, inner[param_start..], " \t\r\n")) catch {};
+    params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..], " \t\r\n"))) catch {};
 
     // Build DTS params — direct alloc, output ≤ raw_params.len + extra for type annotations
     const buf = s.allocator.alloc(u8, raw_params.len * 2 + 16) catch return "()";
@@ -732,7 +807,8 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
         }
         if (c == ch.CH_LPAREN or c == ch.CH_LBRACE or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
             depth += 1;
-        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or c == ch.CH_RANGLE) {
+        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !(i > 0 and p[i - 1] == ch.CH_EQUAL))) {
+            // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (depth == 0) {
             if (c == ch.CH_COLON and colon_idx == null) {
@@ -2100,9 +2176,19 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
     var in_str = false;
     var str_ch_val: u8 = 0;
     var skip_next3 = false;
+    var in_block_comment = false;
+    var skip_to_eol = false;
     for (inner, 0..) |c, i| {
         if (skip_next3) {
             skip_next3 = false;
+            continue;
+        }
+        if (skip_to_eol) {
+            if (c == '\n') skip_to_eol = false;
+            continue;
+        }
+        if (in_block_comment) {
+            if (c == '/' and i > 0 and inner[i - 1] == '*') in_block_comment = false;
             continue;
         }
         if (in_str) {
@@ -2113,6 +2199,18 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
             if (c == str_ch_val) in_str = false;
             continue;
         }
+        // Comments are skipped for the same reason as in buildDtsParams: prose
+        // can hold an unmatched quote or a comma.
+        if (c == '/' and i + 1 < inner.len) {
+            if (inner[i + 1] == '*') {
+                in_block_comment = true;
+                continue;
+            }
+            if (inner[i + 1] == '/') {
+                skip_to_eol = true;
+                continue;
+            }
+        }
         if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE or c == ch.CH_BACKTICK) {
             in_str = true;
             str_ch_val = c;
@@ -2120,14 +2218,15 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         }
         if (c == ch.CH_LPAREN or c == ch.CH_LBRACE or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
             depth += 1;
-        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or c == ch.CH_RANGLE) {
+        } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !(i > 0 and inner[i - 1] == ch.CH_EQUAL))) {
+            // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (c == ch.CH_COMMA and depth == 0) {
-            params.append(std.mem.trim(u8, inner[start..i], " \t\r\n")) catch {};
+            params.append(stripParamComments(s, std.mem.trim(u8, inner[start..i], " \t\r\n"))) catch {};
             start = i + 1;
         }
     }
-    params.append(std.mem.trim(u8, inner[start..], " \t\r\n")) catch {};
+    params.append(stripParamComments(s, std.mem.trim(u8, inner[start..], " \t\r\n"))) catch {};
 
     for (params.items) |param| {
         if (param.len == 0) continue;
@@ -2174,7 +2273,32 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         // are possible (public/protected, readonly) plus separators. Direct
         // alloc avoids the ArrayList init + per-modifier append + toOwnedSlice
         // cost the previous code paid for every parameter property.
-        const dts_param = buildSingleDtsParam(s, p);
+        var dts_param = buildSingleDtsParam(s, p);
+        // A default makes the PARAMETER optional, never the property: the
+        // initializer always assigns it, so TypeScript declares it required.
+        if (hasTopLevelDefault(p)) {
+            var name_end: usize = 0;
+            while (name_end < p.len and p[name_end] != '?' and p[name_end] != ':' and p[name_end] != '=') name_end += 1;
+            const source_optional = name_end < p.len and p[name_end] == '?';
+            if (!source_optional) {
+                if (ch.indexOf(dts_param, "?:", 0)) |q| {
+                    var ident = true;
+                    for (dts_param[0..q]) |nc| {
+                        if (!ch.isIdentChar(nc)) {
+                            ident = false;
+                            break;
+                        }
+                    }
+                    if (ident and q > 0) {
+                        if (s.allocator.alloc(u8, dts_param.len - 1)) |fixed| {
+                            @memcpy(fixed[0..q], dts_param[0..q]);
+                            @memcpy(fixed[q..], dts_param[q + 1 ..]);
+                            dts_param = fixed;
+                        } else |_| {}
+                    }
+                }
+            }
+        }
         const pub_token: []const u8 = if (has_public) "public" else "";
         const prot_token: []const u8 = if (has_protected) "protected" else "";
         const ro_token: []const u8 = if (has_readonly) "readonly" else "";
