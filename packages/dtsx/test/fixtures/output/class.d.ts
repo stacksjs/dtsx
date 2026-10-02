@@ -18,8 +18,8 @@ export declare class CustomErrorWithMethodAndTypeAndReturn {
   getError(): Error;
 }
 export declare class Result<T, E extends Error> {
-  readonly value?: T | null;
-  readonly error?: E | null;
+  readonly value: T | null;
+  readonly error: E | null;
   constructor(value?: T | null, error?: E | null);
   isOk(): this is { readonly value: T };
   isErr(): this is { readonly error: E };

@@ -1429,6 +1429,56 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
    * Build DTS-safe parameter text from raw parameter text.
    * Removes default values and handles destructuring.
    */
+  /**
+   * A parameter's text without its comments. The splitters keep a JSDoc block
+   * that precedes a parameter as part of it, and everything downstream reads
+   * the text positionally: a commented `public readonly body?: string` lost
+   * its modifiers and emitted the comment's prose as a class member, which is
+   * a declaration file TypeScript cannot parse.
+   */
+  function stripParamComments(text: string): string {
+    if (text.indexOf('/') === -1)
+      return text
+    let out = ''
+    let inStr = false
+    let strCh = 0
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charCodeAt(i)
+      if (inStr) {
+        out += text[i]
+        if (ch === CH_BACKSLASH && i + 1 < text.length) {
+          out += text[++i]
+          continue
+        }
+        if (ch === strCh)
+          inStr = false
+        continue
+      }
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+        inStr = true
+        strCh = ch
+        out += text[i]
+        continue
+      }
+      if (ch === CH_SLASH && i + 1 < text.length) {
+        const nc = text.charCodeAt(i + 1)
+        if (nc === CH_STAR) {
+          const end = text.indexOf('*/', i + 2)
+          i = end === -1 ? text.length : end + 1
+          out += ' '
+          continue
+        }
+        if (nc === CH_SLASH) {
+          const end = text.indexOf('\n', i + 2)
+          i = end === -1 ? text.length : end - 1
+          continue
+        }
+      }
+      out += text[i]
+    }
+    return out.trim()
+  }
+
   function buildDtsParams(rawParams: string): string {
     // Strip outer parens
     const inner = rawParams.slice(1, -1).trim()
@@ -1481,7 +1531,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
     for (let i = 0; i <= inner.length; i++) {
       if (i === inner.length) {
-        params.push(inner.slice(paramStart).trim())
+        params.push(stripParamComments(inner.slice(paramStart).trim()))
         break
       }
       const ch = inner.charCodeAt(i)
@@ -1519,7 +1569,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         depth--
       }
       else if (ch === CH_COMMA && depth === 0) {
-        params.push(inner.slice(paramStart, i).trim())
+        params.push(stripParamComments(inner.slice(paramStart, i).trim()))
         paramStart = i + 1
       }
     }
@@ -3052,6 +3102,19 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
   }
 
+  /** Whether a parameter has an initializer at depth 0 (`x: T = d`, not `x: (a?: T) => U`). */
+  function hasTopLevelDefault(param: string): boolean {
+    let depth = 0
+    for (let i = 0; i < param.length; i++) {
+      const ch = param.charCodeAt(i)
+      if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) depth++
+      else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET || (ch === CH_RANGLE && param.charCodeAt(i - 1) !== CH_EQUAL)) depth--
+      else if (ch === CH_EQUAL && depth === 0 && param.charCodeAt(i + 1) !== CH_RANGLE && param.charCodeAt(i + 1) !== CH_EQUAL)
+        return true
+    }
+    return false
+  }
+
   /** Extract parameter properties from constructor params */
   function extractParamProperties(rawParams: string, members: string[]): void {
     const inner = rawParams.slice(1, -1).trim()
@@ -3066,7 +3129,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let strCh = 0
     for (let i = 0; i <= inner.length; i++) {
       if (i === inner.length) {
-        params.push(inner.slice(start).trim())
+        params.push(stripParamComments(inner.slice(start).trim()))
         break
       }
       const ch = inner.charCodeAt(i)
@@ -3076,6 +3139,21 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           inStr = false
         continue
       }
+      // Comments are skipped for the same reason as in buildDtsParams: prose
+      // can hold an unmatched quote or a comma.
+      if (ch === CH_SLASH && i + 1 < inner.length) {
+        const nc = inner.charCodeAt(i + 1)
+        if (nc === CH_STAR) {
+          i += 2
+          while (i + 1 < inner.length && !(inner.charCodeAt(i) === CH_STAR && inner.charCodeAt(i + 1) === CH_SLASH)) i++
+          i++
+          continue
+        }
+        if (nc === CH_SLASH) {
+          while (i < inner.length && inner.charCodeAt(i) !== 10 /* \n */) i++
+          continue
+        }
+      }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) { inStr = true; strCh = ch; continue }
       if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) {
         depth++
@@ -3084,7 +3162,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         depth--
       }
       else if (ch === CH_COMMA && depth === 0) {
-        params.push(inner.slice(start, i).trim())
+        params.push(stripParamComments(inner.slice(start, i).trim()))
         start = i + 1
       }
     }
@@ -3129,7 +3207,12 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const modText = mods.length > 0 ? `${mods.join(' ')} ` : ''
 
       // Parse name: type = default
-      const dtsParam = buildSingleDtsParam(p)
+      let dtsParam = buildSingleDtsParam(p)
+      // A default makes the PARAMETER optional, never the property: the
+      // initializer always assigns it, so TypeScript declares it required.
+      const nameEnd = p.search(/[?:=]/)
+      if (nameEnd !== -1 && p.charCodeAt(nameEnd) !== 63 /* ? */ && hasTopLevelDefault(p))
+        dtsParam = dtsParam.replace(/^([\w$]+)\?:/, '$1:')
       members.push(`  ${modText}${dtsParam};`)
     }
   }
