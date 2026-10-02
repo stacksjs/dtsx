@@ -1,4 +1,20 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.13...v0.11.14)
+
+### 🐛 Bug Fixes
+
+- **extractor**: emit commented and defaulted parameter properties correctly ([c5cc8a6](https://github.com/stacksjs/dtsx/commit/c5cc8a6)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.14 ([f77b12c](https://github.com/stacksjs/dtsx/commit/f77b12c)) _(by Chris <chrisbreuer93@gmail.com>)_
+- run @stacksjs/logsmith, not the unrelated npm 'logsmith' ([0786971](https://github.com/stacksjs/dtsx/commit/0786971)) _(by Chris <chrisbreuer93@gmail.com>)_
+- release through @stacksjs/bumpx, not the unrelated npm 'bumpx' ([f531b01](https://github.com/stacksjs/dtsx/commit/f531b01)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.12...v0.11.13)
 
 ### 🐛 Bug Fixes
