@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.14...v0.11.15)
+
+### 🐛 Bug Fixes
+
+- **zig**: parameter properties with comments, defaults and arrow types ([484fe17](https://github.com/stacksjs/dtsx/commit/484fe17)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.15 ([98340cf](https://github.com/stacksjs/dtsx/commit/98340cf)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.13...v0.11.14)
 
 ### 🐛 Bug Fixes
