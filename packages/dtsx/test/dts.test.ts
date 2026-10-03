@@ -34,6 +34,7 @@ describe('dts-generation', () => {
     'comments',
     'complex-class',
     'default-exports',
+    'default-parameters',
     'edge-cases',
     'enum',
     'exports',

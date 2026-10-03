@@ -1299,7 +1299,9 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       else if (wasMethodShorthand) {
         // Reuse the converted function type: re-inferring from the raw method
         // shorthand loses the parameter list and the generic parameters.
-        cleanProps.push(`${cleanKey}: ${collapseWhitespace(valueType)}`)
+        // Collapsed with cleanMethodSignature, which separates object-type
+        // members it joins onto one line (`{ a?: string; b?: number }`).
+        cleanProps.push(`${cleanKey}: ${cleanMethodSignature(valueType)}`)
       }
       else if (!rawVal.startsWith('[') && (rawVal.includes('=>') || rawVal.startsWith('function') || rawVal.startsWith('async'))) {
         const fnType = inferFunctionType(rawVal, false, 0, true)
@@ -1546,7 +1548,7 @@ export function cleanParameterDefaults(params: string): string {
     for (let i = 0; i < trimmedInner.length; i++) {
       const ch = trimmedInner.charCodeAt(i)
       if (ch === 40 || ch === 60 || ch === 91 || ch === 123) d++
-      else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) d--
+      else if (ch === 41 || ch === 93 || ch === 125 || (ch === 62 && trimmedInner.charCodeAt(i - 1) !== 61)) d--
       else if (d === 0 && ch === 61) {
         const prev = i > 0 ? trimmedInner.charCodeAt(i - 1) : 0
         const next = i + 1 < trimmedInner.length ? trimmedInner.charCodeAt(i + 1) : 0
@@ -1595,7 +1597,7 @@ export function cleanParameterDefaults(params: string): string {
     }
     if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
     if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++
-    else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) depth--
+    else if (ch === 41 || ch === 93 || ch === 125 || (ch === 62 && trimmedInner.charCodeAt(i - 1) !== 61)) depth--
     else if (ch === 44 && depth === 0) {
       paramParts.push(trimmedInner.slice(start, i))
       // Capture the comma + whitespace after it as separator
@@ -1690,7 +1692,7 @@ function cleanSingleParam(param: string): string {
     }
     if (ch === 39 || ch === 34 || ch === 96) { inStr = true; strCh = ch; continue }
     if (ch === 40 || ch === 60 || ch === 91 || ch === 123) depth++
-    else if (ch === 41 || ch === 62 || ch === 93 || ch === 125) depth--
+    else if (ch === 41 || ch === 93 || ch === 125 || (ch === 62 && param.charCodeAt(i - 1) !== 61)) depth--
     else if (depth === 0) {
       if (ch === 58 /* : */ && colonIdx === -1) colonIdx = i
       else if (ch === 61 /* = */ && equalIdx === -1
@@ -2553,7 +2555,8 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       }
       const params = trimmed.substring(parenIdx + 1, closeIdx - 1).trim()
 
-      const paramTypes = params ? `(${params})` : '()'
+      // Initializers are not allowed in a declaration (#3093).
+      const paramTypes = params ? cleanParameterDefaults(`(${params})`) : '()'
 
       if (isGenerator) {
         // Check for explicit Generator return type after the closing paren
@@ -2572,7 +2575,17 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         return inUnion ? `(${funcType})` : funcType
       }
 
-      const funcType = `${generics}${paramTypes} => unknown`
+      // An annotated return type is the declared one.
+      let returnType = 'unknown'
+      const afterParams = trimmed.substring(closeIdx).trimStart()
+      if (afterParams.charCodeAt(0) === 58 /* : */) {
+        const typeContent = afterParams.slice(1)
+        const boundary = findReturnTypeBoundary(typeContent, 0)
+        const annotated = (boundary ? typeContent.slice(0, boundary.index) : typeContent).trim()
+        if (annotated) returnType = annotated
+      }
+
+      const funcType = `${generics}${paramTypes} => ${returnType}`
       return inUnion ? `(${funcType})` : funcType
     }
 

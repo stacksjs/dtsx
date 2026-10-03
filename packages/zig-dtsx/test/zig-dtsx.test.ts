@@ -42,6 +42,7 @@ const standardFixtures = [
   'class',
   'comments',
   'complex-class',
+  'default-parameters',
   'edge-cases',
   'enum',
   'exports',

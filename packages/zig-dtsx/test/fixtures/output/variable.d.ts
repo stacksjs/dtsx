@@ -17,7 +17,7 @@ export declare var helloWorld: string;
  *   someBoolean: true,
  *   someFalse: false,
  *   someFunction: () => void,
- *   anotherOne: () => void,
+ *   anotherOne: () => (typeof some)["object"] | string,
  *   someArray: [1, 2, 3],
  *   someNestedArray: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], ],
  *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
@@ -38,7 +38,7 @@ export declare const someObject: {
   /** @defaultValue false */
   someFalse: boolean;
   someFunction: () => void;
-  anotherOne: () => void;
+  anotherOne: () => (typeof some)["object"] | string;
   someArray: number[];
   someNestedArray: number[][];
   someNestedArray2: (number[] | string)[];
@@ -88,7 +88,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
-  mixedArrays: (Date | Promise<string> | (() => string) | (() => Generator<any, any, any>))[]
+  mixedArrays: (Date | Promise<string> | (() => Promise<string>) | (() => Generator<any, any, any>))[]
 };
 /**
  * Nested Object Types with Methods
@@ -103,7 +103,7 @@ export declare const complexArrays: {
  *   utils: {
  *     formatters: {
  *       date: (input: Date) => ReturnType<Date["toISOString"]>,
- *       currency: (amount: number, currency?) => unknown
+ *       currency: (amount: number, currency?: string) => unknown
  *     }
  *   }
  * }
@@ -111,7 +111,7 @@ export declare const complexArrays: {
  */
 export declare const complexObject: {
   handlers: { onSuccess<T>: (data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
-  utils: { formatters: { date: (input: Date) => ReturnType<Date["toISOString"]>; currency: (amount: number, currency?) => unknown } }
+  utils: { formatters: { date: (input: Date) => ReturnType<Date["toISOString"]>; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
 export declare const methodDecorator: (

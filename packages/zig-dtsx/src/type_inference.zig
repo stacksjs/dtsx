@@ -394,110 +394,92 @@ pub fn parseArrayElements(alloc: std.mem.Allocator, content: []const u8) InferEr
     return elements.toOwnedSlice();
 }
 
-/// Clean a method signature: strip async, replace defaults with ?, collapse whitespace.
-/// Single-pass implementation combining all transformations.
+/// Clean a method signature for a declaration. Port of the TypeScript
+/// emitter's cleanMethodSignature: strip `//` comments line by line, drop a
+/// leading `async`, clean the outermost parameter list's defaults, then
+/// collapse whitespace onto one line. A line break between the members of
+/// an object type becomes `; `, so `{\n a?: string\n b?: number\n}` does not
+/// collapse into the unparseable `{ a?: string b?: number }` (#3093).
 fn cleanMethodSignature(alloc: std.mem.Allocator, signature: []const u8) InferError![]const u8 {
-    var input = signature;
-    // Remove leading "async " (6 chars including the trailing space)
-    if (ch.startsWith(input, "async ")) {
-        input = trim(input[6..]);
-    }
-
-    // Fast path: if no async, no defaults (=), no consecutive whitespace, return as-is
+    // Fast path: nothing to strip, clean or collapse.
     const needs_clean = blk: {
         var prev_ws = false;
-        for (input, 0..) |c, i| {
-            if (c == '=' and (i + 1 >= input.len or input[i + 1] != '>')) break :blk true;
+        for (signature, 0..) |c, i| {
+            if (c == '=' and (i + 1 >= signature.len or signature[i + 1] != '>')) break :blk true;
+            if (c == '\n' or c == '\r' or c == '\t') break :blk true;
+            if (c == '/' and i + 1 < signature.len and signature[i + 1] == '/') break :blk true;
             const is_ws = ch.isWhitespace(c);
             if (is_ws and prev_ws) break :blk true;
             prev_ws = is_ws;
-            if (c == 'a' and i > 0 and !ch.isIdentChar(input[i - 1]) and i + 5 < input.len and
-                input[i + 1] == 's' and input[i + 2] == 'y' and
-                input[i + 3] == 'n' and input[i + 4] == 'c' and ch.isWhitespace(input[i + 5]))
+            if (c == 'a' and (i == 0 or !ch.isIdentChar(signature[i - 1])) and ch.startsWith(signature[i..], "async") and
+                (i + 5 >= signature.len or !ch.isIdentChar(signature[i + 5])))
                 break :blk true;
         }
         break :blk false;
     };
-    if (!needs_clean) return input;
+    if (!needs_clean) return trim(signature);
 
-    // Single pass: remove async keywords, replace defaults with ?, collapse whitespace
+    // 0. Strip inline `//` comments from each line.
+    var stripped = std.array_list.Managed(u8).init(alloc);
+    try stripped.ensureTotalCapacity(signature.len);
+    var line_iter = std.mem.splitScalar(u8, signature, '\n');
+    var first_line = true;
+    while (line_iter.next()) |line| {
+        if (!first_line) try stripped.append('\n');
+        first_line = false;
+        try stripped.appendSlice(stripTrailingInlineComment(line));
+    }
+    var cleaned: []const u8 = stripped.items;
+
+    // 1. Strip the first `async` keyword at word boundaries.
+    if (std.mem.indexOf(u8, cleaned, "async")) |idx| {
+        const before_ok = idx == 0 or !ch.isIdentChar(cleaned[idx - 1]);
+        const after_ok = idx + 5 >= cleaned.len or !ch.isIdentChar(cleaned[idx + 5]);
+        if (before_ok and after_ok) {
+            cleaned = trim(try std.mem.concat(alloc, u8, &.{ cleaned[0..idx], cleaned[idx + 5 ..] }));
+        }
+    }
+
+    // 2. Clean the defaults of the outermost parameter list.
+    if (ch.indexOfChar(cleaned, '(', 0)) |paren_start| {
+        if (findMatchingBracket(cleaned, paren_start, '(', ')')) |paren_end| {
+            const clean_params = try cleanParameterDefaults(alloc, cleaned[paren_start .. paren_end + 1]);
+            cleaned = try std.mem.concat(alloc, u8, &.{ cleaned[0..paren_start], clean_params, cleaned[paren_end + 1 ..] });
+        }
+    }
+
+    // 3. Collapse whitespace; a line break directly inside `{}` separates
+    //    members and becomes `; `.
     var buf = std.array_list.Managed(u8).init(alloc);
-    try buf.ensureTotalCapacity(input.len);
-    var j: usize = 0;
-    var in_ws = false;
-
-    while (j < input.len) {
-        const c = input[j];
-
-        // Skip "async " at word boundaries
-        if (j > 0 and !ch.isIdentChar(input[j - 1]) and j + 5 < input.len and
-            input[j] == 'a' and input[j + 1] == 's' and input[j + 2] == 'y' and
-            input[j + 3] == 'n' and input[j + 4] == 'c' and ch.isWhitespace(input[j + 5]))
-        {
-            j += 6;
-            while (j < input.len and ch.isWhitespace(input[j])) j += 1;
+    try buf.ensureTotalCapacity(cleaned.len);
+    var nest = std.array_list.Managed(u8).init(alloc);
+    var last_was_ws = false;
+    var ws_had_newline = false;
+    for (cleaned) |c| {
+        if (c == '{' or c == '(') {
+            try nest.append(c);
+        } else if ((c == '}' or c == ')') and nest.items.len > 0) {
+            _ = nest.pop();
+        }
+        if (c <= ' ') {
+            last_was_ws = true;
+            if (c == '\n' or c == '\r') ws_had_newline = true;
             continue;
         }
-
-        // Handle identifiers - check for default value patterns (word = value)
-        if (ch.isIdentChar(c)) {
-            const word_start = j;
-            while (j < input.len and ch.isIdentChar(input[j])) j += 1;
-            const word_end = j;
-
-            // Peek past whitespace for '='
-            var peek = j;
-            while (peek < input.len and ch.isWhitespace(input[peek])) peek += 1;
-
-            if (peek < input.len and input[peek] == '=' and (peek + 1 >= input.len or input[peek + 1] != '>')) {
-                // Default value: skip to , or ) and replace with word?
-                var skip = peek + 1;
-                while (skip < input.len and input[skip] != ',' and input[skip] != ')') skip += 1;
-                // Emit word with collapsed whitespace
-                for (input[word_start..word_end]) |wc| {
-                    if (ch.isWhitespace(wc)) {
-                        if (!in_ws) {
-                            try buf.append(' ');
-                            in_ws = true;
-                        }
-                    } else {
-                        try buf.append(wc);
-                        in_ws = false;
-                    }
-                }
-                try buf.append('?');
-                in_ws = false;
-                j = skip;
-                continue;
-            }
-
-            // Not a default - emit the word + any whitespace we peeked past
-            for (input[word_start..j]) |wc| {
-                if (ch.isWhitespace(wc)) {
-                    if (!in_ws) {
-                        try buf.append(' ');
-                        in_ws = true;
-                    }
-                } else {
-                    try buf.append(wc);
-                    in_ws = false;
-                }
-            }
-            continue;
-        }
-
-        // Collapse whitespace
-        if (ch.isWhitespace(c)) {
-            if (!in_ws) {
+        if (last_was_ws and buf.items.len > 0) {
+            const inside_brace = nest.items.len > 0 and nest.items[nest.items.len - 1] == '{';
+            if (ws_had_newline and inside_brace) {
+                const last = buf.items[buf.items.len - 1];
+                const already_separated = last == ';' or last == ',' or last == '{' or c == '}';
+                const after_comment = buf.items.len >= 2 and last == '/' and buf.items[buf.items.len - 2] == '*';
+                try buf.appendSlice(if (!already_separated and !after_comment) "; " else " ");
+            } else {
                 try buf.append(' ');
-                in_ws = true;
             }
-            j += 1;
-        } else {
-            try buf.append(c);
-            in_ws = false;
-            j += 1;
         }
+        last_was_ws = false;
+        ws_had_newline = false;
+        try buf.append(c);
     }
     return trim(buf.items);
 }
@@ -596,54 +578,218 @@ fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method
     return result.toOwnedSlice();
 }
 
-/// Clean parameter defaults: replace `param = value` with `param?`
-fn cleanParameterDefaults(alloc: std.mem.Allocator, params: []const u8) InferError![]const u8 {
-    // Fast path: if there's no '=' anywhere, the input is already clean.
-    if (std.mem.indexOfScalar(u8, params, '=') == null) return params;
-    var buf = std.array_list.Managed(u8).init(alloc);
-    try buf.ensureTotalCapacity(params.len);
-    var depth: i32 = 0;
-    var segment_start: usize = 0;
-    var default_at: ?usize = null;
+/// Skip a string literal or a comment starting at `i`; returns the index of
+/// its last byte, or null when `i` starts neither. Shared by the parameter
+/// cleaners so a quote in JSDoc prose ("error's") cannot open a string.
+fn skipParamNonCode(text: []const u8, i: usize) ?usize {
+    const c = text[i];
+    if (c == '"' or c == '\'' or c == '`') {
+        var j = i + 1;
+        while (j < text.len and text[j] != c) : (j += 1) {
+            if (text[j] == '\\' and j + 1 < text.len) j += 1;
+        }
+        return @min(j, text.len - 1);
+    }
+    if (c == '/' and i + 1 < text.len) {
+        if (text[i + 1] == '*') {
+            var j = i + 2;
+            while (j + 1 < text.len and !(text[j] == '*' and text[j + 1] == '/')) j += 1;
+            return @min(j + 1, text.len - 1);
+        }
+        if (text[i + 1] == '/') {
+            var j = i;
+            while (j < text.len and text[j] != '\n') j += 1;
+            return if (j > i) j - 1 else i;
+        }
+    }
+    return null;
+}
+
+/// Bracket depth delta for one byte. The `>` of an arrow (`=>`) closes
+/// nothing: counting it let `cb: () => void = () => {}` hide its default
+/// below depth 0, so the initializer reached the declaration (#3093).
+fn paramDepthDelta(text: []const u8, i: usize) i32 {
+    return switch (text[i]) {
+        '(', '[', '{', '<' => 1,
+        ')', ']', '}' => -1,
+        '>' => if (i > 0 and text[i - 1] == '=') 0 else -1,
+        else => 0,
+    };
+}
+
+/// Strip a trailing `// comment` from a parameter, respecting strings.
+fn stripTrailingInlineComment(text: []const u8) []const u8 {
     var i: usize = 0;
-    while (i < params.len) : (i += 1) {
-        const c = params[i];
+    while (i + 1 < text.len) : (i += 1) {
+        const c = text[i];
         if (c == '"' or c == '\'' or c == '`') {
             i += 1;
-            while (i < params.len and params[i] != c) : (i += 1) {
-                if (params[i] == '\\' and i + 1 < params.len) i += 1;
+            while (i < text.len and text[i] != c) : (i += 1) {
+                if (text[i] == '\\') i += 1;
             }
             continue;
         }
-        if (c == '(' or c == '[' or c == '{' or c == '<') depth += 1 else if (c == ')' or c == ']' or c == '}' or c == '>') depth -= 1;
-        if (c == '=' and depth == 1 and (i + 1 >= params.len or params[i + 1] != '>')) default_at = i;
-        if ((c == ',' and depth == 1) or (c == ')' and depth == 0)) {
-            const end = default_at orelse i;
-            var declaration = trim(params[segment_start..end]);
-            if (default_at != null) {
-                if (std.mem.indexOfScalar(u8, declaration, ':')) |colon| {
-                    const name = trim(declaration[0..colon]);
-                    const annotation = trim(declaration[colon + 1 ..]);
-                    try buf.appendSlice(name);
-                    if (!ch.endsWith(name, "?")) try buf.append('?');
-                    try buf.appendSlice(": ");
-                    try buf.appendSlice(annotation);
-                } else {
-                    try buf.appendSlice(declaration);
-                    if (!ch.endsWith(declaration, "?")) try buf.append('?');
-                }
-            } else try buf.appendSlice(declaration);
-            try buf.append(c);
-            segment_start = i + 1;
-            default_at = null;
-            if (c == ',') try buf.append(' ');
-        } else if (segment_start == 0 and i == 0 and c == '(') {
-            try buf.append('(');
-            segment_start = 1;
+        if (c == '/' and text[i + 1] == '/') return std.mem.trimEnd(u8, text[0..i], " \t\r\n");
+    }
+    return text;
+}
+
+fn isSimpleNumber(v: []const u8) bool {
+    var i: usize = 0;
+    if (i < v.len and v[i] == '-') i += 1;
+    const int_start = i;
+    while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
+    if (i == int_start) return false;
+    if (i == v.len) return true;
+    if (v[i] != '.') return false;
+    i += 1;
+    const frac_start = i;
+    while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
+    return i > frac_start and i == v.len;
+}
+
+/// Clean one parameter: drop its initializer and mark it optional.
+/// `name: T = v` becomes `name?: T`; an unannotated `name = v` gets a type
+/// guessed from the literal, as the TypeScript emitter does.
+fn cleanSingleParam(alloc: std.mem.Allocator, param: []const u8) InferError![]const u8 {
+    if (ch.startsWith(param, "...")) return param;
+    var colon_idx: ?usize = null;
+    var equal_idx: ?usize = null;
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i < param.len) : (i += 1) {
+        if (skipParamNonCode(param, i)) |end| {
+            i = end;
+            continue;
+        }
+        const delta = paramDepthDelta(param, i);
+        if (delta != 0) {
+            depth += delta;
+            continue;
+        }
+        if (depth != 0) continue;
+        const c = param[i];
+        if (c == ':' and colon_idx == null) {
+            colon_idx = i;
+        } else if (c == '=' and equal_idx == null and
+            (i == 0 or param[i - 1] != '=') and
+            (i + 1 >= param.len or (param[i + 1] != '=' and param[i + 1] != '>')))
+        {
+            equal_idx = i;
         }
     }
-    // toOwnedSlice() trims unused capacity — safer for non-arena allocators.
-    return buf.toOwnedSlice();
+
+    if (colon_idx) |colon| {
+        if (equal_idx == null or colon < equal_idx.?) {
+            const name = trim(param[0..colon]);
+            const type_text = trim(if (equal_idx) |eq| param[colon + 1 .. eq] else param[colon + 1 ..]);
+            const marker: []const u8 = if (equal_idx != null and !ch.endsWith(name, "?")) "?" else "";
+            return std.fmt.allocPrint(alloc, "{s}{s}: {s}", .{ name, marker, type_text });
+        }
+    }
+    if (equal_idx) |eq| {
+        const name = trim(param[0..eq]);
+        const marker: []const u8 = if (!ch.endsWith(name, "?")) "?" else "";
+        const default_value = trim(param[eq + 1 ..]);
+        var type_text: []const u8 = "unknown";
+        if (std.mem.eql(u8, default_value, "true") or std.mem.eql(u8, default_value, "false")) {
+            type_text = "boolean";
+        } else if (isSimpleNumber(default_value)) {
+            type_text = "number";
+        } else if (default_value.len >= 2 and ((default_value[0] == '\'' and default_value[default_value.len - 1] == '\'') or
+            (default_value[0] == '"' and default_value[default_value.len - 1] == '"')))
+        {
+            type_text = "string";
+        } else if (ch.startsWith(default_value, "[")) {
+            type_text = "unknown[]";
+        } else if (ch.startsWith(default_value, "{")) {
+            type_text = "Record<string, unknown>";
+        }
+        return std.fmt.allocPrint(alloc, "{s}{s}: {s}", .{ name, marker, type_text });
+    }
+    return param;
+}
+
+/// Clean parameter defaults from a parameter list, with or without its
+/// parentheses. Port of the TypeScript emitter's cleanParameterDefaults:
+/// separators and line breaks between parameters are kept as written.
+fn cleanParameterDefaults(alloc: std.mem.Allocator, params: []const u8) InferError![]const u8 {
+    // Fast path: if there's no '=' anywhere, the input is already clean.
+    if (std.mem.indexOfScalar(u8, params, '=') == null) return params;
+    const stripped = trim(params);
+    const had_parens = stripped.len >= 2 and stripped[0] == '(' and stripped[stripped.len - 1] == ')';
+    const inner = trim(if (had_parens) stripped[1 .. stripped.len - 1] else stripped);
+    if (inner.len == 0) return if (had_parens) "()" else "";
+
+    // Is there an initializer at depth 0 at all?
+    const has_real_equal = blk: {
+        var d: i32 = 0;
+        var i: usize = 0;
+        while (i < inner.len) : (i += 1) {
+            if (skipParamNonCode(inner, i)) |end| {
+                i = end;
+                continue;
+            }
+            const delta = paramDepthDelta(inner, i);
+            if (delta != 0) {
+                d += delta;
+                continue;
+            }
+            if (d == 0 and inner[i] == '=') {
+                const prev: u8 = if (i > 0) inner[i - 1] else 0;
+                const next: u8 = if (i + 1 < inner.len) inner[i + 1] else 0;
+                if (prev != '=' and prev != '!' and prev != '<' and prev != '>' and next != '=' and next != '>') break :blk true;
+            }
+        }
+        break :blk false;
+    };
+    if (!has_real_equal) return stripped;
+
+    var parts = std.array_list.Managed([]const u8).init(alloc);
+    var separators = std.array_list.Managed([]const u8).init(alloc);
+    var start: usize = 0;
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i < inner.len) : (i += 1) {
+        if (skipParamNonCode(inner, i)) |end| {
+            i = end;
+            continue;
+        }
+        const delta = paramDepthDelta(inner, i);
+        if (delta != 0) {
+            depth += delta;
+            continue;
+        }
+        if (inner[i] == ',' and depth == 0) {
+            try parts.append(inner[start..i]);
+            var j = i + 1;
+            while (j < inner.len and inner[j] <= ' ') j += 1;
+            try separators.append(inner[i..j]);
+            start = j;
+            i = j - 1;
+        }
+    }
+    try parts.append(inner[start..]);
+
+    var out = std.array_list.Managed(u8).init(alloc);
+    try out.ensureTotalCapacity(stripped.len);
+    if (had_parens) try out.append('(');
+    var emitted: usize = 0;
+    for (parts.items) |part| {
+        const t = trim(part);
+        if (t.len > 0 and ch.startsWith(t, "//")) continue;
+        if (emitted > 0) try out.appendSlice(if (emitted - 1 < separators.items.len) separators.items[emitted - 1] else ", ");
+        emitted += 1;
+        if (t.len == 0) {
+            try out.appendSlice(part);
+            continue;
+        }
+        const leading = part[0 .. part.len - std.mem.trimStart(u8, part, " \t\r\n").len];
+        try out.appendSlice(leading);
+        try out.appendSlice(try cleanSingleParam(alloc, stripTrailingInlineComment(t)));
+    }
+    if (had_parens) try out.append(')');
+    return out.toOwnedSlice();
 }
 
 /// Parse object properties from content between braces.
@@ -754,10 +900,12 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                         }
                         // Process value based on type - match TS behavior:
                         // ANY value starting with '(' goes through convertMethodToFunctionType
+                        // An arrow or function value stays raw here, as in the
+                        // TypeScript emitter: inferObjectType infers it and then
+                        // cleans the signature. Cleaning the source first saw
+                        // `x: number = 1` as `number = 1` and wrote `x: number?`.
                         if (is_method and val.len > 0 and val[0] == '(') {
                             val = try convertMethodToFunctionType(alloc, key, val);
-                        } else if (ch.contains(val, "=>") or ch.startsWith(val, "function") or ch.startsWith(val, "async")) {
-                            val = try cleanMethodSignature(alloc, val);
                         }
                         try properties.append(.{ .key = key, .value = val, .is_method = is_method });
                     }
@@ -789,8 +937,6 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
             }
             if (is_method and val.len > 0 and val[0] == '(') {
                 val = try convertMethodToFunctionType(alloc, key, val);
-            } else if (ch.contains(val, "=>") or ch.startsWith(val, "function") or ch.startsWith(val, "async")) {
-                val = try cleanMethodSignature(alloc, val);
             }
             try properties.append(.{ .key = key, .value = val, .is_method = is_method });
         }
@@ -1788,18 +1934,18 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         const nested_default = _clean_default_result;
         _clean_default_result = saved_default; // restore parent's
 
-        // Clean method signatures in inferred types — single scan for the
-        // first interesting byte. Most val_types are bare types like "string"
-        // or "number" that contain neither marker.
-        if (ch.indexOfChar(val_type, '=', 0)) |_| {
-            // Confirm '=>' rather than just '='
-            if (ch.indexOf(val_type, "=>", 0) != null) {
-                val_type = try cleanMethodSignature(alloc, val_type);
-            }
-        } else if (ch.indexOfChar(val_type, 'a', 0)) |_| {
-            if (ch.indexOf(val_type, "async", 0) != null) {
-                val_type = try stripAsyncKeyword(alloc, val_type);
-            }
+        // The inferred function type as written, before it is collapsed onto
+        // one line; the @defaultValue block shows this form, as the
+        // TypeScript emitter does.
+        const fn_type_raw = val_type;
+
+        // Clean function signatures in inferred types, as the TypeScript
+        // emitter does. A method shorthand was already converted to a clean
+        // function type by parseObjectProperties and keeps its line breaks.
+        if (!prop.is_method and (ch.indexOf(val_type, "=>", 0) != null or
+            ch.indexOf(val_type, "function", 0) != null or ch.indexOf(val_type, "async", 0) != null))
+        {
+            val_type = try cleanMethodSignature(alloc, val_type);
         }
 
         // Add inline @defaultValue for widened primitive properties
@@ -1828,8 +1974,9 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             try parts.appendSlice(val_type);
         }
 
-        // Build clean default entry for this property (same loop, no re-parse)
-        if (build_default) {
+        // Build clean default entry for this property (same loop, no re-parse).
+        // Accessors carry no default: `get X: () => T` is not even a type.
+        if (build_default and !ch.startsWith(prop.key, "get ") and !ch.startsWith(prop.key, "set ")) {
             if (ch.endsWith(raw_val, " as const") or ch.endsWith(raw_val, "as const")) {
                 // skip — type already narrow
             } else if (isPrimitiveLiteral(raw_val)) {
@@ -1855,11 +2002,12 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             } else if (raw_val.len > 0 and raw_val[0] != '[' and
                 (ch.contains(raw_val, "=>") or ch.startsWith(raw_val, "function") or ch.startsWith(raw_val, "async")))
             {
-                // Use already-computed val_type instead of re-inferring
+                // Reuse the already-inferred type instead of re-inferring: a
+                // method shorthand collapsed onto one line, an arrow as written.
                 var ps = std.array_list.Managed(u8).init(alloc);
                 try ps.appendSlice(prop.key);
                 try ps.appendSlice(": ");
-                try ps.appendSlice(val_type);
+                try ps.appendSlice(if (prop.is_method) try cleanMethodSignature(alloc, val_type) else fn_type_raw);
                 try clean_props.append(try ps.toOwnedSlice());
             }
         }
@@ -2163,7 +2311,8 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
         }
         if (findMainArrowIndex(async_removed)) |arrow_idx| {
             const signature = splitArrowSignature(async_removed[0..arrow_idx]);
-            var params = signature.params;
+            // Initializers are not allowed in a declaration: `(a: T = v)` is `(a?: T)`.
+            var params = try cleanParameterDefaults(alloc, signature.params);
             const body = trim(async_removed[arrow_idx + 2 ..]);
 
             // Wrap bare params
@@ -2223,7 +2372,8 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
 
         if (findMainArrowIndex(remaining)) |arrow_idx| {
             const signature = splitArrowSignature(remaining[0..arrow_idx]);
-            var params = signature.params;
+            // Initializers are not allowed in a declaration: `(a: T = v)` is `(a?: T)`.
+            var params = try cleanParameterDefaults(alloc, signature.params);
             const body = trim(remaining[arrow_idx + 2 ..]);
 
             const explicit_return_type = signature.return_type;
@@ -2293,7 +2443,7 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
         // Try to extract params
         if (ch.indexOfChar(trimmed, '(', 0)) |paren_start| {
             if (findMatchingBracket(trimmed, paren_start, '(', ')')) |paren_end| {
-                const params = trim(trimmed[paren_start .. paren_end + 1]);
+                const params = try cleanParameterDefaults(alloc, trim(trimmed[paren_start .. paren_end + 1]));
                 // Check for generator
                 const is_generator = ch.indexOfChar(trimmed[0..paren_start], '*', 0) != null;
                 // Check for generics
