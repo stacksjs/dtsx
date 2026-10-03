@@ -65,7 +65,7 @@ export function removeLeadingComments(text: string): string {
 }
 
 /**
- * @deprecated Use extractJSDocComments from extractor/helpers instead
+ * @deprecated Not used by the extractor, which reads comments while it scans.
  */
 export function extractLeadingComments(source: string, position: number): string[] {
   const before = source.substring(0, position)
@@ -271,7 +271,7 @@ export function parseFunctionDeclaration(text: string): FunctionSignature | null
 }
 
 /**
- * @deprecated Use hasExportModifier from extractor/helpers instead
+ * @deprecated Not used by the extractor, which reads modifiers while it scans.
  */
 export function isExportStatement(line: string): boolean {
   return /^\s*export\s+/.test(line)

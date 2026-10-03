@@ -394,7 +394,7 @@ export class IncrementalCache {
   }
 
   /**
-   * Hash file content. Uses the fast Bun.hash-backed hash from extractor/cache —
+   * Hash file content. Uses the fast Bun.hash-backed hash from extractor/hash —
    * SHA-256 was overkill for cache invalidation and ~30× slower for large files.
    */
   private hashContent(content: string): string {

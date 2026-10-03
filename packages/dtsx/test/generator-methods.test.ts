@@ -14,8 +14,9 @@
  * resolved to `Generator<...>` / `AsyncGenerator<...>` when the source did not
  * annotate one - so it is simply not emitted.
  *
- * Two paths emitted it: the hand-rolled scanner in `extractor/scanner.ts`, which
- * is the one that runs, and `buildClassDeclaration` in `extractor/builders.ts`.
+ * The hand-rolled scanner in `extractor/scanner.ts` emitted it. (So did
+ * `buildClassDeclaration` in the compiler-API `extractor/builders.ts`, since
+ * removed: nothing reached it, and it could not load under TypeScript 7.)
  *
  * Surfaced from ts-cache, whose `dist/utils/index.d.ts` did not parse.
  */
