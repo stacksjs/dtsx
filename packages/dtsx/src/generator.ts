@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { basename, dirname, extname, isAbsolute, parse, relative, resolve } from 'node:path'
-import { bundleDeclarations } from './bundler'
+import { linkBundle } from './bundle-linker'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
 import { normalizeConcurrency } from './concurrency'
@@ -187,6 +187,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     logger.info(`Processing ${files.length} files (${mode})...`)
   }
 
+  // Declarations generated per file, kept for `bundle: true`, which links
+  // them into one file per entrypoint.
+  const generatedDts = new Map<string, string>()
+
   // Helper function to process a single file
   // Accepts optional pre-read source to avoid redundant I/O when files are batch-read
   const processSingleFile = async (file: string, preReadSource?: string): Promise<{
@@ -246,6 +250,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       if (buildCache) {
         const cachedContent = buildCache.getCachedIfValid(file, config.cwd)
         if (cachedContent) {
+          if (config.bundle) generatedDts.set(file, cachedContent)
           await showDiff(cachedContent)
           const validationErrorCount = validateContent(cachedContent)
 
@@ -268,6 +273,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       // Use pre-read source if available, otherwise read from disk
       sourceCode = preReadSource ?? await readTextFile(file)
       const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager, typeMapper)
+      if (config.bundle) generatedDts.set(file, dtsContent)
 
       let finalDtsContent = dtsContent
 
@@ -483,27 +489,14 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Bundle output if enabled.
   //
-  // Each user-declared entrypoint becomes one self-contained `.d.ts`:
-  // we walk imports + re-exports from that entry, bundle just the
-  // reachable files, and inline their declarations. Relative
-  // `export … from './x'` lines are dropped (their content is now
-  // inlined), which is what fixes the silent breakage from #3090.
+  // Each user-declared entrypoint becomes one self-contained `.d.ts`: we
+  // walk imports + re-exports from that entry and link the declarations
+  // already generated for the reachable files. Relative imports and
+  // re-exports are resolved rather than dropped, so renamed, default and
+  // namespace re-exports survive (#3090).
   if (config.bundle && (stats.filesGenerated > 0 || cacheHits > 0) && entryFiles.length > 0) {
     try {
       logger.debug('Bundling declarations...')
-
-      // Cache source reads across all entrypoints
-      const sourceContents = new Map<string, string>()
-      const readSource = async (f: string): Promise<string> => {
-        let s = sourceContents.get(f)
-        if (s !== undefined) return s
-        s = await readTextFile(f)
-        sourceContents.set(f, s)
-        return s
-      }
-      for (const f of files) {
-        await readSource(f)
-      }
 
       // Single-entry + explicit bundleOutput keeps the legacy semantic
       // (one combined file at outdir/<bundleOutput>).
@@ -525,13 +518,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         const filesForEntry = files.filter(f => reachable.has(f))
         if (!filesForEntry.includes(entry)) filesForEntry.push(entry)
 
-        const entrySources = new Map<string, string>()
-        for (const f of filesForEntry) {
-          const s = sourceContents.get(f) ?? await readSource(f)
-          entrySources.set(f, s)
-        }
-
-        const bundleResult = await bundleDeclarations(filesForEntry, entrySources, config)
+        const bundleResult = linkBundle(entry, filesForEntry, generatedDts, { cwd: config.cwd, keepComments: config.keepComments })
+        for (const warning of new Set(bundleResult.warnings)) logger.warn(`[bundle] ${warning}`)
 
         const bundlePath = useLegacyOutput
           ? resolve(config.cwd, config.outdir, config.bundleOutput!)

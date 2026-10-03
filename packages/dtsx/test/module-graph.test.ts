@@ -1,8 +1,10 @@
 import type { DtsGenerationConfig } from '../src/types'
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generate } from '../src/generator'
+import { isAvailable as tscAvailable, runTsc } from './helpers/tsc'
 import {
   collectReachableViaReExports,
   resolveRelativeSpecifier,
@@ -376,6 +378,87 @@ describe('generate with bundle: true', () => {
     expect(bundled).toContain('RouteConfig')
     expect(bundled).not.toContain(`from './router'`)
     expect(bundled).not.toContain(`from './types'`)
+  })
+
+  // #3090: dropping every relative re-export only works for `export *`. A
+  // renamed, default or namespace re-export named something the bundle never
+  // declared, and a non-exported type the inlined declarations used was left
+  // out, so consumers saw TS2305/TS2304.
+  it('links renamed, default and namespace re-exports into a usable bundle', async () => {
+    // Outside the repository: tsc refuses explicit files when it finds a
+    // tsconfig.json above the working directory.
+    const dir = await mkdtemp(join(tmpdir(), 'dtsx-bundle-link-'))
+    await writeFiles(dir, {
+      'src/index.ts': [
+        `export * from './router'`,
+        `export { formatPath as format, type PathOptions as FormatOptions } from './utils'`,
+        `export { default as Logger } from './logger'`,
+        `export * as helpers from './helpers'`,
+        `export { default } from './factory'`,
+      ].join('\n'),
+      'src/router.ts': [
+        `interface RouteTable { [path: string]: number }`,
+        `export class Router { table: RouteTable = {} }`,
+        `export function makeTable(): RouteTable { return {} }`,
+      ].join('\n'),
+      'src/utils.ts': [
+        `export interface PathOptions { trailingSlash?: boolean }`,
+        `export function formatPath(path: string, options: PathOptions = {}): string { return path }`,
+      ].join('\n'),
+      'src/logger.ts': `export default class Logger { log(message: string): void {} }`,
+      // Declares its own `PathOptions`, colliding with utils.ts.
+      'src/helpers.ts': [
+        `import type { PathOptions as UtilOptions } from './utils'`,
+        `export interface PathOptions { base: string }`,
+        `export const VERSION: string = '1.0.0'`,
+        `export function withSlash(options: UtilOptions): PathOptions { return { base: '/' } }`,
+      ].join('\n'),
+      'src/factory.ts': [
+        `import { Router as R } from './router'`,
+        `export default function (): R { return new R() }`,
+      ].join('\n'),
+      'consumer.ts': [
+        `import create, { Router, makeTable, format, helpers, Logger, type FormatOptions } from './dist/index'`,
+        `const router: Router = create()`,
+        `const size: number = makeTable()['/']`,
+        `const options: FormatOptions = { trailingSlash: true }`,
+        `const path: string = format('/x', options) + helpers.VERSION`,
+        `const base: string = helpers.withSlash(options).base`,
+        `const helperOptions: helpers.PathOptions = { base }`,
+        `new Logger().log(path)`,
+        `export { router, size, helperOptions }`,
+      ].join('\n'),
+    })
+
+    await generate({
+      cwd: dir,
+      root: 'src',
+      entrypoints: ['index.ts'],
+      outdir: join(dir, 'dist'),
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+      bundle: true,
+    })
+    const bundled = await Bun.file(join(dir, 'dist', 'index.d.ts')).text()
+
+    expect(() => new Bun.Transpiler({ loader: 'ts' }).transformSync(bundled)).not.toThrow()
+    expect(bundled).not.toMatch(/from '\.\.?\//)
+    expect(bundled).toContain('declare interface RouteTable')
+    expect(bundled).toContain('declare interface PathOptions_1 { base: string }')
+    expect(bundled).toContain('declare function withSlash(options: PathOptions): PathOptions_1;')
+    expect(bundled).toContain('declare function _default(): Router;')
+    expect(bundled).toMatch(/declare namespace helpers \{\n {2}export \{ [^}]*PathOptions_1 as PathOptions/)
+    const exportClause = bundled.match(/^export \{ (.*) \};$/m)?.[1].split(', ') ?? []
+    expect(exportClause.sort()).toEqual(['Logger', 'PathOptions as FormatOptions', 'Router', '_default as default', 'formatPath as format', 'helpers', 'makeTable'].sort())
+
+    if (tscAvailable) {
+      const result = runTsc(dir, ['consumer.ts'])
+      expect(result.output).toBe('')
+      expect(result.ok).toBe(true)
+    }
+    await rm(dir, { recursive: true, force: true })
   })
 
   it('writes one bundled file per entrypoint', async () => {
