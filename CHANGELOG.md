@@ -1,4 +1,21 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.15...v0.11.16)
+
+### 🐛 Bug Fixes
+
+- **bundle**: link re-exports instead of dropping them ([a3f5ef8](https://github.com/stacksjs/dtsx/commit/a3f5ef8)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **extractor**: remove the compiler-API modules TypeScript 7 cannot load ([dccb82b](https://github.com/stacksjs/dtsx/commit/dccb82b)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **emit**: drop parameter initializers and keep object-type members separated ([ba82f26](https://github.com/stacksjs/dtsx/commit/ba82f26)) _(by Chris <chrisbreuer93@gmail.com>)_
+- **zig**: keep the space before extends in declare-module interfaces ([cbc3b6a](https://github.com/stacksjs/dtsx/commit/cbc3b6a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.16 ([b902dff](https://github.com/stacksjs/dtsx/commit/b902dff)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.14...v0.11.15)
 
 ### 🐛 Bug Fixes
