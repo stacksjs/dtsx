@@ -2655,20 +2655,41 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             s.skipWhitespaceAndComments();
             const generics = extractGenerics(s);
             s.skipWhitespaceAndComments();
+            // The clause is stored without the keyword and emitted as
+            // " extends <clause>". Slicing from the keyword instead kept its
+            // trailing whitespace but not a leading one, fusing the name and
+            // the keyword (`interface Fooextends Bar  {}`, #3103). Depth is
+            // tracked so a `{` inside type arguments (`extends Foo<{ a: 1 }>`)
+            // does not end the clause early.
             var ext: []const u8 = "";
             if (s.matchWord("extends")) {
+                s.pos += 7;
+                s.skipWhitespaceAndComments();
                 const ext_start = s.pos;
-                while (s.pos < s.len and s.source[s.pos] != ch.CH_LBRACE) {
+                var ext_depth: isize = 0;
+                while (s.pos < s.len) {
                     if (s.skipNonCode()) continue;
+                    const ec = s.source[s.pos];
+                    if (ec == ch.CH_LANGLE or ec == ch.CH_LPAREN or ec == ch.CH_LBRACKET) {
+                        ext_depth += 1;
+                    } else if ((ec == ch.CH_RANGLE and !s.isArrowGT()) or ec == ch.CH_RPAREN or ec == ch.CH_RBRACKET) {
+                        ext_depth -= 1;
+                    } else if (ec == ch.CH_LBRACE) {
+                        if (ext_depth <= 0) break;
+                        ext_depth += 1;
+                    } else if (ec == ch.CH_RBRACE) {
+                        ext_depth -= 1;
+                    }
                     s.pos += 1;
                 }
-                ext = s.source[ext_start..s.pos];
+                ext = s.sliceTrimmed(ext_start, s.pos);
             }
+            const ext_kw: []const u8 = if (ext.len > 0) " extends " else "";
             const body = cleanBraceBlock(s, s.extractBraceBlock());
-            // Direct alloc — fixed shape "<indent><prefix>interface <name><gen><ext> <body>".
+            // Direct alloc — fixed shape "<indent><prefix>interface <name><gen>[ extends <ext>] <body>".
             const if_kw = "interface ";
             const if_total = indent.len + prefix.len + if_kw.len + iname.len +
-                generics.len + ext.len + 1 + body.len;
+                generics.len + ext_kw.len + ext.len + 1 + body.len;
             const if_buf = s.allocator.alloc(u8, if_total) catch continue;
             var ifp: usize = 0;
             @memcpy(if_buf[ifp..][0..indent.len], indent);
@@ -2681,6 +2702,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             ifp += iname.len;
             @memcpy(if_buf[ifp..][0..generics.len], generics);
             ifp += generics.len;
+            @memcpy(if_buf[ifp..][0..ext_kw.len], ext_kw);
+            ifp += ext_kw.len;
             @memcpy(if_buf[ifp..][0..ext.len], ext);
             ifp += ext.len;
             if_buf[ifp] = ' ';

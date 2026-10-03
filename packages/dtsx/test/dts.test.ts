@@ -44,6 +44,7 @@ describe('dts-generation', () => {
     'interface',
     'mixed-exports',
     'module',
+    'module-augmentation',
     'namespace',
     'parameter-properties',
     'private-members',
