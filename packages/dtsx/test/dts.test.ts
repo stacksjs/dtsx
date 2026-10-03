@@ -47,6 +47,7 @@ describe('dts-generation', () => {
     'module',
     'module-augmentation',
     'namespace',
+    'namespace-inline',
     'parameter-properties',
     'private-members',
     'ts-features',

@@ -55,6 +55,7 @@ const standardFixtures = [
   'module',
   'module-augmentation',
   'namespace',
+  'namespace-inline',
   'parameter-properties',
   'private-members',
   // TODO: re-enable once zig-dtsx emits non-exported decls referenced by

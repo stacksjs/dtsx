@@ -2566,7 +2566,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
 
             const vname = s.readIdent();
             if (vname.len == 0) {
-                s.skipToStatementEnd();
+                s.skipToStatementEndInBlock();
                 continue;
             }
             s.skipWhitespaceAndComments();
@@ -2581,6 +2581,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     const tc = s.source[s.pos];
                     if (tc == ch.CH_LPAREN or tc == ch.CH_LBRACE or tc == ch.CH_LBRACKET or tc == ch.CH_LANGLE) {
                         depth += 1;
+                    } else if (tc == ch.CH_RBRACE and depth == 0) {
+                        break; // closes the namespace: `{ export const x = 1 }`
                     } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
                         depth -= 1;
                     } else if (depth == 0 and (tc == ch.CH_EQUAL or tc == ch.CH_SEMI or tc == ch.CH_COMMA)) {
@@ -2602,6 +2604,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     const ic = s.source[s.pos];
                     if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET or ic == ch.CH_LANGLE) {
                         depth += 1;
+                    } else if (ic == ch.CH_RBRACE and depth == 0) {
+                        break; // closes the namespace: `{ export const x = 1 }`
                     } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET or (ic == ch.CH_RANGLE and !s.isArrowGT())) {
                         depth -= 1;
                     } else if (depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
@@ -2728,6 +2732,8 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     const tc = s.source[s.pos];
                     if (tc == ch.CH_LPAREN or tc == ch.CH_LBRACE or tc == ch.CH_LBRACKET or tc == ch.CH_LANGLE) {
                         depth += 1;
+                    } else if (tc == ch.CH_RBRACE and depth == 0) {
+                        break; // closes the namespace: `{ export const x = 1 }`
                     } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
                         depth -= 1;
                     } else if (depth == 0 and tc == ch.CH_SEMI) {
@@ -2874,13 +2880,13 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 cp += cbody.len;
                 lines.append(cl_buf) catch {};
             } else {
-                s.skipToStatementEnd();
+                s.skipToStatementEndInBlock();
             }
         } else if (has_export and s.matchWord("default")) {
             s.pos += 7;
             s.skipWhitespaceAndComments();
             const def_start = s.pos;
-            s.skipToStatementEnd();
+            s.skipToStatementEndInBlock();
             var def_text = s.sliceTrimmed(def_start, s.pos);
             if (def_text.len > 0 and def_text[def_text.len - 1] == ';') def_text = def_text[0 .. def_text.len - 1];
             if (def_text.len > 0) {
@@ -2899,7 +2905,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 lines.append(def_buf) catch {};
             }
         } else {
-            s.skipToStatementEnd();
+            s.skipToStatementEndInBlock();
         }
     }
 

@@ -641,6 +641,17 @@ pub const Scanner = struct {
     /// Skip to statement end (semicolon at depth 0, matching brace, or ASI).
     /// Uses SIMD to skip 16 non-structural bytes at a time.
     pub fn skipToStatementEnd(self: *Scanner) void {
+        self.skipToStatementEndOpts(false);
+    }
+
+    /// Like skipToStatementEnd, but inside a namespace body: an unmatched '}'
+    /// closes the namespace rather than this statement, so it is left for the
+    /// body loop to consume.
+    pub fn skipToStatementEndInBlock(self: *Scanner) void {
+        self.skipToStatementEndOpts(true);
+    }
+
+    inline fn skipToStatementEndOpts(self: *Scanner, stop_before_unmatched_brace: bool) void {
         var brace_depth: isize = 0;
         var paren_depth: isize = 0;
         var bracket_depth: isize = 0;
@@ -750,6 +761,7 @@ pub const Scanner = struct {
             }
             if (c == ch.CH_RBRACE) {
                 const closes_nested_brace = brace_depth > 0;
+                if (!closes_nested_brace and stop_before_unmatched_brace and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) return;
                 if (closes_nested_brace) brace_depth -= 1;
                 if ((!closes_nested_brace or terminate_on_balanced_brace) and brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) {
                     self.pos += 1;

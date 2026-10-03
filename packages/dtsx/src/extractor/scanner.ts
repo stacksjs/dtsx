@@ -854,7 +854,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
   /** Skip to statement end (semicolon at depth 0, matching brace, or ASI) */
   const STMT_DELIM_RE = /[<{};'"`\/\n\r()[\]]/g
-  function skipToStatementEnd(): void {
+  function skipToStatementEnd(stopBeforeUnmatchedBrace = false): void {
     let braceDepth = 0
     let parenDepth = 0
     let bracketDepth = 0
@@ -927,6 +927,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
       if (ch === CH_RBRACE) {
         const closesNestedBrace = braceDepth > 0
+        // Inside a namespace body an unmatched '}' closes the namespace, not
+        // this statement: leave it for the body loop to consume.
+        if (!closesNestedBrace && stopBeforeUnmatchedBrace && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx; return }
         if (closesNestedBrace) braceDepth--
         if ((!closesNestedBrace || terminateOnBalancedBrace) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx + 1; return }
         STMT_DELIM_RE.lastIndex = idx + 1
@@ -3285,7 +3288,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         pos += kw.length
         skipWhitespaceAndComments()
         const vname = readIdent()
-        if (!vname) { skipToStatementEnd(); continue }
+        if (!vname) { skipToStatementEnd(true); continue }
         skipWhitespaceAndComments()
 
         let vtype = ''
@@ -3300,6 +3303,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             const tc = source.charCodeAt(pos)
             if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
               depth++
+            else if (tc === CH_RBRACE && depth === 0)
+              break // closes the namespace: `{ export const x = 1 }`
             else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
               depth--
             else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
@@ -3325,6 +3330,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             const ic = source.charCodeAt(pos)
             if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET || ic === CH_LANGLE)
               depth++
+            else if (ic === CH_RBRACE && depth === 0)
+              break // closes the namespace: `{ export const x = 1 }`
             else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET || (ic === CH_RANGLE && !isArrowGT()))
               depth--
             else if (depth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
@@ -3408,6 +3415,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             const tc = source.charCodeAt(pos)
             if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
               depth++
+            else if (tc === CH_RBRACE && depth === 0)
+              break // closes the namespace: `{ export const x = 1 }`
             else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
               depth--
             else if (depth === 0 && tc === CH_SEMI)
@@ -3500,7 +3509,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           lines.push(`${indent}${prefix}abstract class ${cname}${generics}${hText} ${body}`)
         }
         else {
-          skipToStatementEnd()
+          skipToStatementEnd(true)
         }
       }
       else if (hasExport && matchWord('default')) {
@@ -3508,7 +3517,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         pos += 7
         skipWhitespaceAndComments()
         const defStart = pos
-        skipToStatementEnd()
+        skipToStatementEnd(true)
         let defText = sliceTrimmed(defStart, pos)
         if (defText.charCodeAt(defText.length - 1) === CH_SEMI) defText = defText.slice(0, -1)
         if (defText) {
@@ -3517,11 +3526,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
       else if (!hasExport && (source.charCodeAt(pos) === CH_SQUOTE || source.charCodeAt(pos) === CH_DQUOTE || source.charCodeAt(pos) === CH_BACKTICK)) {
         // Skip string expression statements like 'use strict'
-        skipToStatementEnd()
+        skipToStatementEnd(true)
       }
       else {
         // Unknown declaration or expression, skip
-        skipToStatementEnd()
+        skipToStatementEnd(true)
       }
     }
 
