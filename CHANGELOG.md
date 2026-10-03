@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.16...v0.11.17)
+
+### 🐛 Bug Fixes
+
+- **extractor**: stop namespace members at the closing brace ([3a33b69](https://github.com/stacksjs/dtsx/commit/3a33b69)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.17 ([c16740a](https://github.com/stacksjs/dtsx/commit/c16740a)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.15...v0.11.16)
 
 ### 🐛 Bug Fixes
