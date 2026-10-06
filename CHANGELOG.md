@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.18...v0.11.19)
+
+### 🐛 Bug Fixes
+
+- method signatures that do not parse, and unannotated methods typed void ([dbd0a00](https://github.com/stacksjs/dtsx/commit/dbd0a00)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.19 ([e77d4fe](https://github.com/stacksjs/dtsx/commit/e77d4fe)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.17...v0.11.18)
 
 ### 🐛 Bug Fixes
