@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.17...v0.11.18)
+
+### 🐛 Bug Fixes
+
+- stop declaring documented objects as {} and unannotated functions as void ([a4429fd](https://github.com/stacksjs/dtsx/commit/a4429fd)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### 🧹 Chores
+
+- release v0.11.18 ([b5fc879](https://github.com/stacksjs/dtsx/commit/b5fc879)) _(by Chris <chrisbreuer93@gmail.com>)_
+
+### Contributors
+
+- _Chris <chrisbreuer93@gmail.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.16...v0.11.17)
 
 ### 🐛 Bug Fixes
