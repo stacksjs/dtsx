@@ -97,7 +97,7 @@ export declare const complexArrays: {
  *   handlers: {
  *     onSuccess: <T>(data: T) => Promise<void>,
  *     onError: (error: Error & { code?: number }) => never,
- *     someOtherMethod: () => unknown
+ *     someOtherMethod: () => void
  *   },
  *   utils: {
  *     formatters: {
@@ -109,7 +109,7 @@ export declare const complexArrays: {
  * ```
  */
 export declare const complexObject: {
-  handlers: { onSuccess: <T>(data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => unknown };
+  handlers: { onSuccess: <T>(data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
   utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
@@ -118,10 +118,8 @@ export declare const methodDecorator: (
   propertyKey: string,
   descriptor: PropertyDescriptor
 ) => Omit<PropertyDescriptor, keyof {
-  /** @defaultValue true */
   enumerable: boolean
 }> & {
-  /** @defaultValue true */
   enumerable: boolean
 };
 // declares as SomeType

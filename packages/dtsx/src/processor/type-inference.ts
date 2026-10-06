@@ -16,6 +16,11 @@ const MAX_INFERENCE_DEPTH = 20
 let _collectCleanDefault = false
 let _cleanDefaultResult: string | null = null
 
+/** A type with its block comments removed, and no blank line left where one was. */
+function withoutComments(type: string): string {
+  return stripBlockComments(type).replace(/\n[ \t]*(?=\n)/g, '')
+}
+
 /** Strip block/JSDoc comments from a property key to keep @defaultValue clean */
 function stripBlockComments(s: string): string {
   // Fast path: no `/*` present — return trimmed input directly (zero scan).
@@ -596,7 +601,10 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
       }
 
       const expression = body.slice(expressionStart, i).trim()
-      const inferred = inferBodyExpressionType(expression, parameterTypes)
+      // No comments in a return type: a returned literal's properties are not
+      // defaults, and an inferred type is embedded in other JSDoc
+      // (\`@defaultValue\`), where a nested \`*/\` ends the comment early.
+      const inferred = withoutComments(inferBodyExpressionType(expression, parameterTypes))
       if (!returnTypes.includes(inferred)) returnTypes.push(inferred)
       continue
     }
@@ -1314,11 +1322,11 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
         // shorthand loses the parameter list and the generic parameters.
         // Collapsed with cleanMethodSignature, which separates object-type
         // members it joins onto one line (`{ a?: string; b?: number }`).
-        cleanProps.push(`${cleanKey}: ${cleanMethodSignature(valueType)}`)
+        cleanProps.push(`${cleanKey}: ${withoutComments(cleanMethodSignature(valueType))}`)
       }
       else if (!rawVal.startsWith('[') && (rawVal.includes('=>') || rawVal.startsWith('function') || rawVal.startsWith('async'))) {
         const fnType = inferFunctionType(rawVal, false, 0, true)
-        cleanProps.push(`${cleanKey}: ${fnType}`)
+        cleanProps.push(`${cleanKey}: ${withoutComments(fnType)}`)
       }
     }
   }
@@ -1826,9 +1834,14 @@ function parseObjectProperties(content: string): Array<[string, string]> {
 
     // Track single-line comments — skip to end of line
     if (!inString && !inComment && cc === 47 /* / */ && nextCode === 47 /* / */) {
-      // Skip the entire single-line comment (don't include in key/value parsing)
+      // Skip the comment but not the newline that ends it: the loop's own
+      // increment used to step over it as well, so in a multi-line value
+      // (\`id?: string // note\\n  column?: string\`) the next member joined the
+      // same line and the declaration no longer parsed.
+      current = current.replace(/[ \t]+$/, '')
       i += 2 // Skip '//'
       while (i < content.length && content.charCodeAt(i) !== 10 /* \n */) i++
+      i--
       continue
     }
 
@@ -2197,6 +2210,19 @@ function convertMethodToFunctionType(_methodName: string, _methodDef: string): s
     }
     else {
       returnType = typeContent.trim()
+    }
+  }
+
+  // No annotation: what the body returns, as for a function. A method used to
+  // be declared \`Promise<void>\` (async) or \`unknown\` without its body read.
+  if (returnType === 'unknown' && !isGenerator && afterParams.charCodeAt(0) === 123 /* { */) {
+    const bodyEnd = findMatchingBracket(afterParams, 0, '{', '}')
+    if (bodyEnd !== -1) {
+      const inferred = inferFunctionBodyReturnType(afterParams.slice(1, bodyEnd), isAsync, params)
+      if (inferred !== 'unknown' && inferred !== 'Promise<unknown>')
+        returnType = isAsync && inferred.startsWith('Promise<') ? inferred.slice(8, -1) : inferred
+      else if (isAsync)
+        returnType = 'Promise<unknown>'
     }
   }
 

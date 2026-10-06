@@ -709,3 +709,63 @@ describe('returned object literals (stacks billable trait)', () => {
     expect(output).toContain('same(a: number, b: number): boolean;')
   })
 })
+
+describe('object-literal methods (stacks billable trait)', () => {
+  const source = `
+    export function make() {
+      return {
+        async split(
+          model: any,
+          options: {
+            id?: string // payee account
+            column?: string
+          },
+        ): Promise<number> {
+          return 1
+        },
+        async total(amount: number) {
+          return amount * 2
+        },
+        name(id: string) {
+          return 'item-' + id
+        },
+        log(message: string) {
+          console.log(message)
+        },
+      }
+    }
+  `
+
+  it('keeps members apart when a comment ends a line in a parameter type', () => {
+    // The newline went with the comment, and the next member joined the line.
+    const output = processSourceIsolated(source, 'methods.ts')
+    expect(output).toMatch(/id\?: string\n\s+column\?: string/)
+    expect(() => new Bun.Transpiler({ loader: 'ts' }).transformSync(output)).not.toThrow()
+  })
+
+  it('types an unannotated method by what its body returns', () => {
+    // Async methods used to be Promise<void> and others unknown, unread.
+    const output = processSourceIsolated(source, 'methods.ts')
+    expect(output).toContain('total: (amount: number) => Promise<number>')
+    expect(output).toContain('name: (id: string) => string')
+    expect(output).toContain('log: (message: string) => void')
+  })
+})
+
+describe('inferred return types inside other declarations (stacks newsletter)', () => {
+  it('leaves no comment in an inferred return type to close a JSDoc early', () => {
+    // A returned literal carried `/** @defaultValue true */`, and the object's
+    // own `@defaultValue` block embeds the method type: its `*/` ended the
+    // block and the declaration file no longer parsed.
+    const output = processSourceSemantic(`
+      export const campaigns = {
+        sendNow(id: number) {
+          return { ok: true, campaignId: id }
+        },
+      }
+    `, 'campaigns.ts')
+    expect(output).toContain('sendNow: (id: number) => {')
+    expect(output).not.toMatch(/=> \{[^}]*\/\*\*/)
+    expect(() => new Bun.Transpiler({ loader: 'ts' }).transformSync(output)).not.toThrow()
+  })
+})
