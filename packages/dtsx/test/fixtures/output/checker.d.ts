@@ -4,13 +4,13 @@ export declare function getNodeId(node: Node): number;
 /** @internal */
 export declare function getSymbolId(symbol: Symbol): SymbolId;
 /** @internal */
-export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): void;
+export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): boolean;
 /** @internal */
 export declare function createTypeChecker(host: TypeCheckerHost): TypeChecker;
 /** @internal */
-export declare function signatureHasRestParameter(s: Signature): void;
+export declare function signatureHasRestParameter(s: Signature): boolean;
 /** @internal */
-export declare function signatureHasLiteralTypes(s: Signature): void;
+export declare function signatureHasLiteralTypes(s: Signature): boolean;
 declare interface NodeBuilderContext {
   enclosingDeclaration: Node | undefined
   enclosingFile: SourceFile | undefined

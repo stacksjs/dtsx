@@ -67,5 +67,5 @@ declare type DeepReadonlyObject<T> = {
 // @sealed
 export declare class DecoratedClass {
   name: string;
-  oldMethod(): void;
+  oldMethod(): string;
 }

@@ -221,7 +221,7 @@ describe('declaration generation paths', () => {
     expect(result).toContain('export declare const values: string[];')
   })
 
-  it('infers function and method returns only in semantic mode', () => {
+  it('infers unannotated function and method returns in both modes', () => {
     const source = `
       export function createRecord() { return { answer: 42 } }
       export class Factory { createName() { return 'dtsx' } }
@@ -230,11 +230,25 @@ describe('declaration generation paths', () => {
     const semantic = processSourceSemantic(source, 'returns.ts')
     const isolated = processSourceIsolated(source, 'returns.ts')
 
-    expect(semantic).toContain('createRecord(): {')
-    expect(semantic).toContain('answer: number')
-    expect(semantic).toContain('createName(): string;')
-    expect(isolated).toContain('createRecord(): void;')
-    expect(isolated).toContain('createName(): void;')
+    // Isolated mode used to declare both \`void\` without reading the body - a
+    // declaration that is simply false, and that empties every type derived
+    // from it (\`ReturnType<typeof createRecord>\`).
+    for (const output of [semantic, isolated]) {
+      expect(output).toContain('createRecord(): {')
+      expect(output).toContain('answer: number')
+      expect(output).toContain('createName(): string;')
+      expect(output).not.toContain('createRecord(): void')
+    }
+  })
+
+  it('keeps an explicit annotation over the body in isolated mode', () => {
+    const isolated = processSourceIsolated(`export function size(): number { return 'x'.length }`, 'annotated.ts')
+    expect(isolated).toContain('export declare function size(): number;')
+  })
+
+  it('still declares void for a body that returns nothing', () => {
+    const isolated = processSourceIsolated(`export function log(message: string) { console.log(message) }`, 'void.ts')
+    expect(isolated).toContain('export declare function log(message: string): void;')
   })
 
   it('ignores returns from nested implementation bodies', () => {
@@ -653,5 +667,45 @@ describe('declaration generation paths', () => {
     })
 
     expect(stats.filesProcessed).toBe(0)
+  })
+})
+
+describe('returned object literals (stacks billable trait)', () => {
+  const source = `
+    export function createMethods(table: string) {
+      const prefix = table
+      return {
+        // ─── Section: a comment line inside the returned object ───
+        // It's got an apostrophe too.
+        async find(id: number): Promise<string> {
+          if (id === 0) return prefix
+          return prefix + id
+        },
+        isEmpty(value: string): boolean {
+          return value.length === 0
+        },
+      }
+    }
+  `
+
+  it('reads past a comment line inside the object it returns', () => {
+    // The expression used to end at the first \`//\`, leaving \`{\`.
+    for (const output of [processSourceSemantic(source, 'methods.ts'), processSourceIsolated(source, 'methods.ts')]) {
+      expect(output).toContain('find: (id: number) => Promise<string>')
+      expect(output).toContain('isEmpty: (value: string) => boolean')
+      expect(output).not.toContain('createMethods(table: string): unknown')
+    }
+  })
+
+  it('does not take a comparison inside a method for the return type', () => {
+    // \`===\` anywhere in the expression used to make the whole object \`boolean\`.
+    const output = processSourceIsolated(source, 'methods.ts')
+    expect(output).not.toContain('createMethods(table: string): boolean')
+    expect(output).toContain('createMethods(table: string): {')
+  })
+
+  it('still types a returned comparison as boolean', () => {
+    const output = processSourceIsolated(`export function same(a: number, b: number) { return a === b }`, 'cmp.ts')
+    expect(output).toContain('same(a: number, b: number): boolean;')
   })
 })

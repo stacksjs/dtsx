@@ -2185,7 +2185,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       hasBody = true
       const bodyStart = pos + 1
       findMatchingClose(CH_LBRACE, CH_RBRACE)
-      if (!isolatedDeclarations && !hasExplicitReturnType && !isGenerator) {
+      // Isolated mode prefers annotations, but an unannotated function still
+      // returns what its body returns. It used to be declared `void` unread,
+      // so `function make() { return { ... } }` published as returning nothing
+      // and every type derived from it (`ReturnType<typeof make>`) was empty.
+      if (!hasExplicitReturnType && !isGenerator) {
         returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
       }
     }
@@ -2972,7 +2976,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
         const bodyStart = pos + 1
         findMatchingClose(CH_LBRACE, CH_RBRACE)
-        if (!isolatedDeclarations && !hasExplicitReturnType && !isGenerator) {
+        // As for functions: an unannotated method returns what its body does,
+        // in isolated mode too, rather than being declared `void` unread.
+        if (!hasExplicitReturnType && !isGenerator) {
           retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
         }
       }
@@ -3987,13 +3993,16 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       nonExportedTypes.set(decl.name, decl)
       declarations.push(decl)
     }
-    else if (ch0 === 108 /* l */ && matchWord('let')) {
-      // Non-exported variable — skip for DTS
-      skipToStatementEnd()
-    }
-    else if (ch0 === 118 /* v */ && matchWord('var')) {
-      // Non-exported variable — skip for DTS
-      skipToStatementEnd()
+    else if ((ch0 === 108 /* l */ && matchWord('let')) || (ch0 === 118 /* v */ && matchWord('var'))) {
+      // Non-exported let/var: kept back like a non-exported const, and pulled
+      // in only when an exported declaration refers to it (`typeof counter`,
+      // or an object property naming it). Skipping them left such a
+      // reference pointing at a name the declaration file never declared.
+      const kw = matchWord('let') ? 'let' : 'var'
+      const decls = extractVariable(stmtStart, kw, false)
+      for (let _di = 0; _di < decls.length; _di++) {
+        nonExportedTypes.set(decls[_di].name, decls[_di])
+      }
     }
     else if (ch0 === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
       const decl = extractModule(stmtStart, false, 'module')

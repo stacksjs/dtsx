@@ -195,3 +195,82 @@ export {}
     expectValidTypeScript(output)
   })
 })
+
+describe('object literals of references (stacks payments facade)', () => {
+  it('keeps a shorthand property that follows its JSDoc', () => {
+    const output = processCode(`
+function charge(): number { return 1 }
+function refund(): void {}
+export const Payment = {
+  /**
+   * Charges a card.
+   */
+  charge,
+  refund,
+}
+`)
+    expect(output).toContain('charge: typeof charge')
+    expect(output).toContain('refund: typeof refund')
+    expectValidTypeScript(output)
+  })
+
+  it('does not take an apostrophe or backtick in a JSDoc for a string', () => {
+    // An apostrophe opened a string that never closed, so every property
+    // after it was lost and the whole object declared `{}`.
+    for (const doc of ['Stripe\'s own objects', 'reads `config.payment.driver`', 'a " b']) {
+      const output = processCode(`
+function charge(): number { return 1 }
+function refund(): void {}
+export const Payment = {
+  /**
+   * ${doc}
+   */
+  charge,
+  refund,
+}
+`)
+      expect(output).not.toContain('Payment: {}')
+      expect(output).toContain('charge: typeof charge')
+      expect(output).toContain('refund: typeof refund')
+      expectValidTypeScript(output)
+    }
+  })
+
+  it('types a property naming another binding as that binding', () => {
+    const output = processCode(`
+import { manageWebhook } from './webhook'
+function paymentDriver(): string { return 'stripe' }
+export const Payment = {
+  driver: paymentDriver,
+  webhook: manageWebhook,
+  missing: undefined,
+}
+`)
+    expect(output).toContain('driver: typeof paymentDriver')
+    expect(output).toContain('webhook: typeof manageWebhook')
+    expect(output).toContain('import { manageWebhook } from \'./webhook\'')
+    expect(output).not.toContain('typeof undefined')
+    expectValidTypeScript(output)
+  })
+
+  it('declares a non-exported let or var that an exported value refers to', () => {
+    const output = processCode(`
+let counter = 0
+var label = 'x'
+export const State = { counter, name: label }
+`)
+    expect(output).toContain('declare let counter: number')
+    expect(output).toContain('declare var label: string')
+    expect(output).toContain('counter: typeof counter')
+    expect(output).toContain('name: typeof label')
+    expectValidTypeScript(output)
+  })
+
+  it('leaves out a non-exported let nothing refers to', () => {
+    const output = processCode(`
+let internal = 0
+export const value: number = 1
+`)
+    expect(output).not.toContain('internal')
+  })
+})

@@ -62,8 +62,8 @@ export declare const someObject: {
   /** @defaultValue 'value2' */
   key2: string
 })[];
-  someOtherObject: unknown;
-  someInlineCall2: unknown;
+  someOtherObject: typeof some.deep.object;
+  someInlineCall2: typeof console.log;
   someInlineCall3: unknown
 };
 /** @defaultValue `{ 'Content-Type': 'application/json' }` */

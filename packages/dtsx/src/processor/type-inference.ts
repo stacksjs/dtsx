@@ -564,7 +564,14 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
           i = skipQuotedValue(body, i, expressionChar)
           continue
         }
-        if (expressionChar === 47 && body.charCodeAt(i + 1) === 47) break
+        if (expressionChar === 47 && body.charCodeAt(i + 1) === 47) {
+          // A comment after the expression ends it. One inside it - a comment
+          // line in a returned object literal - is skipped: ending there cut
+          // \`return {\n  // section\n  a() {}\n}\` down to \`{\` and typed it unknown.
+          if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) break
+          while (i < body.length && body.charCodeAt(i) !== 10 && body.charCodeAt(i) !== 13) i++
+          continue
+        }
         if (expressionChar === 47 && body.charCodeAt(i + 1) === 42) {
           const close = body.indexOf('*/', i + 2)
           i = close === -1 ? body.length : close + 2
@@ -651,8 +658,7 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     return whenTrue === whenFalse ? whenTrue : `${whenTrue} | ${whenFalse}`
   }
 
-  const comparisonOperators = ['===', '!==', '==', '!=', '>=', '<=']
-  if (comparisonOperators.some(operator => value.includes(operator)) || value.includes(' > ') || value.includes(' < ')) return 'boolean'
+  if (hasTopLevelComparison(value)) return 'boolean'
 
   let depth = 0
   for (let i = value.length - 1; i >= 0; i--) {
@@ -1245,6 +1251,13 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
     else {
       valueType = inferNarrowType(val, isConst, false, _depth + 1)
+
+      // A property naming another binding (`driver: paymentDriver`,
+      // `webhook: manage.webhook`) has that binding's type, exactly as the
+      // shorthand above does. Literals such as `undefined` are typed before
+      // this is reached; anything else left unknown is a reference.
+      if (valueType === 'unknown' && isEntityName(trimVal))
+        valueType = `typeof ${trimVal}`
 
       // Handle method signatures - clean up async and parameter defaults
       if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {
@@ -1847,7 +1860,9 @@ function parseObjectProperties(content: string): Array<[string, string]> {
     }
 
     const char = content[i]
-    if (!inString && (cc === 34 /* " */ || cc === 39 /* ' */ || cc === 96 /* ` */)) {
+    // Not inside a comment: an apostrophe in a property's JSDoc ("Stripe's")
+    // opened a string that never closed, and every property after it was lost.
+    if (!inString && !inComment && (cc === 34 /* " */ || cc === 39 /* ' */ || cc === 96 /* ` */)) {
       inString = true
       stringChar = char
       current += char
@@ -1945,9 +1960,7 @@ function parseObjectProperties(content: string): Array<[string, string]> {
           properties.push([currentKey, value])
         }
         else if (inKey && current.trim()) {
-          const shorthand = current.trim()
-          if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
-          else if (shorthand.startsWith('...') && shorthand.length > 3) properties.push(['...', shorthand.slice(3).trim()])
+          pushShorthand(properties, current.trim())
         }
         current = ''
         currentKey = ''
@@ -1972,12 +1985,26 @@ function parseObjectProperties(content: string): Array<[string, string]> {
     properties.push([currentKey, value])
   }
   else if (inKey && current.trim()) {
-    const shorthand = current.trim()
-    if (isIdentifierName(shorthand)) properties.push([shorthand, shorthand])
-    else if (shorthand.startsWith('...') && shorthand.length > 3) properties.push(['...', shorthand.slice(3).trim()])
+    pushShorthand(properties, current.trim())
   }
 
   return properties
+}
+
+/**
+ * Record a shorthand property (`charge`) or a spread (`...base`).
+ *
+ * The text may open with the property's JSDoc - the parser keeps comments in
+ * the key so they reach the declaration. It used to test the whole text,
+ * comment included, as an identifier, so a documented shorthand property was
+ * dropped without a word; an object of documented shorthands declared `{}`.
+ */
+function pushShorthand(properties: Array<[string, string]>, text: string): void {
+  const { comments, key } = splitLeadingCommentsFromKey(text)
+  if (isIdentifierName(key))
+    properties.push([comments ? `${comments}\n  ${key}` : key, key])
+  else if (key.startsWith('...') && key.length > 3)
+    properties.push(['...', key.slice(3).trim()])
 }
 
 /**
