@@ -274,3 +274,29 @@ export const value: number = 1
     expect(output).not.toContain('internal')
   })
 })
+
+/**
+ * A default value holding `*\/` closed the generated JSDoc early:
+ *
+ *   export const entry = ['src/**\/*.ts']
+ *
+ * emitted `/** @defaultValue `['src/**\/*.ts']` *\/`, which ends at the `**\/`
+ * and leaves `*.ts']` ... as code, so the whole `.d.ts` failed to parse. Globs
+ * like this are the usual defaults in config files; knip's plugins hit it in
+ * 52 files.
+ */
+describe('`*/` inside a generated @defaultValue', () => {
+  it.each([
+    ['const array', 'export const entry = [\'src/**/*.ts\']\nexport const after = 1\n', '`[\'src/**\\/*.ts\']`'],
+    ['let string', 'export let close = \'*/\'\nexport const after = 1\n', '@defaultValue \'*\\/\''],
+    ['property of a let object', 'export let config = { entry: \'**/*.ts\' }\nexport const after = 1\n', '/** @defaultValue \'**\\/*.ts\' */'],
+    ['merged into an existing JSDoc', '/** Entry globs */\nexport const entry = [\'**/*.ts\']\nexport const after = 1\n', '* @defaultValue `[\'**\\/*.ts\']`'],
+    ['generic annotation', 'export const paths: Record<string, string> = { glob: \'**/*.ts\' }\nexport const after = 1\n', '`{ glob: \'**\\/*.ts\' }`'],
+    ['multi-line default', 'export const config = {\n  entry: [\'src/index.ts\', \'src/cli.ts\', \'src/plugins/index.ts\'],\n  project: [\'src/**/*.ts\', \'scripts/**/*.ts\'],\n}\nexport const after = 1\n', ' *   project: [\'src/**\\/*.ts\', \'scripts/**\\/*.ts\']'],
+  ])('keeps the comment closed: %s', (_label, code, expected) => {
+    const output = processCode(code)
+    expectValidTypeScript(output)
+    expect(output).toContain(expected)
+    expect(output).toContain('export declare const after: 1;')
+  })
+})

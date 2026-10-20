@@ -21,6 +21,15 @@ function withoutComments(type: string): string {
   return stripBlockComments(type).replace(/\n[ \t]*(?=\n)/g, '')
 }
 
+/**
+ * A default value as written into a JSDoc comment, with a backslash between
+ * `*` and `/` wherever they meet. Left as is, a glob such as `'src/**\/*.ts'`
+ * ends the comment early and the rest of the line becomes code.
+ */
+export function escapeCommentEnd(text: string): string {
+  return text.includes('*/') ? text.replace(/\*\//g, '*\\/') : text
+}
+
 /** Strip block/JSDoc comments from a property key to keep @defaultValue clean */
 function stripBlockComments(s: string): string {
   // Fast path: no `/*` present — return trimmed input directly (zero scan).
@@ -1295,7 +1304,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
 
     if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-      propTypes.push(`${commentPrefix}/** @defaultValue ${rawVal} */\n  ${emitKey}: ${valueType}`)
+      propTypes.push(`${commentPrefix}/** @defaultValue ${escapeCommentEnd(rawVal)} */\n  ${emitKey}: ${valueType}`)
     }
     else {
       propTypes.push(`${commentPrefix}${emitKey}: ${valueType}`)
