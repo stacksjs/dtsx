@@ -117,3 +117,71 @@ export function go(): void {}
     expect(processCode(code)).toContain(expected)
   })
 })
+
+/**
+ * A trailing line comment hid the newline that ends the statement, in every read
+ * loop above:
+ *
+ *   export const SLASH_RE = /\//g // %2F
+ *   export const PLUS_RE = /\+/g // %2B
+ *
+ * Skipping the comment also stepped over its newline, so the ASI checks never ran
+ * there and the next line was read into the initializer: `SLASH_RE` came out
+ * `unknown` and `PLUS_RE` was missing. After a type annotation or a type alias
+ * the next statement leaked into the `.d.ts` instead.
+ *
+ * Surfaced from vue-router, whose `encoding.ts` exports the two constants above.
+ */
+describe('a line comment before the newline', () => {
+  it.each([
+    ['initializer', 'export const a = 1 // note\nexport const z = 3\n', 'const a: 1;'],
+    ['initializer with CRLF', 'export const a = 1 // note\r\nexport const z = 3\r\n', 'const a: 1;'],
+    ['local declaration next', 'export const a = 1 // note\nconst z = 3\nexport { z }\n', 'const a: 1;'],
+    ['type annotation', 'export let a: number // note\nexport const z = 3\n', 'let a: number;'],
+    ['type alias', 'export type A = string // note\nexport const z = 3\n', 'type A = string;'],
+    ['type ending in void', 'export type F = () => void // note\nexport const z = 3\n', 'type F = () => void;'],
+    ['namespace initializer', 'export namespace N {\n  export const a = 1 // note\n  export const z = 3\n}\n', 'const a: 1;'],
+    ['namespace annotation', 'export namespace N {\n  export let a: number // note\n  export const z = 3\n}\n', 'let a: number;'],
+    ['namespace type alias', 'export namespace N {\n  export type A = string // note\n  export const z = 3\n}\n', 'type A = string'],
+    ['default export', 'const a = 1\nexport default a // note\nexport const z = 3\n', 'export default a;'],
+  ])('ends the statement: %s', (_label, code, expected) => {
+    const dts = processCode(code)
+    expect(dts).toContain(expected)
+    expect(dts).not.toContain('note')
+    expect(dts).toMatch(/const z: 3;/)
+  })
+
+  it('ends an initializer at the end of the file', () => {
+    expect(processCode('export const a = \'x\' // note')).toContain('const a: \'x\';')
+  })
+
+  // The comment ends a statement only before a declaration, `}` or the end of
+  // the file. A statement that continues on the next line reads on, as before.
+  it.each([
+    ['operator before the comment', 'export let a: string | // note\n  number\nexport const z = 3\n', /let a: string \|[^;]*number;/],
+    ['comment lines inside a type', 'export type A<T> = T extends string\n  ? // note\n    // more\n    number\n  : boolean\n', /\? \/\/ note[^;]*: boolean/],
+    ['return type', 'export function f(): string | // note\n  number { return 1 }\n', /f\(\): string \|[^;]*number;/],
+    ['class member type', 'export class C {\n  a: string | // note\n    number\n}\n', /a: string \|[^;]*number;/],
+    ['keyword before the comment', 'export type A = typeof // note\n  import(\'./dep\')\nexport const z = 3\n', /typeof[^;]*import\('\.\/dep'\);/],
+    ['call on the next line', 'export const a = (() => 1) // note\n  () as number\nexport const z = 3\n', /const a: number;/],
+    ['void in a value', 'export const a = void // note\n  function f() {} as undefined\nexport const z = 3\n', /const a: undefined;/],
+    ['decorator before the comment', 'export const a = @dec() // note\n  class {} as { new(): object }\nexport const z = 3\n', /const a: \{ new\(\): object \};/],
+    ['as const across the comment', 'export const a = { x: 1 } as // note\n  const satisfies { x: number }\nexport const z = 3\n', /const a: \{ x: number \};/],
+    ['as const with the operator far along the line', `export const a = { x: 1 } as // note\n  const${' '.repeat(200)}satisfies { x: number }\nexport const z = 3\n`, /const a: \{ x: number \};/],
+    ['property named like a keyword', 'declare const api: { export(): number }\nexport const a = api. // note\n  // more\n  export() as number\nexport const z = 3\n', /const a: number;/],
+    ['variable named like a keyword', 'const namespace = \'app\'\nexport const a = false ? \'\' : // note\n  namespace as string\nexport const z = 3\n', /const a: string;/],
+  ])('keeps a statement that continues: %s', (_label, code, expected) => {
+    expect(processCode(code)).toMatch(expected)
+  })
+
+  // `//` inside a literal is not a comment.
+  it.each([
+    ['regex', 'export const a = /[//]/g as RegExp\na.test(\'/\') as boolean\n', 'const a: RegExp;'],
+    ['template', 'export type A = `Use:\n// example`\nconsole.log(\'loaded\')\nexport const z = 3\n', 'const z: 3;'],
+  ])('is not fooled by // in a %s', (_label, code, expected) => {
+    const dts = processCode(code)
+    expect(dts).toContain(expected)
+    expect(dts).not.toContain('console.log')
+    expect(dts).not.toContain('a.test')
+  })
+})

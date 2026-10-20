@@ -37,6 +37,16 @@ const CH_AT = 64
 const CH_DOLLAR = 36
 const CH_UNDERSCORE = 95
 
+// A declaration keyword and the name it declares, in the shape only a
+// declaration has, on one line. See `startsDeclaration`. A name is never an
+// operator word (`as // note` then `const satisfies T` continues), and a
+// keyword never runs on into an escape (`export\u0056alue` is an identifier).
+const DECL_NAME = String.raw`(?!(?:as|satisfies|in|of|instanceof|extends|is|keyof|typeof)(?![\p{L}\p{N}_$\\]))[\p{L}_$][\p{L}\p{N}_$]*`
+const DECL_END = String.raw`(?![\p{L}\p{N}_$\\])`
+const DECLARATION_START_RE = new RegExp(String.raw`^(?:(?:export|enum|var)${DECL_END}|import[ \t]+[\p{L}_$*{'"]|(?:const|let)[ \t]+${DECL_NAME}${DECL_END}|declare[ \t]+(?:const|let|var|function|class|enum|type|interface|namespace|module|global|abstract|async)${DECL_END}|abstract[ \t]+class${DECL_END}|interface[ \t]+${DECL_NAME}[ \t]*(?:[{<]|extends${DECL_END})|(?:namespace|module)[ \t]+${DECL_NAME}(?:\.${DECL_NAME})*[ \t]*\{|module[ \t]+['"]|type[ \t]+${DECL_NAME}[ \t]*=)`, 'u')
+// A line break other than LF or CRLF. See `hasOtherLineBreak`.
+const OTHER_LINE_BREAK_RE = /\r(?!\n)|[\u2028\u2029]/
+
 function isWhitespace(ch: number): boolean {
   return ch === CH_SPACE || ch === CH_TAB || ch === CH_LF || ch === CH_CR
 }
@@ -128,6 +138,14 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const nonExportedTypes = new Map<string, Declaration>()
   const funcBodyIndices = new Set<number>()
   let pos = 0
+  // The last line comment `skipNonCode` stepped over: its `//` and the newline
+  // that ends it. See `codeEndBefore`.
+  let skippedCommentStart = -1
+  let skippedCommentEnd = -1
+  // Where the run of comments it belongs to starts, with only whitespace
+  // between them, and where the last comment skipped ended. See `noteComment`.
+  let commentRunStart = -1
+  let lastCommentEnd = -1
 
   // Skip BOM (byte order mark)
   if (pos < len && source.charCodeAt(pos) === 0xFEFF)
@@ -340,15 +358,23 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     if (ch === CH_SLASH && pos + 1 < len) {
       const next = source.charCodeAt(pos + 1)
       if (next === CH_SLASH) {
-        // Line comment — use native indexOf for speed
+        // Line comment – stop AT its newline, not past it. That newline can end
+        // the statement the comment trails, and the ASI checks only run on a
+        // newline: stepping over it read `export const a = 1 // note` on into
+        // the next line, which dropped that declaration and typed `a` unknown.
         const nl = source.indexOf('\n', pos + 2)
-        pos = nl === -1 ? len : nl + 1
+        const end = nl === -1 ? len : nl
+        noteComment(end)
+        skippedCommentStart = pos
+        pos = skippedCommentEnd = end
         return true
       }
       if (next === CH_STAR) {
-        // Block comment — use native indexOf for speed
-        const end = source.indexOf('*/', pos + 2)
-        pos = end === -1 ? len : end + 2
+        // Block comment – use native indexOf for speed
+        const close = source.indexOf('*/', pos + 2)
+        const end = close === -1 ? len : close + 2
+        noteComment(end)
+        pos = end
         return true
       }
       // Check for regex literal: / not followed by / or *, preceded by non-expression char
@@ -407,6 +433,47 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       return p
     }
+  }
+
+  /**
+   * Whether the source from the last skipped `//` up to `end` holds a lone CR,
+   * U+2028 or U+2029. Comments are read to the next LF, so code after such a
+   * break passes for comment text; that newline is then left as it was.
+   */
+  function hasOtherLineBreak(end: number): boolean {
+    return OTHER_LINE_BREAK_RE.test(source.slice(skippedCommentStart, end))
+  }
+
+  /** Record a comment from `pos` to `end`, extending the run before it if only whitespace separates them. */
+  function noteComment(end: number): void {
+    let gap = lastCommentEnd
+    while (gap >= 0 && gap < pos && /\s/.test(source[gap])) gap++
+    if (gap !== pos)
+      commentRunStart = pos
+    lastCommentEnd = end
+  }
+
+  /**
+   * `end`, moved back to the start of a line comment that runs up to it, so a
+   * trailing `// note` stays out of the code read before it.
+   */
+  function codeEndBefore(end: number): number {
+    // `end + 1` takes the LF in, so a CRLF's CR is not read as a lone one.
+    return end === skippedCommentEnd && !hasOtherLineBreak(end + 1) ? skippedCommentStart : end
+  }
+
+  /**
+   * Whether a declaration starts at `pos`, the line after a skipped comment:
+   * its keyword followed by the name it declares, which no expression or type
+   * runs on into, unless the comment follows a `.` (`api. // note` then
+   * `export()`). `function` and `class` are left out: either can be an operand
+   * (`void // note` then `function f() {}`, a decorated class expression).
+   */
+  function startsDeclaration(): boolean {
+    let before = commentRunStart - 1
+    while (before >= 0 && /\s/.test(source[before])) before--
+    const lineEnd = source.indexOf('\n', pos)
+    return source.charCodeAt(before) !== CH_DOT && DECLARATION_START_RE.test(source.slice(pos, lineEnd === -1 ? len : lineEnd))
   }
 
   /** Index of the `//` that comments out `upTo` on this line, or -1. */
@@ -574,7 +641,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
       break
     }
-    const result = pos >= len || isTopLevelKeyword() || source.charCodeAt(pos) === CH_RBRACE
+    let result = pos >= len || isTopLevelKeyword() || source.charCodeAt(pos) === CH_RBRACE
+    // The newline of a trailing `// note` used to be stepped over, so none of
+    // the ASI rules was written for it. It ends the statement only here, before
+    // a `}`, the end of the file or a declaration; the other checks read on
+    // past it, as they did.
+    if (result && saved === skippedCommentEnd)
+      result = !hasOtherLineBreak(pos) && (pos >= len || source.charCodeAt(pos) === CH_RBRACE || startsDeclaration())
     pos = saved
     return result
   }
@@ -648,6 +721,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const ch = source.charCodeAt(pos)
     if (ch !== CH_LF && ch !== CH_CR)
       return false
+    if (pos === skippedCommentEnd)
+      return false // see checkASITopLevel
     if (endsMidExpression(pos))
       return false
     const saved = pos
@@ -702,6 +777,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const ch = source.charCodeAt(pos)
     if (ch !== CH_LF && ch !== CH_CR)
       return false
+    if (pos === skippedCommentEnd)
+      return false // see checkASITopLevel
     if (endsMidExpression(pos))
       return false
     const saved = pos
@@ -741,6 +818,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const ch = source.charCodeAt(pos)
     if (ch !== CH_LF && ch !== CH_CR)
       return false
+    if (pos === skippedCommentEnd)
+      return false // see checkASITopLevel
     const saved = pos
     pos++
     if (ch === CH_CR && pos < len && source.charCodeAt(pos) === CH_LF)
@@ -2289,7 +2368,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             break
           pos++
         }
-        typeAnnotation = sliceTrimmed(typeStart, pos)
+        typeAnnotation = sliceTrimmed(typeStart, codeEndBefore(pos))
       }
 
       // Initializer
@@ -2364,7 +2443,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
           break
         }
-        initializerText = sliceTrimmed(initStart, pos)
+        initializerText = sliceTrimmed(initStart, codeEndBefore(pos))
         if (initializerText.endsWith(' as const') || initializerText === 'const') {
           isAsConst = true
           if (!typeAnnotation) {
@@ -2546,7 +2625,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         break
       pos++
     }
-    const typeBody = sliceTrimmed(typeStart, pos)
+    const typeBody = sliceTrimmed(typeStart, codeEndBefore(pos))
     if (pos < len && source.charCodeAt(pos) === CH_SEMI)
       pos++
 
@@ -3321,7 +3400,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
               break
             pos++
           }
-          vtype = sliceTrimmed(ts, pos)
+          vtype = sliceTrimmed(ts, codeEndBefore(pos))
         }
 
         let initText = ''
@@ -3346,7 +3425,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
               break
             pos++
           }
-          initText = sliceTrimmed(is2, pos)
+          initText = sliceTrimmed(is2, codeEndBefore(pos))
         }
         if (pos < len && source.charCodeAt(pos) === CH_SEMI)
           pos++
@@ -3431,7 +3510,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
               break
             pos++
           }
-          const typeBody = sliceTrimmed(ts, pos)
+          const typeBody = sliceTrimmed(ts, codeEndBefore(pos))
           if (pos < len && source.charCodeAt(pos) === CH_SEMI)
             pos++
           lines.push(`${indent}${prefix}type ${tname}${generics} = ${typeBody}`)
@@ -3606,7 +3685,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   /** Convert a default-export expression into an ambient binding plus export. */
   function extractDefaultExpression(stmtStart: number, expressionStart: number): void {
     skipToStatementEnd()
-    let expression = sliceTrimmed(expressionStart, pos)
+    let expression = sliceTrimmed(expressionStart, codeEndBefore(pos))
     if (expression.charCodeAt(expression.length - 1) === CH_SEMI) expression = expression.slice(0, -1).trimEnd()
     if (!expression) return
 
