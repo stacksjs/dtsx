@@ -2723,12 +2723,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       let isOverride = false
       let isAccessor = false
       let isAsync = false
+      let protectedEnd = -1
 
       const modLoop = true
       while (modLoop) {
         skipWhitespaceAndComments()
         if (matchWord('private')) { isPrivate = true; pos += 7; continue }
-        if (matchWord('protected')) { isProtected = true; pos += 9; continue }
+        if (matchWord('protected')) { isProtected = true; pos += 9; protectedEnd = pos; continue }
         if (matchWord('public')) { pos += 6; continue }
         if (matchWord('static')) { isStatic = true; pos += 6; continue }
         if (matchWord('abstract')) { isAbstract = true; pos += 8; continue }
@@ -2769,6 +2770,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       // Detect member type
       if (matchWord('constructor')) {
+        // A `protected` with a line break after it is a field of that name
+        // (TypeScript reads a modifier only on the same line as what it modifies).
+        const isProtectedConstructor = isProtected && !/[\n\r\u2028\u2029]/.test(source.slice(protectedEnd, pos))
         pos += 11
         skipWhitespaceAndComments()
         const rawParams = extractParamList()
@@ -2785,8 +2789,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           pos++
         }
 
+        // A protected constructor stays protected: public, it would let any
+        // caller construct a class only its subclasses may.
         const dtsParams = buildDtsParams(rawParams)
-        members.push(`  constructor${dtsParams};`)
+        members.push(`  ${isProtectedConstructor ? 'protected ' : ''}constructor${dtsParams};`)
       }
       else if (matchWord('get')) {
         pos += 3
