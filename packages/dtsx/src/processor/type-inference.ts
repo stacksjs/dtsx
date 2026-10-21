@@ -2742,6 +2742,48 @@ export function extractSatisfiesType(value: string): string | null {
 }
 
 /**
+ * Whether `type` closes every bracket, string, template literal and comment it
+ * opens, in order, and opens every bracket it closes.
+ */
+export function isBalancedType(type: string): boolean {
+  // The closing character each open bracket expects; -1 for template literal text.
+  const open: number[] = []
+  let i = 0
+  while (i < type.length) {
+    const c = type.charCodeAt(i)
+    if (open[open.length - 1] === -1) {
+      if (c === 92) i += 2 // backslash
+      else if (c === 96) { open.pop(); i++ }
+      else if (c === 36 && type.charCodeAt(i + 1) === 123) { open.push(125); i += 2 } // ${
+      else i++
+    }
+    else if (c === 34 || c === 39) { // " '
+      i++
+      while (i < type.length && type.charCodeAt(i) !== c) i += type.charCodeAt(i) === 92 ? 2 : 1
+      if (i >= type.length) return false
+      i++
+    }
+    else if (c === 47 && type.charCodeAt(i + 1) === 47) { // //
+      while (i < type.length && type.charCodeAt(i) !== 10 && type.charCodeAt(i) !== 13 && type.charCodeAt(i) !== 0x2028 && type.charCodeAt(i) !== 0x2029) i++
+    }
+    else if (c === 47 && type.charCodeAt(i + 1) === 42) { // /*
+      const close = type.indexOf('*/', i + 2)
+      if (close === -1) return false
+      i = close + 2
+    }
+    else {
+      if (c === 96) open.push(-1)
+      else if (c === 40) open.push(41) // ( )
+      else if (c === 91) open.push(93) // [ ]
+      else if (c === 123) open.push(125) // { }
+      else if ((c === 41 || c === 93 || c === 125) && open.pop() !== c) return false
+      i++
+    }
+  }
+  return open.length === 0
+}
+
+/**
  * Infer mapped type from type expression
  * Handles patterns like { [K in keyof T]: V }
  */
