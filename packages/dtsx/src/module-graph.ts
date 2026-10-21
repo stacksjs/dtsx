@@ -13,7 +13,7 @@
  */
 
 import { existsSync, statSync } from 'node:fs'
-import { dirname, extname, isAbsolute, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { readTextFile } from './compat'
 
 /**
@@ -63,7 +63,7 @@ function isFile(path: string): boolean {
 /**
  * Resolve a relative re-export specifier to an absolute path on disk.
  *
- * Mirrors TypeScript's classic resolver for relative paths only — bare
+ * Resolves local specifiers to normalized absolute native paths. Bare
  * specifiers (e.g. `react`, `@scope/foo`) return `{ resolved: null }`.
  */
 export function resolveRelativeSpecifier(specifier: string, fromFile: string): ResolveResult {
@@ -74,7 +74,7 @@ export function resolveRelativeSpecifier(specifier: string, fromFile: string): R
   }
 
   const baseDir = dirname(fromFile)
-  const candidate = isAbsolute(pathSpecifier) ? pathSpecifier : resolve(baseDir, pathSpecifier)
+  const candidate = resolve(baseDir, pathSpecifier)
 
   // 1. Specifier already includes its extension
   if (isFile(candidate)) {
@@ -105,7 +105,7 @@ export function resolveRelativeSpecifier(specifier: string, fromFile: string): R
   // 3. Try as a directory with an index file
   if (existsSync(candidate)) {
     for (const ext of TS_EXTENSIONS) {
-      const indexPath = `${candidate}/index${ext}`
+      const indexPath = join(candidate, `index${ext}`)
       if (isFile(indexPath)) {
         return { resolved: indexPath, isRelative: true }
       }
@@ -250,7 +250,7 @@ export interface ReachabilityResult {
  * BFS the re-export graph starting from `entrypoints`.
  *
  * Each entrypoint and every file reached via `export … from './x'`
- * (recursively, with cycle protection) ends up in `reachable`. Files
+ * (recursively, with normalized path identities and cycle protection) ends up in `reachable`. Files
  * whose source can't be read are skipped silently — the caller is the
  * one with the right context to decide whether that's an error.
  */
@@ -263,7 +263,8 @@ export async function collectReachableViaReExports(
   const unresolved: UnresolvedReExport[] = []
 
   const queue: string[] = []
-  for (const ep of entrypoints) {
+  for (const entrypoint of entrypoints) {
+    const ep = resolve(entrypoint)
     if (!reachable.has(ep)) {
       reachable.add(ep)
       queue.push(ep)

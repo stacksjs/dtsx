@@ -46,7 +46,7 @@ jobs:
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Verify source identity and output collision safety
-        run: bun test packages/dtsx/test/source-path-identity.test.ts
+        run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts
 
   lint:
     runs-on: ubuntu-latest

@@ -85,6 +85,8 @@ source paths. Overlapping matches generate each source once, including on
 Windows. With `outputStructure: 'flat'`, nested sources emit directly into
 `outdir`; distinct sources with the same declaration filename fail before
 cleaning the previous declarations.
+Directory barrels and graph entrypoints use the same native path identity as
+discovered files, including absolute aliases containing `..` segments.
 
 ### STX Components
 

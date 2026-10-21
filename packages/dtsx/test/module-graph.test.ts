@@ -142,6 +142,21 @@ describe('resolveRelativeSpecifier', () => {
 })
 
 describe('collectReachableViaReExports', () => {
+  it('normalizes entrypoint identities before traversing the graph', async () => {
+    await writeFiles(TMP, {
+      'src/index.ts': `export * from './a';`,
+      'src/a.ts': 'export const value: number = 3;',
+    })
+    const result = await collectReachableViaReExports([
+      join(TMP, 'src', 'index.ts'),
+      `${TMP}/src/../src/index.ts`,
+    ])
+    expect([...result.reachable].sort()).toEqual([
+      join(TMP, 'src', 'index.ts'),
+      join(TMP, 'src', 'a.ts'),
+    ].sort())
+  })
+
   it('walks transitive re-exports', async () => {
     await writeFiles(TMP, {
       'src/index.ts': `export * from './a';`,
