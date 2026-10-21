@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.19...v0.11.20)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: normalize source paths before output collision checks ([8015ac1](https://github.com/stacksjs/dtsx/commit/8015ac1)) _(by Chris <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.20 ([f419e23](https://github.com/stacksjs/dtsx/commit/f419e23)) _(by Chris <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.18...v0.11.19)
 
 ### 🐛 Bug Fixes
