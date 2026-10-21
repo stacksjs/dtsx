@@ -4,7 +4,7 @@
 
 import type { Declaration } from '../types'
 import { formatComments } from './comments'
-import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isBalancedType, isGenericType } from './type-inference'
 
 /**
  * Format a @defaultValue tag as a standalone JSDoc block
@@ -109,10 +109,13 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   let typeAnnotation = decl.typeAnnotation
   const value = decl.value as string | undefined
 
-  // Check for 'satisfies' operator - extract the type from the satisfies clause
+  // Check for 'satisfies' operator - extract the type from the satisfies clause.
+  // The last ` satisfies ` can sit in a comment, a string or a nested element
+  // (`[{ id: 1 } satisfies Item, y]`); the text after it then closes a bracket
+  // or leaves a string open, and is not a type to declare.
   if (value && value.includes(' satisfies ')) {
     const satisfiesType = extractSatisfiesType(value)
-    if (satisfiesType) {
+    if (satisfiesType && isBalancedType(satisfiesType)) {
       typeAnnotation = satisfiesType
     }
   }
