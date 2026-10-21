@@ -801,9 +801,15 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
         absolute: true,
         onlyFiles: true,
       })) {
-        // Skip .d.ts files, node_modules, and excluded patterns
+        // Skip .d.ts files, node_modules, and excluded patterns. A pattern
+        // reaching above the root (`../*.ts`, `../index.ts`) matches files
+        // whose declarations would be written outside outdir; they are
+        // skipped as an absolute path outside the root is.
         if (isProcessableSourceFile(file) && !file.includes('node_modules')) {
-          if (!isExcluded(file, excludePatterns, rootPath)) {
+          if (!isWithinRoot(file, rootPath) && config.outputStructure !== 'flat') {
+            logger.warn(`Skipping entrypoint outside root: ${relative(config.cwd, file)}`)
+          }
+          else if (!isExcluded(file, excludePatterns, rootPath)) {
             files.push(file)
           }
         }
