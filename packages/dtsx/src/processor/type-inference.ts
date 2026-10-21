@@ -774,6 +774,57 @@ function skipQuotedValue(value: string, start: number, quote: number): number {
 }
 
 /**
+ * Index just past the string, template literal type or comment that starts at
+ * `start` in a type, or `start` when none does. A template literal's `${...}`
+ * holds a type and is passed over the same way, nested template literals too.
+ */
+function skipTypeLiteralOrComment(type: string, start: number): number {
+  const char = type.charCodeAt(start)
+  if (char === 34 || char === 39)
+    return skipQuotedValue(type, start, char)
+  if (char === 47 && type.charCodeAt(start + 1) === 47) {
+    let i = start + 2
+    while (i < type.length) {
+      const c = type.charCodeAt(i)
+      if (c === 10 || c === 13 || c === 0x2028 || c === 0x2029) break // line terminators
+      i++
+    }
+    return i
+  }
+  if (char === 47 && type.charCodeAt(start + 1) === 42) {
+    const close = type.indexOf('*/', start + 2)
+    return close === -1 ? type.length : close + 2
+  }
+  if (char !== 96)
+    return start
+  // One entry per template literal (-1) or `${` (its open braces) still open.
+  const open = [-1]
+  let i = start + 1
+  while (i < type.length && open.length > 0) {
+    const c = type.charCodeAt(i)
+    const top = open.length - 1
+    if (open[top] === -1) {
+      if (c === 92) { i += 2 } // backslash
+      else if (c === 96) { open.pop(); i++ }
+      else if (c === 36 && type.charCodeAt(i + 1) === 123) { open.push(1); i += 2 } // ${
+      else { i++ }
+    }
+    else if (c === 96) {
+      open.push(-1)
+      i++
+    }
+    else {
+      const next = skipTypeLiteralOrComment(type, i)
+      if (next !== i) { i = next; continue }
+      if (c === 123) open[top]++
+      else if (c === 125 && --open[top] === 0) open.pop()
+      i++
+    }
+  }
+  return i
+}
+
+/**
  * Infer type from template literal
  */
 function inferTemplateLiteralType(value: string, isConst: boolean): string {
@@ -809,12 +860,20 @@ function inferNewExpressionType(value: string): string {
     // Check for generic type parameters
     let afterGenerics = afterClass
     if (afterClass.startsWith('<')) {
-      // Extract the generic params by finding the matching '>'
+      // Extract the generic params by finding the matching '>'. The `>` of an
+      // arrow type does not close them (`new Map<string, () => void>()`), and
+      // strings, template literal types and comments are passed over, so a `<`
+      // or `>` in one (`new Set<(op: '<') => boolean>()`) is not counted either.
       let depth = 0
       let end = -1
-      for (let j = 0; j < afterClass.length; j++) {
+      for (let j = 0; j < afterClass.length && end === -1; j++) {
+        const next = skipTypeLiteralOrComment(afterClass, j)
+        if (next !== j) { j = next - 1; continue }
         if (afterClass[j] === '<') depth++
-        else if (afterClass[j] === '>') { depth--; if (depth === 0) { end = j; break } }
+        else if (afterClass[j] === '>' && afterClass[j - 1] !== '=') {
+          depth--
+          if (depth === 0) end = j
+        }
       }
       if (end !== -1) {
         const generics = afterClass.slice(0, end + 1)
