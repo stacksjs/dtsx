@@ -1580,7 +1580,12 @@ export function cleanParameterDefaults(params: string): string {
       }
     }
   }
-  if (!hasRealEqual) return stripped
+  if (!hasRealEqual) {
+    // No parameter has a default of its own, but a destructuring pattern may
+    // hold some; those are taken out in place.
+    const cleanedInner = stripPatternDefaultsInList(inner)
+    return cleanedInner === inner ? stripped : (hadParens ? `(${cleanedInner})` : cleanedInner)
+  }
 
   // Split parameters by comma at depth 0, preserving whitespace around commas
   const paramParts: string[] = []
@@ -1728,7 +1733,7 @@ function cleanSingleParam(param: string): string {
 
   if (colonIdx !== -1 && (equalIdx === -1 || colonIdx < equalIdx)) {
     // Has type annotation: name[?]: type [= default]
-    const name = param.slice(0, colonIdx).trim()
+    const name = stripPatternDefaults(param.slice(0, colonIdx).trim())
     const type = equalIdx !== -1
       ? param.slice(colonIdx + 1, equalIdx).trim()
       : param.slice(colonIdx + 1).trim()
@@ -1754,6 +1759,149 @@ function cleanSingleParam(param: string): string {
 
   // No default, return as-is
   return param
+}
+
+/**
+ * `params` with the defaults taken out of each annotated destructuring pattern
+ * (`{ a = 1 }: T, b: U` is `{ a }: T, b: U`) and every other character as
+ * written. A list holding a `/` (a comment or a regex, whose text could pass
+ * for parameters) or a template literal is returned as it is.
+ */
+function stripPatternDefaultsInList(params: string): string {
+  if (params.includes('/') || params.includes('`'))
+    return params
+  let result = ''
+  let copied = 0
+  let depth = 0
+  let patternStart = -1
+  let atParamStart = true
+  for (let i = 0; i < params.length; i++) {
+    const ch = params.charCodeAt(i)
+    if (ch === 34 || ch === 39) {
+      i = skipQuotedValue(params, i, ch) - 1
+      atParamStart = false
+      continue
+    }
+    if (atParamStart && ch > 32) {
+      patternStart = depth === 0 && (ch === 91 || ch === 123) ? i : -1
+      atParamStart = false
+    }
+    if (ch === 40 || ch === 60 || ch === 91 || ch === 123) {
+      depth++
+    }
+    else if (ch === 41 || ch === 93 || ch === 125 || (ch === 62 && params.charCodeAt(i - 1) !== 61)) {
+      if (--depth === 0 && patternStart !== -1 && (ch === 93 || ch === 125)) {
+        const pattern = params.slice(patternStart, i + 1)
+        const cleaned = stripPatternDefaults(pattern)
+        if (cleaned !== pattern && params.slice(i + 1).trimStart().startsWith(':')) {
+          result += params.slice(copied, patternStart) + cleaned
+          copied = i + 1
+        }
+        patternStart = -1
+      }
+    }
+    else if (ch === 44 && depth === 0) {
+      atParamStart = true
+    }
+  }
+  return copied === 0 ? params : result + params.slice(copied)
+}
+
+/**
+ * A parameter's destructuring pattern without its default values, which a
+ * declaration may not have (TS2371): `{ a = 1, b: [c = 'x'] = [] }` is
+ * `{ a, b: [c] }`. Only a pattern of names, string and number keys, nested
+ * patterns and rest elements, whose defaults are each a name, a number, a
+ * string, `[]` or `{}`, is rewritten. Any other text is returned as it is.
+ */
+function stripPatternDefaults(name: string): string {
+  let i = 0
+  let out = ''
+  const space = (): string => {
+    const start = i
+    while (i < name.length && name.charCodeAt(i) <= 32) i++
+    return name.slice(start, i)
+  }
+  const word = (dots: boolean): string => {
+    const start = i
+    while (i < name.length && (isWordChar(name.charCodeAt(i)) || (dots && name[i] === '.'))) i++
+    return name.slice(start, i)
+  }
+  const quoted = (): string => {
+    const quote = name.charCodeAt(i)
+    const end = skipQuotedValue(name, i, quote)
+    if (end > name.length || end - 1 === i || name.charCodeAt(end - 1) !== quote) return ''
+    const text = name.slice(i, end)
+    i = end
+    return text
+  }
+  const literal = (): boolean => {
+    if (name[i] === '"' || name[i] === '\'') return quoted() !== ''
+    if (name.startsWith('[]', i) || name.startsWith('{}', i)) { i += 2; return true }
+    if (name[i] === '-') i++
+    return word(true) !== ''
+  }
+  const target = (): boolean => {
+    if (name[i] === '{' || name[i] === '[') return pattern()
+    const id = word(false)
+    out += id
+    return isIdentifierName(id)
+  }
+  const element = (inObject: boolean): boolean => {
+    if (name.startsWith('...', i)) {
+      out += '...'
+      i += 3
+      out += space()
+      return target()
+    }
+    if (inObject) {
+      const key = name[i] === '"' || name[i] === '\'' ? quoted() : word(false)
+      if (!key) return false
+      out += key
+      const afterKey = i
+      const gap = space()
+      if (name[i] === ':') {
+        out += `${gap}:`
+        i++
+        out += space()
+        if (!target()) return false
+      }
+      else {
+        i = afterKey
+        if (!isIdentifierName(key)) return false
+      }
+    }
+    else if (!target()) {
+      return false
+    }
+    const afterTarget = i
+    space()
+    if (name[i] === '=' && name[i + 1] !== '=' && name[i + 1] !== '>') {
+      i++
+      space()
+      return literal()
+    }
+    i = afterTarget
+    return true
+  }
+  const pattern = (): boolean => {
+    const open = name[i]
+    const close = open === '{' ? '}' : ']'
+    out += open
+    i++
+    for (;;) {
+      out += space()
+      if (name[i] === close) { out += close; i++; return true }
+      if (open === '[' && name[i] === ',') { out += ','; i++; continue } // a hole
+      if (!element(open === '{')) return false
+      out += space()
+      if (name[i] === ',') { out += ','; i++; continue }
+      if (name[i] === close) { out += close; i++; return true }
+      return false
+    }
+  }
+  if (name[0] !== '{' && name[0] !== '[') return name
+  return pattern() && i === name.length ? out : name
 }
 
 /**
