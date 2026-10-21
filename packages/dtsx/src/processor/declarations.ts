@@ -4,7 +4,7 @@
 
 import type { Declaration } from '../types'
 import { formatComments } from './comments'
-import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
+import { consumeCleanDefault, enableCleanDefaultCollection, escapeCommentEnd, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
 
 /**
  * Format a @defaultValue tag as a standalone JSDoc block
@@ -183,6 +183,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   }
 
   result += `: ${typeAnnotation};`
+  defaultTag = escapeCommentEnd(defaultTag)
 
   // Skip generated @defaultValue if user already has one
   if (defaultTag && comments && comments.includes('@defaultValue')) {
