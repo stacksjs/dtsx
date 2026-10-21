@@ -312,7 +312,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   // Function expressions. Check these after `as const` so an asserted
   // object or array containing arrow-function properties is inferred as a
   // container instead of treating the complete initializer as one function.
-  if (findMainArrowIndex(trimmed) !== -1 || trimmed.startsWith('function') || trimmed.startsWith('async')) {
+  if (isArrowFunction(trimmed) || trimmed.startsWith('function') || trimmed.startsWith('async')) {
     return inferFunctionType(trimmed, inUnion, _depth, isConst)
   }
 
@@ -2401,6 +2401,28 @@ function findMainArrowIndex(str: string): number {
   }
 
   return -1
+}
+
+/**
+ * Whether the main arrow of `str` can be that of an arrow function, whose
+ * parameters come before it: a parenthesized list or one name. In
+ * `c ? (v: string) => v : …` or `{ f: () => 1 } as object` the text before the
+ * arrow is neither, and the arrow belongs to a nested function.
+ */
+function isArrowFunction(str: string): boolean {
+  const arrow = findMainArrowIndex(str)
+  if (arrow === -1) return false
+  let head = str.slice(0, arrow).trim()
+  if (head.length > 5 && head.startsWith('async') && !isWordChar(head.charCodeAt(5))) head = head.slice(5).trim()
+  if (head.startsWith('<')) {
+    const end = findMatchingBracket(head, 0, '<', '>')
+    if (end === -1) return true
+    head = head.slice(end + 1).trim()
+  }
+  // A parameter list, or a comment before one.
+  if (head.startsWith('(') || head.startsWith('/')) return true
+  // One parameter name, possibly followed by a comment.
+  return /^(?:[\w$\u0080-\uFFFF]|\\u[\da-f]{4}|\\u\{[\da-f]+\})+$/i.test(head.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n\r]*/g, '').trim())
 }
 
 /**
