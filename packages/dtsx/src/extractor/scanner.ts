@@ -2607,7 +2607,16 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     pos += 5 // skip 'class'
     skipWhitespaceAndComments()
 
-    const name = readIdent() || 'AnonymousClass'
+    // `export default class extends Base {}` has no name: `extends`, or
+    // `implements` before a type, begins its heritage clause, as TypeScript
+    // reads it. Such a class gets a helper name the file does not use, as a
+    // default-exported expression does.
+    const isAnonymous = isDefault && (matchWord('extends') || (matchWord('implements') && isIdentStart(peekAfterWord('implements'))))
+    let name = isAnonymous ? '' : (readIdent() || 'AnonymousClass')
+    if (!name) {
+      name = '__dtsx_default_class__'
+      for (let suffix = 1; source.includes(name); suffix++) name = `__dtsx_default_class_${suffix}__`
+    }
     skipWhitespaceAndComments()
 
     const generics = extractGenerics()
