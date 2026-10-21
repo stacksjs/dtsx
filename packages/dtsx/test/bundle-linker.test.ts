@@ -31,4 +31,18 @@ describe('renameIdentifiers', () => {
       'declare function f(options: Options_1, o: { Options: string, x?: Options_1 }): Ns.Options | \'Options\';',
     )
   })
+
+  it('leaves template literal text alone and renames inside its placeholders', () => {
+    const renames = new Map([['Options', 'Options_1']])
+    const text = [
+      'type A = `Options` | `// Options` | `\\`Options` | `\\${Options}` | Options;',
+      'type B = `${Options}-Options` | `a${`Options-${Options}`}b` | `${{ Options: 1 } extends Options ? \'x\' : \'y\'}`;',
+      'type C = Options;',
+    ].join('\n')
+    expect(renameIdentifiers(text, renames)).toBe([
+      'type A = `Options` | `// Options` | `\\`Options` | `\\${Options}` | Options_1;',
+      'type B = `${Options_1}-Options` | `a${`Options-${Options_1}`}b` | `${{ Options: 1 } extends Options_1 ? \'x\' : \'y\'}`;',
+      'type C = Options_1;',
+    ].join('\n'))
+  })
 })

@@ -332,9 +332,9 @@ function parseModule(file: string, dts: string): ModuleInfo {
 }
 
 /**
- * Rename identifier references in declaration text. Strings, comments,
- * qualified-name members (`a.b`) and property or parameter names (`{ b: T }`,
- * `(b: T)`) are left alone.
+ * Rename identifier references in declaration text. Strings, template literal
+ * text (not its `${}` placeholders), comments, qualified-name members (`a.b`)
+ * and property or parameter names (`{ b: T }`, `(b: T)`) are left alone.
  */
 export function renameIdentifiers(text: string, renames: Map<string, string>): string {
   if (renames.size === 0) return text
@@ -342,8 +342,47 @@ export function renameIdentifiers(text: string, renames: Map<string, string>): s
   let i = 0
   const n = text.length
   let lastSignificant = '\n'
+  // One entry per template literal or placeholder the scan is in: -1 for
+  // template text, otherwise the braces open inside that placeholder.
+  const templates: number[] = []
   while (i < n) {
     const c = text[i]
+    if (templates.length > 0 && templates[templates.length - 1] === -1) {
+      if (c === '\\') {
+        out += text.slice(i, i + 2)
+        i += 2
+      }
+      else if (c === '`') {
+        templates.pop()
+        out += c
+        lastSignificant = c
+        i++
+      }
+      else if (c === '$' && text[i + 1] === '{') {
+        templates.push(0)
+        out += '${'
+        lastSignificant = '{'
+        i += 2
+      }
+      else {
+        out += c
+        i++
+      }
+      continue
+    }
+    if (c === '`') {
+      templates.push(-1)
+      out += c
+      i++
+      continue
+    }
+    if (templates.length > 0 && c === '{') {
+      templates[templates.length - 1]++
+    }
+    else if (templates.length > 0 && c === '}') {
+      if (templates[templates.length - 1] === 0) templates.pop()
+      else templates[templates.length - 1]--
+    }
     if (c === '/' && text[i + 1] === '*') {
       const end = text.indexOf('*/', i + 2)
       const stop = end === -1 ? n : end + 2
