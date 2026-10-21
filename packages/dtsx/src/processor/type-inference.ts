@@ -638,13 +638,41 @@ function collectParameterTypes(parameters: string): Map<string, string> {
     if (colon !== -1) {
       const name = parameter.slice(0, colon).trim().replace(/^\.\.\./, '').replace(/\?$/, '')
       let type = parameter.slice(colon + 1).trim()
-      const defaultValue = type.indexOf('=')
+      const defaultValue = findTypeDefault(type)
       if (defaultValue !== -1) type = type.slice(0, defaultValue).trim()
       if (isIdentifierName(name) && type) types.set(name, type)
     }
     start = i + 1
   }
   return types
+}
+
+/**
+ * Index of the `=` that starts a parameter's default after its type, or -1.
+ * The `=` of an arrow in the type (`(x: number) => void = noop`) is not one.
+ * A type holding a comment or a template literal, or text that is not one
+ * type (a top-level `,`, an unopened bracket or an unclosed string, from a
+ * parameter list split elsewhere), is read as before, up to its first `=`.
+ */
+function findTypeDefault(type: string): number {
+  if (type.includes('/') || type.includes('`'))
+    return type.indexOf('=')
+  let depth = 0
+  for (let i = 0; i < type.length; i++) {
+    const char = type.charCodeAt(i)
+    if (char === 34 || char === 39) {
+      let close = i + 1
+      while (close < type.length && type.charCodeAt(close) !== char) close += type.charCodeAt(close) === 92 ? 2 : 1
+      if (close >= type.length) return type.indexOf('=')
+      i = close
+      continue
+    }
+    if (char === 40 || char === 60 || char === 91 || char === 123) depth++
+    else if (char === 41 || char === 93 || char === 125 || (char === 62 && type.charCodeAt(i - 1) !== 61)) depth--
+    else if (char === 61 && depth === 0 && type.charCodeAt(i + 1) !== 62) return i
+    if (depth < 0 || (char === 44 && depth === 0)) return type.indexOf('=')
+  }
+  return -1
 }
 
 function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>): string {
