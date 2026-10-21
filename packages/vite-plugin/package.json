@@ -26,29 +26,17 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/src/index.js"
-    },
-    "./*": {
-      "import": "./dist/*"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
-  "module": "./dist/src/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "dtsx": "./dist/bin/cli.js"
-  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "bun build.ts && bun run compile",
-    "compile": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --outfile bin/dtsx",
-    "compile:all": "bun run compile:linux-x64 && bun run compile:linux-arm64 && bun run compile:windows-x64 && bun run compile:darwin-x64 && bun run compile:darwin-arm64",
-    "compile:linux-x64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-linux-x64 --outfile bin/dtsx-linux-x64",
-    "compile:linux-arm64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-linux-arm64 --outfile bin/dtsx-linux-arm64",
-    "compile:windows-x64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-windows-x64 --outfile bin/dtsx-windows-x64.exe",
-    "compile:darwin-x64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-darwin-x64 --outfile bin/dtsx-darwin-x64",
-    "compile:darwin-arm64": "bun build ./bin/cli.ts --compile --minify --bytecode --format=esm --target=bun-darwin-arm64 --outfile bin/dtsx-darwin-arm64",
+    "build": "bun build.ts",
     "lint": "bunx --bun pickier run . --mode lint",
     "lint:fix": "bunx --bun pickier run . --mode lint --fix",
     "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
@@ -56,14 +44,7 @@
     "prepublishOnly": "bun --bun run build",
     "release": "bun run changelog && bunx bumpp package.json --all",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit",
-    "zip": "bun run zip:all",
-    "zip:all": "bun run zip:linux-x64 && bun run zip:linux-arm64 && bun run zip:windows-x64 && bun run zip:darwin-x64 && bun run zip:darwin-arm64",
-    "zip:linux-x64": "zip -j bin/dtsx-linux-x64.zip bin/dtsx-linux-x64",
-    "zip:linux-arm64": "zip -j bin/dtsx-linux-arm64.zip bin/dtsx-linux-arm64",
-    "zip:windows-x64": "zip -j bin/dtsx-windows-x64.zip bin/dtsx-windows-x64.exe",
-    "zip:darwin-x64": "zip -j bin/dtsx-darwin-x64.zip bin/dtsx-darwin-x64",
-    "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
+    "typecheck": "bunx tsc --noEmit"
   },
   "devDependencies": {
     "@stacksjs/dtsx": "workspace:*",
