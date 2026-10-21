@@ -1,4 +1,25 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.20...v0.11.21)
+
+### 🐛 Bug Fixes
+
+- **dtsx**: canonicalize directory re-export identities ([55cac45](https://github.com/stacksjs/dtsx/commit/55cac45)) _(by Chris <chris@stacksjs.com>)_
+- preserve exports after trailing comments ([5c6fc6d](https://github.com/stacksjs/dtsx/commit/5c6fc6d)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **build**: build private Vite integration as a library ([8b1d2f6](https://github.com/stacksjs/dtsx/commit/8b1d2f6)) _(by Chris <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.21 ([bce6630](https://github.com/stacksjs/dtsx/commit/bce6630)) _(by Chris <chris@stacksjs.com>)_
+
+### 📄 Miscellaneous
+
+- Merge remote-tracking branch 'origin/main' into codex/settlers-windows-path-identity ([4713f76](https://github.com/stacksjs/dtsx/commit/4713f76)) _(by Chris <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris <chris@stacksjs.com>_
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.19...v0.11.20)
 
 ### 🐛 Bug Fixes
