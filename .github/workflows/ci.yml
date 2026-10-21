@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-paths:
+    name: Source path identity (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Install consumer Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install committed dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify source identity and output collision safety
+        run: bun test packages/dtsx/test/source-path-identity.test.ts
+
   lint:
     runs-on: ubuntu-latest
 
@@ -101,7 +119,7 @@ jobs:
         run: bun test test/zig-dtsx.test.ts
 
   publish-commit:
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, source-paths]
     runs-on: ubuntu-latest
 
     steps:

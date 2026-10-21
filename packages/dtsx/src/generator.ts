@@ -121,10 +121,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   logger.debug(`Using ${stats.generationMode} declaration generation path`)
   logger.debug('Config:', config)
 
-  if (config.clean && !config.dryRun) {
-    await cleanDeclarationOutputs(config)
-  }
-
   // Find all TypeScript files based on entrypoints
   const entryFiles = await findFiles(config)
   assertEntrypointsResolve(config, entryFiles)
@@ -170,6 +166,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
 
   assertUniqueOutputPaths(files, config)
+
+  // Invalid entrypoints or colliding declarations must not erase the last build.
+  if (config.clean && !config.dryRun) {
+    await cleanDeclarationOutputs(config)
+  }
 
   // Prune cache of deleted files
   if (buildCache && !config.dryRun) {
@@ -811,8 +812,9 @@ async function findFiles(config: DtsGenerationConfig): Promise<string[]> {
     }
   }
 
-  // Remove duplicates
-  return [...new Set(files)].sort()
+  // Bun globs may return forward slashes on Windows while explicit entries and
+  // re-export resolution use native separators. Normalize before comparing paths.
+  return [...new Set(files.map(file => resolve(file)))].sort()
 }
 
 function isWithinRoot(filePath: string, rootPath: string): boolean {
@@ -854,7 +856,7 @@ function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   }
   else {
     // Flat structure - just use the filename
-    const filename = dtsPath.split('/').pop()!
+    const filename = basename(dtsPath)
     return resolve(config.cwd, config.outdir, filename)
   }
 }

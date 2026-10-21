@@ -80,6 +80,12 @@ console.log(dtsContent)
 // export declare function greet(name: string): string;
 ```
 
+Entrypoints, include patterns, and relative re-exports share normalized native
+source paths. Overlapping matches generate each source once, including on
+Windows. With `outputStructure: 'flat'`, nested sources emit directly into
+`outdir`; distinct sources with the same declaration filename fail before
+cleaning the previous declarations.
+
 ### STX Components
 
 `.stx` files are declaration entrypoints alongside TypeScript and Vue files.
