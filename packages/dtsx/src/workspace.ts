@@ -2,6 +2,7 @@ import type { DtsGenerationConfig, GenerationStats } from './types'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { generate } from './generator'
+import { normalizeJsonConfig } from './json-config'
 import { logger, setLogLevel } from './logger'
 
 /**
@@ -78,12 +79,7 @@ export async function discoverWorkspaceProjects(rootTsConfig: string): Promise<W
 
     try {
       const content = readFileSync(absolutePath, 'utf-8')
-      // Remove comments for JSON parsing — gate the regex on a cheap indexOf so
-      // comment-free tsconfigs (the common case in CI tooling) skip the pass.
-      const jsonContent = (content.indexOf('//') !== -1 || content.indexOf('/*') !== -1)
-        ? content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '')
-        : content
-      const tsconfig = JSON.parse(jsonContent)
+      const tsconfig = JSON.parse(normalizeJsonConfig(content))
 
       const projectRoot = dirname(absolutePath)
       const projectName = getProjectName(projectRoot, parentName)
