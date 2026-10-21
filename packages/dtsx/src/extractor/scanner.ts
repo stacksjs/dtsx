@@ -151,6 +151,12 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     return source.slice(start, end)
   }
 
+  const commentLineEnd = /[\r\n]/g
+  function lineCommentEnd(from: number): number {
+    commentLineEnd.lastIndex = from
+    return commentLineEnd.exec(source)?.index ?? len
+  }
+
   function skipWhitespaceAndComments(): void {
     // Fast exit: if current char is not whitespace and not '/', nothing to skip
     if (pos >= len) return
@@ -166,9 +172,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (ch === CH_SLASH && pos + 1 < len) {
         const next = source.charCodeAt(pos + 1)
         if (next === CH_SLASH) {
-          // Line comment — use native indexOf for speed
-          const nl = source.indexOf('\n', pos + 2)
-          pos = nl === -1 ? len : nl + 1
+          // Line comment: leave its line terminator for ASI
+          pos = lineCommentEnd(pos + 2)
           continue
         }
         if (next === CH_STAR) {
@@ -285,8 +290,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (ch === CH_SLASH && pos + 1 < len) {
         const next = source.charCodeAt(pos + 1)
         if (next === CH_SLASH) {
-          const nl = source.indexOf('\n', pos + 2)
-          pos = nl === -1 ? len : nl + 1
+          pos = lineCommentEnd(pos + 2)
           continue
         }
         if (next === CH_STAR) {
@@ -327,7 +331,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /** Skip past a string/comment/template literal if at one */
+  let skippedCommentLineBreak = false
   function skipNonCode(): boolean {
+    skippedCommentLineBreak = false
     const ch = source.charCodeAt(pos)
     if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
       skipString(ch)
@@ -340,14 +346,14 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     if (ch === CH_SLASH && pos + 1 < len) {
       const next = source.charCodeAt(pos + 1)
       if (next === CH_SLASH) {
-        // Line comment — use native indexOf for speed
-        const nl = source.indexOf('\n', pos + 2)
-        pos = nl === -1 ? len : nl + 1
+        // Line comment: leave its line terminator for ASI
+        pos = lineCommentEnd(pos + 2)
         return true
       }
       if (next === CH_STAR) {
         // Block comment — use native indexOf for speed
         const end = source.indexOf('*/', pos + 2)
+        skippedCommentLineBreak = lineCommentEnd(pos + 2) < (end === -1 ? len : end)
         pos = end === -1 ? len : end + 2
         return true
       }
@@ -522,6 +528,15 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     return false
   }
 
+  function commentEndsStatement(): boolean {
+    if (!skippedCommentLineBreak) return false
+    const saved = pos
+    skipWhitespaceAndComments()
+    const ends = pos >= len || isTopLevelKeyword() || source.charCodeAt(pos) === CH_RBRACE
+    pos = saved
+    return ends
+  }
+
   /** Check if current position is at a top-level statement-starting keyword */
   function isTopLevelKeyword(): boolean {
     if (pos >= len) return false
@@ -560,9 +575,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (c === CH_SLASH && pos + 1 < len) {
         const next = source.charCodeAt(pos + 1)
         if (next === CH_SLASH) {
-          // Skip line comment — use native indexOf
-          const nl = source.indexOf('\n', pos + 2)
-          pos = nl === -1 ? len : nl + 1
+          // Skip the comment while preserving its line terminator
+          pos = lineCommentEnd(pos + 2)
           continue
         }
         if (next === CH_STAR) {
@@ -658,8 +672,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (c === CH_SLASH && pos + 1 < len) {
         const next = source.charCodeAt(pos + 1)
         if (next === CH_SLASH) {
-          const nl = source.indexOf('\n', pos + 2)
-          pos = nl === -1 ? len : nl + 1
+          pos = lineCommentEnd(pos + 2)
           continue
         }
         if (next === CH_STAR) {
@@ -712,8 +725,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (c === CH_SLASH && pos + 1 < len) {
         const next = source.charCodeAt(pos + 1)
         if (next === CH_SLASH) {
-          const nl = source.indexOf('\n', pos + 2)
-          pos = nl === -1 ? len : nl + 1
+          pos = lineCommentEnd(pos + 2)
           continue
         }
         if (next === CH_STAR) {
@@ -749,9 +761,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const c = source.charCodeAt(pos)
       if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { pos++; continue }
       if (c === CH_SLASH && pos + 1 < len && source.charCodeAt(pos + 1) === CH_SLASH) {
-        // Skip line comment — use native indexOf
-        const nl = source.indexOf('\n', pos + 2)
-        pos = nl === -1 ? len : nl + 1
+        // Skip the comment while preserving its line terminator
+        pos = lineCommentEnd(pos + 2)
         continue
       }
       break
@@ -886,6 +897,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         }
         pos = idx
         if (skipNonCode()) {
+          if (braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0 && commentEndsStatement()) return
           STMT_DELIM_RE.lastIndex = pos
           continue
         }
@@ -2274,8 +2286,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // Read type until = or ; or , at depth 0, or ASI
         let depth = 0
         while (pos < len) {
-          if (skipNonCode())
+          if (skipNonCode()) {
+            if (depth === 0 && commentEndsStatement()) break
             continue
+          }
           const tc = source.charCodeAt(pos)
           if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
             depth++
@@ -2331,8 +2345,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           angleDepth = 0
           jsxDepth = 0
           while (pos < len) {
-            if (skipNonCode())
+            if (skipNonCode()) {
+              if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && commentEndsStatement()) break
               continue
+            }
             const ic = source.charCodeAt(pos)
             if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
               depth++
