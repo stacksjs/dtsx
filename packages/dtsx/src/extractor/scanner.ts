@@ -5,7 +5,7 @@
  */
 
 import type { Declaration } from '../types'
-import { inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
+import { inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral } from '../processor/type-inference'
 
 // Character codes for fast comparison
 const CH_SPACE = 32
@@ -1907,22 +1907,6 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       return `...${name}: ${type}`
     }
     return `${name}${optionalMarker}: ${type}`
-  }
-
-  /** Check if string is a numeric literal (integer or decimal, optionally negative) */
-  function isNumericLiteral(v: string): boolean {
-    let i = 0
-    if (i < v.length && v.charCodeAt(i) === 45 /* - */) i++
-    if (i >= v.length) return false
-    const c = v.charCodeAt(i)
-    if (c < 48 || c > 57) return false // not a digit
-    while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    if (i < v.length && v.charCodeAt(i) === 46 /* . */) {
-      i++
-      if (i >= v.length || v.charCodeAt(i) < 48 || v.charCodeAt(i) > 57) return false
-      while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    }
-    return i === v.length
   }
 
   /** Infer type from a default value expression (simple cases) */

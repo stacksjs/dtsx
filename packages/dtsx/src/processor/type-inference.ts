@@ -76,32 +76,87 @@ export function consumeCleanDefault(): string | null {
   return val
 }
 
-/** Check if a string matches /^-?\d+(\.\d+)?$/ without regex */
-function isNumericLiteral(s: string): boolean {
-  const len = s.length
-  if (len === 0) return false
-  let i = 0
-  if (s.charCodeAt(i) === 45 /* - */) i++
-  if (i >= len) return false
-  const digitStart = i
-  while (i < len && s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) i++
-  if (i === digitStart) return false // no digits
-  if (i < len && s.charCodeAt(i) === 46 /* . */) {
-    i++
-    const fracStart = i
-    while (i < len && s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) i++
-    if (i === fracStart) return false // no digits after dot
-  }
-  return i === len
+/** Whether char code `c` is a digit in `radix` (2, 8, 10 or 16). */
+function isDigitIn(c: number, radix: number): boolean {
+  if (radix === 16)
+    return (c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
+  return c >= 48 && c < 48 + radix
 }
 
-/** Check if s (excluding last char 'n') is all digits — matches /^\d+n$/ */
-function isBigIntDigits(s: string): boolean {
-  for (let i = 0, end = s.length - 1; i < end; i++) {
+/** Index after the digits of `radix` from `i`, with `_` allowed between two digits. */
+function digitsEnd(s: string, i: number, radix: number): number {
+  const start = i
+  while (i < s.length) {
     const c = s.charCodeAt(i)
-    if (c < 48 || c > 57) return false
+    if (isDigitIn(c, radix) || (c === 95 /* _ */ && i > start && isDigitIn(s.charCodeAt(i + 1), radix)))
+      i++
+    else
+      break
   }
-  return true
+  return i
+}
+
+/** The radix a `0x`, `0b` or `0o` prefix at `i` sets, or 10 without one. */
+function prefixRadix(s: string, i: number): number {
+  if (s.charCodeAt(i) !== 48 /* 0 */)
+    return 10
+  const p = s.charCodeAt(i + 1) | 32
+  return p === 120 /* x */ ? 16 : p === 98 /* b */ ? 2 : p === 111 /* o */ ? 8 : 10
+}
+
+/**
+ * Whether `s` is a number literal as written, optionally negative: decimal
+ * (`1`, `1.5`, `.5`, `1e3`, `1_000`), hexadecimal, binary or octal (`0xff`,
+ * `0b101`, `0o17`). Each spelling is also valid as a literal type.
+ */
+export function isNumericLiteral(s: string): boolean {
+  let i = s.charCodeAt(0) === 45 /* - */ ? 1 : 0
+  const radix = prefixRadix(s, i)
+  if (radix !== 10) {
+    const end = digitsEnd(s, i + 2, radix)
+    return end > i + 2 && end === s.length
+  }
+  let end = digitsEnd(s, i, 10)
+  // A leading zero followed by more digits (`07`, `08`) is a legacy spelling,
+  // read as digits alone as before; a separator, fraction or exponent after it
+  // (`0_1`, `00e0`) is not a number literal at all.
+  if (s.charCodeAt(i) === 48 /* 0 */ && end > i + 1)
+    return end === s.length && !s.includes('_', i)
+  const hasInteger = end > i
+  i = end
+  if (s.charCodeAt(i) === 46 /* . */) {
+    end = digitsEnd(s, i + 1, 10)
+    if (!hasInteger && end === i + 1)
+      return false
+    i = end
+  }
+  else if (!hasInteger) {
+    return false
+  }
+  if ((s.charCodeAt(i) | 32) === 101 /* e */) {
+    i++
+    if (s.charCodeAt(i) === 43 /* + */ || s.charCodeAt(i) === 45 /* - */)
+      i++
+    end = digitsEnd(s, i, 10)
+    if (end === i)
+      return false
+    i = end
+  }
+  return i === s.length
+}
+
+/** Whether `s` is a BigInt literal as written, optionally negative: `10n`, `-10n`, `1_000n`, `0xffn`. */
+function isBigIntLiteral(s: string): boolean {
+  if (s.length < 2 || s.charCodeAt(s.length - 1) !== 110 /* n */)
+    return false
+  const i = s.charCodeAt(0) === 45 /* - */ ? 1 : 0
+  const radix = prefixRadix(s, i)
+  const start = radix === 10 ? i : i + 2
+  const end = digitsEnd(s, start, radix)
+  // A decimal BigInt has no leading zero (`0n`, but not `00n` or `0_1n`).
+  if (radix === 10 && s.charCodeAt(start) === 48 /* 0 */ && end > start + 1)
+    return false
+  return end > start && end === s.length - 1
 }
 
 /**
@@ -334,7 +389,7 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   }
 
   // BigInt literals (digits followed by 'n')
-  if (trimmed.charCodeAt(trimmed.length - 1) === 110 /* n */ && trimmed.length > 1 && isBigIntDigits(trimmed)) {
+  if (isBigIntLiteral(trimmed)) {
     if (isConst) {
       return trimmed
     }
