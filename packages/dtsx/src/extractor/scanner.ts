@@ -126,7 +126,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const len = source.length
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
-  const funcBodyIndices = new Set<number>()
+  // Functions read with a body: the implementation signature of an overload set.
+  // Held by identity, since declarations are inserted before them later.
+  const funcBodies = new Set<Declaration>()
   let pos = 0
 
   // Skip BOM (byte order mark)
@@ -2223,12 +2225,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const text = `${exportPrefix}${declarationName}${generics}${dtsParams}: ${returnType};`
     const comments = extractLeadingComments(declStart)
 
-    // Record index if this function had a body (implementation signature for overloads)
-    if (hasBody) {
-      funcBodyIndices.add(declarations.length)
-    }
-
-    return {
+    const decl: Declaration = {
       kind: 'function',
       name: name || 'default',
       text,
@@ -2242,6 +2239,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       start: declStart,
       end: pos,
     }
+    if (hasBody)
+      funcBodies.add(decl)
+    return decl
   }
 
   /**
@@ -4073,11 +4073,16 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   // Post-process: remove implementation signatures of overloaded functions.
   // For any function name that appears more than once, remove the last declaration
   // that has a body (the implementation signature).
-  if (funcBodyIndices.size > 0) {
+  if (funcBodies.size > 0) {
+    // A default export and a named export of the same name are separate
+    // functions (`export function make(...)` beside `export default function
+    // make(...) {}`), so each is its own overload set.
+    const overloadKey = (decl: Declaration): string => decl.isDefault ? `default ${decl.name}` : decl.name
     const funcNameCounts = new Map<string, number>()
     for (const decl of declarations) {
       if (decl.kind === 'function') {
-        funcNameCounts.set(decl.name, (funcNameCounts.get(decl.name) || 0) + 1)
+        const key = overloadKey(decl)
+        funcNameCounts.set(key, (funcNameCounts.get(key) || 0) + 1)
       }
     }
     // Only remove implementation signatures for overloaded functions (count > 1)
@@ -4092,7 +4097,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       for (const name of overloadedNames) {
         // Walk backwards to find the last declaration with a body for this name
         for (let i = declarations.length - 1; i >= 0; i--) {
-          if (declarations[i].kind === 'function' && declarations[i].name === name && funcBodyIndices.has(i)) {
+          if (declarations[i].kind === 'function' && overloadKey(declarations[i]) === name && funcBodies.has(declarations[i])) {
             toRemove.add(i)
             break
           }
