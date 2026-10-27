@@ -2425,7 +2425,18 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
 
   // Handle async arrow functions
   if (trimmed.startsWith('async ') && trimmed.includes('=>')) {
-    const asyncRemoved = trimmed.slice(5).trim() // Remove 'async '
+    let asyncRemoved = trimmed.slice(5).trim() // Remove 'async '
+
+    // Generics at the start, as for a regular arrow: `async <T>(a: T) => a`
+    let generics = ''
+    if (asyncRemoved.startsWith('<')) {
+      const genericEnd = findMatchingBracket(asyncRemoved, 0, '<', '>')
+      if (genericEnd !== -1) {
+        generics = asyncRemoved.substring(0, genericEnd + 1)
+        asyncRemoved = asyncRemoved.substring(genericEnd + 1).trim()
+      }
+    }
+
     const arrowIndex = findMainArrowIndex(asyncRemoved)
     if (arrowIndex === -1) return inUnion ? '(() => Promise<unknown>)' : '() => Promise<unknown>'
     const rawParams = asyncRemoved.substring(0, arrowIndex).trim()
@@ -2459,7 +2470,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       returnType = inferNarrowType(body, isConst, false, _depth + 1)
     }
 
-    const funcType = `${params} => ${explicitReturnType || returnType.startsWith('Promise<') ? returnType : `Promise<${returnType}>`}`
+    const funcType = `${generics}${params} => ${explicitReturnType || returnType.startsWith('Promise<') ? returnType : `Promise<${returnType}>`}`
     return inUnion ? `(${funcType})` : funcType
   }
 
