@@ -1,4 +1,20 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.21...v0.11.22)
+
+### 🐛 Bug Fixes
+
+- **declarations**: preserve embedded source text safely ([316304e](https://github.com/stacksjs/dtsx/commit/316304e)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **workspace**: parse project references as JSONC ([4620570](https://github.com/stacksjs/dtsx/commit/4620570)) _(by Chris <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.22 ([b2ea9bf](https://github.com/stacksjs/dtsx/commit/b2ea9bf)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris <chris@stacksjs.com>_
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.20...v0.11.21)
 
 ### 🐛 Bug Fixes
