@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.22...v0.11.23)
+
+### 🐛 Bug Fixes
+
+- **declarations**: handle const assertions before satisfies constraints ([35daea7](https://github.com/stacksjs/dtsx/commit/35daea7)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.23 ([1425524](https://github.com/stacksjs/dtsx/commit/1425524)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.21...v0.11.22)
 
 ### 🐛 Bug Fixes
