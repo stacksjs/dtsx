@@ -476,6 +476,58 @@ describe('generate with bundle: true', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  // Renaming a linked name (`enabled` to the default export's helper, a
+  // colliding `Options` to `Options_1`) also rewrote the same word inside
+  // template literal types, changing what they accept.
+  it('keeps template literal text when renaming', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dtsx-bundle-template-'))
+    await writeFiles(dir, {
+      'src/index.ts': [
+        `import enabled from './flag'`,
+        `export * from './labels'`,
+        `export type Options = 'x' | 'y'`,
+        'export type Status = `enabled` | `Options`',
+        `export function isEnabled(): number { return Number(enabled) }`,
+      ].join('\n'),
+      'src/flag.ts': `export default 1`,
+      'src/labels.ts': [
+        `type Options = 'a' | 'b'`,
+        'export type Label = `Options-${Options}`',
+      ].join('\n'),
+      'consumer.ts': [
+        `import { isEnabled, type Label, type Options, type Status } from './dist/index'`,
+        `const status: Status = 'enabled'`,
+        `const other: Status = 'Options'`,
+        `const label: Label = 'Options-a'`,
+        `const option: Options = 'x'`,
+        `export { status, other, label, option, isEnabled }`,
+      ].join('\n'),
+    })
+
+    await generate({
+      cwd: dir,
+      root: 'src',
+      entrypoints: ['index.ts'],
+      outdir: join(dir, 'dist'),
+      clean: false,
+      keepComments: false,
+      tsconfigPath: '',
+      verbose: false,
+      bundle: true,
+    })
+    const bundled = await Bun.file(join(dir, 'dist', 'index.d.ts')).text()
+
+    expect(bundled).toContain('type Status = `enabled` | `Options`;')
+    expect(bundled).toContain('type Label = `Options-${Options_1}`;')
+
+    if (tscAvailable) {
+      const result = runTsc(dir, ['consumer.ts'])
+      expect(result.output).toBe('')
+      expect(result.ok).toBe(true)
+    }
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('writes one bundled file per entrypoint', async () => {
     await writeFiles(TMP, {
       'src/index.ts': `export * from './router';`,
