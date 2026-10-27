@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { extractSatisfiesType } from '../src/processor/type-inference'
 import { processCode } from './test-utils'
 
 /**
@@ -273,4 +274,39 @@ export const value: number = 1
 `)
     expect(output).not.toContain('internal')
   })
+})
+
+
+describe('source text embedded in exported data', () => {
+  it('preserves an explicit generic annotation and escapes comment terminators', () => {
+    const source = JSON.stringify({ workflow: "cron: '0 */2 * * *'", config: '/** embedded */ export default {} satisfies BuddyConfig' })
+    const output = processCode(`export const templates: Record<string, string> = ${source}`)
+    expect(output).toContain('templates: Record<string, string>;')
+    expect(output).not.toContain('templates: BuddyConfig')
+    expectValidTypeScript(output)
+  })
+  it('infers containers with comment-ending string data as valid declarations', () => {
+    const output = processCode(`export const config = { glob: '**/node_modules/**', text: 'a satisfies Fake' }`)
+    expect(output).toContain('glob: string')
+    expect(output).not.toContain('config: Fake')
+    expectValidTypeScript(output)
+  })
+})
+
+
+it('recognizes only top-level satisfies operators outside literal data and comments', () => {
+  for (const source of [
+    '"data satisfies Fake"',
+    '{ nested: {} satisfies Inner }',
+    '{} /* satisfies Fake */',
+    '{} // satisfies Fake',
+    '/ satisfies Fake /',
+    '`text ${`nested satisfies Fake`} more`',
+    'object.satisfies',
+  ]) expect(extractSatisfiesType(source)).toBeNull()
+  expect(extractSatisfiesType('{}\nsatisfies\nRecord<string, string>')).toBe('Record<string, string>')
+  expect(extractSatisfiesType('{ text: "satisfies Fake" } satisfies Config')).toBe('Config')
+  const annotated = processCode('export const value: Public = {} satisfies Constraint')
+  expect(annotated).toContain('value: Public;')
+  expectValidTypeScript(annotated)
 })

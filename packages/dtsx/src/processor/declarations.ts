@@ -3,7 +3,7 @@
  */
 
 import type { Declaration } from '../types'
-import { formatComments } from './comments'
+import { escapeJsdocContent, formatComments } from './comments'
 import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'
 
 /**
@@ -109,13 +109,10 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   let typeAnnotation = decl.typeAnnotation
   const value = decl.value as string | undefined
 
-  // Check for 'satisfies' operator - extract the type from the satisfies clause
-  if (value && value.includes(' satisfies ')) {
-    const satisfiesType = extractSatisfiesType(value)
-    if (satisfiesType) {
-      typeAnnotation = satisfiesType
-    }
-  }
+  // A constraint inside quoted data is not an operator, and an explicit
+  // annotation remains the declaration's public type.
+  const satisfiesType = !typeAnnotation && value ? extractSatisfiesType(value) : null
+  if (satisfiesType) typeAnnotation = satisfiesType
   // If we have a value that ends with 'as const' at the top level, infer narrow from value
   else if (!typeAnnotation && value && value.trim().endsWith('as const')) {
     typeAnnotation = inferNarrowType(value, true)
@@ -182,6 +179,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     }
   }
 
+  defaultTag = escapeJsdocContent(defaultTag)
   result += `: ${typeAnnotation};`
 
   // Skip generated @defaultValue if user already has one

@@ -27,3 +27,8 @@ export function formatComments(comments: string[] | undefined, keepComments: boo
   }
   return `${result}\n`
 }
+
+/** Keep data embedded in generated JSDoc from ending the comment. */
+export function escapeJsdocContent(value: string): string {
+  return value.replaceAll('*/', '*\\/')
+}

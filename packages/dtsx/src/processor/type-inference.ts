@@ -3,6 +3,8 @@
  * Handles inferring narrow types from values
  */
 
+import { escapeJsdocContent } from './comments'
+
 /**
  * Maximum recursion depth for type inference to prevent stack overflow on deeply nested types
  */
@@ -767,6 +769,10 @@ function skipQuotedValue(value: string, start: number, quote: number): number {
       i += 2
       continue
     }
+    if (quote === 96 && char === 36 && value.charCodeAt(i + 1) === 123) {
+      i = skipBalancedCodeBlock(value, i + 1)
+      continue
+    }
     i++
     if (char === quote) break
   }
@@ -1295,7 +1301,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
 
     if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-      propTypes.push(`${commentPrefix}/** @defaultValue ${rawVal} */\n  ${emitKey}: ${valueType}`)
+      propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${valueType}`)
     }
     else {
       propTypes.push(`${commentPrefix}${emitKey}: ${valueType}`)
@@ -2725,13 +2731,48 @@ export function isGenericType(typeAnnotation: string): boolean {
  * e.g., "{ port: 3000 } satisfies { port: number }" returns "{ port: number }"
  */
 export function extractSatisfiesType(value: string): string | null {
-  const satisfiesIndex = value.lastIndexOf(' satisfies ')
-  if (satisfiesIndex === -1) {
-    return null
+  let satisfiesIndex = -1
+  let depth = 0
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i)
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(value, i, char) - 1
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 47) {
+      while (i < value.length && value.charCodeAt(i) !== 10) i++
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 42) {
+      const close = value.indexOf('*/', i + 2)
+      i = close === -1 ? value.length : close + 1
+      continue
+    }
+    if (char === 47) {
+      let previous = i - 1
+      while (previous >= 0 && value.charCodeAt(previous) <= 32) previous--
+      if (previous < 0 || '([{:;,=!?&|+*-~>'.includes(value[previous])) {
+        let inClass = false
+        for (i++; i < value.length; i++) {
+          const regexChar = value.charCodeAt(i)
+          if (regexChar === 92) i++
+          else if (regexChar === 91) inClass = true
+          else if (regexChar === 93) inClass = false
+          else if (regexChar === 47 && !inClass) break
+        }
+        continue
+      }
+    }
+    if (char === 40 || char === 91 || char === 123) depth++
+    else if (char === 41 || char === 93 || char === 125) depth--
+    else if (depth === 0 && value.startsWith('satisfies', i) && isWordBoundary(value, i, 9) && value[i - 1] !== '.') {
+      satisfiesIndex = i
+    }
   }
+  if (satisfiesIndex === -1) return null
 
   // Extract everything after 'satisfies '
-  let typeStr = value.slice(satisfiesIndex + 11).trim()
+  let typeStr = value.slice(satisfiesIndex + 9).trim()
 
   // Remove trailing semicolon if present
   if (typeStr.endsWith(';')) {
