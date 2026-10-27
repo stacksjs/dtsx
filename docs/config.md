@@ -210,6 +210,8 @@ entrypoints: [
 ]
 ```
 
+A file an entry point reaches outside `root` (an absolute path, or a pattern such as `../*.ts`) is skipped with a warning, since its declaration would be written outside `outdir`. With `outputStructure: 'flat'` it is written into `outdir` under its file name.
+
 ### Output Structure
 
 Choose between mirroring source structure or flat output:
