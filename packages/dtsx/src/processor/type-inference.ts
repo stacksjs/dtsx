@@ -2583,8 +2583,17 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       while (pos < len && trimmed.charCodeAt(pos) <= 32) pos++
     }
 
-    // Check for generics <...>
+    // Check for generics <...>, which follow the name if there is one:
+    // `function <T>(a: T)`, `function id<T>(a: T)`. `functionFactory<T>()`
+    // is a call, not a function expression with a name.
     let generics = ''
+    let nameStart = -1
+    if (!isWordChar(trimmed.charCodeAt(8))) {
+      const start = pos
+      while (pos < len && isWordChar(trimmed.charCodeAt(pos))) pos++
+      if (pos > start) nameStart = start
+      while (pos < len && trimmed.charCodeAt(pos) <= 32) pos++
+    }
     if (pos < len && trimmed.charCodeAt(pos) === 60) { // <
       const genStart = pos
       let depth = 1
@@ -2598,6 +2607,14 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       }
       generics = trimmed.substring(genStart, pos)
       while (pos < len && trimmed.charCodeAt(pos) <= 32) pos++
+    }
+    // A named function's type parameters are kept only when the loop above
+    // closed them and they hold no quote or comment, which it does not skip
+    // (`<T extends '>'>`), and no `typeof`, which may name the function or
+    // its locals (`<T = typeof id>`); otherwise they are left out as before.
+    if (nameStart !== -1 && generics && (!generics.endsWith('>') || /['"`/]|\btypeof\b/.test(generics))) {
+      generics = ''
+      pos = nameStart
     }
 
     // Skip optional function name until (
