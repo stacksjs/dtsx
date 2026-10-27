@@ -1401,28 +1401,41 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     return rebased.join('\n')
   }
 
-  /** Extract type parameters <...> (normalized to single line) */
+  /** Extract type parameters <...>, whitespace outside literals and comments collapsed */
   function extractGenerics(): string {
     if (pos >= len || source.charCodeAt(pos) !== CH_LANGLE)
       return ''
     const start = pos
     findMatchingClose(CH_LANGLE, CH_RANGLE)
-    const raw = source.slice(start, pos)
-    // Normalize multi-line generics to single line (avoid regex)
+    const end = pos
+    const raw = source.slice(start, end)
+    // Normalize multi-line generics (avoid regex)
     if (raw.includes('\n')) {
-      // Collapse whitespace/newlines to single spaces
+      // Collapse whitespace/newlines to single spaces. A `//` comment is left
+      // out: on one line it would comment out everything after it, the closing
+      // `>` included. Strings and block comments are copied as they are.
       let result = ''
       let prevSpace = false
-      for (let i = 0; i < raw.length; i++) {
-        const c = raw.charCodeAt(i)
+      pos = start
+      while (pos < end) {
+        const c = source.charCodeAt(pos)
         if (c === 32 || c === 9 || c === 10 || c === 13) {
           if (!prevSpace && result.length > 0) { result += ' '; prevSpace = true }
+          pos++
+          continue
         }
-        else {
-          result += raw[i]
-          prevSpace = false
+        if (c === CH_SLASH && source.charCodeAt(pos + 1) === CH_SLASH) {
+          const nl = source.indexOf('\n', pos + 2)
+          pos = nl === -1 || nl > end ? end : nl
+          continue
         }
+        const from = pos
+        if (!skipNonCode())
+          pos++
+        result += source.slice(from, Math.min(pos, end))
+        prevSpace = false
       }
+      pos = end
       // Trim spaces around < and >
       if (result.charCodeAt(1) === 32) result = `<${result.slice(2)}`
       if (result.charCodeAt(result.length - 2) === 32) result = `${result.slice(0, -2)}>`
