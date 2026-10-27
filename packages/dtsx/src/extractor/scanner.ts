@@ -5,7 +5,7 @@
  */
 
 import type { Declaration } from '../types'
-import { inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
+import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 
 // Character codes for fast comparison
 const CH_SPACE = 32
@@ -2390,9 +2390,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
         }
         else if (!typeAnnotation) {
-          const asType = extractAssertion(initializerText)
-          if (asType)
-            typeAnnotation = asType
+          // A const assertion can be followed by a satisfies constraint.
+          // Handle that operator before extracting the assertion's type.
+          const assertedType = extractSatisfiesType(initializerText) ?? extractAssertion(initializerText)
+          if (assertedType)
+            typeAnnotation = assertedType
         }
         } // end else (non-isolatedDeclarations path)
       }

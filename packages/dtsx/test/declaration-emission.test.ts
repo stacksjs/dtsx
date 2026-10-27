@@ -310,3 +310,14 @@ it('recognizes only top-level satisfies operators outside literal data and comme
   expect(annotated).toContain('value: Public;')
   expectValidTypeScript(annotated)
 })
+
+
+it('keeps const assertions followed by satisfies constraints valid in both scanner modes', async () => {
+  const { processSourceIsolated, processSourceSemantic } = await import('../src/generator')
+  const source = `export const floors = { health: '1.0.0', watch: '2.0.0' } as const satisfies Partial<Record<string, string>>`
+  for (const output of [processCode(source), processSourceIsolated(source, 'floors.ts'), processSourceSemantic(source, 'floors.ts')]) {
+    expect(output).not.toContain(': const satisfies')
+    expect(output).toContain('floors: Partial<Record<string, string>>')
+    expectValidTypeScript(output)
+  }
+})
