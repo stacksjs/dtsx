@@ -2621,6 +2621,17 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const modLoop = true
       while (modLoop) {
         skipWhitespaceAndComments()
+        // Contextual words followed by a method/property continuation are
+        // names, not modifiers (for example, `async(value: number)`).
+        const start = pos
+        const word = readIdent()
+        pos = start
+        if (word) {
+          const next = peekAfterWord(word)
+          if (next === CH_LPAREN || next === CH_LANGLE || next === CH_QUESTION
+            || next === 33 /* ! */ || next === CH_COLON || next === CH_EQUAL
+            || next === CH_SEMI || next === CH_RBRACE) break
+        }
         if (matchWord('private')) { isPrivate = true; pos += 7; continue }
         if (matchWord('protected')) { isProtected = true; pos += 9; continue }
         if (matchWord('public')) { pos += 6; continue }
@@ -2643,12 +2654,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         isPrivate = true
       }
 
-      // Skip private members entirely
-      if (isPrivate) {
-        // Skip to next member
-        skipClassMember()
-        continue
-      }
+      // Visibility controls emission, not where a member ends. Consume private
+      // headers, bodies and field initializers through the same parser as public
+      // members so a following same-line declaration is not swallowed.
+      const output = isPrivate ? [] : members
 
       // Build modifier prefix
       let modPrefix = '  '
@@ -2669,7 +2678,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         skipWhitespaceAndComments()
 
         // Extract parameter properties (non-private params with modifiers like public/protected/readonly)
-        extractParamProperties(rawParams, members)
+        extractParamProperties(rawParams, output)
 
         // Skip constructor body
         if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
@@ -2680,13 +2689,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         }
 
         const dtsParams = buildDtsParams(rawParams)
-        members.push(`  constructor${dtsParams};`)
+        output.push(`  constructor${dtsParams};`)
       }
       else if (matchWord('get')) {
         pos += 3
         skipWhitespaceAndComments()
-        // Check it's actually an accessor (followed by identifier or [)
-        if (pos < len && (isIdentStart(source.charCodeAt(pos)) || source.charCodeAt(pos) === CH_LBRACKET || source.charCodeAt(pos) === CH_HASH)) {
+        // An accessor has a member name, including quoted/computed/private names.
+        if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
           const memberName = readMemberName()
           // Filter private hash accessors (e.g., get #foo())
           if (memberName.startsWith('#')) {
@@ -2714,17 +2723,17 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
             pos++
           }
-          members.push(`${modPrefix}get ${memberName}(): ${retType};`)
+          output.push(`${modPrefix}get ${memberName}(): ${retType};`)
         }
         else {
           // 'get' is used as a method name
-          handleMethodOrProperty('get', modPrefix, isStatic, isReadonly, isAsync, members)
+          handleMethodOrProperty('get', modPrefix, isStatic, isReadonly, isAsync, output)
         }
       }
       else if (matchWord('set')) {
         pos += 3
         skipWhitespaceAndComments()
-        if (pos < len && (isIdentStart(source.charCodeAt(pos)) || source.charCodeAt(pos) === CH_LBRACKET || source.charCodeAt(pos) === CH_HASH)) {
+        if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
           const memberName = readMemberName()
           // Filter private hash accessors (e.g., set #foo(value))
           if (memberName.startsWith('#')) {
@@ -2749,10 +2758,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             pos++
           }
           const dtsParams = buildDtsParams(rawParams)
-          members.push(`${modPrefix}set ${memberName}${dtsParams};`)
+          output.push(`${modPrefix}set ${memberName}${dtsParams};`)
         }
         else {
-          handleMethodOrProperty('set', modPrefix, isStatic, isReadonly, isAsync, members)
+          handleMethodOrProperty('set', modPrefix, isStatic, isReadonly, isAsync, output)
         }
       }
       else {
@@ -2763,14 +2772,19 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         const memberName = readMemberName()
         if (!memberName) { skipClassMember(); continue }
 
-        handleMethodOrPropertyAfterName(memberName, modPrefix, isStatic, isReadonly, isGenerator, isAbstract, isAsync, members)
+        handleMethodOrPropertyAfterName(memberName, modPrefix, isStatic, isReadonly, isGenerator, isAbstract, isAsync, output)
       }
     }
 
     return `{\n${members.join('\n')}\n}`
   }
 
-  /** Read a member name (identifier, computed property [expr], or #private) */
+  function isMemberNameStart(ch: number): boolean {
+    return isIdentStart(ch) || ch === CH_LBRACKET || ch === CH_HASH
+      || ch === CH_SQUOTE || ch === CH_DQUOTE
+  }
+
+  /** Read an identifier, computed property, quoted name or private identifier. */
   function readMemberName(): string {
     if (pos >= len)
       return ''
@@ -2784,14 +2798,22 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       pos++
       return `#${readIdent()}`
     }
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+      const start = pos
+      skipString(ch)
+      return source.slice(start, pos)
+    }
     return readIdent()
   }
 
-  /** Peek at what char comes after a word (skipping whitespace) */
+  /** Peek after a word using the same whitespace/comment rules as its header. */
   function peekAfterWord(word: string): number {
-    let p = pos + word.length
-    while (p < len && isWhitespace(source.charCodeAt(p))) p++
-    return p < len ? source.charCodeAt(p) : 0
+    const start = pos
+    pos += word.length
+    skipWhitespaceAndComments()
+    const next = pos < len ? source.charCodeAt(pos) : 0
+    pos = start
+    return next
   }
 
   /** Skip a class member (to next member boundary) */
