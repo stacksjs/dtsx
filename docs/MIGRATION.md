@@ -347,6 +347,16 @@ export default defineConfig({
 })
 ```
 
+Aliases that resolve to authored sources inside the emitting package are
+included in its declaration graph and written as relative output imports.
+Inherited JSONC configurations retain the directory that declared their path
+mappings and `baseUrl`. The same rules apply to the public Bun plugins.
+
+Public dependency names, workspace package exports, self exports, package
+imports and builtins keep their module identities. A private alias that is
+missing, excluded or outside the package fails generation with its source
+context. Consumer projects do not need to reproduce the source path mappings.
+
 ### Preserving JSDoc Comments
 
 Comments are preserved by default:

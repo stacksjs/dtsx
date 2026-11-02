@@ -51,17 +51,18 @@ export class BuildCache {
   private manifest: CacheManifest | null = null
   private configHash: string
 
-  constructor(config: DtsGenerationConfig) {
+  constructor(config: DtsGenerationConfig, resolutionContext?: string) {
     this.cacheDir = resolve(config.cwd, CACHE_DIR)
     this.manifestPath = join(this.cacheDir, CACHE_FILE)
-    this.configHash = this.hashConfig(config)
+    this.configHash = this.hashConfig(config, resolutionContext)
   }
 
   /**
    * Hash relevant config options that affect output
    */
-  private hashConfig(config: DtsGenerationConfig): string {
+  private hashConfig(config: DtsGenerationConfig, resolutionContext?: string): string {
     const relevantConfig = {
+      resolutionContext,
       keepComments: config.keepComments,
       importOrder: config.importOrder,
       outputStructure: config.outputStructure,

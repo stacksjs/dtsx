@@ -1,3 +1,4 @@
+import type { ModuleResolver } from './module-graph'
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import type { TypeMapper } from './type-mappings'
 import { Glob } from 'bun'
@@ -14,12 +15,25 @@ import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
-import { collectReachableViaReExports, resolveRelativeSpecifier, scanReExportSpecifiers } from './module-graph'
+import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { applyTypeMappings, createTypeMapper } from './type-mappings'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, sourceMapCommentPrefix, validateDtsContent, writeToFile } from './utils'
+
+const moduleResolvers = new WeakMap<DtsGenerationConfig, Promise<ModuleResolver>>()
+const emittedSources = new WeakMap<DtsGenerationConfig, Set<string>>()
+
+function getModuleResolver(config: DtsGenerationConfig): Promise<ModuleResolver> {
+  let pending = moduleResolvers.get(config)
+  if (!pending) {
+    pending = createModuleResolver(config)
+    moduleResolvers.set(config, pending)
+    void pending.catch(() => moduleResolvers.delete(config))
+  }
+  return pending
+}
 
 async function writeDeclarationMapFile(
   outputPath: string,
@@ -27,6 +41,7 @@ async function writeDeclarationMapFile(
   dtsContent: string,
   sourceCode: string,
   cwd: string,
+  write: (path: string, content: string) => Promise<void> = writeToFile,
 ): Promise<string> {
   const dtsFilename = basename(outputPath) || 'output.d.ts'
   const sourceFilename = relative(dirname(outputPath), sourcePath)
@@ -36,7 +51,7 @@ async function writeDeclarationMapFile(
   const sourceMap = generateDeclarationMap(contentToMap, dtsFilename, sourceFilename, sourceCode)
   const mapPath = `${outputPath}.map`
 
-  await writeToFile(mapPath, JSON.stringify(sourceMap))
+  await write(mapPath, JSON.stringify(sourceMap))
   logger.debug(`  Generated source map: ${relative(cwd, mapPath)}`)
   return mapFilename
 }
@@ -76,27 +91,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
   // Initialize incremental build cache if enabled
   let buildCache: BuildCache | null = null
-  if (config.incremental) {
-    buildCache = new BuildCache(config)
-
-    if (config.clearCache) {
-      logger.debug('Clearing build cache...')
-      if (!config.dryRun) buildCache.clear()
-    }
-    else {
-      const loaded = buildCache.load()
-      if (loaded) {
-        const cacheStats = buildCache.getStats()
-        logger.debug(`Loaded build cache with ${cacheStats.entries} entries`)
-      }
-      else {
-        logger.debug('No existing build cache found, starting fresh')
-      }
-    }
-
-    // Ensure .dtsx-cache is in .gitignore
-    if (!config.dryRun) ensureGitignore(config.cwd)
-  }
 
   // Statistics tracking
   const stats: GenerationStats = {
@@ -126,6 +120,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   assertEntrypointsResolve(config, entryFiles)
 
   let files = entryFiles.slice()
+  const resolveSpecifier = await getModuleResolver(config)
 
   // Auto-expand the file set through relative re-exports AND imports so:
   //   1. A barrel `export * from './x'` pulls in `./x.ts`. Otherwise the
@@ -140,7 +135,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   // imports may still surface in declaration types via inferred returns.
   let reExportReachability: Awaited<ReturnType<typeof collectReachableViaReExports>> | null = null
   if (config.autoIncludeReExports !== false && files.length > 0) {
-    reExportReachability = await collectReachableViaReExports(files, { includeImports: true })
+    reExportReachability = await collectReachableViaReExports(files, { includeImports: true, resolveSpecifier })
 
     const rootPath = resolve(config.cwd, config.root)
     const excludePatterns = config.exclude || []
@@ -151,7 +146,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
       if (!isProcessableSourceFile(f)) continue
       if (f.endsWith('.d.ts')) continue
       if (f.includes('node_modules')) continue
-      if (!isWithinRoot(f, rootPath)) {
+      const localFlatSource = config.outputStructure === 'flat' && entryFiles.some(entry => resolveSpecifier.isPackageLocal?.(entry, f))
+      if (!isWithinRoot(f, rootPath) && !localFlatSource) {
         logger.warn(`Skipping auto-included source outside root: ${relative(config.cwd, f)}`)
         continue
       }
@@ -166,11 +162,30 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }
 
   assertUniqueOutputPaths(files, config)
+  emittedSources.set(config, new Set(files))
 
-  // Invalid entrypoints or colliding declarations must not erase the last build.
-  if (config.clean && !config.dryRun) {
-    await cleanDeclarationOutputs(config)
+  if (config.incremental) {
+    buildCache = new BuildCache(config, resolveSpecifier.cacheKey?.(files))
+
+    if (config.clearCache) {
+      logger.debug('Clearing build cache...')
+      if (!config.dryRun) buildCache.clear()
+    }
+    else {
+      const loaded = buildCache.load()
+      if (loaded) {
+        const cacheStats = buildCache.getStats()
+        logger.debug(`Loaded build cache with ${cacheStats.entries} entries`)
+      }
+      else {
+        logger.debug('No existing build cache found, starting fresh')
+      }
+    }
+
+    // Ensure .dtsx-cache is in .gitignore
+    if (!config.dryRun) ensureGitignore(config.cwd)
   }
+
 
   // Prune cache of deleted files
   if (buildCache && !config.dryRun) {
@@ -191,6 +206,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   // Declarations generated per file, kept for `bundle: true`, which links
   // them into one file per entrypoint.
   const generatedDts = new Map<string, string>()
+  const pendingOutputs = new Map<string, { content: string, lineEnding: DtsGenerationConfig['lineEnding'] }>()
+  const queueOutput = async (path: string, content: string, lineEnding: DtsGenerationConfig['lineEnding'] = 'lf'): Promise<void> => {
+    pendingOutputs.set(path, { content, lineEnding })
+  }
 
   // Helper function to process a single file
   // Accepts optional pre-read source to avoid redundant I/O when files are batch-read
@@ -259,12 +278,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
             previewDryRun(cachedContent)
           }
           else {
-            await mkdir(dirname(outputPath), { recursive: true })
             if (config.declarationMap) {
               sourceCode = preReadSource ?? await readTextFile(file)
-              await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd)
+              await writeDeclarationMapFile(outputPath, file, cachedContent, sourceCode, config.cwd, queueOutput)
             }
-            await writeToFile(outputPath, cachedContent, config.lineEnding)
+            await queueOutput(outputPath, cachedContent, config.lineEnding)
           }
           logger.debug(`[cached] ${relative(config.cwd, outputPath)}`)
           return { success: true, file, declarationCount: 0, importCount: 0, exportCount: 0, cached: true, validationErrorCount }
@@ -307,13 +325,11 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         previewDryRun(finalDtsContent)
       }
       else {
-        await mkdir(dirname(outputPath), { recursive: true })
-
         if (config.declarationMap && sourceCode) {
-          await writeDeclarationMapFile(outputPath, file, finalDtsContent, sourceCode, config.cwd)
+          await writeDeclarationMapFile(outputPath, file, finalDtsContent, sourceCode, config.cwd, queueOutput)
         }
 
-        await writeToFile(outputPath, finalDtsContent, config.lineEnding)
+        await queueOutput(outputPath, finalDtsContent, config.lineEnding)
 
         // Update cache for incremental builds
         if (buildCache && sourceCode) {
@@ -427,6 +443,17 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
 
+  // Prepare and validate the actual declarations (including plugin hooks,
+  // formatting and alias-to-emitted-source checks) before removing prior output.
+  // Cached declarations and source maps join the same publication phase.
+  if (!config.dryRun) {
+    if (config.clean) await cleanDeclarationOutputs(config)
+    for (const [path, output] of pendingOutputs) {
+      await mkdir(dirname(path), { recursive: true })
+      await writeToFile(path, output.content, output.lineEnding)
+    }
+  }
+
   // Save incremental build cache
   if (buildCache && !config.dryRun) {
     buildCache.save()
@@ -455,8 +482,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         try { src = await readTextFile(f) }
         catch { continue }
         for (const ref of scanReExportSpecifiers(src)) {
-          if (!ref.specifier.startsWith('.')) continue
-          const r = resolveRelativeSpecifier(ref.specifier, f)
+          const r = resolveSpecifier(ref.specifier, f)
+          if (!r.isRelative) continue
           if (!r.resolved) {
             broken.push({ from: f, specifier: ref.specifier, reason: 'missing' })
           }
@@ -507,7 +534,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
         // Reachable file set for this entry: follow re-exports AND imports.
         // Imports matter for bundling because exported declarations may
         // reference imported types.
-        const reachability = await collectReachableViaReExports([entry], { includeImports: true })
+        const reachability = await collectReachableViaReExports([entry], { includeImports: true, resolveSpecifier })
         const reachable = new Set<string>()
         for (const r of reachability.reachable) {
           if (r.endsWith('.d.ts')) continue
@@ -877,34 +904,28 @@ function getDeclarationSpecifier(fromOutputPath: string, toOutputPath: string, r
   return specifier
 }
 
-function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string, config: DtsGenerationConfig): string {
+async function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string, config: DtsGenerationConfig): Promise<string> {
+  const resolveSpecifier = await getModuleResolver(config)
   const outputPath = getOutputPath(filePath, config)
 
   const rewriteSpecifier = (specifier: string): string => {
-    const resolved = resolveRelativeSpecifier(specifier, filePath)
+    const resolved = resolveSpecifier(specifier, filePath)
     if (!resolved.isRelative || !resolved.resolved) {
       return specifier
     }
 
     if (/\.d\.(?:ts|mts|cts)$/.test(resolved.resolved)) return specifier
+    if (resolved.isAlias && emittedSources.has(config) && !emittedSources.get(config)!.has(resolved.resolved))
+      throw new Error(`Local alias ${JSON.stringify(specifier)} from ${filePath} targets a declaration excluded from this package build: ${resolved.resolved}`)
 
-    const suffix = specifier.match(/[?#].*$/)?.[0] ?? ''
+    const suffix = resolved.isAlias ? resolved.suffix ?? '' : specifier.match(/[?#].*$/)?.[0] ?? ''
     const pathSpecifier = suffix ? specifier.slice(0, -suffix.length) : specifier
     const writtenExtension = extname(pathSpecifier)
     const runtimeExtension = /^(?:\.js|\.jsx|\.mjs|\.cjs)$/.test(writtenExtension) ? writtenExtension : ''
     return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config), runtimeExtension) + suffix
   }
 
-  return content
-    .replace(/\b(from\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
-      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
-    })
-    .replace(/\b(import\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
-      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
-    })
-    .replace(/\b(import\s*\(\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_match, prefix: string, quote: string, specifier: string) => {
-      return `${prefix}${quote}${rewriteSpecifier(specifier)}${quote}`
-    })
+  return rewriteModuleSpecifiers(content, rewriteSpecifier)
 }
 
 /**
@@ -914,6 +935,10 @@ export async function processFile(
   filePath: string,
   config: DtsGenerationConfig,
 ): Promise<string> {
+  // A standalone call is a new generation boundary, even if the caller reuses
+  // its options object after editing the tsconfig or package metadata.
+  moduleResolvers.delete(config)
+  emittedSources.delete(config)
   const result = await processFileWithStats(filePath, config)
   return result.content
 }
@@ -980,7 +1005,7 @@ async function processFileWithStatsFromSource(
 
   // Process declarations to generate DTS
   let dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
-  dtsContent = rewriteRelativeDeclarationSpecifiers(dtsContent, filePath, config)
+  dtsContent = await rewriteRelativeDeclarationSpecifiers(dtsContent, filePath, config)
 
   if (typeMapper) {
     dtsContent = applyTypeMappings(dtsContent, typeMapper, { filePath })

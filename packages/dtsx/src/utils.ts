@@ -1,12 +1,10 @@
-import { normalizeJsonConfig } from './json-config'
 import type { DtsGenerationConfig } from './types'
-import { statSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { createRequire } from 'node:module'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { write } from './compat'
 import { config } from './config'
+import { readEffectiveTsconfig } from './tsconfig'
 import { findDanglingTypeReferences } from './dangling-refs'
 import { validateTypeScriptSyntax } from './syntax-validator'
 
@@ -53,74 +51,11 @@ export async function getAllTypeScriptFiles(directory?: string): Promise<string[
   })
 }
 
-interface TypeScriptConfigFile {
-  extends?: string | string[]
-  compilerOptions?: {
-    isolatedDeclarations?: boolean
-  }
-}
-
-
-function findConfigFile(path: string): string | null {
-  const candidates = [path]
-  if (!path.endsWith('.json')) candidates.push(`${path}.json`)
-  candidates.push(join(path, 'tsconfig.json'))
-  for (const candidate of candidates) {
-    try {
-      if (statSync(candidate).isFile()) return candidate
-    }
-    catch {
-      // Try the next supported config filename.
-    }
-  }
-  return null
-}
-
-function resolveExtendedConfig(specifier: string, configPath: string): string | null {
-  if (isAbsolute(specifier) || specifier.startsWith('.')) {
-    return findConfigFile(resolve(dirname(configPath), specifier))
-  }
-
-  const require = createRequire(configPath)
-  for (const candidate of [specifier, `${specifier}/tsconfig.json`]) {
-    try {
-      const resolvedPath = findConfigFile(require.resolve(candidate))
-      if (resolvedPath) return resolvedPath
-    }
-    catch {
-      // Try the package's conventional tsconfig.json subpath next.
-    }
-  }
-  return null
-}
-
-async function readIsolatedDeclarationsOption(configPath: string, visited: Set<string>): Promise<boolean | undefined> {
-  const resolvedPath = findConfigFile(configPath)
-  if (!resolvedPath || visited.has(resolvedPath)) return undefined
-  visited.add(resolvedPath)
-
-  const source = await readFile(resolvedPath, 'utf8')
-  const config = JSON.parse(normalizeJsonConfig(source)) as TypeScriptConfigFile
-  const extendedConfigs = typeof config.extends === 'string' ? [config.extends] : config.extends ?? []
-  let inheritedValue: boolean | undefined
-
-  for (const specifier of extendedConfigs) {
-    const extendedPath = resolveExtendedConfig(specifier, resolvedPath)
-    if (!extendedPath) continue
-    const value = await readIsolatedDeclarationsOption(extendedPath, visited)
-    if (value !== undefined) inheritedValue = value
-  }
-
-  return config.compilerOptions?.isolatedDeclarations ?? inheritedValue
-}
-
 /** Resolve the effective isolatedDeclarations option across a tsconfig hierarchy. */
 export async function checkIsolatedDeclarationsConfig(options?: Pick<DtsGenerationConfig, 'cwd' | 'tsconfigPath'>): Promise<boolean> {
   try {
     const cwd = options?.cwd || process.cwd()
-    const configuredPath = options?.tsconfigPath || 'tsconfig.json'
-    const tsconfigPath = isAbsolute(configuredPath) ? configuredPath : resolve(cwd, configuredPath)
-    return await readIsolatedDeclarationsOption(tsconfigPath, new Set()) ?? false
+    return (await readEffectiveTsconfig(resolve(cwd, options?.tsconfigPath || 'tsconfig.json'), { allowCircular: true }))?.isolatedDeclarations ?? false
   }
   catch {
     return false
