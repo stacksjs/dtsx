@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.24...v0.11.25)
+
+### 🐛 Bug Fixes
+
+- preserve class members after private methods ([b163cc4](https://github.com/stacksjs/dtsx/commit/b163cc4)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.25 ([47ae3d4](https://github.com/stacksjs/dtsx/commit/47ae3d4)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.23...v0.11.24)
 
 ### 🐛 Bug Fixes
