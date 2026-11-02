@@ -1,4 +1,18 @@
 # Changelog
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.23...v0.11.24)
+
+### 🐛 Bug Fixes
+
+- **declarations**: emit package-local aliases portably ([f9c34c2](https://github.com/stacksjs/dtsx/commit/f9c34c2)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### 🧹 Chores
+
+- release v0.11.24 ([8de58a0](https://github.com/stacksjs/dtsx/commit/8de58a0)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+### Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.22...v0.11.23)
 
 ### 🐛 Bug Fixes
