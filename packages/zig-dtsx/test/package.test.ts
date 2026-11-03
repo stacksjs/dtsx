@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { isAvailable, runTsc } from '../../dtsx/test/helpers/tsc'
 
 interface PackedManifest {
   name: string
+  version: string
   exports: { '.': { types: string, import: string } }
+  dependencies?: Record<string, string>
 }
 
 interface PackedPackage {
@@ -86,4 +88,40 @@ void [one, many, available, api];`)
   phase('strict negative complete')
   expect(negative.ok).toBe(false)
   expect(negative.output.match(/error TS\d+/g)).toEqual(['error TS2322'])
+}))
+
+test('an unpublished native workspace version installs without requiring its benchmark-only core package', () => withPackedPackage(async ({ directory, files, manifest }) => {
+  const publisher = join(directory, 'publisher')
+  const native = join(publisher, 'native')
+  const core = join(publisher, 'core')
+  const consumer = join(directory, 'consumer')
+  const version = `${manifest.version}-package-test.${crypto.randomUUID()}`
+  await Promise.all([native, core, consumer].map(path => mkdir(path, { recursive: true })))
+  await writeFile(join(publisher, 'package.json'), JSON.stringify({ name: 'native-package-workspace', private: true, workspaces: ['native', 'core'] }))
+  await Promise.all([...files].map(async ([name, payload]) => {
+    const destination = join(native, name.slice('package/'.length))
+    await mkdir(dirname(destination), { recursive: true })
+    await Bun.write(destination, payload)
+  }))
+  const authoredNative: PackedManifest = await Bun.file(resolve(import.meta.dir, '../package.json')).json()
+  const authoredCore: { name: string, version: string } = await Bun.file(resolve(import.meta.dir, '../../dtsx/package.json')).json()
+  // The core descriptor models packaging metadata only. The consumer is outside
+  // this workspace and receives no core source, exports, alias or runtime link.
+  await writeFile(join(native, 'package.json'), JSON.stringify({ ...authoredNative, version }))
+  await writeFile(join(core, 'package.json'), JSON.stringify({ ...authoredCore, version }))
+  const archive = join(directory, 'unpublished-native.tgz')
+  const packed = Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: native })
+  expect(packed.exitCode, packed.stderr.toString()).toBe(0)
+  const futureFiles = await new Bun.Archive(await readFile(archive)).files()
+  const futureManifest: PackedManifest = JSON.parse(await futureFiles.get('package/package.json')!.text())
+  expect(futureManifest.version).toBe(version)
+  if (futureManifest.dependencies?.[authoredCore.name])
+    expect(futureManifest.dependencies[authoredCore.name]).toBe(version)
+  await writeFile(join(consumer, 'package.json'), JSON.stringify({ name: 'unpublished-native-consumer', private: true, type: 'module', dependencies: { [manifest.name]: `file:${archive}` } }))
+  const installed = Bun.spawnSync([process.execPath, 'install'], { cwd: consumer })
+  expect(installed.exitCode, `${installed.stdout}\n${installed.stderr}`).toBe(0)
+  const frozen = Bun.spawnSync([process.execPath, 'install', '--frozen-lockfile'], { cwd: consumer })
+  expect(frozen.exitCode, frozen.stderr.toString()).toBe(0)
+  expect(await Bun.file(join(consumer, 'node_modules', manifest.name, 'src/index.ts')).arrayBuffer()).toEqual(await files.get('package/src/index.ts')!.arrayBuffer())
+  expect(await Bun.file(join(consumer, 'node_modules', authoredCore.name, 'package.json')).exists()).toBe(false)
 }))

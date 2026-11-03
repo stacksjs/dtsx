@@ -24,7 +24,7 @@
     "build.zig.zon",
     "README.md"
   ],
-  "dependencies": {
+  "devDependencies": {
     "@stacksjs/dtsx": "workspace:*"
   }
 }

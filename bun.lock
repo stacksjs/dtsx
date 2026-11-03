@@ -85,7 +85,7 @@
     "packages/zig-dtsx": {
       "name": "zig-dtsx",
       "version": "0.11.25",
-      "dependencies": {
+      "devDependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
     },
