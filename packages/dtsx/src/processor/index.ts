@@ -221,26 +221,6 @@ export function processDeclarations(
     }
   }
 
-  // Build reference check sets for interfaces using a word Set.
-  // Extract all words from referencing texts in O(n), then O(1) lookup per interface.
-  const interfaceReferences = new Set<string>()
-  if (interfaces.length > 0) {
-    const refParts: string[] = []
-    for (const func of functions) {
-      if (func.isExported) refParts.push(func.text)
-    }
-    for (const cls of classes) refParts.push(cls.text)
-    for (const type of types) refParts.push(type.text)
-    if (refParts.length > 0) {
-      const refWords = extractWordSet(refParts.join('\n'))
-      for (const iface of interfaces) {
-        if (refWords.has(iface.name)) {
-          interfaceReferences.add(iface.name)
-        }
-      }
-    }
-  }
-
   // Create filtered imports based on actually used items
   const processedImports: string[] = []
   if (imports.length > 0) {
@@ -260,9 +240,10 @@ export function processDeclarations(
       if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
       else if (variable.isExported && variable.value) textParts.push(processVariableDeclaration(variable, false))
     }
-    for (const iface of interfaces) {
-      if (iface.isExported || interfaceReferences.has(iface.name)) textParts.push(iface.text)
-    }
+    // Every interface below is emitted, including local interfaces retained
+    // for exported value annotations and other local declarations. Its imports
+    // must resolve even when it is not directly referenced by an export.
+    for (const iface of interfaces) textParts.push(iface.text)
     for (const type of types) textParts.push(type.text)
     for (const cls of classes) textParts.push(cls.text)
     for (const enumDecl of enums) textParts.push(enumDecl.text)
