@@ -229,9 +229,7 @@ export function processDeclarations(
 
     // Build combined text for import usage detection
     const textParts: string[] = []
-    for (const func of functions) {
-      if (func.isExported) textParts.push(func.text)
-    }
+    for (const func of functions) textParts.push(func.text)
     for (const variable of variables) {
       // Non-exported declarations can still be part of the public graph when
       // referenced by `export default name`. The declaration processor emits

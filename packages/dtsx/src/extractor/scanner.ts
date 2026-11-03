@@ -118,8 +118,16 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const len = source.length
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
-  const funcBodyIndices = new Set<number>()
+  const nonExportedFunctionGroups = new Map<string, Declaration[]>()
+  const functionBodies = new Set<Declaration>()
   let pos = 0
+
+  function retainPrivateFunction(declaration: Declaration): void {
+    const group = nonExportedFunctionGroups.get(declaration.name)
+    if (group) group.push(declaration)
+    else nonExportedFunctionGroups.set(declaration.name, [declaration])
+    nonExportedTypes.set(declaration.name, declaration)
+  }
 
   // Skip BOM (byte order mark)
   if (pos < len && source.charCodeAt(pos) === 0xFEFF)
@@ -2099,12 +2107,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const text = `${exportPrefix}${declarationName}${generics}${dtsParams}: ${returnType};`
     const comments = extractLeadingComments(declStart)
 
-    // Record index if this function had a body (implementation signature for overloads)
-    if (hasBody) {
-      funcBodyIndices.add(declarations.length)
-    }
-
-    return {
+    const declaration: Declaration = {
       kind: 'function',
       name: name || 'default',
       text,
@@ -2118,6 +2121,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       start: declStart,
       end: pos,
     }
+    // Declaration identity survives insertion of retained local declarations.
+    if (hasBody) functionBodies.add(declaration)
+    return declaration
   }
 
   /**
@@ -3834,7 +3840,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       // by an exported declaration via `typeof X` etc. (resolveReferencedTypes
       // emits it without `export`); otherwise it's dropped from the output.
       const decl = extractFunction(stmtStart, false, false, false)
-      if (decl) nonExportedTypes.set(decl.name, decl)
+      if (decl) retainPrivateFunction(decl)
       else skipToStatementEnd()
     }
     else if (ch0 === 97 /* a */) {
@@ -3845,7 +3851,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         skipWhitespaceAndComments()
         if (matchWord('function')) {
           const decl = extractFunction(stmtStart, false, true, false)
-          if (decl) nonExportedTypes.set(decl.name, decl)
+          if (decl) retainPrivateFunction(decl)
           else { pos = savedAsyncPos; skipToStatementEnd() }
         }
         else {
@@ -3965,17 +3971,23 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
   }
 
-  // Resolve referenced non-exported types
-  if (nonExportedTypes.size > 0) {
-    resolveReferencedTypes(declarations, nonExportedTypes)
+  // Discard overload implementations before computing the emitted dependency graph.
+  if (functionBodies.size > 0) {
+    removeOverloadImplementations(declarations)
+    for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
   }
 
-  // Post-process: remove implementation signatures of overloaded functions.
-  // For any function name that appears more than once, remove the last declaration
-  // that has a body (the implementation signature).
-  if (funcBodyIndices.size > 0) {
+  // Resolve referenced non-exported types from the surviving public signatures.
+  if (nonExportedTypes.size > 0) {
+    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups)
+  }
+
+  return declarations
+
+  // Remove the last body-bearing declaration when a function has overload signatures.
+  function removeOverloadImplementations(group: Declaration[]): void {
     const funcNameCounts = new Map<string, number>()
-    for (const decl of declarations) {
+    for (const decl of group) {
       if (decl.kind === 'function') {
         funcNameCounts.set(decl.name, (funcNameCounts.get(decl.name) || 0) + 1)
       }
@@ -3991,8 +4003,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const toRemove = new Set<number>()
       for (const name of overloadedNames) {
         // Walk backwards to find the last declaration with a body for this name
-        for (let i = declarations.length - 1; i >= 0; i--) {
-          if (declarations[i].kind === 'function' && declarations[i].name === name && funcBodyIndices.has(i)) {
+        for (let i = group.length - 1; i >= 0; i--) {
+          if (group[i].kind === 'function' && group[i].name === name && functionBodies.has(group[i])) {
             toRemove.add(i)
             break
           }
@@ -4002,13 +4014,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // Remove in reverse order to preserve indices
         const sortedIndices = [...toRemove].sort((a, b) => b - a)
         for (const idx of sortedIndices) {
-          declarations.splice(idx, 1)
+          group.splice(idx, 1)
         }
       }
     }
   }
-
-  return declarations
 
   // --- Helper: handle `declare ...` after `declare` keyword ---
   function handleDeclare(stmtStart: number, isExported: boolean): void {
@@ -4201,7 +4211,7 @@ function addInitializerReferences(text: string, references: Set<string>): void {
 }
 
 /** Resolve non-exported types that are referenced by exported declarations */
-function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>): void {
+function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>): void {
   // Iteratively resolve referenced non-exported types (transitive closure)
   const resolved = new Set<string>()
   const declNames = new Set<string>()
@@ -4227,7 +4237,11 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
         continue
       if (wordSet.has(name)) {
         if (!declNames.has(name)) {
-          toInsert.push(decl)
+          const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
+          if (group) {
+            for (const member of group) toInsert.push(member)
+          }
+          else toInsert.push(decl)
           declNames.add(name)
         }
         resolved.add(name)

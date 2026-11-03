@@ -854,9 +854,6 @@ pub fn processDeclarations(
     // Short-circuit: skip combined_words building and import map when there are no imports.
     // For import-free code (e.g. synthetic benchmarks), this avoids O(n) word
     // extraction across all declarations — a significant saving on large inputs.
-    // Lazy-init: only allocate when there are interfaces to check
-    var interface_references = std.StringHashMap(void).init(alloc);
-    _ = &interface_references; // prevent unused warning in no-imports path
     var processed_imports = std.array_list.Managed([]const u8).init(alloc);
 
     if (imports_idx.len > 0) {
@@ -871,48 +868,28 @@ pub fn processDeclarations(
                 try all_imported_items_map.put(item, imp);
             }
         }
-        // Build combined word set for interface reference detection AND import filtering.
+        // Collect references from every declaration emitted below. The scanner
+        // has already selected the reachable non-exported declarations.
         // Single pass over all declarations instead of 7 separate loops per group.
         var combined_words = std.StringHashMap(void).init(alloc);
         try combined_words.ensureTotalCapacity(@intCast(@max(declarations.len * 4, 128)));
         for (declarations) |d| {
             switch (d.kind) {
                 .function_decl => {
-                    if (d.is_exported) extractWords(&combined_words, d.text);
-                },
-                .variable_decl => {
-                    if (d.is_exported) {
-                        extractWords(&combined_words, d.text);
-                        if (d.type_annotation.len > 0) {
-                            extractWords(&combined_words, d.type_annotation);
-                        } else if (d.value.len > 0) {
-                            extractWords(&combined_words, try type_inf.inferNarrowType(alloc, d.value, true, false, 0));
-                        }
-                    }
-                },
-                .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {
                     extractWords(&combined_words, d.text);
                 },
-                .interface_decl, .import_decl, .unknown_decl => {},
-            }
-        }
-
-        // Interface reference detection
-        try interface_references.ensureTotalCapacity(@intCast(@max(interfaces_idx.len, 4)));
-        if (interfaces_idx.len > 0 and combined_words.count() > 0) {
-            for (interfaces_idx) |iidx| {
-                const iface = declarations[iidx];
-                if (combined_words.contains(iface.name)) {
-                    try interface_references.put(iface.name, {});
-                }
-            }
-        }
-
-        // Add interface text to combined_words (after ref detection, before import filtering)
-        for (interfaces_idx) |iidx| {
-            const iface = declarations[iidx];
-            if (iface.is_exported or interface_references.contains(iface.name)) {
-                extractWords(&combined_words, iface.text);
+                .variable_decl => {
+                    extractWords(&combined_words, d.text);
+                    if (d.type_annotation.len > 0) {
+                        extractWords(&combined_words, d.type_annotation);
+                    } else if (d.is_exported and d.value.len > 0) {
+                        extractWords(&combined_words, try type_inf.inferNarrowType(alloc, d.value, true, false, 0));
+                    }
+                },
+                .interface_decl, .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {
+                    extractWords(&combined_words, d.text);
+                },
+                .import_decl, .unknown_decl => {},
             }
         }
         var used_import_items = std.StringHashMap(void).init(alloc);

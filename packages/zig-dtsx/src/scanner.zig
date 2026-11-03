@@ -103,6 +103,7 @@ pub const Scanner = struct {
     /// Lazy-initialized: only allocated on first insertion to avoid overhead for
     /// files that have no non-exported types or overloaded functions.
     non_exported_types: std.StringHashMap(Declaration),
+    non_exported_function_groups: std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)) = .empty,
     func_body_indices: std.AutoHashMap(usize, void),
     non_exported_types_inited: bool,
     func_body_indices_inited: bool,
@@ -132,6 +133,9 @@ pub const Scanner = struct {
         self.declarations.deinit();
         if (self.non_exported_types_inited) self.non_exported_types.deinit();
         if (self.func_body_indices_inited) self.func_body_indices.deinit();
+        var groups = self.non_exported_function_groups.valueIterator();
+        while (groups.next()) |group| group.deinit();
+        self.non_exported_function_groups.deinit(self.allocator);
     }
 
     /// Lazy-put into non_exported_types (initializes the map on first use)
@@ -140,6 +144,14 @@ pub const Scanner = struct {
             self.non_exported_types_inited = true;
         }
         self.non_exported_types.put(name, decl) catch {};
+    }
+
+    pub fn putNonExportedFunction(self: *Scanner, decl: Declaration) !void {
+        self.non_exported_types_inited = true;
+        try self.non_exported_types.put(decl.name, decl);
+        const group = try self.non_exported_function_groups.getOrPut(self.allocator, decl.name);
+        if (!group.found_existing) group.value_ptr.* = std.array_list.Managed(Declaration).init(self.allocator);
+        try group.value_ptr.append(decl);
     }
 
     /// Lazy-put into func_body_indices (initializes on first use)
@@ -904,14 +916,16 @@ pub const Scanner = struct {
         // Main scan loop — delegate to scan_loop module
         try @import("scan_loop.zig").scanMainLoop(self);
 
-        // Post-process: resolve referenced non-exported types (only if map was used)
-        if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {
-            resolveReferencedTypes(&self.declarations, &self.non_exported_types);
+        // Discard overload implementations before computing the emitted dependency graph.
+        if (self.func_body_indices_inited and self.func_body_indices.count() > 0) {
+            removeOverloadImplementations(&self.declarations);
+            var groups = self.non_exported_function_groups.valueIterator();
+            while (groups.next()) |group| removeOverloadImplementations(group);
         }
 
-        // Post-process: remove implementation signatures of overloaded functions (only if map was used)
-        if (self.func_body_indices_inited and self.func_body_indices.count() > 0) {
-            removeOverloadImplementations(self);
+        // Resolve referenced non-exported types from the surviving public signatures.
+        if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {
+            resolveReferencedTypes(&self.declarations, &self.non_exported_types, &self.non_exported_function_groups);
         }
 
         return .{
@@ -945,7 +959,7 @@ pub fn isWordInText(name: []const u8, text: []const u8) bool {
 }
 
 /// Resolve non-exported types that are referenced by exported declarations
-fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration)) void {
+fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration), non_exported_function_groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) void {
     var resolved = std.StringHashMap(void).init(declarations.allocator);
     defer resolved.deinit();
     var decl_names = std.StringHashMap(void).init(declarations.allocator);
@@ -1010,7 +1024,12 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
             // O(1) lookup instead of O(n*m) text scanning
             if (word_set.contains(name)) {
                 if (!decl_names.contains(name)) {
-                    to_insert.append(entry.value_ptr.*) catch {};
+                    const group = if (entry.value_ptr.kind == .function_decl) non_exported_function_groups.get(name) else null;
+                    if (group) |members| {
+                        to_insert.appendSlice(members.items) catch {};
+                    } else {
+                        to_insert.append(entry.value_ptr.*) catch {};
+                    }
                     decl_names.put(name, {}) catch {};
                 }
                 resolved.put(name, {}) catch {};
@@ -1102,14 +1121,14 @@ fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(vo
 /// Remove implementation signatures of overloaded functions.
 /// Single-HashMap approach: count function names, then find and remove body-bearing
 /// implementations in one backward pass.
-fn removeOverloadImplementations(scanner: *Scanner) void {
+fn removeOverloadImplementations(declarations: *std.array_list.Managed(Declaration)) void {
     // Single HashMap: count function declarations by name. Track overloads inline
     // so we don't need a second iteration pass to count them.
-    var func_counts = std.StringHashMap(usize).init(scanner.allocator);
+    var func_counts = std.StringHashMap(usize).init(declarations.allocator);
     defer func_counts.deinit();
     var overload_count: usize = 0;
 
-    for (scanner.declarations.items) |d| {
+    for (declarations.items) |d| {
         if (d.kind == .function_decl) {
             const entry = func_counts.getOrPut(d.name) catch continue;
             if (!entry.found_existing) {
@@ -1125,21 +1144,21 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
     // Single backward pass: for each overloaded name (count > 1),
     // find and mark the last body-bearing declaration for removal.
     // Use a bitset (array of bools) instead of a HashMap for to_remove.
-    const len = scanner.declarations.items.len;
-    const remove_flags = scanner.allocator.alloc(bool, len) catch return;
-    defer scanner.allocator.free(remove_flags);
+    const len = declarations.items.len;
+    const remove_flags = declarations.allocator.alloc(bool, len) catch return;
+    defer declarations.allocator.free(remove_flags);
     @memset(remove_flags, false);
 
     var found_count: usize = 0;
 
     // Walk backward: for each overloaded function, mark its last body-bearing impl
-    var names_found = std.StringHashMap(void).init(scanner.allocator);
+    var names_found = std.StringHashMap(void).init(declarations.allocator);
     defer names_found.deinit();
 
     var i: usize = len;
     while (i > 0) {
         i -= 1;
-        const d = scanner.declarations.items[i];
+        const d = declarations.items[i];
         if (d.kind != .function_decl) continue;
 
         // Check if this function is overloaded
@@ -1150,7 +1169,7 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
         if (names_found.contains(d.name)) continue;
 
         // Is this the implementation (has body)?
-        if (scanner.func_body_indices.contains(i)) {
+        if (d.has_body) {
             remove_flags[i] = true;
             found_count += 1;
             names_found.put(d.name, {}) catch {};
@@ -1162,13 +1181,13 @@ fn removeOverloadImplementations(scanner: *Scanner) void {
 
     // Filter in single pass
     var write: usize = 0;
-    for (scanner.declarations.items, 0..) |d, fi| {
+    for (declarations.items, 0..) |d, fi| {
         if (!remove_flags[fi]) {
-            scanner.declarations.items[write] = d;
+            declarations.items[write] = d;
             write += 1;
         }
     }
-    scanner.declarations.shrinkRetainingCapacity(write);
+    declarations.shrinkRetainingCapacity(write);
 }
 
 // Tests

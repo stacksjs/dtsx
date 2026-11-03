@@ -2047,19 +2047,18 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         }
         const dts_params = buildDtsParams(s, raw_params);
         const opt_mark: []const u8 = if (is_optional) "?" else "";
-        const gen_text: []const u8 = if (is_generator) "*" else "";
 
-        // Direct alloc — class methods are emitted in tight loops, so the
+        // Generator methods use their return type in ambient declarations;
+        // an emitted star would make the entire declaration invalid (TS1221).
+        // Direct alloc: class methods are emitted in tight loops, so the
         // ArrayList overhead added up to a non-trivial fraction of class
         // emission time on member-heavy classes.
-        const meth_total = mod_prefix.len + gen_text.len + member_name.len + opt_mark.len +
+        const meth_total = mod_prefix.len + member_name.len + opt_mark.len +
             generics.len + dts_params.len + 2 + ret_type.len + 1;
         const meth_buf = s.allocator.alloc(u8, meth_total) catch return;
         var mp: usize = 0;
         @memcpy(meth_buf[mp..][0..mod_prefix.len], mod_prefix);
         mp += mod_prefix.len;
-        @memcpy(meth_buf[mp..][0..gen_text.len], gen_text);
-        mp += gen_text.len;
         @memcpy(meth_buf[mp..][0..member_name.len], member_name);
         mp += member_name.len;
         @memcpy(meth_buf[mp..][0..opt_mark.len], opt_mark);

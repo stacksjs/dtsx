@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import { processSource, ZIG_AVAILABLE } from '../src/index'
+import { packedRetainedGraph, retainedVariants } from '../../dtsx/test/helpers/retained-package'
 
 const fixturesDir = resolve(import.meta.dir, '../../dtsx/test/fixtures')
 const inputDir = join(fixturesDir, 'input')
@@ -1519,4 +1520,13 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
       expect(result).toContain('string[]')
     })
   })
+})
+
+
+describeIf('native retained declaration graph package imports', () => {
+  for (const variant of Object.keys(retainedVariants) as Array<keyof typeof retainedVariants>) {
+    test(`retains ${variant} in a strict normally packed consumer`, async () => {
+      await packedRetainedGraph('native', variant)
+    })
+  }
 })

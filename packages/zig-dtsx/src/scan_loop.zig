@@ -51,10 +51,18 @@ pub fn scanMainLoop(s: *Scanner) !void {
             s.putNonExportedType(decl.name, decl);
             try s.declarations.append(decl);
         } else if (ch0 == 'f' and s.matchWord("function")) {
-            s.skipToStatementEnd();
+            const decl = ext.extractFunction(s, stmt_start, false, false, false);
+            if (decl) |d| try s.putNonExportedFunction(d);
         } else if (ch0 == 'a') {
             if (s.matchWord("async")) {
-                s.skipToStatementEnd();
+                s.pos += 5;
+                s.skipWhitespaceAndComments();
+                if (s.matchWord("function")) {
+                    const decl = ext.extractFunction(s, stmt_start, false, true, false);
+                    if (decl) |d| try s.putNonExportedFunction(d);
+                } else {
+                    s.skipToStatementEnd();
+                }
             } else if (s.matchWord("abstract")) {
                 s.pos += 8;
                 s.skipWhitespaceAndComments();
