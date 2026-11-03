@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.27...v0.11.28)
+
+## 🐛 Bug Fixes
+
+- preserve retained declaration imports and overload signatures ([bf2430d](https://github.com/stacksjs/dtsx/commit/bf2430d)) _(by Chris <chris@stacksjs.com>)_ ([#3137](https://github.com/stacksjs/dtsx/issues/3137))
+
+## 🔧 Chores
+
+- release v0.11.28 ([5e63dbe](https://github.com/stacksjs/dtsx/commit/5e63dbe)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.26...v0.11.27)
 
 ## 🐛 Bug Fixes
