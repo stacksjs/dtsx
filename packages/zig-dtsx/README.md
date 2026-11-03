@@ -6,11 +6,15 @@ A high-performance TypeScript declaration file (.d.ts) emitter written in Zig. T
 
 `zig-dtsx` reimplements the dtsx declaration generation pipeline in Zig for maximum performance. It produces output identical to the TypeScript implementation and is used as a drop-in replacement when the compiled binary is available.
 
-## Installation
+## Package availability
 
-```bash
-bun add zig-dtsx -d
-```
+`zig-dtsx` is published to the Pantry registry by this repository's release
+workflow and is intentionally excluded from npm publication. Install the package
+through Pantry. Its authored TypeScript entry requires Bun's `bun:ffi` and loads
+the matching shared library from the package's `prebuilt` directory.
+
+The standalone CLI archives on [GitHub Releases](https://github.com/stacksjs/dtsx/releases)
+are a separate delivery surface and do not require importing the Bun FFI binding.
 
 ## Usage
 
@@ -48,7 +52,8 @@ The Zig implementation mirrors the TypeScript dtsx pipeline:
 2. **Extractor** - Parses tokens and extracts declaration-relevant constructs (exports, types, interfaces, classes, functions, variables)
 3. **Emitter** - Produces `.d.ts` output from the extracted declarations
 
-The Zig binary communicates with the Node/Bun runtime via FFI, allowing seamless integration with the existing dtsx ecosystem.
+The TypeScript binding calls the native shared library through Bun FFI. It is not
+a Node.js or browser runtime entrypoint.
 
 ## Benchmarks
 

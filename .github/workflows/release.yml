@@ -66,7 +66,7 @@ jobs:
             zig build lib -Doptimize=ReleaseFast -Dtarget="$target"
             # Windows DLLs land in zig-out/bin/, unix shared libs in zig-out/lib/.
             # tar.gz for the GH release (standalone download); copy into prebuilt/
-            # for the npm tarball so consumers get the FFI lib without a postinstall.
+            # for the Pantry tarball so Bun FFI consumers get the lib without a postinstall.
             tar -czf "../dtsx/bin/zig-dtsx-lib-${plat}.tar.gz" -C "zig-out/${lib_dir}" "${lib_file}"
             mkdir -p "prebuilt/${plat}"
             cp "zig-out/${lib_dir}/${lib_file}" "prebuilt/${plat}/"
@@ -92,8 +92,8 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
 
       # Publish the JavaScript packages to npm for downstream package-manager
-      # consumers. zig-dtsx remains Pantry-only because it ships native binaries
-      # instead of a JavaScript entrypoint. Every npm package uses this workflow
+      # consumers. zig-dtsx remains Pantry-only: its authored TypeScript entry
+      # loads native libraries through bun:ffi. Every npm package uses this workflow
       # as its trusted OIDC publisher, so a partial release must fail the job.
       - name: Publish to npm
         run: pantry publish --npm --skip zig-dtsx --access public
