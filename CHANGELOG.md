@@ -1,4 +1,21 @@
 # Changelog
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.25...v0.11.26)
+
+## 🐛 Bug Fixes
+
+- keep native benchmarks out of consumer dependencies ([b913675](https://github.com/stacksjs/dtsx/commit/b913675)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3136](https://github.com/stacksjs/dtsx/issues/3136))
+- align native package types with shipped source ([4b8713f](https://github.com/stacksjs/dtsx/commit/4b8713f)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3136](https://github.com/stacksjs/dtsx/issues/3136))
+
+## 🔧 Chores
+
+- release v0.11.26 ([f51096f](https://github.com/stacksjs/dtsx/commit/f51096f)) _(by Chris Breuer <chris@stacksjs.com>)_
+- require qualified release recovery tooling ([e4bb7f4](https://github.com/stacksjs/dtsx/commit/e4bb7f4)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3136](https://github.com/stacksjs/dtsx/issues/3136), [stacksjs/bumpx#2018](https://github.com/stacksjs/bumpx/issues/2018))
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.24...v0.11.25)
 
 ### 🐛 Bug Fixes
