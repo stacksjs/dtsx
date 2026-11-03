@@ -59,7 +59,7 @@
     "preview:docs": "bun --bun bunpress preview docs"
   },
   "devDependencies": {
-    "@stacksjs/bumpx": "^0.2.4",
+    "@stacksjs/bumpx": "^0.2.31",
     "@stacksjs/bunpress": "^0.1.4",
     "@stacksjs/clapp": "^0.2.16",
     "pickier": "^0.1.20",

@@ -5,7 +5,7 @@
     "": {
       "name": "@stacksjs/dtsx",
       "devDependencies": {
-        "@stacksjs/bumpx": "^0.2.4",
+        "@stacksjs/bumpx": "^0.2.31",
         "@stacksjs/bunpress": "^0.1.4",
         "@stacksjs/clapp": "^0.2.16",
         "@stacksjs/gitlint": "^0.1.5",
@@ -23,14 +23,14 @@
     },
     "packages/bun-plugin": {
       "name": "bun-plugin-dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
     },
     "packages/dtsx": {
       "name": "@stacksjs/dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "bin": {
         "dtsx": "./dist/bin/cli.js",
       },
@@ -43,7 +43,7 @@
     },
     "packages/esbuild-plugin": {
       "name": "esbuild-plugin-dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -53,7 +53,7 @@
     },
     "packages/tsup-plugin": {
       "name": "tsup-plugin-dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -63,10 +63,7 @@
     },
     "packages/vite-plugin": {
       "name": "vite-plugin-dtsx",
-      "version": "0.11.21",
-      "bin": {
-        "dtsx": "./dist/bin/cli.js",
-      },
+      "version": "0.11.25",
       "devDependencies": {
         "@stacksjs/dtsx": "workspace:*",
         "vite": "^7.3.1",
@@ -77,7 +74,7 @@
     },
     "packages/webpack-plugin": {
       "name": "webpack-plugin-dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -87,7 +84,7 @@
     },
     "packages/zig-dtsx": {
       "name": "zig-dtsx",
-      "version": "0.11.21",
+      "version": "0.11.25",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*",
       },
@@ -307,7 +304,7 @@
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.2", "", { "os": "win32", "cpu": "x64" }, "sha512-Nd/SgG27WoA9e+/TdK74KnHz852TLa94ovOYySo/yMPuTmpckK/jIF2jSwS3g7ELSKXK13/cVdmg1Z/DaCWKxA=="],
 
-    "@stacksjs/bumpx": ["@stacksjs/bumpx@0.2.6", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "@stacksjs/logsmith": "^0.2.1", "bunfig": "^0.15.6" }, "bin": { "bumpx": "./dist/bin/cli.js" } }, "sha512-y4Jz8WKTJtes6/o1vsIbOeuIoqKItfnbeel94qrJKNKsY2CBzU3FT3YwKjs8K52JFfyACCdQa1tGx+lQWtpyTA=="],
+    "@stacksjs/bumpx": ["@stacksjs/bumpx@0.2.31", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "@stacksjs/logsmith": "^0.2.14", "bunfig": "^0.15.6" }, "bin": { "bumpx": "./dist/bin/cli.js" } }, "sha512-nmQ14cVa/G7mIa61wG7geKuvz2gNt6r/tU8vZk6e01mPwLIwt1ozjxA7NeC9F7h3NA+8D7fbjyhX54PEbpEFag=="],
 
     "@stacksjs/bunpress": ["@stacksjs/bunpress@0.1.4", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "@stacksjs/stx": "^0.2.10", "@stacksjs/ts-cloud": "^0.2.2", "@stacksjs/ts-md": "^0.1.1", "bunfig": "^0.15.6" }, "bin": { "bunpress": "./dist/bin/cli.js" } }, "sha512-uo5ahVHkV0AcUbqhF1OSTqG9TuTIvL3a0UZtU3De+pi0hFfPkj/XrOT5gBp5D3u9XsbYGghYm9VQaReSHnT/YQ=="],
 
@@ -807,7 +804,7 @@
 
     "@cwcss/crosswind/@stacksjs/clapp": ["@stacksjs/clapp@0.2.7", "", {}, "sha512-UutXeFR2U2LvNEX9YKccwzPe7Re7GEit47M7KKgLSgrLH2D8K5VRL6Xbmvnw6xWLGg+YZJQ0t3W4tDIWx/OkVg=="],
 
-    "@stacksjs/bumpx/@stacksjs/clapp": ["@stacksjs/clapp@0.2.7", "", {}, "sha512-UutXeFR2U2LvNEX9YKccwzPe7Re7GEit47M7KKgLSgrLH2D8K5VRL6Xbmvnw6xWLGg+YZJQ0t3W4tDIWx/OkVg=="],
+    "@stacksjs/bumpx/@stacksjs/logsmith": ["@stacksjs/logsmith@0.2.14", "", { "dependencies": { "@stacksjs/clapp": "^0.2.0", "bunfig": "^0.15.6", "pickier": "^0.1.9" }, "bin": { "logsmith": "./dist/bin/cli.js", "@stacksjs/logsmith": "./dist/bin/cli.js" } }, "sha512-Ez089s5Rlytkz1IwPGOVXPMEoBxzMu5hoM4o4dJYlAZctvJE9Q0OoFUwX2K7a7nfMwIws3LQ3AOPil7cAQmXPw=="],
 
     "@stacksjs/bunpress/@stacksjs/clapp": ["@stacksjs/clapp@0.2.7", "", {}, "sha512-UutXeFR2U2LvNEX9YKccwzPe7Re7GEit47M7KKgLSgrLH2D8K5VRL6Xbmvnw6xWLGg+YZJQ0t3W4tDIWx/OkVg=="],
 
