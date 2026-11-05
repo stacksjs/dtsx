@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.30...v0.11.31)
+
+## ✅ Tests
+
+- require the current immutable Pantry release contract ([ece8b6e](https://github.com/stacksjs/dtsx/commit/ece8b6e)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.31 ([fbeb999](https://github.com/stacksjs/dtsx/commit/fbeb999)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.29...v0.11.30)
 
 ## 🐛 Bug Fixes
