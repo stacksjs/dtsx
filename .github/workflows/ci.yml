@@ -144,13 +144,30 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@abb26af17a5c06a115c5adc42463ae1a44cd822a
+        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
+        with:
+          version: 0.11.169
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1282+c0f9b51d8
 
       - name: Install Dependencies
         run: bun install
 
       - name: Build
         run: bun run build
+
+      - name: Build every plugin library
+        run: bun --filter './packages/*-plugin' build
+
+      - name: Build and stage the native host library
+        working-directory: packages/zig-dtsx
+        run: |
+          zig build -Doptimize=ReleaseFast
+          mkdir -p prebuilt/linux-x64
+          cp zig-out/lib/libzig-dtsx.so prebuilt/linux-x64/
 
       - name: Publish Commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
