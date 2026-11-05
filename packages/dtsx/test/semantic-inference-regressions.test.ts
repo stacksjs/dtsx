@@ -13,6 +13,49 @@ afterEach(async () => {
 })
 
 describe('semantic return inference regressions', () => {
+  it('preserves returned async callbacks with generic return annotations', () => {
+    const output = processSourceSemantic(`export function createTranscriber() {
+      return async (audio: Uint8Array, signal: AbortSignal): Promise<string> => {
+        if (signal.aborted) throw new Error('Cancelled')
+        return 'decoded'
+      }
+    }`)
+    expect(output).toContain('createTranscriber(): (audio: Uint8Array, signal: AbortSignal) => Promise<string>')
+  })
+
+  it('keeps an arrow body conditional inside the returned callback', () => {
+    const output = processSourceSemantic(`export function createChoice() {
+      return (value: number) => value > 0 ? value : 0
+    }`)
+    expect(output).toContain('createChoice(): (value: number) => number')
+  })
+
+  it('distinguishes an outer conditional from its returned callbacks', () => {
+    const output = processSourceSemantic(`export function choose(flag: boolean) {
+      return flag ? ((value: number): number => value) : ((value: string): string => value)
+    }`)
+    expect(output).toContain('(value: number) => number')
+    expect(output).toContain('(value: string) => string')
+    expect(output).not.toContain('choose(flag: boolean): boolean')
+  })
+
+  it('does not consume a grouped outer condition as arrow parameters', () => {
+    const output = processSourceSemantic(`export function choose(flag: boolean) {
+      return (flag) ? (value: number) => 1 : (value: string) => 'text'
+    }`)
+    expect(output).toContain('(value: number) => number')
+    expect(output).toContain('(value: string) => string')
+    expect(output).not.toContain('(flag) =>')
+  })
+
+  it('groups a returned callback beside an absent return', () => {
+    const output = processSourceSemantic(`export function optional(flag: boolean) {
+      if (!flag) return
+      return (value: number) => value + 1
+    }`)
+    expect(output).toContain('((value: number) => number) | undefined')
+  })
+
   it('finds the outer async arrow after callback parameter types', () => {
     const output = processSourceSemantic(`export const f = async (cb: () => string, count: number): Promise<number> => count`)
     expect(output).toContain('(cb: () => string, count: number) => Promise<number>')
@@ -134,6 +177,10 @@ describe('semantic spread and value-reference regressions', () => {
     const directory = await mkdtemp(join(tmpdir(), 'dtsx-semantic-regressions-'))
     tempDirectories.push(directory)
     const sources = [
+      `export function createTranscriber() { return async (audio: Uint8Array, signal: AbortSignal): Promise<string> => { if (signal.aborted) throw new Error('Cancelled'); return 'decoded' } }`,
+      `export function createChoice() { return (value: number) => value > 0 ? value : 0 }`,
+      `export function choose(flag: boolean) { return (flag) ? (value: number) => 1 : (value: string) => 'text' }`,
+      `export function optional(flag: boolean) { if (!flag) return; return (value: number) => value + 1 }`,
       `export const f = async (cb: () => string, count: number): Promise<number> => count`,
       `export const f = (value: number) => { return value + 1 }`,
       `export function create() { const local = 1; return { local } }`,
