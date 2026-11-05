@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.29...v0.11.30)
+
+## 🐛 Bug Fixes
+
+- **release**: build complete licensed workspace payloads ([b23a5c3](https://github.com/stacksjs/dtsx/commit/b23a5c3)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.30 ([9dc4503](https://github.com/stacksjs/dtsx/commit/9dc4503)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.28...v0.11.29)
 
 ## 🐛 Bug Fixes
