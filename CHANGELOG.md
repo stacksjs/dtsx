@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.28...v0.11.29)
+
+## 🐛 Bug Fixes
+
+- preserve callable return types for callback factories ([edc9cb5](https://github.com/stacksjs/dtsx/commit/edc9cb5)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.29 ([e46f374](https://github.com/stacksjs/dtsx/commit/e46f374)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.27...v0.11.28)
 
 ## 🐛 Bug Fixes
