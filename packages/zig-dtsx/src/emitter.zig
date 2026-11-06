@@ -6,6 +6,7 @@ const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
+const module_specifiers = @import("module_specifiers.zig");
 
 /// Check if a character is an identifier character (for word boundary checks)
 inline fn isIdentChar(c: u8) bool {
@@ -680,7 +681,34 @@ pub fn processDeclarations(
     keep_comments: bool,
     import_order: []const []const u8,
 ) ![]const u8 {
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, null);
+}
+
+/// Context-aware native emission. The legacy entrypoint retains its original
+/// six arguments and byte-preserving module spelling.
+pub fn processDeclarationsWithContext(
+    alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
+    declarations: []const Declaration,
+    source_code: []const u8,
+    keep_comments: bool,
+    import_order: []const []const u8,
+    context: *const module_specifiers.Context,
+) ![]const u8 {
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, context);
+}
+
+fn processDeclarationsInternal(
+    alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
+    declarations: []const Declaration,
+    source_code: []const u8,
+    keep_comments: bool,
+    import_order: []const []const u8,
+    context: ?*const module_specifiers.Context,
+) ![]const u8 {
     var result = std.array_list.Managed(u8).init(result_alloc);
+    errdefer result.deinit();
     // DTS output is typically 30-60% of source size (bodies stripped, types added).
     // Bias toward 60% + 256 byte slack to avoid the final 1-2 reallocs on average files.
     try result.ensureTotalCapacity((source_code.len * 6) / 10 + 256);
@@ -1203,6 +1231,13 @@ pub fn processDeclarations(
     for (default_exports.items) |stmt| {
         if (result.items.len > 0) try result.append('\n');
         try result.appendSlice(stmt);
+    }
+
+    if (context) |resolved| {
+        const contextual_output = try module_specifiers.rewrite(alloc, result.items, resolved);
+        defer alloc.free(contextual_output);
+        result.clearRetainingCapacity();
+        try result.appendSlice(contextual_output);
     }
 
     // Append null terminator so FFI callers get a C string without extra copy.

@@ -1,0 +1,400 @@
+//! Resolved module context for native declaration emission. Resolution and
+//! package delivery belong to the project planner, not this source-only pass.
+const std = @import("std");
+const ch = @import("char_utils.zig");
+
+pub const Rewrite = struct {
+    specifier: []const u8,
+    resolvedSource: []const u8,
+    declarationOutput: []const u8,
+    emittedSpecifier: []const u8,
+};
+
+const WireContext = struct {
+    version: u32,
+    moduleSpecifierMode: []const u8,
+    sourceFile: []const u8,
+    outputFile: []const u8,
+    sourceHash: []const u8,
+    rewrites: []const Rewrite,
+};
+
+pub const Context = struct {
+    parsed: std.json.Parsed(WireContext),
+
+    pub fn deinit(self: Context) void {
+        self.parsed.deinit();
+    }
+
+    fn lookup(self: *const Context, specifier: []const u8) ![]const u8 {
+        for (self.parsed.value.rewrites) |entry| {
+            if (std.mem.eql(u8, entry.specifier, specifier)) return entry.emittedSpecifier;
+        }
+        if (std.mem.startsWith(u8, specifier, "./") or std.mem.startsWith(u8, specifier, "../") or
+            std.mem.eql(u8, specifier, ".") or std.mem.eql(u8, specifier, "..") or
+            std.mem.startsWith(u8, specifier, "/") or std.mem.startsWith(u8, specifier, "\\") or
+            (specifier.len >= 3 and std.ascii.isAlphabetic(specifier[0]) and specifier[1] == ':' and (specifier[2] == '/' or specifier[2] == '\\')))
+        {
+            return error.UnresolvedModuleSpecifier;
+        }
+        return specifier;
+    }
+};
+
+fn validString(value: []const u8) bool {
+    return value.len > 0 and std.mem.indexOfScalar(u8, value, 0) == null;
+}
+
+pub fn parse(allocator: std.mem.Allocator, json: []const u8, source: []const u8) !Context {
+    const parsed = std.json.parseFromSlice(WireContext, allocator, json, .{ .allocate = .alloc_always }) catch return error.InvalidContext;
+    errdefer parsed.deinit();
+    const wire = parsed.value;
+    if (wire.version != 1) return error.UnsupportedContextVersion;
+    if ((!std.mem.eql(u8, wire.moduleSpecifierMode, "preserve") and !std.mem.eql(u8, wire.moduleSpecifierMode, "node")) or
+        !validString(wire.sourceFile) or !validString(wire.outputFile) or wire.sourceHash.len != 64)
+        return error.InvalidContext;
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(source, &digest, .{});
+    const hex = "0123456789abcdef";
+    for (digest, 0..) |byte, index| {
+        if (wire.sourceHash[index * 2] != hex[byte >> 4] or wire.sourceHash[index * 2 + 1] != hex[byte & 15])
+            return error.InvalidContext;
+    }
+    for (wire.rewrites, 0..) |entry, index| {
+        if (!validString(entry.specifier) or !validString(entry.resolvedSource) or
+            !validString(entry.declarationOutput) or !validString(entry.emittedSpecifier)) return error.InvalidContext;
+        for (wire.rewrites[0..index]) |previous| {
+            if (std.mem.eql(u8, previous.specifier, entry.specifier) and
+                (!std.mem.eql(u8, previous.resolvedSource, entry.resolvedSource) or
+                    !std.mem.eql(u8, previous.declarationOutput, entry.declarationOutput) or
+                    !std.mem.eql(u8, previous.emittedSpecifier, entry.emittedSpecifier))) return error.InvalidContext;
+        }
+    }
+    return .{ .parsed = parsed };
+}
+
+const Token = struct {
+    start: usize,
+    end: usize,
+    kind: enum { word, quoted, punctuation, template },
+};
+
+fn tokens(allocator: std.mem.Allocator, content: []const u8) ![]Token {
+    var result = std.array_list.Managed(Token).init(allocator);
+    errdefer result.deinit();
+    var i: usize = 0;
+    try scanCode(&result, content, &i, false);
+    return result.toOwnedSlice();
+}
+
+// Template raw text is literal data. Only ${...} switches back to TypeScript
+// syntax, including nested templates and object/type braces in a substitution.
+fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, position: *usize) anyerror!void {
+    var raw_start = position.*;
+    position.* += 1;
+    while (position.* < content.len) {
+        const i = position.*;
+        if (content[i] == '\\') {
+            if (i + 1 >= content.len) return error.InvalidContext;
+            position.* += 2;
+        } else if (content[i] == '`') {
+            position.* += 1;
+            try result.append(.{ .start = raw_start, .end = position.*, .kind = .template });
+            return;
+        } else if (content[i] == '$' and i + 1 < content.len and content[i + 1] == '{') {
+            try result.append(.{ .start = raw_start, .end = i + 1, .kind = .template });
+            try result.append(.{ .start = i + 1, .end = i + 2, .kind = .punctuation });
+            position.* += 2;
+            try scanCode(result, content, position, true);
+            raw_start = position.*;
+        } else position.* += 1;
+    }
+    return error.InvalidContext;
+}
+
+fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, position: *usize, substitution: bool) anyerror!void {
+    var braces: usize = 0;
+    while (position.* < content.len) {
+        const i = position.*;
+        if (ch.isWhitespace(content[i])) { position.* += 1; continue; }
+        if (i + 1 < content.len and content[i] == '/' and content[i + 1] == '/') {
+            position.* += 2;
+            while (position.* < content.len and content[position.*] != '\n') position.* += 1;
+            continue;
+        }
+        if (i + 1 < content.len and content[i] == '/' and content[i + 1] == '*') {
+            position.* += 2;
+            while (position.* + 1 < content.len and !(content[position.*] == '*' and content[position.* + 1] == '/')) position.* += 1;
+            if (position.* + 1 >= content.len) return error.InvalidContext;
+            position.* += 2;
+            continue;
+        }
+        if (content[i] == '`') {
+            try scanTemplate(result, content, position);
+        } else if (content[i] == '\'' or content[i] == '"') {
+            const quote = content[i];
+            position.* += 1;
+            var closed = false;
+            while (position.* < content.len) {
+                if (content[position.*] == '\\') {
+                    if (position.* + 1 >= content.len) return error.InvalidContext;
+                    position.* += 2;
+                } else if (content[position.*] == quote) {
+                    position.* += 1;
+                    closed = true;
+                    break;
+                } else position.* += 1;
+            }
+            if (!closed) return error.InvalidContext;
+            try result.append(.{ .start = i, .end = position.*, .kind = .quoted });
+        } else if (ch.isIdentStart(content[i])) {
+            position.* += 1;
+            while (position.* < content.len and ch.isIdentChar(content[position.*])) position.* += 1;
+            try result.append(.{ .start = i, .end = position.*, .kind = .word });
+        } else {
+            position.* += 1;
+            try result.append(.{ .start = i, .end = position.*, .kind = .punctuation });
+            if (substitution) {
+                if (content[i] == '{') braces += 1;
+                if (content[i] == '}') {
+                    if (braces == 0) return;
+                    braces -= 1;
+                }
+            }
+        }
+    }
+    if (substitution) return error.InvalidContext;
+}
+
+fn isToken(content: []const u8, items: []const Token, index: usize, text: []const u8) bool {
+    return index < items.len and std.mem.eql(u8, content[items[index].start..items[index].end], text);
+}
+
+fn moduleLiteral(content: []const u8, items: []const Token, index: usize) ?usize {
+    if (index > 0 and isToken(content, items, index - 1, ".")) return null;
+    const importing = isToken(content, items, index, "import");
+    if (!importing and !isToken(content, items, index, "export")) return null;
+    var next = index + 1;
+    if (next >= items.len) return null;
+    if (importing) {
+        if (items[next].kind == .quoted) return next;
+        if (isToken(content, items, next, "(")) {
+            return if (next + 2 < items.len and items[next + 1].kind == .quoted and
+                (isToken(content, items, next + 2, ")") or isToken(content, items, next + 2, ","))) next + 1 else null;
+        }
+        if (items[next].kind != .word and !isToken(content, items, next, "*") and !isToken(content, items, next, "{")) return null;
+    } else {
+        if (isToken(content, items, next, "type")) next += 1;
+        if (!isToken(content, items, next, "*") and !isToken(content, items, next, "{")) return null;
+    }
+    var depth: usize = 0;
+    while (next < items.len) : (next += 1) {
+        if (isToken(content, items, next, ";")) return null;
+        if (isToken(content, items, next, "{")) depth += 1;
+        if (isToken(content, items, next, "}")) {
+            if (depth == 0) return null;
+            depth -= 1;
+        }
+        if (depth == 0 and isToken(content, items, next, "from"))
+            return if (next + 1 < items.len and items[next + 1].kind == .quoted) next + 1 else null;
+        if (depth == 0 and isToken(content, items, next, "=")) {
+            if (importing and isToken(content, items, next + 1, "require") and isToken(content, items, next + 2, "(") and
+                next + 4 < items.len and items[next + 3].kind == .quoted and isToken(content, items, next + 4, ")")) return next + 3;
+            return null;
+        }
+    }
+    return null;
+}
+
+fn hexValue(value: u8) !u32 {
+    return if (value >= '0' and value <= '9') value - '0' else if (value >= 'a' and value <= 'f') value - 'a' + 10 else if (value >= 'A' and value <= 'F') value - 'A' + 10 else error.InvalidContext;
+}
+
+fn readHex(content: []const u8, start: usize, length: usize) !u32 {
+    if (start + length > content.len) return error.InvalidContext;
+    var result: u32 = 0;
+    for (content[start..][0..length]) |byte| result = result * 16 + try hexValue(byte);
+    return result;
+}
+
+fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
+    var decoded = std.array_list.Managed(u8).init(allocator);
+    errdefer decoded.deinit();
+    const body = literal[1 .. literal.len - 1];
+    var i: usize = 0;
+    while (i < body.len) : (i += 1) {
+        if (body[i] != '\\') { try decoded.append(body[i]); continue; }
+        i += 1;
+        if (i >= body.len) return error.InvalidContext;
+        switch (body[i]) {
+            '\n' => {},
+            '\r' => { if (i + 1 < body.len and body[i + 1] == '\n') i += 1; },
+            'n' => try decoded.append('\n'),
+            'r' => try decoded.append('\r'),
+            't' => try decoded.append('\t'),
+            'b' => try decoded.append(8),
+            'f' => try decoded.append(12),
+            'v' => try decoded.append(11),
+            '0' => return error.InvalidContext,
+            'x' => { try decoded.append(@intCast(try readHex(body, i + 1, 2))); i += 2; },
+            'u' => {
+                var codepoint: u32 = 0;
+                if (i + 1 < body.len and body[i + 1] == '{') {
+                    i += 2;
+                    const start = i;
+                    while (i < body.len and body[i] != '}') : (i += 1) {
+                        if (i - start >= 6) return error.InvalidContext;
+                        codepoint = codepoint * 16 + try hexValue(body[i]);
+                    }
+                    if (i == start or i >= body.len or codepoint > 0x10ffff) return error.InvalidContext;
+                } else {
+                    codepoint = try readHex(body, i + 1, 4);
+                    i += 4;
+                }
+                if (codepoint >= 0xd800 and codepoint <= 0xdbff) {
+                    if (i + 6 >= body.len or body[i + 1] != '\\' or body[i + 2] != 'u') return error.InvalidContext;
+                    const low = try readHex(body, i + 3, 4);
+                    if (low < 0xdc00 or low > 0xdfff) return error.InvalidContext;
+                    codepoint = 0x10000 + (codepoint - 0xd800) * 0x400 + low - 0xdc00;
+                    i += 6;
+                }
+                var bytes: [4]u8 = undefined;
+                const length = std.unicode.utf8Encode(@intCast(codepoint), &bytes) catch return error.InvalidContext;
+                try decoded.appendSlice(bytes[0..length]);
+            },
+            else => try decoded.append(body[i]),
+        }
+    }
+    return decoded.toOwnedSlice();
+}
+
+fn appendLiteral(result: *std.array_list.Managed(u8), value: []const u8, quote: u8) !void {
+    const hex = "0123456789abcdef";
+    try result.append(quote);
+    for (value) |byte| {
+        if (byte == quote or byte == '\\') { try result.append('\\'); try result.append(byte); }
+        else if (byte < 32) {
+            try result.appendSlice("\\u00");
+            try result.append(hex[byte >> 4]);
+            try result.append(hex[byte & 15]);
+        } else try result.append(byte);
+    }
+    try result.append(quote);
+}
+
+/// Emit only grammatical module literals through the resolved context. This
+/// runs inside the native emitter before its result allocation is finalized.
+pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *const Context) ![]u8 {
+    if (std.mem.eql(u8, context.parsed.value.moduleSpecifierMode, "preserve")) return allocator.dupe(u8, content);
+    const items = try tokens(allocator, content);
+    defer allocator.free(items);
+    var result = std.array_list.Managed(u8).init(allocator);
+    errdefer result.deinit();
+    var copied: usize = 0;
+    for (items, 0..) |token, index| {
+        if (token.kind != .word) continue;
+        const literal_index = moduleLiteral(content, items, index) orelse continue;
+        const literal = items[literal_index];
+        if (literal.start < copied) continue;
+        const decoded = try decodeLiteral(allocator, content[literal.start..literal.end]);
+        defer allocator.free(decoded);
+        if (!validString(decoded)) return error.InvalidContext;
+        const replacement = try context.lookup(decoded);
+        try result.appendSlice(content[copied..literal.start]);
+        if (std.mem.eql(u8, replacement, decoded)) try result.appendSlice(content[literal.start..literal.end])
+        else try appendLiteral(&result, replacement, content[literal.start]);
+        copied = literal.end;
+    }
+    try result.appendSlice(content[copied..]);
+    return result.toOwnedSlice();
+}
+
+fn testContext(allocator: std.mem.Allocator, mode: []const u8, source: []const u8, rewrites: []const u8) !Context {
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(source, &digest, .{});
+    const alphabet = "0123456789abcdef";
+    var hash: [64]u8 = undefined;
+    for (digest, 0..) |byte, i| { hash[i * 2] = alphabet[byte >> 4]; hash[i * 2 + 1] = alphabet[byte & 15]; }
+    const json = try std.fmt.allocPrint(allocator,
+        "{{\"version\":1,\"moduleSpecifierMode\":\"{s}\",\"sourceFile\":\"/src/index.ts\",\"outputFile\":\"/dist/index.d.ts\",\"sourceHash\":\"{s}\",\"rewrites\":{s}}}",
+        .{ mode, hash, rewrites });
+    defer allocator.free(json);
+    return parse(allocator, json, source);
+}
+
+test "context maps only actual emitted module literals" {
+    const a = std.testing.allocator;
+    const source = "source identity";
+    const entries = "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]";
+    const context = try testContext(a, "node", source, entries);
+    defer context.deinit();
+    const input =
+        "// import('./missing')\n" ++
+        "/* export * from './missing' */\n" ++
+        "import './value';\nimport type { Value } from './value';\n" ++
+        "export type { Value } from './value';\nexport * as values from './value';\n" ++
+        "import Value = require('./value');\n" ++
+        "export type T = import('./value').Value;\n" ++
+        "export interface X { value: typeof import('./value'); literal: './missing'; from: './missing'; }\n" ++
+        "declare module './missing' { export type T = import('./value').Value }\n" ++
+        "export type Template = `import('./missing')`;\n" ++
+        "export type Name = './missing';\n" ++
+        "import type { External } from 'external';\n";
+    const output = try rewrite(a, input, &context);
+    defer a.free(output);
+    try std.testing.expect(std.mem.indexOf(u8, output, "import './value.js'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "from './value.js'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "require('./value.js')") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "typeof import('./value.js')") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "declare module './missing'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "literal: './missing'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "`import('./missing')`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "from 'external'") != null);
+}
+
+test "context checks source identity, missing edges and preserves legacy spelling" {
+    const a = std.testing.allocator;
+    const context = try testContext(a, "node", "source", "[]");
+    defer context.deinit();
+    try std.testing.expectError(error.UnresolvedModuleSpecifier, rewrite(a, "export * from './missing';", &context));
+    const preserved = try testContext(a, "preserve", "source", "[]");
+    defer preserved.deinit();
+    const input = "export * from './missing';";
+    const output = try rewrite(a, input, &preserved);
+    defer a.free(output);
+    try std.testing.expectEqualStrings(input, output);
+    try std.testing.expectError(error.InvalidContext, parse(a, "{}", "source"));
+    try std.testing.expectError(error.InvalidContext, parse(a,
+        "{\"version\":1,\"moduleSpecifierMode\":\"node\",\"sourceFile\":\"/src\",\"outputFile\":\"/dist\",\"sourceHash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"rewrites\":[]}", "source"));
+}
+
+test "escaped module literals map decoded values and safely escape emitted paths" {
+    const a = std.testing.allocator;
+    const context = try testContext(a, "node", "source",
+        "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value's.js\"}]");
+    defer context.deinit();
+    const output = try rewrite(a, "export * from '\\u002e/value';", &context);
+    defer a.free(output);
+    try std.testing.expectEqualStrings("export * from './value\\'s.js';", output);
+}
+
+test "template substitutions recurse through syntax while raw characters remain literal" {
+    const a = std.testing.allocator;
+    const context = try testContext(a, "node", "source",
+        "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]");
+    defer context.deinit();
+    const input =
+        "export type T = `raw import('./missing') ${import('./value').Name} " ++
+        "\\${import('./missing')} " ++
+        "${{ brace: '}'; literal: \"import('./missing')\"; name: import('./value').Name }['name']} " ++
+        "${`nested import('./missing') ${/* } */ import('./value').Name}`} end`;";
+    const expected =
+        "export type T = `raw import('./missing') ${import('./value.js').Name} " ++
+        "\\${import('./missing')} " ++
+        "${{ brace: '}'; literal: \"import('./missing')\"; name: import('./value.js').Name }['name']} " ++
+        "${`nested import('./missing') ${/* } */ import('./value.js').Name}`} end`;";
+    const output = try rewrite(a, input, &context);
+    defer a.free(output);
+    try std.testing.expectEqualStrings(expected, output);
+    try std.testing.expectError(error.InvalidContext, rewrite(a, "type T = `${{ name: import('./value') }`;", &context));
+}

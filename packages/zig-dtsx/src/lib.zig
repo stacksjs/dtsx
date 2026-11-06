@@ -3,6 +3,7 @@
 const std = @import("std");
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
+const module_specifiers = @import("module_specifiers.zig");
 
 const ProcessResult = struct {
     ptr: [*]const u8,
@@ -63,19 +64,31 @@ fn processSourceInternal(
     keep_comments: bool,
     isolated_declarations: bool,
 ) !ProcessResult {
-    // Handle empty input
-    if (len == 0) {
-        const result = try std.heap.c_allocator.alloc(u8, 1);
-        result[0] = 0;
-        return .{ .ptr = result.ptr, .len = 0 };
-    }
+    return processSourceInternalWithContext(input, len, keep_comments, isolated_declarations, null);
+}
 
+fn processSourceInternalWithContext(
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    isolated_declarations: bool,
+    context_json: ?[]const u8,
+) !ProcessResult {
+    if (len == 0 and context_json == null) return emptyResult();
     const source = input[0..len];
 
     // Reuse thread-local arena — reset frees all allocations but keeps backing pages
     const arena = getOrInitArena();
     _ = arena.reset(.retain_capacity);
     const arena_alloc = arena.allocator();
+    var context: ?module_specifiers.Context = if (context_json) |json|
+        try module_specifiers.parse(arena_alloc, json, source)
+    else
+        null;
+    defer if (context) |*value| value.deinit();
+
+    // Validate a supplied context even when its source is empty.
+    if (len == 0) return emptyResult();
 
     // Scan
     var scanner = Scanner.init(arena_alloc, source, keep_comments, isolated_declarations);
@@ -85,7 +98,15 @@ fn processSourceInternal(
     // processDeclarations appends '\0' before toOwnedSlice, so the result is
     // already null-terminated with no extra copy needed.
     const default_import_order = [_][]const u8{"bun"};
-    const dts_output = try emitter.processDeclarations(
+    const dts_output = if (context) |*value| try emitter.processDeclarationsWithContext(
+        arena_alloc,
+        std.heap.c_allocator,
+        scanner.declarations.items,
+        source,
+        keep_comments,
+        &default_import_order,
+        value,
+    ) else try emitter.processDeclarations(
         arena_alloc,
         std.heap.c_allocator,
         scanner.declarations.items,
@@ -96,6 +117,35 @@ fn processSourceInternal(
 
     // dts_output[0..len] is content, dts_output.ptr[len] == 0 (null terminator)
     return .{ .ptr = dts_output.ptr, .len = dts_output.len };
+}
+
+/// Additive context ABI v1. All legacy signatures and allocation rules remain
+/// unchanged. Status: 0 success, 1 invalid context, 2 unsupported version,
+/// 3 unresolved module, 4 emission failure. Failure still returns a freeable,
+/// empty, NUL-terminated allocation and initializes both output fields.
+export fn process_source_with_context_v1(
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    isolated_declarations: bool,
+    context: [*]const u8,
+    context_len: usize,
+    out_len: *u64,
+    out_status: *u32,
+) [*]const u8 {
+    out_len.* = 0;
+    out_status.* = 0;
+    const result = processSourceInternalWithContext(input, len, keep_comments, isolated_declarations, context[0..context_len]) catch |err| {
+        out_status.* = switch (err) {
+            error.InvalidContext => 1,
+            error.UnsupportedContextVersion => 2,
+            error.UnresolvedModuleSpecifier => 3,
+            else => 4,
+        };
+        return emptyResult().ptr;
+    };
+    out_len.* = @intCast(result.len);
+    return result.ptr;
 }
 
 /// Get the length of a result string (without null terminator).
@@ -274,6 +324,18 @@ test "result_length stays within the null-terminated allocation" {
     try std.testing.expectEqual(@as(usize, 4), result_length(&value));
     const empty = [_]u8{0};
     try std.testing.expectEqual(@as(usize, 0), result_length(&empty));
+}
+
+test "context ABI failure initializes status and returns a freeable empty result" {
+    const source = "export const count = 1";
+    const invalid_json = "{";
+    var length: u64 = 999;
+    var status: u32 = 999;
+    const result = process_source_with_context_v1(source.ptr, source.len, true, false, invalid_json.ptr, invalid_json.len, &length, &status);
+    defer free_result(result, @intCast(length));
+    try std.testing.expectEqual(@as(u32, 1), status);
+    try std.testing.expectEqual(@as(u64, 0), length);
+    try std.testing.expectEqual(@as(u8, 0), result[0]);
 }
 
 test "processSourceInternal preserves nested JSX declarations end to end" {

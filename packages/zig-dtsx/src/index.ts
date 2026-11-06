@@ -49,6 +49,7 @@ if (slug !== null) {
 }
 
 let lib: ReturnType<typeof dlopen> | null = null
+let selectedLibPath: string | undefined
 for (const libPath of libPaths) {
   try {
     lib = dlopen(libPath, {
@@ -85,11 +86,26 @@ for (const libPath of libPaths) {
         returns: FFIType.void,
       },
     })
+    selectedLibPath = libPath
     break
   }
   catch {
     continue
   }
+}
+
+// Probe the additive ABI on the exact library selected above. Older libraries
+// remain usable for preserve APIs and never masquerade as contextual emitters.
+const contextABI = {
+  process_source_with_context_v1: {
+    args: [FFIType.ptr, FFIType.u64, FFIType.bool, FFIType.bool, FFIType.ptr, FFIType.u64, FFIType.ptr, FFIType.ptr],
+    returns: FFIType.ptr,
+  },
+} as const
+let contextLib: ReturnType<typeof dlopen<typeof contextABI>> | null = null
+if (selectedLibPath) {
+  try { contextLib = dlopen(selectedLibPath, contextABI) }
+  catch { /* The legacy source-only ABI is independently available. */ }
 }
 
 const symbols = lib?.symbols as any
@@ -132,6 +148,54 @@ function readResult(resultPtr: ReturnType<typeof process_source>, knownLen?: num
  * @returns The generated .d.ts declaration content
  */
 export const ZIG_AVAILABLE: boolean = !!lib
+export const ZIG_CONTEXT_AVAILABLE: boolean = !!contextLib
+
+/** Resolved graph information supplied by the owning project planner. */
+export interface SourceEmissionContext {
+  version: 1
+  moduleSpecifierMode: 'preserve' | 'node'
+  sourceFile: string
+  outputFile: string
+  /** SHA-256 of the exact UTF-8 source bytes. */
+  sourceHash: string
+  rewrites: Array<{
+    specifier: string
+    resolvedSource: string
+    declarationOutput: string
+    emittedSpecifier: string
+  }>
+}
+
+/**
+ * Emit through the native contextual ABI. The caller's planner owns resolution
+ * and package delivery; identity strings alone do not prove filesystem ownership.
+ * This never falls back to the source-only ABI or a TypeScript emitter.
+ */
+export function processSourceWithContext(sourceCode: string, context: SourceEmissionContext, keepComments: boolean = true, isolatedDeclarations: boolean = false): string {
+  if (!contextLib) throw new Error('Native contextual emission is unavailable in the selected zig-dtsx library; build a library with context ABI v1')
+  const encodedSource = encoder.encode(sourceCode)
+  const sourceBytes = encodedSource.length ? encodedSource : new Uint8Array(1)
+  const serializedContext = JSON.stringify(context)
+  if (typeof serializedContext !== 'string') throw new Error('Invalid native emission context')
+  const contextBytes = encoder.encode(serializedContext)
+  const length = new BigUint64Array(1)
+  const status = new Uint32Array(1)
+  const result = contextLib.symbols.process_source_with_context_v1(
+    ptr(sourceBytes), encodedSource.length, keepComments, isolatedDeclarations,
+    ptr(contextBytes), contextBytes.length, ptr(length), ptr(status),
+  )
+  if (status[0] !== 0) {
+    if (result) free_result(result, Number(length[0]))
+    const messages: Record<number, string> = {
+      1: 'Invalid native emission context',
+      2: 'Unsupported native emission context version',
+      3: 'Unresolved module specifier in native emission context',
+      4: 'Native contextual declaration emission failed',
+    }
+    throw new Error(messages[status[0]] ?? `Native contextual emission failed with status ${status[0]}`)
+  }
+  return readResult(result, Number(length[0]))
+}
 
 export function processSource(sourceCode: string, keepComments: boolean = true, isolatedDeclarations: boolean = false): string {
   if (!lib) {
@@ -247,4 +311,4 @@ export function processBatch(sources: string[], keepComments: boolean = true, th
   return results
 }
 
-export default { processSource, processBatch } as { processSource: typeof processSource, processBatch: typeof processBatch }
+export default { processSource, processBatch, processSourceWithContext } as { processSource: typeof processSource, processBatch: typeof processBatch, processSourceWithContext: typeof processSourceWithContext }

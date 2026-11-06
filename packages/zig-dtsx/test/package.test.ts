@@ -70,12 +70,15 @@ test('the normal packed Bun FFI binding retains strict public API types without 
   // own graph cache avoids checking unchanged dependency declarations twice;
   // the new file must still invalidate the project and produce exactly TS2322.
   const compilerOptions = { module: 'Preserve', moduleResolution: 'Bundler', target: 'ESNext', strict: true, skipLibCheck: false, paths: {}, types: ['bun'], noEmit: true, incremental: true, tsBuildInfoFile: './consumer.tsbuildinfo' }
-  await writeFile(join(consumer, 'consumer.ts'), `import binding, { processSource, processBatch, ZIG_AVAILABLE } from '${manifest.name}';
+  await writeFile(join(consumer, 'consumer.ts'), `import binding, { processSource, processBatch, processSourceWithContext, ZIG_AVAILABLE, ZIG_CONTEXT_AVAILABLE, type SourceEmissionContext } from '${manifest.name}';
 const one: string = processSource('export const value = 1', true, false);
 const many: string[] = processBatch(['export const value = 1'], false, 1);
 const available: boolean = ZIG_AVAILABLE;
-const api: { processSource: typeof processSource, processBatch: typeof processBatch } = binding;
-void [one, many, available, api];`)
+const contextual: boolean = ZIG_CONTEXT_AVAILABLE;
+const context: SourceEmissionContext = { version: 1, moduleSpecifierMode: 'node', sourceFile: '/src/index.ts', outputFile: '/dist/index.d.ts', sourceHash: 'hash', rewrites: [] };
+const emitted: string = processSourceWithContext('export const value = 1', context);
+const api: { processSource: typeof processSource, processBatch: typeof processBatch, processSourceWithContext: typeof processSourceWithContext } = binding;
+void [one, many, available, contextual, emitted, api];`)
   await writeFile(join(consumer, 'tsconfig.json'), JSON.stringify({ compilerOptions, include: ['*.ts'] }))
   phase('strict positive start')
   const positive = runTsc(consumer, ['--project', 'tsconfig.json'])
@@ -88,6 +91,10 @@ void [one, many, available, api];`)
   phase('strict negative complete')
   expect(negative.ok).toBe(false)
   expect(negative.output.match(/error TS\d+/g)).toEqual(['error TS2322'])
+  await writeFile(join(consumer, 'negative.ts'), `import { processSourceWithContext, type SourceEmissionContext } from '${manifest.name}'; const context: SourceEmissionContext = { version: 1, moduleSpecifierMode: 'node', sourceFile: '/src/index.ts', outputFile: '/dist/index.d.ts', sourceHash: 'hash', rewrites: [] }; const wrong: number = processSourceWithContext('export const value = 1', context); void wrong;`)
+  const contextualNegative = runTsc(consumer, ['--project', 'tsconfig.json'])
+  expect(contextualNegative.ok).toBe(false)
+  expect(contextualNegative.output.match(/error TS\d+/g)).toEqual(['error TS2322'])
 }))
 
 test('an unpublished native workspace version installs without requiring its benchmark-only core package', () => withPackedPackage(async ({ directory, files, manifest }) => {

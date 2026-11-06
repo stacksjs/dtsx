@@ -40,6 +40,9 @@ pub const DeclarationKind = types.DeclarationKind;
 /// callers can treat it as a C string); the returned slice excludes
 /// that NUL. Callers freeing the buffer must free `ptr[0 .. len + 1]`.
 pub const processDeclarations = emitter.processDeclarations;
+pub const ModuleSpecifierContext = @import("module_specifiers.zig").Context;
+pub const parseModuleSpecifierContext = @import("module_specifiers.zig").parse;
+pub const processDeclarationsWithContext = emitter.processDeclarationsWithContext;
 
 test {
     // Pull the re-exported declarations into the test build so a
@@ -49,4 +52,7 @@ test {
     _ = Declaration;
     _ = DeclarationKind;
     _ = processDeclarations;
+    _ = ModuleSpecifierContext;
+    _ = parseModuleSpecifierContext;
+    _ = processDeclarationsWithContext;
 }
