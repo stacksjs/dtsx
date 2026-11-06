@@ -5,12 +5,13 @@ import { Glob } from 'bun'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { basename, dirname, extname, isAbsolute, parse, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, parse, relative, resolve } from 'node:path'
 import { linkBundle } from './bundle-linker'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
 import { normalizeConcurrency } from './concurrency'
 import { config as defaultConfig } from './config'
+import { createDeclarationReferenceResolver, getDeclarationOutputPath } from './declaration-project'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
@@ -229,7 +230,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   }> => {
     let sourceCode: string | undefined
     try {
-      const outputPath = getOutputPath(file, config)
+      const outputPath = getDeclarationOutputPath(file, config)
 
       const showDiff = async (content: string): Promise<void> => {
         if (!config.diff) return
@@ -555,7 +556,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
         const bundlePath = useLegacyOutput
           ? resolve(config.cwd, config.outdir, config.bundleOutput!)
-          : getOutputPath(entry, config)
+          : getDeclarationOutputPath(entry, config)
 
         if (config.dryRun) {
           logger.info(`[dry-run] Would bundle ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
@@ -856,7 +857,7 @@ function isWithinRoot(filePath: string, rootPath: string): boolean {
 function assertUniqueOutputPaths(files: string[], config: DtsGenerationConfig): void {
   const sourceByOutput = new Map<string, string>()
   for (const sourcePath of files) {
-    const outputPath = getOutputPath(sourcePath, config)
+    const outputPath = getDeclarationOutputPath(sourcePath, config)
     const existingSource = sourceByOutput.get(outputPath)
     if (existingSource && existingSource !== sourcePath) {
       throw new Error(`Output path collision: ${relative(config.cwd, existingSource)} and ${relative(config.cwd, sourcePath)} both emit ${relative(config.cwd, outputPath)}`)
@@ -869,80 +870,11 @@ function isProcessableSourceFile(filePath: string): boolean {
   return /\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/.test(filePath) && !/\.d\.(?:ts|mts|cts)$/.test(filePath)
 }
 
-/**
- * Get the output path for a given input file
- */
-function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
-  const rootPath = resolve(config.cwd, config.root)
-  const relativePath = relative(rootPath, inputPath)
-  const dtsPath = /\.d\.(?:ts|mts|cts)$/.test(relativePath)
-    ? relativePath
-    : relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/, (ext) => {
-        if (ext === '.mts' || ext === '.mjs') return '.d.mts'
-        if (ext === '.cts' || ext === '.cjs') return '.d.cts'
-        return '.d.ts'
-      })
-
-  if (config.outputStructure === 'mirror') {
-    // Mirror the source structure
-    return resolve(config.cwd, config.outdir, dtsPath)
-  }
-  else {
-    // Flat structure - just use the filename
-    const filename = basename(dtsPath)
-    return resolve(config.cwd, config.outdir, filename)
-  }
-}
-
-function getDeclarationSpecifier(fromOutputPath: string, toOutputPath: string, runtimeExtension = ''): string {
-  let specifier = relative(dirname(fromOutputPath), toOutputPath).replace(/\\/g, '/')
-  specifier = specifier
-    .replace(/\.d\.mts$/, '')
-    .replace(/\.d\.cts$/, '')
-    .replace(/\.d\.ts$/, '')
-
-  if (runtimeExtension) specifier += runtimeExtension
-
-  if (!specifier.startsWith('.')) {
-    specifier = `./${specifier}`
-  }
-
-  return specifier
-}
-
 async function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string, config: DtsGenerationConfig): Promise<string> {
   const resolveSpecifier = await getModuleResolver(config)
-  const outputPath = getOutputPath(filePath, config)
+  const resolveReference = createDeclarationReferenceResolver(filePath, config, resolveSpecifier, emittedSources.get(config))
 
-  const rewriteSpecifier = (specifier: string): string => {
-    const resolved = resolveSpecifier(specifier, filePath)
-    if (!resolved.isRelative || !resolved.resolved) {
-      return specifier
-    }
-
-    if (/\.d\.(?:ts|mts|cts)$/.test(resolved.resolved)) {
-      if (config.moduleSpecifierMode !== 'node') return specifier
-      const delivered = emittedSources.get(config)
-      if (delivered && !delivered.has(resolved.resolved))
-        throw new Error(`Local declaration ${JSON.stringify(specifier)} from ${filePath} targets an authored declaration not emitted by this package build: ${resolved.resolved}. Declaration-only dependencies must be delivered with the package before this importer can be emitted.`)
-    }
-    if (resolved.isAlias && emittedSources.has(config) && !emittedSources.get(config)!.has(resolved.resolved))
-      throw new Error(`Local alias ${JSON.stringify(specifier)} from ${filePath} targets a declaration excluded from this package build: ${resolved.resolved}`)
-
-    const suffix = resolved.isAlias ? resolved.suffix ?? '' : specifier.match(/[?#].*$/)?.[0] ?? ''
-    const pathSpecifier = suffix ? specifier.slice(0, -suffix.length) : specifier
-    const writtenExtension = extname(pathSpecifier)
-    let runtimeExtension = /^(?:\.js|\.jsx|\.mjs|\.cjs)$/.test(writtenExtension) ? writtenExtension : ''
-    if (!runtimeExtension && config.moduleSpecifierMode === 'node') {
-      const targetExtension = extname(resolved.resolved)
-      runtimeExtension = targetExtension === '.mts' || targetExtension === '.mjs'
-        ? '.mjs'
-        : targetExtension === '.cts' || targetExtension === '.cjs' ? '.cjs' : '.js'
-    }
-    return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config), runtimeExtension) + suffix
-  }
-
-  return rewriteModuleSpecifiers(content, rewriteSpecifier)
+  return rewriteModuleSpecifiers(content, specifier => resolveReference(specifier).emittedSpecifier)
 }
 
 /**
@@ -1152,7 +1084,7 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
         }
 
         // Process just this file
-        const outputPath = getOutputPath(filePath, config)
+        const outputPath = getDeclarationOutputPath(filePath, config)
         const { content: dtsContent } = await processFileWithStats(filePath, config)
 
         await mkdir(dirname(outputPath), { recursive: true })
