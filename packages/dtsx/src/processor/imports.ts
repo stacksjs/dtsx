@@ -2,6 +2,8 @@
  * Import statement parsing and processing utilities
  */
 
+import type { ModuleReference } from '../module-references'
+import { parseImportEquals, quoteModuleSpecifier, scanModuleReferences } from '../module-references'
 import { getImportItemsFromCache, setImportItemsCache } from './cache'
 
 /**
@@ -34,6 +36,18 @@ export interface ParsedImport {
   isNamespace: boolean
   /** Namespace name if isNamespace is true */
   namespaceName: string | null
+  /** External import-equals syntax must retain its require clause. */
+  isImportEquals?: boolean
+}
+
+function getStaticImportReference(importText: string): ModuleReference | undefined {
+  return scanModuleReferences(importText).find(item => item.category === 'static-import')
+}
+
+/** Canonically quote the decoded value of a grammatical module literal. */
+export function getImportSourceLiteral(importText: string): string | undefined {
+  const reference = getStaticImportReference(importText)
+  return reference ? quoteModuleSpecifier(reference.specifier, '\'') : undefined
 }
 
 /**
@@ -46,23 +60,25 @@ export function parseImportStatement(importText: string): {
   source: string
   isTypeOnly: boolean
   isNamespace: boolean
+  isImportEquals?: boolean
 } | null {
+  const importEquals = parseImportEquals(importText)
+  if (importEquals) return {
+    defaultName: importEquals.name,
+    namedItems: [],
+    source: importEquals.source,
+    isTypeOnly: importEquals.isTypeOnly,
+    isNamespace: false,
+    isImportEquals: true,
+  }
   // Find 'from' and extract source
   const fromIndex = importText.indexOf(' from ')
   if (fromIndex === -1)
     return null
 
-  // Extract source (between quotes after 'from')
-  const afterFrom = importText.slice(fromIndex + 6).trim()
-  const quoteChar = afterFrom[0]
-  if (quoteChar !== '"' && quoteChar !== '\'')
-    return null
-
-  const endQuote = afterFrom.indexOf(quoteChar, 1)
-  if (endQuote === -1)
-    return null
-
-  const source = afterFrom.slice(1, endQuote)
+  const reference = getStaticImportReference(importText)
+  if (!reference) return null
+  const source = reference.specifier
 
   // Parse the import part (before 'from')
   let importPart = importText.slice(0, fromIndex).trim()
@@ -134,6 +150,13 @@ export function extractAllImportedItems(importText: string): string[] {
   }
 
   const items: string[] = []
+
+  const importEquals = parseImportEquals(importText)
+  if (importEquals) {
+    items.push(importEquals.name)
+    setImportItemsCache(importText, items)
+    return items
+  }
 
   // Find 'from' keyword position
   const fromIndex = importText.indexOf(' from ')
@@ -212,22 +235,24 @@ export function extractAllImportedItems(importText: string): string[] {
  * Handles: import type { X }, import { type X, Y }, import * as X, etc.
  */
 export function parseImportDetailed(importText: string): ParsedImport | null {
+  const importEquals = parseImportEquals(importText)
+  if (importEquals) return {
+    defaultName: importEquals.name,
+    namedItems: [],
+    source: importEquals.source,
+    isTypeOnly: importEquals.isTypeOnly,
+    isNamespace: false,
+    namespaceName: null,
+    isImportEquals: true,
+  }
   // Find 'from' and extract source
   const fromIndex = importText.indexOf(' from ')
   if (fromIndex === -1)
     return null
 
-  // Extract source (between quotes after 'from')
-  const afterFrom = importText.slice(fromIndex + 6).trim()
-  const quoteChar = afterFrom[0]
-  if (quoteChar !== '"' && quoteChar !== '\'')
-    return null
-
-  const endQuote = afterFrom.indexOf(quoteChar, 1)
-  if (endQuote === -1)
-    return null
-
-  const source = afterFrom.slice(1, endQuote)
+  const reference = getStaticImportReference(importText)
+  if (!reference) return null
+  const source = reference.specifier
 
   // Parse the import part (before 'from')
   let importPart = importText.slice(0, fromIndex).trim()
@@ -473,7 +498,7 @@ export function isTypeOnlyImportItem(itemText: string): boolean {
  */
 export function convertToTypeOnlyImport(importText: string): string {
   const parsed = parseImportDetailed(importText)
-  if (!parsed || parsed.isTypeOnly)
+  if (!parsed || parsed.isTypeOnly || parsed.isImportEquals)
     return importText
 
   // Already type-only at statement level
@@ -489,14 +514,21 @@ export function convertToTypeOnlyImport(importText: string): string {
  * Combines separate import statements into one where possible
  */
 export function mergeImports(imports: string[]): string[] {
-  const bySource = new Map<string, { types: ImportItem[], values: ImportItem[], defaultName: string | null }>()
+  const bySource = new Map<string, { types: ImportItem[], values: ImportItem[], defaultName: string | null, sourceLiteral: string }>()
+  const preservedEquals: string[] = []
 
   for (const imp of imports) {
     const parsed = parseImportDetailed(imp)
     if (!parsed)
       continue
+    if (parsed.isImportEquals) {
+      preservedEquals.push(imp)
+      continue
+    }
 
-    const existing = bySource.get(parsed.source) || { types: [], values: [], defaultName: null }
+    const sourceLiteral = getImportSourceLiteral(imp)
+    if (!sourceLiteral) throw new Error('Cannot locate a grammatical module literal in the import declaration')
+    const existing = bySource.get(parsed.source) || { types: [], values: [], defaultName: null, sourceLiteral }
 
     if (parsed.defaultName) {
       existing.defaultName = parsed.defaultName
@@ -514,22 +546,22 @@ export function mergeImports(imports: string[]): string[] {
     bySource.set(parsed.source, existing)
   }
 
-  const result: string[] = []
+  const result: string[] = preservedEquals
 
-  for (const [source, { types, values, defaultName }] of bySource) {
+  for (const { types, values, defaultName, sourceLiteral } of bySource.values()) {
     if (types.length === 0 && values.length === 0 && defaultName) {
       // Only default import
-      result.push(`import ${defaultName} from '${source}';`)
+      result.push(`import ${defaultName} from ${sourceLiteral};`)
     }
     else if (types.length > 0 && values.length === 0 && !defaultName) {
       // Only type imports
       const items = types.map(t => t.originalName === t.name ? t.name : `${t.originalName} as ${t.name}`)
-      result.push(`import type { ${items.join(', ')} } from '${source}';`)
+      result.push(`import type { ${items.join(', ')} } from ${sourceLiteral};`)
     }
     else if (values.length > 0 && types.length === 0 && !defaultName) {
       // Only value imports
       const items = values.map(v => v.originalName === v.name ? v.name : `${v.originalName} as ${v.name}`)
-      result.push(`import { ${items.join(', ')} } from '${source}';`)
+      result.push(`import { ${items.join(', ')} } from ${sourceLiteral};`)
     }
     else {
       // Mixed imports - use inline type specifiers
@@ -545,10 +577,10 @@ export function mergeImports(imports: string[]): string[] {
       }
 
       if (defaultName) {
-        result.push(`import ${defaultName}, { ${allItems.join(', ')} } from '${source}';`)
+        result.push(`import ${defaultName}, { ${allItems.join(', ')} } from ${sourceLiteral};`)
       }
       else {
-        result.push(`import { ${allItems.join(', ')} } from '${source}';`)
+        result.push(`import { ${allItems.join(', ')} } from ${sourceLiteral};`)
       }
     }
   }

@@ -4,6 +4,7 @@ const std = @import("std");
 const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
+const module_specifiers = @import("module_specifiers.zig");
 const scanner = @import("scanner.zig");
 const Scanner = scanner.Scanner;
 const Declaration = types.Declaration;
@@ -114,8 +115,13 @@ pub fn extractLeadingComments(s: *Scanner, decl_start: usize) ?[]const []const u
 pub fn extractImport(s: *Scanner, start: usize) Declaration {
     const stmt_start = start;
     var found_quote = false;
+    var import_equals: ?module_specifiers.ImportEquals = null;
     while (s.pos < s.len) {
         const c = s.source[s.pos];
+        if (c == ch.CH_SLASH and s.pos + 1 < s.len and (s.source[s.pos + 1] == ch.CH_SLASH or s.source[s.pos + 1] == ch.CH_STAR)) {
+            s.skipWhitespaceAndComments();
+            continue;
+        }
         if (c == ch.CH_SEMI) {
             s.pos += 1;
             break;
@@ -123,6 +129,13 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
         if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE) {
             s.skipString(c);
             found_quote = true;
+            const quote_end = s.pos;
+            s.skipWhitespaceAndComments();
+            if (s.pos < s.len and s.source[s.pos] == ch.CH_RPAREN) {
+                const close_end = s.pos + 1;
+                import_equals = module_specifiers.parseImportEquals(s.allocator, s.source[stmt_start..close_end]) catch null;
+                if (import_equals != null) s.pos = close_end else s.pos = quote_end;
+            } else s.pos = quote_end;
             while (s.pos < s.len and (s.source[s.pos] == ch.CH_SPACE or s.source[s.pos] == ch.CH_TAB)) s.pos += 1;
             if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
             break;
@@ -133,7 +146,7 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
 
     const text = s.sliceTrimmed(stmt_start, s.pos);
     // Check for 'import type '
-    const is_type_only = text.len > 11 and text[7] == 't' and
+    const is_type_only = if (import_equals) |binding| binding.is_type_only else text.len > 11 and text[7] == 't' and
         (ch.startsWith(text, "import type ") or ch.startsWith(text, "import type{"));
 
     // Detect side-effect imports
@@ -154,7 +167,9 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
     // Extract source module — use indexOfChar (single-byte SIMD scan) for the
     // closing quote instead of indexOf with a 1-char needle.
     var module_src: []const u8 = "";
-    {
+    if (import_equals) |binding| {
+        module_src = binding.source;
+    } else {
         const from_idx = ch.indexOf(text, "from ", 0);
         if (from_idx) |fi| {
             var mi = fi + 5;
@@ -183,7 +198,18 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
 
     // Parse import clause once (cached in Declaration to avoid re-parsing in emitter)
     var parsed_import: ?types.ParsedImport = null;
-    if (!is_side_effect) pi: {
+    if (import_equals) |binding| {
+        const resolved_items: [][]const u8 = s.allocator.alloc([]const u8, 1) catch &.{};
+        if (resolved_items.len > 0) resolved_items[0] = binding.name;
+        parsed_import = .{
+            .default_name = binding.name,
+            .source = binding.source,
+            .is_type_only = binding.is_type_only,
+            .is_import_equals = true,
+            .resolved_items = resolved_items,
+        };
+    }
+    if (!is_side_effect and parsed_import == null) pi: {
         const from_idx = ch.indexOf(text, " from ", 0) orelse break :pi;
         var import_part = ch.sliceTrimmed(text, 0, from_idx);
 
@@ -3195,12 +3221,14 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
                 s.skipWhitespaceAndComments();
                 const decl = extractEnum(s, stmt_start, is_exported, true);
                 s.declarations.append(decl) catch {};
-            } else if (is_exported) {
-                s.pos = saved_pos;
-                const decls = extractVariable(s, stmt_start, "const", true);
-                for (decls) |d| s.declarations.append(d) catch {};
             } else {
-                s.skipToStatementEnd();
+                s.pos = saved_pos;
+                const decls = extractVariable(s, stmt_start, "const", is_exported);
+                for (decls) |d| {
+                    if (is_exported) {
+                        s.declarations.append(d) catch {};
+                    } else s.putNonExportedType(d.name, d);
+                }
             }
         }
     } else if (c0 == 'i' and s.matchWord("interface")) {
@@ -3213,13 +3241,13 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
         const decl = extractEnum(s, stmt_start, is_exported, false);
         s.declarations.append(decl) catch {};
     } else if ((c0 == 'l' and s.matchWord("let")) or (c0 == 'v' and s.matchWord("var"))) {
-        if (is_exported) {
-            // First-char dispatch — saves a redundant matchWord call.
-            const kind: []const u8 = if (c0 == 'l') "let" else "var";
-            const decls = extractVariable(s, stmt_start, kind, true);
-            for (decls) |d| s.declarations.append(d) catch {};
-        } else {
-            s.skipToStatementEnd();
+        // First-char dispatch saves a redundant matchWord call.
+        const kind: []const u8 = if (c0 == 'l') "let" else "var";
+        const decls = extractVariable(s, stmt_start, kind, is_exported);
+        for (decls) |d| {
+            if (is_exported) {
+                s.declarations.append(d) catch {};
+            } else s.putNonExportedType(d.name, d);
         }
     } else if (c0 == 'm' and s.matchWord("module")) {
         const decl = extractModule(s, stmt_start, is_exported, "module");

@@ -6,6 +6,7 @@
 
 import type { Declaration } from '../types'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
+import { parseImportEquals } from '../module-references'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 
 // Character codes for fast comparison
@@ -1032,12 +1033,25 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     // Scan to semicolon or end of statement (handle ASI - no semicolons)
     // Imports end after the module specifier string: from '...' or import '...'
     let foundQuote = false
+    let importEquals: ReturnType<typeof parseImportEquals>
     while (pos < len) {
       const ch = source.charCodeAt(pos)
+      if (ch === CH_SLASH && (source.charCodeAt(pos + 1) === CH_SLASH || source.charCodeAt(pos + 1) === CH_STAR)) {
+        skipWhitespaceAndComments()
+        continue
+      }
       if (ch === CH_SEMI) { pos++; break }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
         skipString(ch)
         foundQuote = true
+        const quoteEnd = pos
+        skipWhitespaceAndComments()
+        if (source.charCodeAt(pos) === CH_RPAREN) {
+          const closeEnd = pos + 1
+          importEquals = parseImportEquals(source.slice(stmtStart, closeEnd))
+          pos = importEquals ? closeEnd : quoteEnd
+        }
+        else pos = quoteEnd
         // After closing quote of module specifier, the import is done
         // Skip optional semicolon and stop
         while (pos < len && (source.charCodeAt(pos) === CH_SPACE || source.charCodeAt(pos) === CH_TAB)) pos++
@@ -1051,7 +1065,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
 
     const text = sliceTrimmed(stmtStart, pos)
-    const isTypeOnly = text.charCodeAt(7) === 116 /* t */ && (text.startsWith('import type ') || text.startsWith('import type{'))
+    const isTypeOnly = importEquals?.isTypeOnly ?? (text.charCodeAt(7) === 116 /* t */ && (text.startsWith('import type ') || text.startsWith('import type{')))
 
     // Detect side-effect imports: import 'foo' or import "foo" (no names imported)
     // After 'import' + optional 'type', next non-ws must be a quote
@@ -1071,7 +1085,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
     // Extract source module: find 'from' or direct quote after import
     let moduleSrc = ''
-    {
+    if (importEquals) moduleSrc = importEquals.source
+    else {
       const fromIdx = text.indexOf('from ')
       if (fromIdx !== -1) {
         let mi = fromIdx + 5
@@ -4070,23 +4085,21 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         const decl = extractEnum(stmtStart, isExported, true)
         declarations.push(decl)
       }
-      else if (isExported) {
-        pos = savedPos
-        const decls = extractVariable(stmtStart, 'const', true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
-      }
       else {
-        skipToStatementEnd()
+        pos = savedPos
+        const decls = extractVariable(stmtStart, 'const', isExported)
+        for (let _di = 0; _di < decls.length; _di++) {
+          if (isExported) declarations.push(decls[_di])
+          else nonExportedTypes.set(decls[_di].name, decls[_di])
+        }
       }
     }
     else if (matchWord('let') || matchWord('var')) {
-      if (isExported) {
-        const kind = matchWord('let') ? 'let' : 'var'
-        const decls = extractVariable(stmtStart, kind, true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
-      }
-      else {
-        skipToStatementEnd()
+      const kind = matchWord('let') ? 'let' : 'var'
+      const decls = extractVariable(stmtStart, kind, isExported)
+      for (let _di = 0; _di < decls.length; _di++) {
+        if (isExported) declarations.push(decls[_di])
+        else nonExportedTypes.set(decls[_di].name, decls[_di])
       }
     }
     else if (matchWord('module')) {

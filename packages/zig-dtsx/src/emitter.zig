@@ -149,6 +149,7 @@ const ParsedImportResult = struct {
     source: []const u8,
     is_type_only: bool,
     is_namespace: bool,
+    is_import_equals: bool,
     namespace_name: ?[]const u8,
 };
 
@@ -161,6 +162,7 @@ fn getParsedImport(decl: Declaration) ?ParsedImportResult {
         .source = pi.source,
         .is_type_only = pi.is_type_only,
         .is_namespace = pi.is_namespace,
+        .is_import_equals = pi.is_import_equals,
         .namespace_name = pi.namespace_name,
     };
 }
@@ -964,6 +966,16 @@ fn processDeclarationsInternal(
 
             const used_default = if (parsed.default_name) |dn| used_import_items.contains(dn) else false;
             const used_namespace = if (parsed.namespace_name) |name| used_import_items.contains(name) else false;
+            if (parsed.is_import_equals) {
+                if (used_default) {
+                    const original = ch.sliceTrimmed(imp.text, 0, imp.text.len);
+                    import_buf.clearRetainingCapacity();
+                    try import_buf.appendSlice(original);
+                    if (!ch.endsWith(original, ";")) try import_buf.append(';');
+                    try processed_imports.append(try import_buf.toOwnedSlice());
+                }
+                continue;
+            }
             used_named.clearRetainingCapacity();
 
             for (parsed.named_items) |item| {
@@ -1013,9 +1025,9 @@ fn processDeclarationsInternal(
                     try import_buf.appendSlice(" }");
                 }
 
-                try import_buf.appendSlice(" from '");
-                try import_buf.appendSlice(parsed.source);
-                try import_buf.appendSlice("';");
+                try import_buf.appendSlice(" from ");
+                try module_specifiers.appendImportSourceLiteral(alloc, imp.text, &import_buf);
+                try import_buf.append(';');
 
                 try processed_imports.append(try import_buf.toOwnedSlice());
             }

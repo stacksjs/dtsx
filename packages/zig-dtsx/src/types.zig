@@ -87,6 +87,7 @@ pub const ParsedImport = struct {
     source: []const u8 = "",
     is_type_only: bool = false,
     is_namespace: bool = false,
+    is_import_equals: bool = false,
     namespace_name: ?[]const u8 = null,
     /// Pre-resolved item names (type/as stripped) for fast filtering
     resolved_items: []const []const u8 = &.{},

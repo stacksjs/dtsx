@@ -30,6 +30,7 @@ pub const Context = struct {
         for (self.parsed.value.rewrites) |entry| {
             if (std.mem.eql(u8, entry.specifier, specifier)) return entry.emittedSpecifier;
         }
+        if (std.mem.eql(u8, self.parsed.value.moduleSpecifierMode, "preserve")) return specifier;
         if (std.mem.startsWith(u8, specifier, "./") or std.mem.startsWith(u8, specifier, "../") or
             std.mem.eql(u8, specifier, ".") or std.mem.eql(u8, specifier, "..") or
             std.mem.startsWith(u8, specifier, "/") or std.mem.startsWith(u8, specifier, "\\") or
@@ -170,6 +171,51 @@ fn isToken(content: []const u8, items: []const Token, index: usize, text: []cons
     return index < items.len and std.mem.eql(u8, content[items[index].start..items[index].end], text);
 }
 
+pub const ImportEquals = struct {
+    name: []const u8,
+    source: []const u8,
+    is_type_only: bool,
+};
+
+/// Parse one complete external import-equals statement using the same native
+/// lexical grammar as contextual module emission. Borrow the binding name;
+/// the decoded module value is allocated from allocator.
+pub fn parseImportEquals(allocator: std.mem.Allocator, content: []const u8) !?ImportEquals {
+    const items = try tokens(allocator, content);
+    defer allocator.free(items);
+    if (!isToken(content, items, 0, "import")) return null;
+    const type_only = isToken(content, items, 1, "type") and !isToken(content, items, 2, "=");
+    const binding: usize = if (type_only) 2 else 1;
+    if (binding + 5 >= items.len or items[binding].kind != .word or
+        !isToken(content, items, binding + 1, "=") or !isToken(content, items, binding + 2, "require") or
+        !isToken(content, items, binding + 3, "(") or items[binding + 4].kind != .quoted or
+        !isToken(content, items, binding + 5, ")")) return null;
+    const end = binding + 6;
+    if (items.len != end and !(items.len == end + 1 and isToken(content, items, end, ";"))) return null;
+    const literal = items[binding + 4];
+    const value = try decodeLiteral(allocator, content[literal.start..literal.end]);
+    return .{ .name = content[items[binding].start..items[binding].end], .source = value, .is_type_only = type_only };
+}
+
+/// Borrow the original module literal, including its quotes and escapes, from
+/// one grammatical import. The source text outlives this returned slice.
+pub fn importSourceLiteral(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
+    const items = try tokens(allocator, content);
+    defer allocator.free(items);
+    if (!isToken(content, items, 0, "import")) return null;
+    const index = moduleLiteral(content, items, 0) orelse return null;
+    return content[items[index].start..items[index].end];
+}
+
+/// Rebuild imports with the canonical single-quote style while retaining the
+/// actual decoded module identity, including escaped matching quote bytes.
+pub fn appendImportSourceLiteral(allocator: std.mem.Allocator, content: []const u8, result: *std.array_list.Managed(u8)) !void {
+    const literal = try importSourceLiteral(allocator, content) orelse return error.InvalidModuleLiteral;
+    const decoded = try decodeLiteral(allocator, literal);
+    defer allocator.free(decoded);
+    try appendLiteral(result, decoded, '\'');
+}
+
 fn moduleLiteral(content: []const u8, items: []const Token, index: usize) ?usize {
     if (index > 0 and isToken(content, items, index - 1, ".")) return null;
     const importing = isToken(content, items, index, "import");
@@ -236,7 +282,13 @@ fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
             'f' => try decoded.append(12),
             'v' => try decoded.append(11),
             '0' => return error.InvalidContext,
-            'x' => { try decoded.append(@intCast(try readHex(body, i + 1, 2))); i += 2; },
+            'x' => {
+                const codepoint = try readHex(body, i + 1, 2);
+                var bytes: [4]u8 = undefined;
+                const length = std.unicode.utf8Encode(@intCast(codepoint), &bytes) catch return error.InvalidContext;
+                try decoded.appendSlice(bytes[0..length]);
+                i += 2;
+            },
             'u' => {
                 var codepoint: u32 = 0;
                 if (i + 1 < body.len and body[i + 1] == '{') {
@@ -285,7 +337,8 @@ fn appendLiteral(result: *std.array_list.Managed(u8), value: []const u8, quote: 
 /// Emit only grammatical module literals through the resolved context. This
 /// runs inside the native emitter before its result allocation is finalized.
 pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *const Context) ![]u8 {
-    if (std.mem.eql(u8, context.parsed.value.moduleSpecifierMode, "preserve")) return allocator.dupe(u8, content);
+    if (std.mem.eql(u8, context.parsed.value.moduleSpecifierMode, "preserve") and context.parsed.value.rewrites.len == 0)
+        return allocator.dupe(u8, content);
     const items = try tokens(allocator, content);
     defer allocator.free(items);
     var result = std.array_list.Managed(u8).init(allocator);
@@ -352,6 +405,21 @@ test "context maps only actual emitted module literals" {
     try std.testing.expect(std.mem.indexOf(u8, output, "from 'external'") != null);
 }
 
+test "import-equals parsing shares comment and quoted literal grammar" {
+    const a = std.testing.allocator;
+    const parsed = (try parseImportEquals(a, "import /* binding */ type Options = require /* module */ ( './options.cjs' /* close */ );")).?;
+    defer a.free(parsed.source);
+    try std.testing.expectEqualStrings("Options", parsed.name);
+    try std.testing.expectEqualStrings("./options.cjs", parsed.source);
+    try std.testing.expect(parsed.is_type_only);
+    const named_type = (try parseImportEquals(a, "import type = require('./type.cjs')")).?;
+    defer a.free(named_type.source);
+    try std.testing.expectEqualStrings("type", named_type.name);
+    try std.testing.expect(!named_type.is_type_only);
+    try std.testing.expect((try parseImportEquals(a, "import Options from './options.cjs';")) == null);
+    try std.testing.expect((try parseImportEquals(a, "import Options = require('./options.cjs';")) == null);
+}
+
 test "context checks source identity, missing edges and preserves legacy spelling" {
     const a = std.testing.allocator;
     const context = try testContext(a, "node", "source", "[]");
@@ -376,6 +444,16 @@ test "escaped module literals map decoded values and safely escape emitted paths
     const output = try rewrite(a, "export * from '\\u002e/value';", &context);
     defer a.free(output);
     try std.testing.expectEqualStrings("export * from './value\\'s.js';", output);
+}
+
+test "preserve context applies explicit private mappings without inferring extensions" {
+    const a = std.testing.allocator;
+    const context = try testContext(a, "preserve", "source",
+        "[{\"specifier\":\"local/value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value\"}]");
+    defer context.deinit();
+    const output = try rewrite(a, "export type { Value } from 'local/value';\nexport * from './unmapped';", &context);
+    defer a.free(output);
+    try std.testing.expectEqualStrings("export type { Value } from './value';\nexport * from './unmapped';", output);
 }
 
 test "template substitutions recurse through syntax while raw characters remain literal" {
