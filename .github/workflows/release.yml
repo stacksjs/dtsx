@@ -29,7 +29,9 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Pantry
-        uses: home-lang/pantry/packages/action@abb26af17a5c06a115c5adc42463ae1a44cd822a
+        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
+        with:
+          version: 0.11.169
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
@@ -44,6 +46,11 @@ jobs:
           git rev-parse --verify "refs/tags/${RELEASE_TAG}"
           package_version="$(bun -e "console.log((await Bun.file('package.json').json()).version)")"
           test "v${package_version}" = "${RELEASE_TAG}"
+
+      - name: Build JavaScript library and plugins
+        run: |
+          bun run build
+          bun --filter './packages/*-plugin' build
 
       - name: Build Zig CLI + Library Binaries
         working-directory: packages/zig-dtsx
@@ -100,8 +107,9 @@ jobs:
 
       - name: Create GitHub Release with Pantry
         id: pantry-release
-        uses: home-lang/pantry/packages/action@abb26af17a5c06a115c5adc42463ae1a44cd822a
+        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
         with:
+          version: 0.11.169
           install: false
           release: true
           release-tag: ${{ env.RELEASE_TAG }}

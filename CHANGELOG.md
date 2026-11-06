@@ -1,5 +1,47 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.30...v0.11.31)
+
+## ✅ Tests
+
+- require the current immutable Pantry release contract ([ece8b6e](https://github.com/stacksjs/dtsx/commit/ece8b6e)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.31 ([fbeb999](https://github.com/stacksjs/dtsx/commit/fbeb999)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.29...v0.11.30)
+
+## 🐛 Bug Fixes
+
+- **release**: build complete licensed workspace payloads ([b23a5c3](https://github.com/stacksjs/dtsx/commit/b23a5c3)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.30 ([9dc4503](https://github.com/stacksjs/dtsx/commit/9dc4503)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.28...v0.11.29)
+
+## 🐛 Bug Fixes
+
+- preserve callable return types for callback factories ([edc9cb5](https://github.com/stacksjs/dtsx/commit/edc9cb5)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.29 ([e46f374](https://github.com/stacksjs/dtsx/commit/e46f374)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.27...v0.11.28)
 
 ## 🐛 Bug Fixes

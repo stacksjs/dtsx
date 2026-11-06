@@ -28,9 +28,13 @@ describe('release workflow', () => {
     const workflow = await loadReleaseWorkflow()
     const steps = workflow.jobs.release.steps
     const releaseStep = steps.find(step => step.name === 'Create GitHub Release with Pantry')
+    const setupStep = steps.find(step => step.name === 'Setup Pantry')
 
     expect(workflow.jobs.release.permissions.contents).toBe('write')
-    expect(releaseStep?.uses).toMatch(/^home-lang\/pantry\/packages\/action@[a-f0-9]{40}$/)
+    expect(releaseStep?.uses).toMatch(/^pantry-pm\/pantry\/packages\/action@[a-f0-9]{40}$/)
+    expect(releaseStep?.uses).toBe(setupStep?.uses)
+    expect(String(setupStep?.with?.version)).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(releaseStep?.with?.version).toBe(setupStep?.with?.version)
     expect(String(releaseStep?.with?.release)).toBe('true')
     expect(releaseStep?.with?.['release-tag']).toBe('${{ env.RELEASE_TAG }}')
     expect(steps.some(step => step.uses?.includes('action-releaser'))).toBe(false)

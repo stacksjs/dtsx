@@ -617,7 +617,7 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
   if (hasBareReturn && !returnTypes.includes('undefined')) returnTypes.push('undefined')
   const returnType = returnTypes.includes('unknown')
     ? 'unknown'
-    : returnTypes.length === 0 ? 'void' : returnTypes.join(' | ')
+    : returnTypes.length === 0 ? 'void' : joinReturnTypes(returnTypes)
   return isAsync && !returnType.startsWith('Promise<') ? `Promise<${returnType}>` : returnType
 }
 
@@ -661,11 +661,15 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
   if (value.startsWith('!')) return 'boolean'
   if (value.startsWith('fetch(')) return 'Promise<Response>'
 
+  // A callback's signature and body belong to that value, not to the
+  // enclosing expression's comparison/conditional operators.
+  if (isFunctionExpression(value)) return inferNarrowType(value, false)
+
   const conditional = splitTopLevelConditional(value)
   if (conditional) {
     const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes)
     const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes)
-    return whenTrue === whenFalse ? whenTrue : `${whenTrue} | ${whenFalse}`
+    return whenTrue === whenFalse ? whenTrue : joinReturnTypes([whenTrue, whenFalse])
   }
 
   if (hasTopLevelComparison(value)) return 'boolean'
@@ -689,6 +693,33 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     const name = reference.slice(7)
     return parameterTypes.get(name) ?? 'unknown'
   })
+}
+
+/** Function members need parentheses at a union boundary. */
+function joinReturnTypes(types: string[]): string {
+  return types.map(type => types.length > 1 && findMainArrowIndex(type) !== -1 ? `(${type})` : type).join(' | ')
+}
+
+/** Recognize a complete function value without consuming an outer conditional. */
+function isFunctionExpression(value: string): boolean {
+  if (value.startsWith('function') && isWordBoundary(value, 0, 8)) return true
+  const arrow = findMainArrowIndex(value)
+  if (arrow === -1) return false
+  let header = value.slice(0, arrow).trim()
+  if (header.startsWith('async') && isWordBoundary(header, 0, 5)) header = header.slice(5).trim()
+  if (header.startsWith('<')) {
+    const end = findMatchingBracket(header, 0, '<', '>')
+    if (end === -1) return false
+    header = header.slice(end + 1).trim()
+  }
+  if (header.startsWith('(')) {
+    const close = findMatchingBracket(header, 0, '(', ')')
+    if (close === -1) return false
+    const suffix = header.slice(close + 1).trim()
+    if (suffix && !suffix.startsWith(':')) return false
+  }
+  const signature = splitArrowSignature(header)
+  return hasBalancedOuterParentheses(signature.params) || isIdentifierName(signature.params)
 }
 
 function hasBalancedOuterParentheses(value: string): boolean {
@@ -2456,7 +2487,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
     }
     else {
       // Expression body - try to infer
-      returnType = inferNarrowType(body, isConst, false, _depth + 1)
+      returnType = inferBodyExpressionType(body, collectParameterTypes(params))
     }
 
     const funcType = `${params} => ${explicitReturnType || returnType.startsWith('Promise<') ? returnType : `Promise<${returnType}>`}`
