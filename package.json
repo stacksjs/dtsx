@@ -62,7 +62,6 @@
     "@stacksjs/bumpx": "^0.2.31",
     "@stacksjs/bunpress": "^0.1.4",
     "@stacksjs/clapp": "^0.2.16",
-    "pickier": "^0.1.20",
     "@stacksjs/gitlint": "^0.1.5",
     "@stacksjs/logsmith": "^0.2.1",
     "@types/bun": "^1.3.11",
@@ -70,8 +69,9 @@
     "bun-git-hooks": "^0.3.1",
     "bun-plugin-dtsx": "workspace:*",
     "mitata": "^1.0.34",
-    "oxc-transform": "^0.121.0",
     "oxc-parser": "^0.121.0",
+    "oxc-transform": "^0.121.0",
+    "pickier": "0.1.86",
     "typescript": "^7.0.2"
   },
   "workspaces": [

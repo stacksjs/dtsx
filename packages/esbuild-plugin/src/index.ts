@@ -3,10 +3,10 @@
  * Integrates with esbuild's build pipeline for seamless .d.ts generation
  */
 
-import type { Plugin, BuildOptions, BuildResult, OnLoadArgs, OnLoadResult } from 'esbuild'
+import type { Plugin, BuildOptions, BuildResult } from 'esbuild'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import { generate } from '@stacksjs/dtsx'
-import { resolve, dirname, basename, extname, relative, join } from 'node:path'
+import { resolve, dirname, relative, join } from 'node:path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 
 /**

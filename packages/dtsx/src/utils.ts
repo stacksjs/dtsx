@@ -1,6 +1,6 @@
 import type { DtsGenerationConfig } from './types'
-import { readFile, readdir } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { readdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { write } from './compat'
 import { config } from './config'
