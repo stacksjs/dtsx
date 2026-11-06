@@ -43,10 +43,10 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.1.0
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
+        uses: oven-sh/setup-bun@v2.2.0
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
