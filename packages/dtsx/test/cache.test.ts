@@ -94,6 +94,32 @@ describe('BuildCache', () => {
       expect(cache.load()).toBe(false)
     })
 
+    it('rejects a populated version 3 cache with a matching configuration', () => {
+      const config = makeConfig({ moduleSpecifierMode: 'node' })
+      const source = "export type { Contract } from './contract'"
+      const declaration = "export type { Contract } from './contract';"
+      const file = writeSourceFile('index.ts', source)
+      const producer = new BuildCache(config)
+      producer.update(file, source, declaration, tempDir)
+      producer.save()
+
+      const current = new BuildCache(config)
+      expect(current.load()).toBe(true)
+      expect(current.getCachedIfValid(file, tempDir)).toBe(declaration)
+
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      expect(manifest.version).toBe(4)
+      expect(Object.keys(manifest.entries)).toHaveLength(1)
+      // Construct a previous-format fixture with every other field intact.
+      // This does not claim that an historical SDK produced the fixture.
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, version: 3 }))
+
+      const previous = new BuildCache(config)
+      expect(previous.load()).toBe(false)
+      expect(previous.getCachedIfValid(file, tempDir)).toBeNull()
+    })
+
     it('returns false when manifest entries have an invalid shape', () => {
       const config = makeConfig()
       const cache = new BuildCache(config)
@@ -132,7 +158,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(3)
+      expect(parsed.version).toBe(4)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')

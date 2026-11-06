@@ -355,6 +355,7 @@ cli
   .option('--keep-comments', 'Keep comments in generated .d.ts files', { default: defaultOptions.keepComments })
   .option('--clean', 'Clean output directory before generation', { default: defaultOptions.clean })
   .option('--tsconfig <path>', 'Path to tsconfig.json', { default: defaultOptions.tsconfigPath })
+  .option('--module-specifier-mode <mode>', 'Declaration module specifiers: preserve or node')
   .option('--verbose', 'Enable verbose logging', { default: defaultOptions.verbose })
   .option('--import-order <patterns>', 'Import order priority patterns (comma-separated)', {
     default: defaultOptions.importOrder?.join(','),
@@ -404,6 +405,7 @@ cli
         root: resolve(options.root || fileConfig.root || defaultOptions.root),
         outdir: resolve(options.outdir || fileConfig.outdir || defaultOptions.outdir),
         tsconfigPath: resolve(options.tsconfigPath || fileConfig.tsconfigPath || defaultOptions.tsconfigPath),
+        moduleSpecifierMode: options.moduleSpecifierMode ?? fileConfig.moduleSpecifierMode ?? defaultOptions.moduleSpecifierMode,
         keepComments: options.keepComments ?? fileConfig.keepComments ?? defaultOptions.keepComments,
         clean: options.clean ?? fileConfig.clean ?? defaultOptions.clean,
         verbose: options.verbose ?? fileConfig.verbose ?? defaultOptions.verbose,
@@ -423,6 +425,7 @@ cli
         bundle: options.bundle ?? fileConfig.bundle ?? false,
         bundleOutput: options.bundleOutput ?? fileConfig.bundleOutput ?? 'index.d.ts',
         incremental: options.incremental ?? fileConfig.incremental ?? false,
+        cacheDir: fileConfig.cacheDir,
         clearCache: options.clearCache ?? false,
         indentStyle: (options.indentStyle as 'spaces' | 'tabs') ?? fileConfig.indentStyle ?? 'spaces',
         indentSize: Number(options.indentSize) || fileConfig.indentSize || 2,

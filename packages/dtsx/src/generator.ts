@@ -82,6 +82,10 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     config = await pluginManager.runOnStart(config)
   }
 
+  if (config.moduleSpecifierMode !== undefined && config.moduleSpecifierMode !== 'preserve' && config.moduleSpecifierMode !== 'node') {
+    throw new Error('moduleSpecifierMode must be preserve or node')
+  }
+
   await assertSafeOutputConfiguration(config)
 
   if (config.isolatedDeclarations === undefined) {
@@ -871,11 +875,13 @@ function isProcessableSourceFile(filePath: string): boolean {
 function getOutputPath(inputPath: string, config: DtsGenerationConfig): string {
   const rootPath = resolve(config.cwd, config.root)
   const relativePath = relative(rootPath, inputPath)
-  const dtsPath = relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/, (ext) => {
-    if (ext === '.mts' || ext === '.mjs') return '.d.mts'
-    if (ext === '.cts' || ext === '.cjs') return '.d.cts'
-    return '.d.ts'
-  })
+  const dtsPath = /\.d\.(?:ts|mts|cts)$/.test(relativePath)
+    ? relativePath
+    : relativePath.replace(/\.(m?tsx?|cts|jsx?|mjs|cjs|vue|stx)$/, (ext) => {
+        if (ext === '.mts' || ext === '.mjs') return '.d.mts'
+        if (ext === '.cts' || ext === '.cjs') return '.d.cts'
+        return '.d.ts'
+      })
 
   if (config.outputStructure === 'mirror') {
     // Mirror the source structure
@@ -914,14 +920,25 @@ async function rewriteRelativeDeclarationSpecifiers(content: string, filePath: s
       return specifier
     }
 
-    if (/\.d\.(?:ts|mts|cts)$/.test(resolved.resolved)) return specifier
+    if (/\.d\.(?:ts|mts|cts)$/.test(resolved.resolved)) {
+      if (config.moduleSpecifierMode !== 'node') return specifier
+      const delivered = emittedSources.get(config)
+      if (delivered && !delivered.has(resolved.resolved))
+        throw new Error(`Local declaration ${JSON.stringify(specifier)} from ${filePath} targets an authored declaration not emitted by this package build: ${resolved.resolved}. Declaration-only dependencies must be delivered with the package before this importer can be emitted.`)
+    }
     if (resolved.isAlias && emittedSources.has(config) && !emittedSources.get(config)!.has(resolved.resolved))
       throw new Error(`Local alias ${JSON.stringify(specifier)} from ${filePath} targets a declaration excluded from this package build: ${resolved.resolved}`)
 
     const suffix = resolved.isAlias ? resolved.suffix ?? '' : specifier.match(/[?#].*$/)?.[0] ?? ''
     const pathSpecifier = suffix ? specifier.slice(0, -suffix.length) : specifier
     const writtenExtension = extname(pathSpecifier)
-    const runtimeExtension = /^(?:\.js|\.jsx|\.mjs|\.cjs)$/.test(writtenExtension) ? writtenExtension : ''
+    let runtimeExtension = /^(?:\.js|\.jsx|\.mjs|\.cjs)$/.test(writtenExtension) ? writtenExtension : ''
+    if (!runtimeExtension && config.moduleSpecifierMode === 'node') {
+      const targetExtension = extname(resolved.resolved)
+      runtimeExtension = targetExtension === '.mts' || targetExtension === '.mjs'
+        ? '.mjs'
+        : targetExtension === '.cts' || targetExtension === '.cjs' ? '.cjs' : '.js'
+    }
     return getDeclarationSpecifier(outputPath, getOutputPath(resolved.resolved, config), runtimeExtension) + suffix
   }
 

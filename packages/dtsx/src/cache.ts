@@ -1,5 +1,5 @@
 import type { DtsGenerationConfig } from './types'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { hashContent } from './extractor/hash'
 
@@ -38,9 +38,23 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
+
+/** Clear only the cache manifest, preserving other tools' files in the directory. */
+export function clearBuildCache(cacheDir: string): void {
+  try {
+    rmSync(join(cacheDir, CACHE_FILE), { force: true })
+    // Remove the directory only when it is empty. Never recursively remove a
+    // caller-configured directory, which may contain unrelated build artifacts.
+    try { rmdirSync(cacheDir) }
+    catch { /* A nonempty or missing directory needs no further cleanup. */ }
+  }
+  catch {
+    // Cache clearing remains best effort, matching the existing cache API.
+  }
+}
 
 /**
  * Incremental build cache manager
@@ -52,7 +66,7 @@ export class BuildCache {
   private configHash: string
 
   constructor(config: DtsGenerationConfig, resolutionContext?: string) {
-    this.cacheDir = resolve(config.cwd, CACHE_DIR)
+    this.cacheDir = resolve(config.cwd, config.cacheDir ?? CACHE_DIR)
     this.manifestPath = join(this.cacheDir, CACHE_FILE)
     this.configHash = this.hashConfig(config, resolutionContext)
   }
@@ -66,6 +80,7 @@ export class BuildCache {
       keepComments: config.keepComments,
       importOrder: config.importOrder,
       outputStructure: config.outputStructure,
+      moduleSpecifierMode: config.moduleSpecifierMode ?? 'preserve',
       isolatedDeclarations: config.isolatedDeclarations,
       declarationMap: config.declarationMap,
       indentStyle: config.indentStyle,
@@ -300,14 +315,7 @@ export class BuildCache {
   clear(): void {
     this.manifest = null
 
-    try {
-      if (existsSync(this.manifestPath)) {
-        rmSync(this.cacheDir, { recursive: true, force: true })
-      }
-    }
-    catch {
-      // Ignore errors
-    }
+    clearBuildCache(this.cacheDir)
   }
 
   /**

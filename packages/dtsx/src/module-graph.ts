@@ -181,7 +181,17 @@ function containsPath(directory: string, file: string): boolean {
 export async function createModuleResolver(options: ModuleResolutionOptions): Promise<ModuleResolver> {
   const config = await readEffectiveTsconfig(resolve(options.cwd, options.tsconfigPath || 'tsconfig.json'))
   const mappings = Object.entries(config?.paths ?? {})
-  if (mappings.length === 0) return resolveRelativeSpecifier
+  if (mappings.length === 0) {
+    const resolveModule: ModuleResolver = (specifier, fromFile) => resolveRelativeSpecifier(specifier, fromFile)
+    // Final declaration output depends on resolved targets even without aliases.
+    // In particular, an unchanged importer may resolve to a different file kind.
+    resolveModule.cacheKey = files => JSON.stringify(files.map(file => ({
+      file,
+      references: scanReExportSpecifiers(readFileSync(file, 'utf8'), { includeImports: true })
+        .map(reference => ({ specifier: reference.specifier, resolution: resolveModule(reference.specifier, file) })),
+    })))
+    return resolveModule
+  }
   const base = config?.baseUrl ?? config?.pathsBasePath ?? options.cwd
   const configuredRoot = resolve(options.cwd, options.root)
   const packages = new Map<string, PackageBoundary | undefined>()

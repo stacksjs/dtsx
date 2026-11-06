@@ -158,6 +158,7 @@ Use command-line flags to override configuration:
 
 ```bash
 dtsx generate --root ./lib --outdir ./types --keep-comments --verbose
+dtsx generate --module-specifier-mode node
 ```
 
 ## Configuration Options
@@ -178,6 +179,27 @@ dtsx generate --root ./lib --outdir ./types --keep-comments --verbose
 | `keepComments` | `boolean` | `true` | Preserve comments in output |
 | `clean` | `boolean` | `true` | Clean output directory before generation |
 | `outputStructure` | `'mirror' \| 'flat'` | `'mirror'` | Output directory structure |
+| `moduleSpecifierMode` | `'preserve' \| 'node'` | `'preserve'` | Keep existing spelling or use explicit runtime extensions from resolved targets |
+
+With `moduleSpecifierMode: 'node'`, `processFile()` maps local authored `.d.ts`,
+`.d.mts` and `.d.cts` targets to `.js`, `.mjs` and `.cjs` specifiers using the
+configured output structure. This single-file transform does not deliver those
+dependencies. `generate()` refuses an importer whose local authored declaration
+is not delivered by the package build, instead of writing a dangling declaration
+graph. This option does not add copying or emission of authored declaration
+files. The default `preserve` mode retains existing behavior.
+
+The `generate` CLI accepts `--module-specifier-mode preserve|node`; an explicit
+flag overrides the project configuration. Both Bun build adapters select `node`
+for `target: 'node'` and `preserve` for other targets. An explicit
+`moduleSpecifierMode` overrides that target default. ESM format alone does not
+select Node mode. Incremental cache identity includes the effective mode.
+The Bun adapter uses the core declaration cache directly. `cacheDir` is relative
+to the project `cwd` and defaults to `.dtsx-cache`. `clearCache(cacheDir)` from
+`bun-plugin-dtsx` clears its manifest and preserves unrelated directory contents.
+Its standalone `clearCache` resolves a relative path against the calling process's
+working directory. When building with a different project `cwd`, pass the absolute
+cache directory to `clearCache`.
 
 ### Build Options
 
