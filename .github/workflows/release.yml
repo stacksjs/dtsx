@@ -23,23 +23,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          version: 0.11.169
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0-dev.1282+c0f9b51d8
+          version: 0.11.178
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Validate Release Tag
         run: |
@@ -107,9 +102,9 @@ jobs:
 
       - name: Create GitHub Release with Pantry
         id: pantry-release
-        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          version: 0.11.169
+          version: 0.11.178
           install: false
           release: true
           release-tag: ${{ env.RELEASE_TAG }}

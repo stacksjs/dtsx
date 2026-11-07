@@ -18,11 +18,11 @@ jobs:
     name: Build workspace libraries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
-      - name: Install consumer Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v7.0.1
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          bun-version: 1.4.2
+          version: 0.11.178
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Build core library and CLI
@@ -38,11 +38,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6.0.2
-      - name: Install consumer Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v7.0.1
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          bun-version: 1.4.2
+          version: 0.11.178
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Verify source identity and output collision safety
@@ -52,13 +52,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
+        with:
+          version: 0.11.178
 
       - name: Use cached node_modules
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@v6.1.0
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
@@ -66,7 +68,7 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Lint
         run: bun run lint
@@ -75,13 +77,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
+        with:
+          version: 0.11.178
 
       - name: Use cached node_modules
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@v6.1.0
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
@@ -89,7 +93,7 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
         run: bun --bun run typecheck
@@ -98,18 +102,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          version: 0.17.0-dev.1282+c0f9b51d8
+          version: 0.11.178
 
       - name: Use cached node_modules
-        uses: actions/cache@v5.0.3
+        uses: actions/cache@v6.1.0
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
@@ -117,7 +118,7 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Unit Test
         run: bun test
@@ -139,22 +140,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@c1ef80f71239e7f3626e3ed0ef3eb960d61ae5b5
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          version: 0.11.169
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0-dev.1282+c0f9b51d8
+          version: 0.11.178
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build
         run: bun run build

@@ -43,18 +43,15 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2.1.2
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@1ead8b67da0e4cfacced1230c72d1cfb4e72a24d
         with:
-          version: 0.17.0-dev.1282+c0f9b51d8
+          version: 0.11.178
 
       - name: Use cached node_modules
-        uses: actions/cache@v5
+        uses: actions/cache@v6.1.0
         with:
           path: node_modules
           key: node-modules-${{ hashFiles('**/bun.lock') }}
@@ -62,7 +59,7 @@ jobs:
             node-modules-
 
       - name: Install Dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build dtsx
         run: bun run build
@@ -82,7 +79,7 @@ jobs:
         working-directory: packages/dtsx
 
       - name: Download Previous Benchmark
-        uses: dawidd6/action-download-artifact@v14
+        uses: dawidd6/action-download-artifact@v28
         with:
           workflow: benchmark.yml
           branch: main
@@ -95,7 +92,7 @@ jobs:
         run: bun benchmark/ci-summary.ts --results packages/dtsx/benchmark-results.json --base base-benchmark/benchmark-results.json
 
       - name: Upload Benchmark Results
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: benchmark-results-${{ github.sha }}
           path: packages/dtsx/benchmark-results.json
@@ -103,7 +100,7 @@ jobs:
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const fs = require('fs');

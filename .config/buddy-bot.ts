@@ -10,7 +10,7 @@ const config: BuddyBotConfig = {
   dashboard: {
     enabled: true,
     title: 'Dependency Dashboard',
-    // issueNumber: undefined, // Auto-generated
+    issueNumber: 58,
   },
   workflows: {
     enabled: true,

@@ -16,12 +16,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
     // Enable LTO on Linux release builds (requires LLD; macOS Mach-O doesn't support LLD yet)
-    if (target.result.os.tag == .linux and optimize != .Debug) {
+    if (target.result.os.tag == .linux and optimize != .debug) {
         lib.use_lld = true;
         lib.lto = .full;
     }
     // Strip debug symbols in release builds for smaller binary + faster loads
-    if (optimize != .Debug) {
+    if (optimize != .debug) {
         lib.root_module.strip = true;
     }
     b.installArtifact(lib);
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    if (optimize != .Debug) {
+    if (optimize != .debug) {
         exe.root_module.strip = true;
     }
     b.installArtifact(exe);

@@ -1,2 +1,3 @@
 dependencies:
-  bun.sh: ^1.3.14
+  bun.sh: 1.4.4
+  ziglang.org: 0.17.1
