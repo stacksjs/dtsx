@@ -475,6 +475,61 @@ fn isExternalModule(content: []const u8, items: []const Token) bool {
     return false;
 }
 
+pub const ModuleReference = struct {
+    specifier: []const u8,
+    kind: enum { static_import, re_export, import_type, augmentation },
+};
+
+/// The project graph uses the same decoded grammatical literals as rewriting.
+/// Each returned specifier and the returned slice belong to the caller.
+pub fn collectModuleReferences(allocator: std.mem.Allocator, content: []const u8) ![]ModuleReference {
+    const items = try tokens(allocator, content);
+    defer allocator.free(items);
+    var result = std.array_list.Managed(ModuleReference).init(allocator);
+    errdefer {
+        for (result.items) |reference| allocator.free(reference.specifier);
+        result.deinit();
+    }
+    const external_module = isExternalModule(content, items);
+    var depth: usize = 0;
+    for (items, 0..) |token, index| {
+        const top_level = depth == 0;
+        if (isToken(content, items, index, "{") or isToken(content, items, index, "(") or isToken(content, items, index, "[")) depth += 1 else if (depth > 0 and (isToken(content, items, index, "}") or isToken(content, items, index, ")") or isToken(content, items, index, "]"))) depth -= 1;
+        if (token.kind != .word) continue;
+        const augmentation = top_level and external_module and isToken(content, items, index, "declare") and
+            isToken(content, items, index + 1, "module") and index + 3 < items.len and
+            items[index + 2].kind == .quoted and isToken(content, items, index + 3, "{");
+        const literal_index = if (augmentation) index + 2 else moduleLiteral(content, items, index) orelse continue;
+        const kind: @FieldType(ModuleReference, "kind") = if (augmentation) .augmentation else if (isToken(content, items, index, "export")) .re_export else if (top_level and !isToken(content, items, index + 1, "(")) .static_import else .import_type;
+        const literal = items[literal_index];
+        const decoded = try decodeLiteral(allocator, content[literal.start..literal.end]);
+        errdefer allocator.free(decoded);
+        if (!validString(decoded)) return error.InvalidContext;
+        try result.append(.{ .specifier = decoded, .kind = kind });
+    }
+    return result.toOwnedSlice();
+}
+
+pub fn freeModuleReferences(allocator: std.mem.Allocator, references: []ModuleReference) void {
+    for (references) |reference| allocator.free(reference.specifier);
+    allocator.free(references);
+}
+
+fn checkModuleReferenceAllocations(allocator: std.mem.Allocator) !void {
+    const references = try collectModuleReferences(allocator, "import /* activation */ { 'from, as' as Bound } from\n'./child\\u002ejs'; export type { Bound } from './types.js'; export type Value = import('./model.js').Value; declare module './target.js' { interface Added {} } const raw = `import './ignored.js'`; ");
+    defer freeModuleReferences(allocator, references);
+    try std.testing.expectEqual(@as(usize, 4), references.len);
+    try std.testing.expectEqualStrings("./child.js", references[0].specifier);
+    try std.testing.expectEqual(.static_import, references[0].kind);
+    try std.testing.expectEqual(.re_export, references[1].kind);
+    try std.testing.expectEqual(.import_type, references[2].kind);
+    try std.testing.expectEqual(.augmentation, references[3].kind);
+}
+
+test "module graph reference collection shares literal grammar and allocation errors" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkModuleReferenceAllocations, .{});
+}
+
 /// Emit only grammatical module literals through the resolved context. This
 /// runs inside the native emitter before its result allocation is finalized.
 pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *const Context) ![]u8 {

@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
 const module_specifiers = @import("module_specifiers.zig");
+const augmentation_graph = @import("augmentation_graph.zig");
 
 // Platform-aware C stdio bindings.
 //
@@ -272,24 +273,22 @@ const FileTask = struct {
     output_name_z: [*:0]const u8,
     keep_comments: bool,
     isolated_declarations: bool,
+    source: []const u8 = "",
+    context: ?module_specifiers.Context = null,
 };
 
 /// Thread context: directory fds + task slice.
 const WorkerCtx = struct {
-    input_dir_fd: c_int,
     output_dir_fd: c_int,
     tasks: []const FileTask,
     failures: []?anyerror,
 };
 
-/// One checked file operation. Emission completes before the destination opens.
-/// This retains legacy direct publication; it is not a project transaction.
-fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !void {
-    const default_import_order = [_][]const u8{"bun"};
-    const source = if (builtin.os.tag == .windows)
-        try readFile(alloc, std.mem.span(task.input_name_z))
+fn readProjectSource(alloc: std.mem.Allocator, input_dir_fd: c_int, input_name_z: [*:0]const u8) ![]const u8 {
+    return if (builtin.os.tag == .windows)
+        try readFile(alloc, std.mem.span(input_name_z))
     else read_source: {
-        const fd = c.openat(ctx.input_dir_fd, task.input_name_z, c.O_RDONLY);
+        const fd = c.openat(input_dir_fd, input_name_z, c.O_RDONLY);
         if (fd < 0) return error.InputReadFailure;
         var closed = false;
         defer if (!closed) {
@@ -310,10 +309,26 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
         if (close_result != 0) return error.InputReadFailure;
         break :read_source buf;
     };
+}
+
+/// One checked file operation. Emission completes before the destination opens.
+/// This retains legacy direct publication; it is not a project transaction.
+fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !void {
+    const default_import_order = [_][]const u8{"bun"};
+    const source = task.source;
 
     var scanner = Scanner.init(alloc, source, task.keep_comments, task.isolated_declarations);
     _ = try scanner.scan();
-    const output = try emitter.processDeclarations(
+    var context = task.context;
+    const output = if (context) |*value| try emitter.processDeclarationsWithContext(
+        alloc,
+        alloc,
+        scanner.declarations.items,
+        source,
+        task.keep_comments,
+        &default_import_order,
+        value,
+    ) else try emitter.processDeclarations(
         alloc,
         alloc,
         scanner.declarations.items,
@@ -453,13 +468,60 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
         }
     }
 
+    // The standalone CLI owns source snapshots and its activation graph. Do not
+    // plan one set of bytes and then re-read another set in worker threads.
+    const source_root = try std.Io.Dir.cwd().realPathFileAlloc(io, project_dir, sa);
+    const graph_files = try sa.alloc(augmentation_graph.File, tasks.len);
+    for (tasks, filenames, 0..) |*task, filename, index| {
+        task.source = readProjectSource(sa, input_dir_fd, task.input_name_z) catch |err| {
+            writeErr("error: ");
+            writeErr(filename);
+            writeErr(": ");
+            writeErr(@errorName(err));
+            writeErr("\n");
+            return err;
+        };
+        graph_files[index] = .{ .path = try std.fs.path.resolveAlloc(sa, &.{ source_root, filename }), .source = task.source };
+    }
+    var failed_source: ?[]const u8 = null;
+    const required = augmentation_graph.plan(sa, graph_files, .{ .isolated_declarations = isolated_declarations, .failure_file = &failed_source }) catch |err| {
+        if (failed_source) |path| {
+            writeErr("error: ");
+            writeErr(path);
+            writeErr(": ");
+            writeErr(@errorName(err));
+            writeErr("\n");
+        }
+        return err;
+    };
+    for (tasks, graph_files, required) |*task, file, imports| {
+        if (imports.len == 0) continue;
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(file.source, &digest, .{});
+        const hash = try sa.alloc(u8, 64);
+        const hex = "0123456789abcdef";
+        for (digest, 0..) |byte, index| {
+            hash[index * 2] = hex[byte >> 4];
+            hash[index * 2 + 1] = hex[byte & 15];
+        }
+        task.context = try module_specifiers.fromWire(.{
+            .version = 1,
+            .moduleSpecifierMode = "preserve",
+            .sourceFile = file.path,
+            .outputFile = std.mem.span(task.output_name_z),
+            .sourceHash = hash,
+            .rewrites = &.{},
+            .augmentationImports = imports,
+        }, file.source);
+    }
+
     // Thread pool — cap threads to avoid spawn/join overhead dominating for small projects.
     // Each thread needs ~8 files minimum to amortize ~100µs spawn+join cost.
     const cpu_count = std.Thread.getCpuCount() catch 4;
     const max_threads = @min(cpu_count, @max(filenames.len / 8, 1));
 
     if (max_threads <= 1) {
-        workerFn(.{ .input_dir_fd = input_dir_fd, .output_dir_fd = output_dir_fd, .tasks = tasks, .failures = failures });
+        workerFn(.{ .output_dir_fd = output_dir_fd, .tasks = tasks, .failures = failures });
         return checkTaskFailures(tasks, failures);
     }
 
@@ -474,7 +536,6 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     for (0..max_threads) |t| {
         const count = files_per_thread + @as(usize, if (t < remainder) 1 else 0);
         const ctx = WorkerCtx{
-            .input_dir_fd = input_dir_fd,
             .output_dir_fd = output_dir_fd,
             .tasks = tasks[offset .. offset + count],
             .failures = failures[offset .. offset + count],

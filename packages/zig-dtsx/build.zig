@@ -65,6 +65,7 @@ pub fn build(b: *std.Build) void {
         "src/emitter.zig",
         "src/type_inference.zig",
         "src/module_specifiers.zig",
+        "src/augmentation_graph.zig",
         "src/computed_keys.zig",
         "src/parameters.zig",
         "src/enum_declarations.zig",

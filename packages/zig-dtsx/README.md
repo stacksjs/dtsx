@@ -65,6 +65,11 @@ The `generateNativeDeclarationProject` Bun API in `@stacksjs/dtsx` owns graph
 planning and transactional publication for this protocol. The older `--project`
 directory mode retains direct per-file publication.
 
+Directory mode snapshots source bytes before worker emission and derives local
+augmentation activation from relative project imports. It retains the original
+import path needed to load a provider, including transitive routes, while pruning
+unrelated imports. It uses native graph analysis without the Bun project planner.
+
 ## Benchmarks
 
 Benchmarked on Apple M3 Pro, macOS _(bun 1.3.11, arm64-darwin)_.
