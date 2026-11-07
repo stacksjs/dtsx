@@ -923,8 +923,8 @@ fn processDeclarationsInternal(
                     extractWords(&combined_words, d.text);
                     if (d.type_annotation.len > 0) {
                         extractWords(&combined_words, d.type_annotation);
-                    } else if (d.is_exported and d.value.len > 0) {
-                        extractWords(&combined_words, try type_inf.inferNarrowTypeWithKeyConstants(alloc, d.value, true, false, 0, d.computed_key_constants));
+                    } else if (d.value.len > 0) {
+                        extractWords(&combined_words, try processVariableDeclaration(alloc, d, false));
                     }
                 },
                 .interface_decl, .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {

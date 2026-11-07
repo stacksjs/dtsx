@@ -4,6 +4,7 @@
  * Produces the same Declaration[] shape that the processor expects.
  */
 import type { Declaration } from '../types'
+import { projectBindingPattern } from '../binding-patterns'
 import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
@@ -2135,6 +2136,18 @@ function extractFunction(declStart: number, isExported: boolean, isAsync: boolea
    * Extract variable declaration(s).
    * pos should be at const/let/var keyword.
    */
+let bindingSupportNames: Set<string> | undefined
+let bindingSupportSequence = 0
+function allocateBindingSupportName(): string {
+  bindingSupportNames ??= new Set(tokenizeDeclarationSyntax(source).filter(token => token.kind === 'word').map(token => source.slice(token.start, token.end)))
+  for (;; ) {
+    const name = `__dtsx_binding_${bindingSupportSequence++}`
+    if (bindingSupportNames.has(name)) continue
+    bindingSupportNames.add(name)
+    return name
+  }
+}
+
 function extractVariable(declStart: number, kind: string, isExported: boolean): Declaration[] {
   pos += kind.length // skip const/let/var
   skipWhitespaceAndComments()
@@ -2150,14 +2163,13 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
 
     const ch = source.charCodeAt(pos)
 
-    // Skip destructuring patterns - these are implementation details
+    let pattern: string | undefined
+    const patternOffset = pos
     if (ch === CH_LBRACE || ch === CH_LBRACKET) {
-      // Can't represent destructuring in DTS, skip this statement
-      skipToStatementEnd()
-      return results
+      findMatchingClose(ch, ch === CH_LBRACE ? CH_RBRACE : CH_RBRACKET)
+      pattern = source.slice(patternOffset, pos)
     }
-
-    const name = readIdent()
+    const name = pattern ? allocateBindingSupportName() : readIdent()
     if (!name) { skipToStatementEnd(); return results }
     skipWhitespaceAndComments()
 
@@ -2288,31 +2300,29 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
       } // end else (non-isolatedDeclarations path)
     }
 
-    // Skip comma or semicolon
-    if (pos < len) {
-      const sc = source.charCodeAt(pos)
-      if (sc === CH_COMMA) { pos++; continue }
-      if (sc === CH_SEMI) { pos++ }
-    }
+    const comments = results.length === 0 ? extractLeadingComments(declStart) : undefined
+    const declarationKind = pattern ? 'const' : kind
+    const exported = pattern ? false : isExported
+    const dtsText = `${exported ? 'export ' : ''}declare ${declarationKind} ${name}: ${typeAnnotation || 'unknown'};`
 
-    const comments = extractLeadingComments(declStart)
-    const dtsText = `${isExported ? 'export ' : ''}declare ${kind} ${name}: ${typeAnnotation || 'unknown'};`
-
-    results.push({
+    const declaration: Declaration = {
       kind: 'variable',
       name,
       text: dtsText,
-      isExported,
+      isExported: exported,
       typeAnnotation,
       value: initializerText,
       initializerStart,
-      modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
-      leadingComments: comments,
+      modifiers: isAsConst ? [declarationKind, 'const assertion'] : [declarationKind],
+      leadingComments: pattern ? undefined : comments,
       start: declStart,
       end: pos,
-    })
-
-    break // For now, only handle first declaration in statement
+    }
+    if (pattern) results.push(...projectBindingPattern({ pattern, patternOffset, root: declaration, kind, exported: isExported, comments, allocateName: allocateBindingSupportName }))
+    else results.push(declaration)
+    if (source.charCodeAt(pos) === CH_COMMA) { pos++; continue }
+    if (source.charCodeAt(pos) === CH_SEMI) pos++
+    break
   } while (pos < len)
 
   return results

@@ -1,6 +1,7 @@
 //! Source-position inference of direct aliases before private declaration closure.
 //! This models straight-line assignments, not a complete TypeScript flow graph.
 const std = @import("std");
+const ch = @import("char_utils.zig");
 const syntax = @import("module_specifiers.zig");
 const refs = @import("declaration_references.zig");
 const type_inf = @import("type_inference.zig");
@@ -9,6 +10,7 @@ const Binding = struct { declared: ?[]const u8 = null, flow: ?[]const u8 = null,
 const Value = struct { type: ?[]const u8 = null, unresolved: bool = false };
 const Write = struct { binding: *Binding, operator: []const u8 };
 const Deferred = struct { start: usize, end: usize };
+const LocalCall = struct { type: []const u8, flow: []const u8 };
 const MemberKey = struct { next: usize, is_static: bool };
 
 fn oneOf(value: []const u8, choices: []const []const u8) bool {
@@ -60,6 +62,40 @@ fn assignedType(allocator: std.mem.Allocator, declared: []const u8, value: []con
     return null;
 }
 
+fn directCall(allocator: std.mem.Allocator, original: []const u8, functions: *const std.StringHashMap(void)) !?[]const u8 {
+    const value = std.mem.trim(u8, original, " \t\r\n");
+    if (value.len == 0 or !ch.isIdentStart(value[0])) return null;
+    var end: usize = 1;
+    while (end < value.len and ch.isIdentChar(value[end])) end += 1;
+    if (!functions.contains(value[0..end])) return null;
+    const items = try syntax.tokenizeDeclarationSyntax(allocator, value);
+    defer allocator.free(items);
+    if (items.len < 3 or items[0].kind != .word or !std.mem.eql(u8, value[items[1].start..items[1].end], "(")) return null;
+    var depth: usize = 1;
+    for (items[2..], 2..) |item, index| {
+        const piece = value[item.start..item.end];
+        if (std.mem.eql(u8, piece, "(")) depth += 1 else if (std.mem.eql(u8, piece, ")")) {
+            depth -= 1;
+            if (depth == 0) return if (index + 1 == items.len) value[items[0].start..items[0].end] else null;
+        }
+    }
+    return null;
+}
+
+fn functionReturn(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+    const items = try syntax.tokenizeDeclarationSyntax(allocator, text);
+    defer allocator.free(items);
+    var depth: usize = 0;
+    for (items, 0..) |item, index| {
+        const piece = text[item.start..item.end];
+        if (std.mem.eql(u8, piece, "(")) depth += 1 else if (std.mem.eql(u8, piece, ")") and depth > 0) {
+            depth -= 1;
+            if (depth == 0 and index + 1 < items.len and std.mem.eql(u8, text[items[index + 1].start..items[index + 1].end], ":")) return std.mem.trim(u8, text[items[index + 1].end..], " \t\r\n;");
+        }
+    }
+    return "";
+}
+
 const Context = struct {
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -72,6 +108,9 @@ const Context = struct {
     class_member_syntax: std.AutoHashMap(usize, void),
     instance_initializers: std.AutoHashMap(usize, usize),
     operators: std.AutoHashMap(usize, []const u8),
+    local_calls: std.StringHashMap(LocalCall),
+    functions: std.StringHashMap(void),
+    inferred_calls: std.AutoHashMap(*Declaration, []const u8),
     cursor: usize = 0,
 
     fn token(self: *const Context, index: usize) []const u8 {
@@ -82,6 +121,9 @@ const Context = struct {
         if (try refs.directConstValueAlias(self.allocator, expression)) |alias| {
             const binding = self.bindings.get(alias) orelse return .{};
             return .{ .type = binding.flow, .unresolved = binding.unresolved };
+        }
+        if (try directCall(self.allocator, expression, &self.functions)) |name| {
+            if (self.local_calls.get(name)) |call| return .{ .type = call.flow };
         }
         const inferred = try type_inf.inferNarrowType(self.allocator, expression, true, false, 0);
         return .{ .type = if (std.mem.eql(u8, inferred, "unknown")) null else inferred };
@@ -452,7 +494,11 @@ const Context = struct {
         const alias = try refs.directConstValueAlias(self.allocator, entry.value);
         const origin = if (alias) |name| self.bindings.get(name) else null;
         const is_const = if (entry.modifiers) |modifiers| modifiers.len > 0 and std.mem.eql(u8, modifiers[0], "const") else false;
-        if (entry.type_annotation.len == 0 and is_const and alias != null and !std.mem.eql(u8, alias.?, entry.name) and origin != null) {
+        if (self.inferred_calls.get(entry)) |call_type| {
+            entry.inferred_type = call_type;
+            const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
+            entry.text = try std.fmt.allocPrint(self.allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, call_type });
+        } else if (entry.type_annotation.len == 0 and is_const and alias != null and !std.mem.eql(u8, alias.?, entry.name) and origin != null) {
             if (value.unresolved) entry.inference_error = .unsupported_value_flow else if (value.type) |value_type| {
                 entry.inferred_type = if (origin.?.declared != null and try sameType(self.allocator, origin.?.declared.?, value_type))
                     try std.fmt.allocPrint(self.allocator, "typeof {s}", .{alias.?})
@@ -516,6 +562,9 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
         .class_member_syntax = std.AutoHashMap(usize, void).init(allocator),
         .instance_initializers = std.AutoHashMap(usize, usize).init(allocator),
         .operators = std.AutoHashMap(usize, []const u8).init(allocator),
+        .local_calls = std.StringHashMap(LocalCall).init(allocator),
+        .functions = std.StringHashMap(void).init(allocator),
+        .inferred_calls = std.AutoHashMap(*Declaration, []const u8).init(allocator),
     };
     defer context.bindings.deinit();
     defer context.pairs.deinit();
@@ -525,6 +574,9 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
     defer context.class_member_syntax.deinit();
     defer context.instance_initializers.deinit();
     defer context.operators.deinit();
+    defer context.local_calls.deinit();
+    defer context.functions.deinit();
+    defer context.inferred_calls.deinit();
     var ordered = std.array_list.Managed(*Declaration).init(allocator);
     defer ordered.deinit();
     for (declarations) |*entry| {
@@ -537,9 +589,55 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
         try addBinding(allocator, entry, &context.bindings);
     }
     std.mem.sort(*Declaration, ordered.items, {}, sourceOrder);
+    for (ordered.items) |entry| if (entry.kind == .function_decl and entry.generics.len == 0) try context.functions.put(entry.name, {});
+    var has_call = false;
+    for (ordered.items) |entry| {
+        if (entry.kind == .variable_decl and entry.type_annotation.len == 0 and try directCall(allocator, entry.value, &context.functions) != null) {
+            has_call = true;
+            break;
+        }
+    }
+    const source_items: ?[]const syntax.SyntaxToken = if (has_call) try syntax.tokenizeDeclarationSyntax(allocator, source) else null;
+    defer if (source_items) |tokens| allocator.free(tokens);
+    if (source_items) |tokens| {
+        var counts = std.StringHashMap(usize).init(allocator);
+        defer counts.deinit();
+        var depth: isize = 0;
+        for (tokens, 0..) |item, index| {
+            const piece = source[item.start..item.end];
+            if (depth == 0 and std.mem.eql(u8, piece, "function") and index + 1 < tokens.len) {
+                const following = tokens[index + 1];
+                const next_index = if (std.mem.eql(u8, source[following.start..following.end], "*")) index + 2 else index + 1;
+                if (next_index < tokens.len and tokens[next_index].kind == .word) {
+                    const name = source[tokens[next_index].start..tokens[next_index].end];
+                    const entry = try counts.getOrPut(name);
+                    if (!entry.found_existing) entry.value_ptr.* = 0;
+                    entry.value_ptr.* += 1;
+                }
+            }
+            if (oneOf(piece, &.{ "{", "(", "[" })) depth += 1 else if (oneOf(piece, &.{ "}", ")", "]" })) depth -= 1;
+        }
+        var inferred_name: []const u8 = "__dtsx_call_result";
+        while (std.mem.indexOf(u8, source, inferred_name) != null) inferred_name = try std.fmt.allocPrint(allocator, "{s}_", .{inferred_name});
+        for (ordered.items) |entry| {
+            if (entry.kind != .function_decl or entry.generics.len > 0 or counts.get(entry.name) != 1) continue;
+            const call_type = try std.fmt.allocPrint(allocator, "(typeof {s}) extends (...args: never[]) => infer {s} ? {s} : never", .{ entry.name, inferred_name, inferred_name });
+            const return_type = try functionReturn(allocator, entry.text);
+            const flow = if (return_type.len > 0 and try primitive(allocator, return_type) != null) return_type else call_type;
+            try context.local_calls.put(entry.name, .{ .type = call_type, .flow = flow });
+        }
+    }
     var has_alias = false;
     for (ordered.items) |entry| {
         if (entry.kind != .variable_decl or entry.type_annotation.len > 0) continue;
+        if (try directCall(allocator, entry.value, &context.functions)) |name| {
+            if (context.local_calls.get(name)) |call| {
+                try context.inferred_calls.put(entry, call.type);
+                if (context.bindings.getPtr(entry.name)) |binding| binding.active = true;
+                if (context.bindings.getPtr(name)) |binding| binding.active = true;
+                has_alias = true;
+            }
+        }
         const modifiers = entry.modifiers orelse continue;
         if (modifiers.len == 0 or !std.mem.eql(u8, modifiers[0], "const")) continue;
         const alias = try refs.directConstValueAlias(allocator, entry.value) orelse continue;
@@ -550,8 +648,8 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
         has_alias = true;
     }
     if (!has_alias) return;
-    const items = try syntax.tokenizeDeclarationSyntax(allocator, source);
-    defer allocator.free(items);
+    const items = source_items orelse try syntax.tokenizeDeclarationSyntax(allocator, source);
+    defer if (source_items == null) allocator.free(items);
     context.items = items;
     var delimiters = std.array_list.Managed(usize).init(allocator);
     defer delimiters.deinit();

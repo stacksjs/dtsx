@@ -5,6 +5,7 @@ const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
 const module_specifiers = @import("module_specifiers.zig");
+const binding_patterns = @import("binding_patterns.zig");
 const parameter_order = @import("parameters.zig");
 const scanner = @import("scanner.zig");
 const Scanner = scanner.Scanner;
@@ -1264,26 +1265,36 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 
 /// Extract variable declaration(s)
 pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_exported: bool) []const Declaration {
+    return extractVariableChecked(s, decl_start, kind, is_exported) catch |err| {
+        s.pending_error = err;
+        s.pos = s.len;
+        return &.{};
+    };
+}
+
+fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_exported: bool) ![]const Declaration {
     s.pos += kind.len; // skip const/let/var
     s.skipWhitespaceAndComments();
 
     var results = std.array_list.Managed(Declaration).init(s.allocator);
-    results.ensureTotalCapacity(2) catch {};
+    defer results.deinit();
+    try results.ensureTotalCapacity(2);
 
-    if (s.pos >= s.len) return results.toOwnedSlice() catch &.{};
+    if (s.pos >= s.len) return try results.toOwnedSlice();
 
     while (s.pos < s.len) {
         const c = s.source[s.pos];
-        // Skip destructuring patterns
-        if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) {
-            s.skipToStatementEnd();
-            return results.toOwnedSlice() catch &.{};
-        }
-
-        const name = s.readIdent();
+        const pattern_start = s.pos;
+        var pattern: ?[]const u8 = null;
+        var names = binding_patterns.Names{ .allocator = s.allocator, .source = s.source, .counter = &s.binding_name_counter };
+        const name = if (c == ch.CH_LBRACE or c == ch.CH_LBRACKET) blk: {
+            _ = s.findMatchingClose(c, if (c == ch.CH_LBRACE) ch.CH_RBRACE else ch.CH_RBRACKET);
+            pattern = s.source[pattern_start..s.pos];
+            break :blk try names.next();
+        } else s.readIdent();
         if (name.len == 0) {
             s.skipToStatementEnd();
-            return results.toOwnedSlice() catch &.{};
+            return try results.toOwnedSlice();
         }
         s.skipWhitespaceAndComments();
 
@@ -1440,18 +1451,20 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
         const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
 
         // Build DTS text — direct alloc (no ArrayList overhead).
-        const export_prefix: []const u8 = if (is_exported) "export " else "";
+        const exported = is_exported and pattern == null;
+        const variable_kind: []const u8 = if (pattern != null) "const" else kind;
+        const export_prefix: []const u8 = if (exported) "export " else "";
         const declare_kw = "declare ";
-        const total = export_prefix.len + declare_kw.len + kind.len + 1 + name.len + 2 + final_type.len + 1;
+        const total = export_prefix.len + declare_kw.len + variable_kind.len + 1 + name.len + 2 + final_type.len + 1;
         const text_buf = blk: {
-            const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+            const buf = try s.allocator.alloc(u8, total);
             var tp: usize = 0;
             @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
             tp += export_prefix.len;
             @memcpy(buf[tp..][0..declare_kw.len], declare_kw);
             tp += declare_kw.len;
-            @memcpy(buf[tp..][0..kind.len], kind);
-            tp += kind.len;
+            @memcpy(buf[tp..][0..variable_kind.len], variable_kind);
+            tp += variable_kind.len;
             buf[tp] = ' ';
             tp += 1;
             @memcpy(buf[tp..][0..name.len], name);
@@ -1465,16 +1478,14 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
         };
 
         // Store the variable kind in modifiers
-        const mods = s.allocator.alloc([]const u8, 1) catch null;
-        if (mods) |m| {
-            m[0] = kind;
-        }
+        const mods = try s.allocator.alloc([]const u8, 1);
+        mods[0] = variable_kind;
 
-        results.append(.{
+        const declaration: Declaration = .{
             .kind = .variable_decl,
             .name = name,
             .text = text_buf,
-            .is_exported = is_exported,
+            .is_exported = exported,
             .modifiers = mods,
             .type_annotation = type_annotation,
             .preserve_type_annotation = type_annotation.len > 0,
@@ -1483,7 +1494,11 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
             .leading_comments = comments,
             .start = decl_start,
             .end = s.pos,
-        }) catch {};
+        };
+        if (pattern) |binding| {
+            const projected = try binding_patterns.projectBindingPattern(s.allocator, &names, .{ .pattern = binding, .pattern_offset = pattern_start, .root = declaration, .kind = kind, .exported = is_exported, .comments = comments });
+            try results.appendSlice(projected);
+        } else try results.append(declaration);
 
         if (s.pos < s.len and s.source[s.pos] == ch.CH_COMMA) {
             s.pos += 1;
@@ -1493,7 +1508,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
         break;
     }
 
-    return results.toOwnedSlice() catch &.{};
+    return try results.toOwnedSlice();
 }
 
 // ========================================================================

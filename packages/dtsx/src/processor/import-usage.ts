@@ -18,7 +18,7 @@ export function analyzeDeclarationImportUsage(declarations: readonly Declaration
       parts.push(declaration.text)
       if (declaration.kind === 'variable') {
         if (declaration.typeAnnotation) parts.push(declaration.typeAnnotation)
-        else if (declaration.isExported && declaration.value) parts.push(processVariableDeclaration(declaration, false))
+        else if (declaration.value) parts.push(processVariableDeclaration(declaration, false))
       }
     }
   }

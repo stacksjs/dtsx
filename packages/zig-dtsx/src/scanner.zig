@@ -115,6 +115,7 @@ pub const Scanner = struct {
     isolated_declarations: bool,
     external_module: bool = false,
     pending_error: ?anyerror = null,
+    binding_name_counter: usize = 0,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes

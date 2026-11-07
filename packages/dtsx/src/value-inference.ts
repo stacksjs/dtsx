@@ -1,5 +1,6 @@
 import type { Declaration } from './types'
 import { directConstValueAlias, returnTypeExpectsObject } from './declaration-references'
+import { isIdentChar, isIdentStart } from './lexical'
 import { tokenizeDeclarationSyntax } from './module-references'
 import { extractAllImportedItems } from './processor/imports'
 import { inferNarrowType } from './processor/type-inference'
@@ -45,7 +46,7 @@ function assignedType(declared: string, value: string): string | undefined {
 }
 
 /**
- * Infer direct identifier aliases at their source position, before private closure.
+ * Infer identifier aliases and monomorphic local calls before private closure.
  * This models straight-line assignments, not TypeScript's complete control-flow graph.
  */
 export function inferDeclarationValueAliases(source: string, declarations: Declaration[], candidates: ReadonlyMap<string, Declaration>): void {
@@ -65,9 +66,66 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     else if (declaration.kind === 'variable') bindings.set(declaration.name, { declared: declaration.typeAnnotation, unresolved: false })
   }
   ordered.sort((left, right) => (left.start ?? 0) - (right.start ?? 0))
+  const declaredFunctions = new Set(ordered.filter(item => item.kind === 'function' && !item.generics).map(item => item.name))
+  const callRoots = new Map<string, string | undefined>()
+  const directCall = (value: string): string | undefined => {
+    value = value.trimStart()
+    if (callRoots.has(value)) return callRoots.get(value)
+    callRoots.set(value, undefined)
+    if (!isIdentStart(value.charCodeAt(0))) return undefined
+    let end = 1
+    while (isIdentChar(value.charCodeAt(end))) end++
+    if (!declaredFunctions.has(value.slice(0, end))) return undefined
+    const items = tokenizeDeclarationSyntax(value)
+    if (items[0]?.kind !== 'word' || !items[1] || value.slice(items[1].start, items[1].end) !== '(') return undefined
+    let depth = 1
+    for (let index = 2; index < items.length; index++) {
+      const token = value.slice(items[index].start, items[index].end)
+      if (token === '(') depth++
+      else if (token === ')' && --depth === 0) {
+        const name = index === items.length - 1 ? value.slice(items[0].start, items[0].end) : undefined
+        callRoots.set(value, name)
+        return name
+      }
+    }
+    return undefined
+  }
+  const callCandidates = new Set(ordered.filter(item => item.kind === 'variable' && !item.typeAnnotation && typeof item.value === 'string').map(item => directCall(item.value as string)).filter((name): name is string => name !== undefined))
+  const sourceTokens = callCandidates.size ? tokenizeDeclarationSyntax(source) : undefined
+  const counts = new Map<string, number>()
+  if (sourceTokens) {
+    let depth = 0
+    for (let index = 0; index < sourceTokens.length; index++) {
+      const text = source.slice(sourceTokens[index].start, sourceTokens[index].end)
+      if (depth === 0 && text === 'function') {
+        const following = sourceTokens[index + 1]
+        const name = following && source.slice(following.start, following.end) === '*' ? sourceTokens[index + 2] : following
+        if (name?.kind === 'word') {
+          const spelling = source.slice(name.start, name.end)
+          counts.set(spelling, (counts.get(spelling) ?? 0) + 1)
+        }
+      }
+      if (['{', '(', '['].includes(text)) depth++
+      else if (['}', ')', ']'].includes(text)) depth--
+    }
+  }
+  const localCalls = new Map<string, Declaration>()
+  for (const item of ordered) if (item.kind === 'function' && !item.generics && counts.get(item.name) === 1) localCalls.set(item.name, item)
+  let callTypeName = '__dtsx_call_result'
+  while (source.includes(callTypeName)) callTypeName += '_'
+  const callType = (name: string): string => `(typeof ${name}) extends (...args: never[]) => infer ${callTypeName} ? ${callTypeName} : never`
+  const inferredCalls = new Map<Declaration, string>()
   let hasAlias = false
   for (const declaration of ordered) {
-    if (declaration.kind !== 'variable' || declaration.typeAnnotation || declaration.modifiers?.[0] !== 'const' || typeof declaration.value !== 'string') continue
+    if (declaration.kind !== 'variable' || declaration.typeAnnotation || typeof declaration.value !== 'string') continue
+    const call = directCall(declaration.value)
+    if (call && localCalls.has(call)) {
+      inferredCalls.set(declaration, callType(call))
+      bindings.get(declaration.name)!.active = true
+      bindings.get(call)!.active = true
+      hasAlias = true
+    }
+    if (declaration.modifiers?.[0] !== 'const') continue
     const alias = directConstValueAlias(declaration.value)
     if (!alias || alias === declaration.name || !bindings.has(alias)) continue
     bindings.get(alias)!.active = true
@@ -75,7 +133,7 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     hasAlias = true
   }
   if (!hasAlias) return
-  const tokens = tokenizeDeclarationSyntax(source)
+  const tokens = sourceTokens ?? tokenizeDeclarationSyntax(source)
   const text = (index: number): string => tokens[index] ? source.slice(tokens[index].start, tokens[index].end) : ''
   const pairs = new Map<number, number>()
   const parents = new Map<number, number>()
@@ -124,6 +182,9 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
       const binding = bindings.get(alias)
       return { type: binding?.flow, unresolved: binding?.unresolved ?? false }
     }
+    const call = directCall(expression)
+    const callable = call ? localCalls.get(call) : undefined
+    if (callable) return { type: callable.returnType && primitive(callable.returnType) ? callable.returnType : callType(call!), unresolved: false }
     const type = inferNarrowType(expression, true)
     return { type: type === 'unknown' ? undefined : type, unresolved: false }
   }
@@ -447,7 +508,12 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     const value = expressionType(expression)
     const alias = directConstValueAlias(expression)
     const origin = alias ? bindings.get(alias) : undefined
-    if (!declaration.typeAnnotation && declaration.modifiers?.[0] === 'const' && alias && alias !== declaration.name && origin) {
+    const inferredCall = inferredCalls.get(declaration)
+    if (inferredCall) {
+      declaration.inferredType = inferredCall
+      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${inferredCall};`
+    }
+    else if (!declaration.typeAnnotation && declaration.modifiers?.[0] === 'const' && alias && alias !== declaration.name && origin) {
       if (value.unresolved) declaration.inferenceError = 'DTSX_UNSUPPORTED_VALUE_FLOW'
       else if (value.type) {
         declaration.inferredType = origin.declared && sameType(origin.declared, value.type) ? `typeof ${alias}` : value.type

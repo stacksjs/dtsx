@@ -1,0 +1,16 @@
+[
+  { "pattern": "{ count, label: title }", "names": ["count", "title"] },
+  { "pattern": "[first, , last, ...tail]", "names": ["first", "last", "tail"] },
+  { "pattern": "{ nested: { value } = { value: 7 }, optional = 9, ...rest }", "names": ["value", "optional", "rest"] },
+  { "pattern": "{ ['quoted-name']: count, [token]: secret, ...rest }", "names": ["count", "secret", "rest"] },
+  { "pattern": "{ 'quoted-name': value, 12: twelve }", "names": ["value", "twelve"] },
+  { "pattern": "[head = fallback(), { value: renamed } = source, ...tail]", "names": ["head", "renamed", "tail"] },
+  { "pattern": "{ value = factory<Map<string, number>, boolean>(), other }", "names": ["value", "other"] },
+  { "pattern": "{ first = left < right, second = upper > lower }", "names": ["first", "second"] },
+  { "pattern": "{ callback = <T = number, U = string>(value: T): T => value, other }", "names": ["callback", "other"] },
+  { "pattern": "{ regex = /[,}]/, next }", "names": ["regex", "next"] },
+  { "pattern": "{ [`prefix_${key}`]: value, ...rest }", "names": ["value", "rest"] },
+  { "pattern": "{ /* before */ nested: [first, { value = fallback }, ...tail] /* after */ }", "names": ["first", "value", "tail"] },
+  { "pattern": "{}", "names": [] },
+  { "pattern": "[, ,]", "names": [] }
+]
