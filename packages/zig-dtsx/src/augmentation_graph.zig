@@ -18,6 +18,21 @@ const Node = struct {
     required: std.array_list.Managed([]const u8),
 };
 
+const Identities = struct {
+    allocator: std.mem.Allocator,
+    files: *const std.StringHashMap(usize),
+    external: std.StringHashMap(usize),
+    file_count: usize,
+
+    fn get(self: *Identities, from: []const u8, specifier: []const u8) !?usize {
+        if (try resolve(self.allocator, self.files, from, specifier)) |index| return index;
+        if (std.mem.startsWith(u8, specifier, ".") or std.fs.path.isAbsolute(specifier)) return null;
+        const entry = try self.external.getOrPut(specifier);
+        if (!entry.found_existing) entry.value_ptr.* = self.file_count + self.external.count() - 1;
+        return entry.value_ptr.*;
+    }
+};
+
 fn key(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const value = try std.fs.path.resolveAlloc(allocator, &.{path});
     if (builtin.os.tag == .windows) for (value) |*byte| {
@@ -86,11 +101,12 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
             &.{};
     }
     var has_augmentation = false;
+    var identities: Identities = .{ .allocator = a, .files = &paths, .external = .init(a), .file_count = files.len };
     for (files, 0..) |file, index| {
         failed_source = file.path;
         for (references[index]) |reference| {
             if (reference.kind != .augmentation) continue;
-            if (try resolve(a, &paths, file.path, reference.specifier)) |target| {
+            if (try identities.get(file.path, reference.specifier)) |target| {
                 _ = try addUnique(&nodes[index].augmented, target);
                 _ = try addUnique(&nodes[index].visible, target);
                 has_augmentation = true;
@@ -103,7 +119,8 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
             if (references[index].len == 0) references[index] = try modules.collectModuleReferences(a, file.source);
             for (references[index]) |reference| {
                 if (reference.kind != .static_import and reference.kind != .re_export) continue;
-                if (try resolve(a, &paths, file.path, reference.specifier)) |target| {
+                if (try identities.get(file.path, reference.specifier)) |target| {
+                    if (target >= files.len) continue;
                     try nodes[index].edges.append(.{ .target = target, .specifier = reference.specifier, .is_import = reference.kind == .static_import });
                 }
             }
@@ -115,15 +132,15 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
             const declarations = try emitter.processDeclarations(a, a, scanner.declarations.items, file.source, false, &import_order);
             const emitted = try modules.collectModuleReferences(a, declarations);
             for (emitted) |reference| {
-                if (try resolve(a, &paths, file.path, reference.specifier)) |target| {
+                if (try identities.get(file.path, reference.specifier)) |target| {
                     _ = try addUnique(&nodes[index].visible, target);
-                    if (reference.kind == .import_type or reference.kind == .augmentation) {
+                    if (target < files.len and (reference.kind == .import_type or reference.kind == .augmentation)) {
                         try nodes[index].edges.append(.{ .target = target, .specifier = reference.specifier, .is_import = false });
                     }
                 }
             }
         }
-        const visible = try a.alloc(bool, files.len);
+        const visible = try a.alloc(bool, files.len + identities.external.count());
         const Parent = struct { from: usize, edge: usize };
         const parents = try a.alloc(?Parent, files.len);
         var pending = std.array_list.Managed(usize).init(a);
@@ -137,6 +154,7 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
                 try pending.append(start);
                 var cursor: usize = 0;
                 while (cursor < pending.items.len) : (cursor += 1) {
+                    if (pending.items[cursor] >= files.len) continue;
                     for (nodes[pending.items[cursor]].visible.items) |target| {
                         if (visible[target]) continue;
                         visible[target] = true;
@@ -227,4 +245,25 @@ test "native activation chooses the shortest original path without unrelated cyc
 
 test "native project graph propagates every allocation failure without leaking" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, checkPlanAllocations, .{});
+}
+
+fn checkExternalPlanAllocations(allocator: std.mem.Allocator) !void {
+    const files = [_]File{
+        .{ .path = "/src/index.ts", .source = "import { unrelated } from './cycle.js'; import { other } from './other.js'; import { install } from './bridge.js'; import type { Remote } from 'external-contract'; export type { Remote }; install({base:'ok',add:(a,b)=>a+b}); unrelated(); other();" },
+        .{ .path = "/src/bridge.ts", .source = "import type { Remote } from 'external-contract'; import { install as apply } from './nested/provider.js'; export function install(target: Remote): void { apply(target) }" },
+        .{ .path = "/src/nested/provider.ts", .source = "import type { Remote } from 'external-contract'; declare module 'external-contr\\u0061ct' { interface Remote { add: (a: number, b: number) => number } } export function install(target: Remote): void { void target }" },
+        .{ .path = "/src/cycle.ts", .source = "import type { Remote } from './index.js'; export function unrelated(value?: Remote): void { void value }" },
+        .{ .path = "/src/other.ts", .source = "declare module 'external-contract/other' { interface Other { value: number } } export function other(): void {}" },
+    };
+    const required = try plan(allocator, &files, .{});
+    defer free(allocator, required);
+    try std.testing.expectEqual(@as(usize, 1), required[0].len);
+    try std.testing.expectEqualStrings("./bridge.js", required[0][0]);
+    try std.testing.expectEqual(@as(usize, 1), required[1].len);
+    try std.testing.expectEqualStrings("./nested/provider.js", required[1][0]);
+    for (required[2..]) |imports| try std.testing.expectEqual(@as(usize, 0), imports.len);
+}
+
+test "external activation identities preserve paths without unrelated providers or allocation escapes" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkExternalPlanAllocations, .{});
 }

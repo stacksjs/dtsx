@@ -25,7 +25,7 @@ function closure(start: string, edges: (file: string) => Iterable<string>): Set<
 
 /**
  * Find original import paths that activate augmentations of declaration-reachable
- * local modules. Retain the paths, not unused value bindings. This analysis
+ * project or external modules. Retain the paths, not unused value bindings. This analysis
  * never publishes outputs or invokes a native or TypeScript emitter.
  * The analysis universe may include excluded sources; delivery policy still
  * decides whether a required path can actually be published by the caller.
@@ -48,14 +48,20 @@ export async function planAugmentationImports(
   if (augmentations.size === 0) return required
 
   const nodes = new Map<string, Node>()
+  const identity = (specifier: string, from: string): string | undefined => {
+    const resolution = resolveModule(specifier, from)
+    if (resolution.resolved) return resolution.resolved
+    if (!resolution.isRelative && !resolution.isAlias) return `external:${specifier}`
+    return undefined
+  }
   for (const [file, source] of sources) {
     const declarations = extractDeclarations(source, file, false, isolatedDeclarations)
     const usage = analyzeDeclarationImportUsage(declarations)
     const node: Node = { edges: [], declarations: new Set(), augmentations: new Set() }
     const add = (reference: ModuleReference, isImport: boolean, used: boolean): void => {
-      const target = resolveModule(reference.specifier, file).resolved
-      if (!target || !sources.has(target)) return
-      node.edges.push({ specifier: reference.specifier, target, import: isImport })
+      const target = identity(reference.specifier, file)
+      if (!target) return
+      if (sources.has(target)) node.edges.push({ specifier: reference.specifier, target, import: isImport })
       if (used) node.declarations.add(target)
     }
     for (const declaration of declarations) {
@@ -65,8 +71,8 @@ export async function planAugmentationImports(
     }
     for (const reference of scanModuleReferences(usage.referenceText)) add(reference, false, true)
     for (const specifier of augmentations.get(file) ?? []) {
-      const target = resolveModule(specifier, file).resolved
-      if (target && sources.has(target)) {
+      const target = identity(specifier, file)
+      if (target) {
         node.augmentations.add(target)
         node.declarations.add(target)
       }

@@ -201,7 +201,8 @@ Its standalone `clearCache` resolves a relative path against the calling process
 working directory. When building with a different project `cwd`, pass the absolute
 cache directory to `clearCache`.
 
-Local module augmentations participate in the project graph. Imports needed to
+Module augmentations participate in the project graph, including augmentations
+of declaration-visible external dependency types. Imports needed to
 activate those augmentations remain in declarations, with unused bindings
 converted to bare imports. Required providers must be included in the build.
 Incremental builds also track changes to this activation graph.

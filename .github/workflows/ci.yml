@@ -67,7 +67,7 @@ jobs:
       - name: Verify actual native project traversal and installed delivery
         env:
           DTSX_NATIVE_CLI: ${{ github.workspace }}/packages/zig-dtsx/zig-out/bin/zig-dtsx${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: bun test packages/zig-dtsx/test/cli-project.test.ts packages/zig-dtsx/test/cli-context.test.ts packages/zig-dtsx/test/cli-augmentation.test.ts packages/dtsx/test/native-generation.test.ts packages/dtsx/test/module-augmentation-package.test.ts
+        run: bun test packages/zig-dtsx/test/cli-project.test.ts packages/zig-dtsx/test/cli-context.test.ts packages/zig-dtsx/test/cli-augmentation.test.ts packages/dtsx/test/native-generation.test.ts packages/dtsx/test/module-augmentation-package.test.ts packages/dtsx/test/external-augmentation-package.test.ts
 
   lint:
     runs-on: ubuntu-latest
