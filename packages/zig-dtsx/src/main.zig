@@ -257,18 +257,28 @@ fn workerFn(ctx: WorkerCtx) void {
             const fp = c.fopen(task.input_name_z, "rb") orelse continue;
             _ = c.fseek(fp, 0, c.SEEK_END);
             const tell_result = c.ftell(fp);
-            if (tell_result < 0) { _ = c.fclose(fp); continue; }
+            if (tell_result < 0) {
+                _ = c.fclose(fp);
+                continue;
+            }
             const size: usize = @intCast(tell_result);
             _ = c.fseek(fp, 0, c.SEEK_SET);
-            const buf = alloc.alloc(u8, size) catch { _ = c.fclose(fp); continue; };
+            const buf = alloc.alloc(u8, size) catch {
+                _ = c.fclose(fp);
+                continue;
+            };
             const nread = c.fread(buf.ptr, 1, size, fp);
             _ = c.fclose(fp);
 
             var scanner = Scanner.init(alloc, buf[0..nread], task.keep_comments, false);
             _ = scanner.scan() catch continue;
             const output = emitter.processDeclarations(
-                alloc, alloc, scanner.declarations.items, buf[0..nread],
-                task.keep_comments, &default_import_order,
+                alloc,
+                alloc,
+                scanner.declarations.items,
+                buf[0..nread],
+                task.keep_comments,
+                &default_import_order,
             ) catch continue;
 
             const out_fp = c.fopen(task.output_name_z, "wb") orelse continue;
@@ -282,11 +292,17 @@ fn workerFn(ctx: WorkerCtx) void {
 
             // Use lseek to get file size (avoids opaque cimport struct_stat)
             const end_off = c.lseek(fd, 0, 2); // SEEK_END
-            if (end_off < 0) { _ = c.close(fd); continue; }
+            if (end_off < 0) {
+                _ = c.close(fd);
+                continue;
+            }
             _ = c.lseek(fd, 0, 0); // SEEK_SET
             const size: usize = @intCast(end_off);
 
-            const buf = alloc.alloc(u8, size) catch { _ = c.close(fd); continue; };
+            const buf = alloc.alloc(u8, size) catch {
+                _ = c.close(fd);
+                continue;
+            };
             var total: usize = 0;
             while (total < size) {
                 const n = c.read(fd, @ptrCast(buf.ptr + total), size - total);
@@ -299,8 +315,12 @@ fn workerFn(ctx: WorkerCtx) void {
             var scanner = Scanner.init(alloc, source, task.keep_comments, false);
             _ = scanner.scan() catch continue;
             const output = emitter.processDeclarations(
-                alloc, alloc, scanner.declarations.items, source,
-                task.keep_comments, &default_import_order,
+                alloc,
+                alloc,
+                scanner.declarations.items,
+                source,
+                task.keep_comments,
+                &default_import_order,
             ) catch continue;
 
             // Single-syscall write: overwrite the null terminator with '\n'.
@@ -308,8 +328,7 @@ fn workerFn(ctx: WorkerCtx) void {
             // Since output is arena-allocated, the byte is writable.
             @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
 
-            const out_fd = c.openat(ctx.output_dir_fd, task.output_name_z,
-                c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
+            const out_fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
             if (out_fd >= 0) {
                 _ = c.write(out_fd, @ptrCast(output.ptr), output.len + 1);
                 _ = c.close(out_fd);

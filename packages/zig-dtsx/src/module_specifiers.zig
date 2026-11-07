@@ -117,7 +117,10 @@ fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, positio
     var braces: usize = 0;
     while (position.* < content.len) {
         const i = position.*;
-        if (ch.isWhitespace(content[i])) { position.* += 1; continue; }
+        if (ch.isWhitespace(content[i])) {
+            position.* += 1;
+            continue;
+        }
         if (i + 1 < content.len and content[i] == '/' and content[i + 1] == '/') {
             position.* += 2;
             while (position.* < content.len and content[position.*] != '\n') position.* += 1;
@@ -269,12 +272,17 @@ fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
     const body = literal[1 .. literal.len - 1];
     var i: usize = 0;
     while (i < body.len) : (i += 1) {
-        if (body[i] != '\\') { try decoded.append(body[i]); continue; }
+        if (body[i] != '\\') {
+            try decoded.append(body[i]);
+            continue;
+        }
         i += 1;
         if (i >= body.len) return error.InvalidContext;
         switch (body[i]) {
             '\n' => {},
-            '\r' => { if (i + 1 < body.len and body[i + 1] == '\n') i += 1; },
+            '\r' => {
+                if (i + 1 < body.len and body[i + 1] == '\n') i += 1;
+            },
             'n' => try decoded.append('\n'),
             'r' => try decoded.append('\r'),
             't' => try decoded.append('\t'),
@@ -324,8 +332,10 @@ fn appendLiteral(result: *std.array_list.Managed(u8), value: []const u8, quote: 
     const hex = "0123456789abcdef";
     try result.append(quote);
     for (value) |byte| {
-        if (byte == quote or byte == '\\') { try result.append('\\'); try result.append(byte); }
-        else if (byte < 32) {
+        if (byte == quote or byte == '\\') {
+            try result.append('\\');
+            try result.append(byte);
+        } else if (byte < 32) {
             try result.appendSlice("\\u00");
             try result.append(hex[byte >> 4]);
             try result.append(hex[byte & 15]);
@@ -354,8 +364,7 @@ pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *cons
         if (!validString(decoded)) return error.InvalidContext;
         const replacement = try context.lookup(decoded);
         try result.appendSlice(content[copied..literal.start]);
-        if (std.mem.eql(u8, replacement, decoded)) try result.appendSlice(content[literal.start..literal.end])
-        else try appendLiteral(&result, replacement, content[literal.start]);
+        if (std.mem.eql(u8, replacement, decoded)) try result.appendSlice(content[literal.start..literal.end]) else try appendLiteral(&result, replacement, content[literal.start]);
         copied = literal.end;
     }
     try result.appendSlice(content[copied..]);
@@ -367,10 +376,11 @@ fn testContext(allocator: std.mem.Allocator, mode: []const u8, source: []const u
     std.crypto.hash.sha2.Sha256.hash(source, &digest, .{});
     const alphabet = "0123456789abcdef";
     var hash: [64]u8 = undefined;
-    for (digest, 0..) |byte, i| { hash[i * 2] = alphabet[byte >> 4]; hash[i * 2 + 1] = alphabet[byte & 15]; }
-    const json = try std.fmt.allocPrint(allocator,
-        "{{\"version\":1,\"moduleSpecifierMode\":\"{s}\",\"sourceFile\":\"/src/index.ts\",\"outputFile\":\"/dist/index.d.ts\",\"sourceHash\":\"{s}\",\"rewrites\":{s}}}",
-        .{ mode, hash, rewrites });
+    for (digest, 0..) |byte, i| {
+        hash[i * 2] = alphabet[byte >> 4];
+        hash[i * 2 + 1] = alphabet[byte & 15];
+    }
+    const json = try std.fmt.allocPrint(allocator, "{{\"version\":1,\"moduleSpecifierMode\":\"{s}\",\"sourceFile\":\"/src/index.ts\",\"outputFile\":\"/dist/index.d.ts\",\"sourceHash\":\"{s}\",\"rewrites\":{s}}}", .{ mode, hash, rewrites });
     defer allocator.free(json);
     return parse(allocator, json, source);
 }
@@ -432,14 +442,12 @@ test "context checks source identity, missing edges and preserves legacy spellin
     defer a.free(output);
     try std.testing.expectEqualStrings(input, output);
     try std.testing.expectError(error.InvalidContext, parse(a, "{}", "source"));
-    try std.testing.expectError(error.InvalidContext, parse(a,
-        "{\"version\":1,\"moduleSpecifierMode\":\"node\",\"sourceFile\":\"/src\",\"outputFile\":\"/dist\",\"sourceHash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"rewrites\":[]}", "source"));
+    try std.testing.expectError(error.InvalidContext, parse(a, "{\"version\":1,\"moduleSpecifierMode\":\"node\",\"sourceFile\":\"/src\",\"outputFile\":\"/dist\",\"sourceHash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"rewrites\":[]}", "source"));
 }
 
 test "escaped module literals map decoded values and safely escape emitted paths" {
     const a = std.testing.allocator;
-    const context = try testContext(a, "node", "source",
-        "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value's.js\"}]");
+    const context = try testContext(a, "node", "source", "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value's.js\"}]");
     defer context.deinit();
     const output = try rewrite(a, "export * from '\\u002e/value';", &context);
     defer a.free(output);
@@ -448,8 +456,7 @@ test "escaped module literals map decoded values and safely escape emitted paths
 
 test "preserve context applies explicit private mappings without inferring extensions" {
     const a = std.testing.allocator;
-    const context = try testContext(a, "preserve", "source",
-        "[{\"specifier\":\"local/value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value\"}]");
+    const context = try testContext(a, "preserve", "source", "[{\"specifier\":\"local/value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value\"}]");
     defer context.deinit();
     const output = try rewrite(a, "export type { Value } from 'local/value';\nexport * from './unmapped';", &context);
     defer a.free(output);
@@ -458,8 +465,7 @@ test "preserve context applies explicit private mappings without inferring exten
 
 test "template substitutions recurse through syntax while raw characters remain literal" {
     const a = std.testing.allocator;
-    const context = try testContext(a, "node", "source",
-        "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]");
+    const context = try testContext(a, "node", "source", "[{\"specifier\":\"./value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]");
     defer context.deinit();
     const input =
         "export type T = `raw import('./missing') ${import('./value').Name} " ++
