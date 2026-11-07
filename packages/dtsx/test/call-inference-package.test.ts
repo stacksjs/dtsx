@@ -7,11 +7,18 @@ import { processSource, ZIG_AVAILABLE } from '../../zig-dtsx/src'
 import { dts } from '../../bun-plugin/src'
 import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
-import { isAvailable, runTsc } from './helpers/tsc'
+import { isAvailable } from './helpers/tsc'
+import { assertPackageControls } from './helpers/package-controls'
 import { assertIsolatedDeclarationDiagnostic } from './helpers/isolated-oracle'
 
 interface Fixture { files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }> }
 const fixtures: Record<string, Fixture> = {
+  'inferred member-call returns reference the parameter type': {
+    files: { 'index.ts': 'export function read(input: Date) { return input.toISOString() }' },
+    positive: 'const value: string = api.read(new Date()); void value;',
+    negatives: [{ text: 'const bad: number = api.read(new Date()); void bad;', code: 'TS2322' }],
+  },
+
   'a preceding parameter binding governs the default call type': {
     files: { 'index.ts': 'export function read(Math: { abs(value: number): string }, value = Math.abs(-1)): string { return value }' },
     positive: 'const value: string = api.read({ abs: () => "ready" }, "again"); void value;',
@@ -33,19 +40,7 @@ const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution
 const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../../zig-dtsx/zig-out/bin/zig-dtsx${process.platform === 'win32' ? '.exe' : ''}`)
 
 async function controls(root: string, specifier: string, fixture: Fixture): Promise<void> {
-  await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions, files: ['control.ts'] }))
-  await writeFile(join(root, 'control.ts'), `import * as api from '${specifier}'; ${fixture.positive}`)
-  const positive = runTsc(root, ['--project', 'tsconfig.json'])
-  expect(positive.ok, positive.output).toBe(true)
-  expect(positive.output.match(/error TS\d+/g) ?? [], positive.output).toEqual([])
-  // Compile independent negative blocks together. Every block must produce
-  // exactly its authored diagnostic on its own line, within the same 5s bound.
-  await writeFile(join(root, 'control.ts'), `import * as api from '${specifier}';\n${fixture.negatives.map(negative => `{ ${negative.text} }`).join('\n')}`)
-  const result = runTsc(root, ['--project', 'tsconfig.json'])
-  expect(result.ok, result.output).toBe(false)
-  expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual(fixture.negatives.map(negative => `error ${negative.code}`))
-  const lines = [...result.output.matchAll(/control\.ts\((\d+),\d+\): error TS\d+/g)].map(match => Number(match[1]))
-  expect(lines, result.output).toEqual(fixture.negatives.map((_, index) => index + 2))
+  await assertPackageControls(root, specifier, fixture)
 }
 
 for (const producer of ['core', 'bun-plugin', 'native', 'native-project'] as const) {

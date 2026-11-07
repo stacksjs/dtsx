@@ -5,6 +5,7 @@
 import type { KeyConstants } from '../computed-keys'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
 import { normalizeDefaultParameterOrder } from '../parameters'
+import { tokenizeDeclarationSyntax } from '../module-references'
 import { escapeJsdocContent } from './comments'
 
 /**
@@ -701,10 +702,30 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
   }
 
   const inferred = inferNarrowType(value, false)
-  return inferred.replace(/\btypeof\s+[$A-Z_a-z][$\w]*/g, (reference) => {
-    const name = reference.slice(7)
-    return parameterTypes.get(name) ?? 'unknown'
-  })
+  const tokens = tokenizeDeclarationSyntax(inferred)
+  let result = ''
+  let cursor = 0
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]
+    if (token.kind !== 'word' || inferred.slice(token.start, token.end) !== 'typeof') continue
+    const root = tokens[index + 1]
+    if (!root || root.kind !== 'word') continue
+    let type = parameterTypes.get(inferred.slice(root.start, root.end))
+    // Implementation locals do not exist in the emitted signature. Never
+    // turn their unresolved queries into invalid names such as unknown.json.
+    if (!type) return 'unknown'
+    let end = root.end
+    index++
+    while (tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '.' && tokens[index + 2]?.kind === 'word') {
+      const property = tokens[index + 2]
+      type = `(${type})["${inferred.slice(property.start, property.end)}"]`
+      end = property.end
+      index += 2
+    }
+    result += inferred.slice(cursor, token.start) + type
+    cursor = end
+  }
+  return result + inferred.slice(cursor)
 }
 
 /** Function members need parentheses at a union boundary. */

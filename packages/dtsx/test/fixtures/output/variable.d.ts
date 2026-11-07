@@ -1,3 +1,4 @@
+import process from 'node:process';
 /**
  * Example of const declaration
  * @defaultValue `{ apiUrl: 'https://api.stacksjs.org', timeout: '5000' }`
@@ -54,7 +55,7 @@ export declare const someObject: {
   /** @defaultValue 'value' */
   key: string
 };
-  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: unknown; nestedKey2: () => void } };
+  someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: ReturnType<typeof process.cwd>; nestedKey2: () => void } };
   someNestedObjectArray: ({
   /** @defaultValue 'value' */
   key: string
@@ -64,7 +65,7 @@ export declare const someObject: {
 })[];
   someOtherObject: typeof some.deep.object;
   someInlineCall2: typeof console.log;
-  someInlineCall3: unknown
+  someInlineCall3: ReturnType<typeof console.log>
 };
 /** @defaultValue `{ 'Content-Type': 'application/json' }` */
 export declare const defaultHeaders: {
@@ -101,7 +102,7 @@ export declare const complexArrays: {
  *   },
  *   utils: {
  *     formatters: {
- *       date: (input: Date) => unknown,
+ *       date: (input: Date) => ReturnType<(Date)["toISOString"]>,
  *       currency: (amount: number, currency?: string) => unknown
  *     }
  *   }
@@ -110,7 +111,7 @@ export declare const complexArrays: {
  */
 export declare const complexObject: {
   handlers: { onSuccess: <T>(data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
-  utils: { formatters: { date: (input: Date) => unknown; currency: (amount: number, currency?: string) => unknown } }
+  utils: { formatters: { date: (input: Date) => ReturnType<(Date)["toISOString"]>; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
 export declare const methodDecorator: (

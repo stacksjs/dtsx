@@ -7,7 +7,8 @@ import { processSource, ZIG_AVAILABLE } from '../../zig-dtsx/src'
 import { dts } from '../../bun-plugin/src'
 import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
-import { isAvailable, runTsc } from './helpers/tsc'
+import { isAvailable } from './helpers/tsc'
+import { assertPackageControls } from './helpers/package-controls'
 
 interface Fixture { files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string, authoredCode?: string }>, reference?: { positive: string, negatives: Array<{ text: string, code: string }> } }
 const fixtures: Record<string, Fixture> = {
@@ -90,17 +91,7 @@ const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution
 const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../../zig-dtsx/zig-out/bin/zig-dtsx${process.platform === 'win32' ? '.exe' : ''}`)
 
 async function controls(root: string, specifier: string, fixture: Fixture, authored = false): Promise<void> {
-  await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions, files: ['control.ts'] }))
-  await writeFile(join(root, 'control.ts'), `import * as api from '${specifier}'; ${fixture.positive}`)
-  const positive = runTsc(root, ['--project', 'tsconfig.json'])
-  expect(positive.ok, positive.output).toBe(true)
-  expect(positive.output.match(/error TS\d+/g) ?? [], positive.output).toEqual([])
-  for (const negative of fixture.negatives) {
-    await writeFile(join(root, 'control.ts'), `import * as api from '${specifier}'; ${negative.text}`)
-    const result = runTsc(root, ['--project', 'tsconfig.json'])
-    expect(result.ok, result.output).toBe(false)
-    expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual([`error ${authored ? negative.authoredCode ?? negative.code : negative.code}`])
-  }
+  await assertPackageControls(root, specifier, { ...fixture, negatives: fixture.negatives.map(negative => ({ ...negative, code: authored ? negative.authoredCode ?? negative.code : negative.code })) })
 }
 
 for (const producer of ['core', 'bun-plugin', 'native', 'native-project'] as const) {
