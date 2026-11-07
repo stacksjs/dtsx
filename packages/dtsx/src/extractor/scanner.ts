@@ -1986,9 +1986,22 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const start = pos
       // Read type, respecting nesting. Track {/} in depth when part of type (object literal types).
       let depth = 0
+      let lastTypeTokenEnd = start
+      function expectsTypeOperand(): boolean {
+        const prefix = sliceTrimmed(start, lastTypeTokenEnd)
+        const endsWithWord = (word: string) => {
+          const index = prefix.length - word.length
+          return index >= 0 && prefix.endsWith(word) && (index === 0 || !isIdentChar(prefix.charCodeAt(index - 1)))
+        }
+        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || endsWithWord('is') || endsWithWord('extends')
+      }
       while (pos < len) {
-        if (skipNonCode())
+        const tokenStart = pos
+        if (skipNonCode()) {
+          // Literal types are significant; comments between type tokens are trivia.
+          if (source.charCodeAt(tokenStart) !== CH_SLASH) lastTypeTokenEnd = pos
           continue
+        }
         const ch = source.charCodeAt(pos)
         if (ch === CH_LPAREN || ch === CH_LBRACKET || ch === CH_LANGLE) {
           depth++
@@ -2003,12 +2016,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
           else {
             // At depth 0: { is part of return type if it starts the type or follows a type operator
-            const textSoFar = sliceTrimmed(start, pos)
-            const endsWithWord = (w: string) => {
-              const idx = textSoFar.length - w.length
-              return idx >= 0 && textSoFar.endsWith(w) && (idx === 0 || !isIdentChar(textSoFar.charCodeAt(idx - 1)))
-            }
-            if (textSoFar.length === 0 || textSoFar.endsWith('|') || textSoFar.endsWith('&') || endsWithWord('is') || endsWithWord('extends')) {
+            if (expectsTypeOperand()) {
               depth++
             }
             else {
@@ -2024,8 +2032,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         else if (depth === 0 && ch === CH_SEMI) {
           break
         }
-        if (depth === 0 && checkASIMember())
+        if (depth === 0 && checkASIMember() && !expectsTypeOperand())
           break
+        if (!isWhitespace(ch)) lastTypeTokenEnd = pos + 1
         pos++
       }
       return sliceTrimmed(start, pos)

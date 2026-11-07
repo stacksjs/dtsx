@@ -344,8 +344,14 @@ pub fn extractReturnType(s: *Scanner) []const u8 {
         s.skipWhitespaceAndComments();
         const start = s.pos;
         var depth: isize = 0;
+        var last_type_token_end = start;
         while (s.pos < s.len) {
-            if (s.skipNonCode()) continue;
+            const token_start = s.pos;
+            if (s.skipNonCode()) {
+                // Literal types are significant; comments between tokens are trivia.
+                if (s.source[token_start] != ch.CH_SLASH) last_type_token_end = s.pos;
+                continue;
+            }
             const c = s.source[s.pos];
             if (c == ch.CH_LPAREN or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
                 depth += 1;
@@ -355,13 +361,7 @@ pub fn extractReturnType(s: *Scanner) []const u8 {
                 if (depth > 0) {
                     depth += 1;
                 } else {
-                    const text_so_far = ch.sliceTrimmed(s.source, start, s.pos);
-                    const is_type_ctx = text_so_far.len == 0 or
-                        ch.endsWith(text_so_far, "|") or
-                        ch.endsWith(text_so_far, "&") or
-                        endsWithWord(text_so_far, "is") or
-                        endsWithWord(text_so_far, "extends");
-                    if (is_type_ctx) {
+                    if (expectsReturnTypeOperand(ch.sliceTrimmed(s.source, start, last_type_token_end))) {
                         depth += 1;
                     } else {
                         break; // function body
@@ -373,12 +373,19 @@ pub fn extractReturnType(s: *Scanner) []const u8 {
             } else if (depth == 0 and c == ch.CH_SEMI) {
                 break;
             }
-            if (depth == 0 and s.checkASIMember()) break;
+            if (depth == 0 and s.checkASIMember() and !expectsReturnTypeOperand(ch.sliceTrimmed(s.source, start, last_type_token_end))) break;
+            if (!ch.isWhitespace(c)) last_type_token_end = s.pos + 1;
             s.pos += 1;
         }
         return ch.sliceTrimmed(s.source, start, s.pos);
     }
     return "";
+}
+
+/// A brace or newline after these tokens still belongs to the return type.
+fn expectsReturnTypeOperand(prefix: []const u8) bool {
+    return prefix.len == 0 or ch.endsWith(prefix, "=>") or ch.endsWith(prefix, "|") or
+        ch.endsWith(prefix, "&") or endsWithWord(prefix, "is") or endsWithWord(prefix, "extends");
 }
 
 fn endsWithWord(text: []const u8, word: []const u8) bool {
