@@ -1,11 +1,11 @@
-import { expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { expect, test } from 'bun:test'
 import { dts } from '../../bun-plugin/src'
 import { generate } from '../src'
-import { isAvailable, runTsc } from './helpers/tsc'
 import { traceAsync, traceSync } from './helpers/phase-trace'
+import { isAvailable, runTsc } from './helpers/tsc'
 
 type Producer = 'core' | 'bun-plugin' | 'cli'
 
@@ -15,6 +15,7 @@ interface ClassCase {
   instance?: string
   positive?: string
   privateExpression?: string
+  privateCode?: 2339 | 2341
   signatures?: string[]
   retainsPrivateBrand?: boolean
 }
@@ -22,18 +23,18 @@ interface ClassCase {
 const cases: ClassCase[] = [
   { name: 'same-line hash private method', source: 'export class Calculate { #if(value: number): number { return value } value(): number { return this.#if(4) / 2 } }', privateExpression: 'new Calculate().if(4)' },
   { name: 'multiline hash private method', source: 'export class Calculate {\n #if(value: number): number { return value }\n value(): number { return this.#if(4) / 2 }\n}', privateExpression: 'new Calculate().if(4)' },
-  { name: 'same-line TypeScript private method', source: 'export class Calculate { private hidden(value: number): number { return value } value(): number { return this.hidden(4) / 2 } }', privateExpression: 'new Calculate().hidden(4)' },
-  { name: 'quoted private method', source: 'export class Calculate { private "hidden"(value: number): number { return value } value(): number { return this.hidden(4) / 2 } }', privateExpression: 'new Calculate().hidden(4)' },
+  { name: 'same-line TypeScript private method', source: 'export class Calculate { private hidden(value: number): number { return value } value(): number { return this.hidden(4) / 2 } }', privateCode: 2341, privateExpression: 'new Calculate().hidden(4)' },
+  { name: 'quoted private method', source: 'export class Calculate { private "hidden"(value: number): number { return value } value(): number { return this.hidden(4) / 2 } }', privateCode: 2341, privateExpression: 'new Calculate().hidden(4)' },
   { name: 'generic private method with object constraints', source: 'export class Calculate { #hidden<T extends { value: number }>(value: T): T { return value } value(): number { return this.#hidden({ value: 2 }).value } }', privateExpression: 'new Calculate().hidden({ value: 2 })' },
   { name: 'private method with object return type', source: 'export class Calculate { #hidden(): { value: number } { return { value: 2 } } value(): number { return this.#hidden().value } }', privateExpression: 'new Calculate().hidden()' },
-  { name: 'TypeScript private accessor', source: 'export class Calculate { private get hidden(): number { return 2 } value(): number { return this.hidden } }', privateExpression: 'new Calculate().hidden' },
-  { name: 'quoted TypeScript private accessor', source: 'export class Calculate { private get "hidden"(): number { return 2 } value(): number { return this.hidden } }', privateExpression: 'new Calculate().hidden' },
+  { name: 'TypeScript private accessor', source: 'export class Calculate { private get hidden(): number { return 2 } value(): number { return this.hidden } }', privateCode: 2341, privateExpression: 'new Calculate().hidden' },
+  { name: 'quoted TypeScript private accessor', source: 'export class Calculate { private get "hidden"(): number { return 2 } value(): number { return this.hidden } }', privateCode: 2341, privateExpression: 'new Calculate().hidden' },
   { name: 'quoted public accessor control', source: 'export class Calculate { get "current"(): number { return 2 } set "current"(value: number) {} value(): number { return this.current } }', positive: 'const current: number = new Calculate().current; new Calculate().current = 3;', signatures: ['get "current"(): number', 'set "current"(value: number)'] },
   { name: 'hash private accessor control', source: 'export class Calculate { get #hidden(): number { return 2 } set #hidden(value: number) {} value(): number { return this.#hidden } }', privateExpression: 'new Calculate().hidden' },
   { name: 'private object initializer continuation', source: 'export class Calculate { #hidden = { nested: { value: 4 } }.nested; value(): number { return this.#hidden.value / 2 } }', privateExpression: 'new Calculate().hidden' },
   { name: 'private arrow initializer continuation', source: 'export class Calculate { #hidden = () => ({ value: 2 }); value(): number { return this.#hidden().value } }', privateExpression: 'new Calculate().hidden' },
   { name: 'private body with comments regex and division', source: 'export class Calculate { #hidden(value: string): number { /* } fake() {} */ if (value) /[}]/.test(value); return Number(value) / 2 } /** public member */ value(): number { return this.#hidden("4") } }', privateExpression: 'new Calculate().hidden("4")' },
-  { name: 'static private method with comments', source: 'export class Calculate { private /* header */ static hidden(value: number): number { return value } value(): number { return Calculate.hidden(4) / 2 } }', privateExpression: 'Calculate.hidden(4)' },
+  { name: 'static private method with comments', source: 'export class Calculate { private /* header */ static hidden(value: number): number { return value } value(): number { return Calculate.hidden(4) / 2 } }', privateCode: 2341, privateExpression: 'Calculate.hidden(4)' },
   { name: 'constructor after a private method', source: 'export class Calculate { #hidden(value: number): number { return value } constructor(public readonly seed: number) {} value(): number { return this.#hidden(this.seed) } }', instance: 'new Calculate(2)', positive: 'const seed: number = new Calculate(2).seed;', privateExpression: 'new Calculate(2).hidden(4)', signatures: ['constructor(seed: number)', 'readonly seed: number'] },
   { name: 'public fields accessors and static members after a private method', source: 'export class Calculate { #hidden(): void {} count = 2; get current(): number { return this.count } set current(value: number) { this.count = value } static create(): Calculate { return new Calculate() } value(): number { return this.count } }', positive: 'const count: number = new Calculate().count; const current: number = new Calculate().current; new Calculate().current = 3; const made: Calculate = Calculate.create();', privateExpression: 'new Calculate().hidden()', signatures: ['count: number', 'get current(): number', 'set current(value: number)', 'static create(): Calculate'] },
   { name: 'ordinary public keyword method control', source: 'export class Calculate { if(value: number): number { return value } value(): number { return this.if(4) / 2 } }', positive: 'const named: number = new Calculate().if(4);', signatures: ['if(value: number): number'] },
@@ -56,6 +57,14 @@ async function packedClass(fixture: ClassCase, producer: Producer): Promise<void
     expect(isAvailable).toBe(true)
     const sourceCheck = runTsc(library, ['--project', 'tsconfig.source.json'])
     expect(sourceCheck.ok, sourceCheck.output).toBe(true)
+
+    if (fixture.privateExpression) {
+      await writeFile(join(library, 'private.ts'), `import { Calculate } from './src/index.js'; ${fixture.privateExpression};`)
+      await writeFile(join(library, 'tsconfig.private.json'), JSON.stringify({ compilerOptions, files: ['private.ts'] }))
+      const authoredPrivacy = runTsc(library, ['--project', 'tsconfig.private.json'])
+      expect(authoredPrivacy.ok).toBe(false)
+      expect(authoredPrivacy.output.match(/error TS\d+/g)).toEqual([`error TS${fixture.privateCode ?? 2339}`])
+    }
 
     const entrypoints = [join(library, 'src/index.ts')]
     const details = { library, producer, fixture: fixture.name, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
@@ -101,8 +110,7 @@ async function packedClass(fixture: ClassCase, producer: Producer): Promise<void
       await writeFile(join(consumer, 'tsconfig.private.json'), JSON.stringify({ compilerOptions, include: ['private.ts'] }))
       const privacy = runTsc(consumer, ['--project', 'tsconfig.private.json'])
       expect(privacy.ok).toBe(false)
-      expect(privacy.output).toContain('TS2339')
-      expect(privacy.output.match(/error TS\d+/g)).toEqual(['error TS2339'])
+      expect(privacy.output.match(/error TS\d+/g)).toEqual([`error TS${fixture.privateCode ?? 2339}`])
     }
     if (fixture.retainsPrivateBrand) {
       await writeFile(join(consumer, 'brand.ts'), `${header}const structural: Calculate = { value: () => 2 }; export { structural }`)
@@ -142,7 +150,7 @@ for (const word of ['private', 'protected', 'public', 'static', 'abstract', 'rea
         name: `${visibility} ${word}`,
         source: `export class Calculate { ${modifier}${word} /* header */ (value: number): number { return value } value(): number { return this.${word}(4) / 2 } }`,
         ...(visibility === 'private'
-          ? { privateExpression: `new Calculate().${word}(4)` }
+          ? { privateExpression: `new Calculate().${word}(4)`, privateCode: 2341 }
           : { positive: `const named: number = new Calculate().${word}(4);`, signatures: [`${word}(value: number): number`] }),
       }, 'core')
     })

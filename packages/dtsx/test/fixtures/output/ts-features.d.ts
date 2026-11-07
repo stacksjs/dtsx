@@ -96,6 +96,7 @@ export declare class SymbolClass {
 /** Class with private fields */
 export declare class PrivateFieldsClass {
   name: string;
+  #private;
   constructor(name: string, data: number);
   get data(): number;
   processData(): number;
@@ -103,6 +104,7 @@ export declare class PrivateFieldsClass {
 }
 /** Class extending private fields class */
 export declare class ExtendedPrivateClass extends PrivateFieldsClass {
+  #private;
   constructor(name: string, data: number, flag: boolean);
   get flag(): boolean;
 }
@@ -110,6 +112,7 @@ export declare class ExtendedPrivateClass extends PrivateFieldsClass {
 export declare class StaticBlockClass {
   static readonly config: { initialized: boolean, timestamp: number };
   static instances: Map<string, StaticBlockClass>;
+  static #private_static;
   id: string;
   constructor();
 }
@@ -117,15 +120,18 @@ export declare class StaticBlockClass {
 export declare class ComplexStaticBlocks {
   static readonly PRIMARY_CONFIG: Record<string, unknown>;
   static readonly SECONDARY_CONFIG: Record<string, unknown>;
+  static #private_static;
   constructor();
 }
 /** Class implementing Disposable */
 export declare class DisposableConnection implements Disposable {
+  #private;
   connect(): void;
   [Symbol.dispose](): void;
 }
 /** DisposableStack for managing multiple resources */
 export declare class ResourceManager {
+  #private;
   add(resource: Disposable): void;
   [Symbol.dispose](): void;
 }

@@ -41,6 +41,7 @@ export type WithTimestamps<T> = T & { createdAt: Date; updatedAt: Date }
 export type Entity<T> = WithId<WithTimestamps<T>>;
 // Generic class with constraints
 export declare class TypedMap<K extends string | number, V> {
+  private map;
   set(key: K, value: V): this;
   get(key: K): V | undefined;
   has(key: K): boolean;

@@ -11,6 +11,7 @@ export declare class CustomErrorWithMethodAndType extends CustomError {
   getError(): Error;
 }
 export declare class CustomErrorWithMethodAndTypeAndReturn {
+  private message;
   public readonly code: number;
   public readonly metadata: Record<string, unknown>;
   constructor(message: string, code: number, metadata: Record<string, unknown>);

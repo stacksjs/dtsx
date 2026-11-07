@@ -751,8 +751,8 @@ describe('Real-world patterns without isolatedDeclarations', () => {
     expect(result).toContain('from(table: string): QueryBuilder;')
     expect(result).toContain('where(condition: string): QueryBuilder;')
     expect(result).toContain('build(): string;')
-    // Private members should be excluded
-    expect(result).not.toContain('private query')
+    // Private identity remains without exposing its implementation type.
+    expect(result).toContain('private query;')
   })
 
   it('should handle event emitter pattern', () => {
@@ -836,9 +836,8 @@ describe('Real-world patterns without isolatedDeclarations', () => {
     expect(result).toContain('public readonly id: string;')
     expect(result).toContain('public name: string;')
     expect(result).toContain('protected email: string;')
-    // Private param property should NOT appear as a class property,
-    // but it still appears in the constructor signature
-    expect(result).not.toContain('private password')
+    // Parameter properties retain their private brand and constructor input.
+    expect(result).toContain('private password;')
     expect(result).toContain('constructor(id: string, name: string, email: string, password: string);')
     expect(result).toContain('getEmail(): string;')
   })

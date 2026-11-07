@@ -8,7 +8,7 @@ import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
-import { parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
+import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 import { inferDeclarationValueAliases } from '../value-inference'
@@ -580,12 +580,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
     const c = pos < len ? source[pos] : ''
     const two = source.slice(pos, pos + 2)
-    const continuesExpression
-     = c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
+    const continuesExpression = (c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
       || c === ',' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%'
       || c === '<' || c === '>' || c === '=' || c === '&' || c === '|' || c === '^'
       || c === '`' || two === '=>'
-      || matchWord('as') || matchWord('satisfies') || matchWord('instanceof') || matchWord('in')
+      || matchWord('as') || matchWord('satisfies') || matchWord('instanceof') || matchWord('in'))
     pos = saved
     return !continuesExpression
   }
@@ -2605,6 +2604,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
 
     pos++ // skip {
       const members: string[] = []
+      const privateMembers = new Set<string>()
 
       while (pos < len) {
         skipWhitespaceAndComments()
@@ -2664,9 +2664,26 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         if (pos >= len || source.charCodeAt(pos) === CH_RBRACE)
           break
 
-        // Skip private identifier members (#field)
-        if (source.charCodeAt(pos) === CH_HASH) {
-          isPrivate = true
+        // Keep private identity without exposing implementation signatures.
+        const memberStart = pos
+        if ((matchWord('get') || matchWord('set')) && isMemberNameStart(peekAfterWord(source.slice(pos, pos + 3)))) {
+          pos += 3
+          skipWhitespaceAndComments()
+        }
+        if (source.charCodeAt(pos) === CH_STAR) { pos++; skipWhitespaceAndComments() }
+        const privateName = readMemberName()
+        pos = memberStart
+        const hashPrivate = privateName.startsWith('#')
+        if (hashPrivate) isPrivate = true
+        if (isPrivate && privateName && privateName !== 'constructor') {
+          const stub = hashPrivate ? (isStatic ? '  static #private_static;' : '  #private;') : `  private ${isStatic ? 'static ' : ''}${privateName};`
+          const quoted = privateName[0] === '\'' || privateName[0] === '"'
+          const canonicalName = quoted ? decodeStringLiteral(privateName) ?? privateName : privateName
+          const identity = hashPrivate ? `${isStatic ? 'static' : 'instance'}#` : `${isStatic ? 'static:' : 'instance:'}${canonicalName}`
+          if (!privateMembers.has(identity)) {
+            privateMembers.add(identity)
+            members.push(stub)
+          }
         }
 
         // Visibility controls emission, not where a member ends. Consume private
@@ -2692,8 +2709,8 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
           const rawParams = extractParamList()
           skipWhitespaceAndComments()
 
-          // Extract parameter properties (non-private params with modifiers like public/protected/readonly)
-          extractParamProperties(rawParams, output)
+          // Parameter properties participate in class identity and public shape.
+          extractParamProperties(rawParams, members)
 
           // Skip constructor body
           if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
@@ -2704,7 +2721,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
           }
 
           const dtsParams = buildDtsParams(rawParams)
-          output.push(`  constructor${dtsParams};`)
+          members.push(isPrivate ? '  private constructor();' : `  ${isProtected ? 'protected ' : ''}constructor${dtsParams};`)
         }
         else if (matchWord('get')) {
           pos += 3
@@ -3118,12 +3135,16 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
 
       if (!hasPublic && !hasProtected && !hasPrivate && !hasReadonly)
         continue
-      if (hasPrivate)
-        continue // Skip private parameter properties
 
       // Extract the modifiers text and parameter info (no regex — use indexOf)
       let p = param
       const mods: string[] = []
+      if (hasPrivate) {
+        let si = 7
+        while (si < p.length && isWhitespace(p.charCodeAt(si))) si++
+        p = p.slice(si)
+        mods.push('private')
+      }
       if (hasPublic) {
         let si = 6 // 'public'.length
         while (si < p.length && isWhitespace(p.charCodeAt(si))) si++
@@ -3155,7 +3176,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       const nameEnd = p.search(/[?:=]/)
       if (nameEnd !== -1 && p.charCodeAt(nameEnd) !== 63 /* ? */ && hasTopLevelDefault(p))
         dtsParam = dtsParam.replace(/^([\w$]+)\?:/, '$1:')
-      members.push(`  ${modText}${dtsParam};`)
+      members.push(hasPrivate ? `  private ${dtsParam.split(/[?:]/, 1)[0]};` : `  ${modText}${dtsParam};`)
     }
   }
 

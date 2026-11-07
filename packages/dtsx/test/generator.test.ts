@@ -54,7 +54,8 @@ describe('processSource (stdin support)', () => {
     }`
     const result = processSource(source)
     expect(result).toContain('export declare class MyClass')
-    // Private members are correctly omitted from .d.ts output
+    // Preserve private identity while omitting its implementation type.
+    expect(result).toContain('private name;')
     expect(result).not.toContain('private name: string;')
     expect(result).toContain('constructor(name: string);')
     expect(result).toContain('getName(): string;')

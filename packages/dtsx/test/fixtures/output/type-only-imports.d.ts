@@ -26,6 +26,7 @@ export type Mapped = {
 }
 // Class using imported types
 export declare class Handler {
+  private config;
   constructor(config: Config);
   process(input: TypeA): TypeB;
 }

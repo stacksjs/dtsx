@@ -1719,7 +1719,7 @@ describe('Class access modifiers', () => {
     expect(result).toContain('getResult(): number;')
   })
 
-  it('should omit private members from DTS', () => {
+  it('should preserve private brands without implementation signatures', () => {
     const source = `
       export class Encapsulated {
         private secret: string = 'hidden'
@@ -1728,8 +1728,9 @@ describe('Class access modifiers', () => {
       }
     `
     const result = processSource(source)
-    expect(result).not.toContain('private secret')
-    expect(result).not.toContain('internalMethod')
+    expect(result).toContain('private secret;')
+    expect(result).toContain('private internalMethod;')
+    expect(result).not.toContain('internalMethod()')
     expect(result).toContain('publicMethod(): string;')
   })
 
@@ -1763,7 +1764,7 @@ describe('Class getters and setters', () => {
     `
     const result = processSource(source)
     expect(result).toContain('get fahrenheit(): number;')
-    expect(result).not.toContain('private celsius')
+    expect(result).toContain('private celsius;')
   })
 
   it('should handle getter and setter', () => {

@@ -571,7 +571,10 @@ pub fn extractAssertion(init_text: []const u8) ?[]const u8 {
 /// prose, a declaration file TypeScript cannot parse.
 fn stripParamComments(s: *Scanner, text: []const u8) []const u8 {
     if (ch.indexOfChar(text, '/', 0) == null) return text;
-    const out = s.allocator.alloc(u8, text.len) catch return text;
+    const out = s.allocator.alloc(u8, text.len) catch |err| {
+        s.pending_error = err;
+        return text;
+    };
     var n: usize = 0;
     var in_str = false;
     var str_ch: u8 = 0;
@@ -711,7 +714,11 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
 
     // Split parameters by comma at depth 0
     var params = std.array_list.Managed([]const u8).init(s.allocator);
-    params.ensureTotalCapacity(8) catch {};
+    defer params.deinit();
+    params.ensureTotalCapacity(8) catch |err| {
+        s.pending_error = err;
+        return "()";
+    };
     var param_start: usize = 0;
     var depth: isize = 0;
     var in_str = false;
@@ -766,14 +773,23 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (c == ch.CH_COMMA and depth == 0) {
-            params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..i], " \t\r\n"))) catch {};
+            params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..i], " \t\r\n"))) catch |err| {
+                s.pending_error = err;
+                return "()";
+            };
             param_start = i + 1;
         }
     }
-    params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..], " \t\r\n"))) catch {};
+    params.append(stripParamComments(s, std.mem.trim(u8, inner[param_start..], " \t\r\n"))) catch |err| {
+        s.pending_error = err;
+        return "()";
+    };
 
     // Build DTS params — direct alloc, output ≤ raw_params.len + extra for type annotations
-    const buf = s.allocator.alloc(u8, raw_params.len * 2 + 16) catch return "()";
+    const buf = s.allocator.alloc(u8, raw_params.len * 2 + 16) catch |err| {
+        s.pending_error = err;
+        return "()";
+    };
     var pos: usize = 0;
     buf[pos] = '(';
     pos += 1;
@@ -947,7 +963,10 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     // Build result — direct alloc (no ArrayList overhead)
     const rest_prefix: []const u8 = if (is_rest) "..." else "";
     const total = rest_prefix.len + name.len + opt_marker.len + 2 + param_type.len;
-    const result_buf = s.allocator.alloc(u8, total) catch return "unknown: unknown";
+    const result_buf = s.allocator.alloc(u8, total) catch |err| {
+        s.pending_error = err;
+        return "unknown: unknown";
+    };
     var rp: usize = 0;
     if (is_rest) {
         @memcpy(result_buf[rp..][0..3], "...");
@@ -1791,11 +1810,22 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
 
 /// Build class body DTS (members only, no implementations)
 fn buildClassBodyDts(s: *Scanner) []const u8 {
+    return buildClassBodyDtsChecked(s) catch |err| {
+        s.pending_error = err;
+        s.pos = s.len;
+        return "{}";
+    };
+}
+
+fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
     if (s.pos >= s.len or s.source[s.pos] != ch.CH_LBRACE) return "{}";
     s.pos += 1; // skip {
 
     var members = std.array_list.Managed([]const u8).init(s.allocator);
-    members.ensureTotalCapacity(16) catch {};
+    defer members.deinit();
+    try members.ensureTotalCapacity(16);
+    var private_members = std.StringHashMap(void).init(s.allocator);
+    defer private_members.deinit();
 
     while (s.pos < s.len) {
         s.skipWhitespaceAndComments();
@@ -1831,6 +1861,13 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             // First-byte dispatch — most class members have at most one or two
             // modifiers. The previous code ran up to 10 matchWord calls per
             // member iteration; this lets us reject most bytes immediately.
+            const saved = s.pos;
+            const word = s.readIdent();
+            s.pos = saved;
+            if (word.len > 0) {
+                const next = s.peekAfterWord(word);
+                if (next == '(' or next == '<' or next == '?' or next == '!' or next == ':' or next == '=' or next == ';' or next == '}') break;
+            }
             const mc = s.source[s.pos];
             switch (mc) {
                 'p' => {
@@ -1884,13 +1921,32 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
         s.skipWhitespaceAndComments();
         if (s.pos >= s.len or s.source[s.pos] == ch.CH_RBRACE) break;
 
-        // Skip private # members
-        if (s.source[s.pos] == ch.CH_HASH) is_private = true;
-
-        if (is_private) {
-            s.skipClassMember();
-            continue;
+        // Private signatures erase implementation types but retain class identity.
+        const member_start = s.pos;
+        if ((s.matchWord("get") or s.matchWord("set")) and isAccessorFollowed(s)) {
+            s.pos += 3;
+            s.skipWhitespaceAndComments();
         }
+        if (s.source[s.pos] == '*') {
+            s.pos += 1;
+            s.skipWhitespaceAndComments();
+        }
+        const private_name = s.readMemberName();
+        s.pos = member_start;
+        const hash_private = ch.startsWith(private_name, "#");
+        if (hash_private) is_private = true;
+        if (is_private and private_name.len > 0 and !std.mem.eql(u8, private_name, "constructor")) {
+            const stub = if (hash_private) (if (is_static) "  static #private_static;" else "  #private;") else try std.fmt.allocPrint(s.allocator, "  private {s}{s};", .{ if (is_static) "static " else "", private_name });
+            const quoted = private_name[0] == '\'' or private_name[0] == '"';
+            const decoded = if (quoted) try module_specifiers.decodeStringLiteral(s.allocator, private_name) else private_name;
+            const identity = if (hash_private) (if (is_static) "static#" else "instance#") else try std.fmt.allocPrint(s.allocator, "{s}:{s}", .{ if (is_static) "static" else "instance", decoded });
+            const entry = try private_members.getOrPut(identity);
+            if (!entry.found_existing) try members.append(stub);
+        }
+        // Parse all members with the same boundaries, even when only a brand is emitted.
+        var discarded = std.array_list.Managed([]const u8).init(s.allocator);
+        defer discarded.deinit();
+        const output = if (is_private) &discarded else &members;
 
         // Build modifier prefix — direct alloc + memcpy beats ArrayList for the
         // ≤4 known fixed-length tokens. Saves an ArrayList init + toOwnedSlice
@@ -1901,7 +1957,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             @as(usize, if (is_abstract) "abstract ".len else 0) +
             @as(usize, if (is_readonly) "readonly ".len else 0);
         const prefix = blk: {
-            const pbuf = s.allocator.alloc(u8, proto_len) catch break :blk @as([]const u8, "  ");
+            const pbuf = try s.allocator.alloc(u8, proto_len);
             pbuf[0] = ' ';
             pbuf[1] = ' ';
             var pp: usize = 2;
@@ -1932,7 +1988,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             s.skipWhitespaceAndComments();
 
             // Extract parameter properties
-            extractParamProperties(s, raw_params, &members);
+            try extractParamProperties(s, raw_params, &members);
 
             // Skip constructor body
             if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
@@ -1941,15 +1997,15 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
                 s.pos += 1;
             }
 
-            const dts_params = buildDtsParams(s, raw_params);
+            const dts_params = if (is_private) "()" else buildDtsParams(s, raw_params);
             // Direct alloc — fixed-shape "  constructor<params>;".
-            const ctor_prefix = "  constructor";
+            const ctor_prefix: []const u8 = if (is_private) "  private constructor" else if (is_protected) "  protected constructor" else "  constructor";
             const ctor_total = ctor_prefix.len + dts_params.len + 1;
-            const ctor_buf = s.allocator.alloc(u8, ctor_total) catch break;
+            const ctor_buf = try s.allocator.alloc(u8, ctor_total);
             @memcpy(ctor_buf[0..ctor_prefix.len], ctor_prefix);
             @memcpy(ctor_buf[ctor_prefix.len..][0..dts_params.len], dts_params);
             ctor_buf[ctor_total - 1] = ';';
-            members.append(ctor_buf) catch {};
+            try members.append(ctor_buf);
         } else if (s.matchWord("get") and isAccessorFollowed(s)) {
             s.pos += 3;
             s.skipWhitespaceAndComments();
@@ -1980,7 +2036,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             const get_kw = "get ";
             const get_sep = "(): ";
             const get_total = prefix.len + get_kw.len + member_name.len + get_sep.len + ret_type.len + 1;
-            const get_buf = s.allocator.alloc(u8, get_total) catch break;
+            const get_buf = try s.allocator.alloc(u8, get_total);
             var gp: usize = 0;
             @memcpy(get_buf[gp..][0..prefix.len], prefix);
             gp += prefix.len;
@@ -1993,7 +2049,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             @memcpy(get_buf[gp..][0..ret_type.len], ret_type);
             gp += ret_type.len;
             get_buf[gp] = ';';
-            members.append(get_buf) catch {};
+            try output.append(get_buf);
         } else if (s.matchWord("set") and isAccessorFollowed(s)) {
             s.pos += 3;
             s.skipWhitespaceAndComments();
@@ -2014,7 +2070,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             // Direct alloc — fixed shape "<prefix>set <name><params>;".
             const set_kw = "set ";
             const set_total = prefix.len + set_kw.len + member_name.len + dts_params.len + 1;
-            const set_buf = s.allocator.alloc(u8, set_total) catch break;
+            const set_buf = try s.allocator.alloc(u8, set_total);
             var sp: usize = 0;
             @memcpy(set_buf[sp..][0..prefix.len], prefix);
             sp += prefix.len;
@@ -2025,7 +2081,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
             @memcpy(set_buf[sp..][0..dts_params.len], dts_params);
             sp += dts_params.len;
             set_buf[sp] = ';';
-            members.append(set_buf) catch {};
+            try output.append(set_buf);
         } else {
             // Regular method or property
             const is_generator = s.source[s.pos] == ch.CH_STAR;
@@ -2038,10 +2094,11 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
                 s.skipClassMember();
                 continue;
             }
-            handleMethodOrPropertyAfterName(s, member_name, prefix, is_static, is_readonly, is_generator, is_abstract, is_async, &members);
+            try handleMethodOrPropertyAfterName(s, member_name, prefix, is_static, is_readonly, is_generator, is_abstract, is_async, output);
         }
     }
 
+    if (s.pending_error) |err| return err;
     if (members.items.len == 0) return "{}";
 
     // Join members — direct alloc + memcpy. Total = "{\n" + members joined by
@@ -2050,7 +2107,7 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
     var total_len: usize = 4; // "{\n" (2) + "\n}" (2)
     for (members.items) |m| total_len += m.len;
     total_len += members.items.len - 1; // newlines between
-    const buf = s.allocator.alloc(u8, total_len) catch return "{}";
+    const buf = try s.allocator.alloc(u8, total_len);
     buf[0] = '{';
     buf[1] = '\n';
     var rp: usize = 2;
@@ -2090,7 +2147,7 @@ fn skipAccessorBody(s: *Scanner) void {
 }
 
 /// Handle method or property after reading member name
-fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_prefix: []const u8, is_static: bool, is_readonly: bool, is_generator: bool, is_abstract: bool, is_async: bool, members: *std.array_list.Managed([]const u8)) void {
+fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_prefix: []const u8, is_static: bool, is_readonly: bool, is_generator: bool, is_abstract: bool, is_async: bool, members: *std.array_list.Managed([]const u8)) !void {
     _ = is_abstract;
     s.skipWhitespaceAndComments();
     if (s.pos >= s.len) return;
@@ -2134,9 +2191,9 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
             if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-                const inferred = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0) catch ret_type;
+                const inferred = try type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0);
                 ret_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
-                    std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) catch inferred
+                    try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred})
                 else
                     inferred;
             }
@@ -2153,7 +2210,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         // emission time on member-heavy classes.
         const meth_total = mod_prefix.len + member_name.len + opt_mark.len +
             generics.len + dts_params.len + 2 + ret_type.len + 1;
-        const meth_buf = s.allocator.alloc(u8, meth_total) catch return;
+        const meth_buf = try s.allocator.alloc(u8, meth_total);
         var mp: usize = 0;
         @memcpy(meth_buf[mp..][0..mod_prefix.len], mod_prefix);
         mp += mod_prefix.len;
@@ -2170,7 +2227,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         @memcpy(meth_buf[mp..][0..ret_type.len], ret_type);
         mp += ret_type.len;
         meth_buf[mp] = ';';
-        members.append(meth_buf) catch {};
+        try members.append(meth_buf);
     } else if (next_ch == ch.CH_COLON or next_ch == ch.CH_EQUAL or next_ch == ch.CH_SEMI or next_ch == ch.CH_RBRACE or next_ch == ch.CH_LF or next_ch == ch.CH_CR) {
         // Property
         var prop_type: []const u8 = "";
@@ -2187,7 +2244,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                 } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !s.isArrowGT())) {
                     if (depth == 0) break;
                     depth -= 1;
-                } else if (depth == 0 and (c == ch.CH_SEMI or c == ch.CH_EQUAL or c == ch.CH_COMMA)) {
+                } else if (depth == 0 and (c == ch.CH_SEMI or (c == ch.CH_EQUAL and (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_RANGLE)) or c == ch.CH_COMMA)) {
                     break;
                 }
                 if (depth == 0 and s.checkASIMember()) break;
@@ -2241,7 +2298,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         const opt_mark: []const u8 = if (is_optional) "?" else "";
         // Direct alloc — fixed shape "<prefix><name>[?]: <type>;".
         const prop_total = mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;
-        const prop_buf = s.allocator.alloc(u8, prop_total) catch return;
+        const prop_buf = try s.allocator.alloc(u8, prop_total);
         var pp: usize = 0;
         @memcpy(prop_buf[pp..][0..mod_prefix.len], mod_prefix);
         pp += mod_prefix.len;
@@ -2254,20 +2311,21 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         @memcpy(prop_buf[pp..][0..prop_type.len], prop_type);
         pp += prop_type.len;
         prop_buf[pp] = ';';
-        members.append(prop_buf) catch {};
+        try members.append(prop_buf);
     } else {
         s.skipClassMember();
     }
 }
 
 /// Extract parameter properties from constructor params
-fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.array_list.Managed([]const u8)) void {
+fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.array_list.Managed([]const u8)) !void {
     if (raw_params.len < 2) return;
     const inner = std.mem.trim(u8, raw_params[1 .. raw_params.len - 1], " \t\r\n");
     if (inner.len == 0) return;
 
     // Split by comma at depth 0
     var params = std.array_list.Managed([]const u8).init(s.allocator);
+    defer params.deinit();
     var start: usize = 0;
     var depth: isize = 0;
     var in_str = false;
@@ -2319,11 +2377,11 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
             // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (c == ch.CH_COMMA and depth == 0) {
-            params.append(stripParamComments(s, std.mem.trim(u8, inner[start..i], " \t\r\n"))) catch {};
+            try params.append(stripParamComments(s, std.mem.trim(u8, inner[start..i], " \t\r\n")));
             start = i + 1;
         }
     }
-    params.append(stripParamComments(s, std.mem.trim(u8, inner[start..], " \t\r\n"))) catch {};
+    try params.append(stripParamComments(s, std.mem.trim(u8, inner[start..], " \t\r\n")));
 
     for (params.items) |param| {
         if (param.len == 0) continue;
@@ -2339,7 +2397,14 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         const has_readonly = (first == 'r' and (ch.startsWith(param, "readonly ") or ch.startsWith(param, "readonly\t"))) or ch.contains(param, " readonly ");
 
         if (!has_public and !has_protected and !has_private and !has_readonly) continue;
-        if (has_private) continue;
+        if (has_private) {
+            var private_param = std.mem.trimStart(u8, param[7..], " \t\r\n");
+            if (ch.startsWith(private_param, "readonly ") or ch.startsWith(private_param, "readonly\t")) private_param = std.mem.trimStart(u8, private_param[8..], " \t\r\n");
+            var name_end: usize = 0;
+            while (name_end < private_param.len and ch.isIdentChar(private_param[name_end])) name_end += 1;
+            try members.append(try std.fmt.allocPrint(s.allocator, "  private {s};", .{private_param[0..name_end]}));
+            continue;
+        }
 
         var p = param;
         if (has_public) {
@@ -2359,7 +2424,7 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
                 // Reconstruct without 'readonly '
                 const before = p[0..ri];
                 const after = p[si..];
-                const new_p = s.allocator.alloc(u8, before.len + after.len) catch continue;
+                const new_p = try s.allocator.alloc(u8, before.len + after.len);
                 @memcpy(new_p[0..before.len], before);
                 @memcpy(new_p[before.len..], after);
                 p = new_p;
@@ -2387,11 +2452,12 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
                         }
                     }
                     if (ident and q > 0) {
-                        if (s.allocator.alloc(u8, dts_param.len - 1)) |fixed| {
+                        {
+                            const fixed = try s.allocator.alloc(u8, dts_param.len - 1);
                             @memcpy(fixed[0..q], dts_param[0..q]);
                             @memcpy(fixed[q..], dts_param[q + 1 ..]);
                             dts_param = fixed;
-                        } else |_| {}
+                        }
                     }
                 }
             }
@@ -2406,7 +2472,7 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
             (if (num_mods > 0) num_mods else 0); // separators + trailing space when any modifier present
 
         const m_total = 2 + mod_text_len + dts_param.len + 1;
-        const mbuf = s.allocator.alloc(u8, m_total) catch continue;
+        const mbuf = try s.allocator.alloc(u8, m_total);
         var mp: usize = 0;
         mbuf[mp] = ' ';
         mp += 1;
@@ -2443,7 +2509,7 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         mp += dts_param.len;
         mbuf[mp] = ';';
         mp += 1;
-        members.append(mbuf[0..mp]) catch {};
+        try members.append(mbuf[0..mp]);
     }
 }
 
@@ -3354,4 +3420,26 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
     } else {
         s.skipToStatementEnd();
     }
+}
+
+fn checkPrivateClassBodyAllocations(allocator: Allocator) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const body = "{ static #static_value: number = 7; private brand: undefined; private hidden(value: number): number { return value } get #value(): number { return 7 } set #value(value: number) { void value } protected constructor(/** secret */ private readonly token: number = 7, public value: string = 'ready') {} publicMethod(): string { return this.value } }";
+    var s = Scanner.init(std.testing.allocator, body, true, false);
+    defer s.deinit();
+    s.allocator = arena.allocator();
+    const output = try buildClassBodyDtsChecked(&s);
+    if (s.pending_error) |err| return err;
+    try std.testing.expect(std.mem.indexOf(u8, output, "private brand;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "private hidden;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "#private;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "static #private_static;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "private token;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "protected constructor(") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "publicMethod(): string;") != null);
+}
+
+test "private class projection propagates backing allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkPrivateClassBodyAllocations, .{});
 }

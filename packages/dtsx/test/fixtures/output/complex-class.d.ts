@@ -26,6 +26,7 @@ export declare interface Serializable {
  * Base event emitter class
  */
 export declare abstract class EventEmitter<Events extends Record<string, any[]>> {
+  private listeners;
   on<K extends keyof Events>(event: K, listener: (...args: Events[K]) => void): this;
   off<K extends keyof Events>(event: K, listener: (...args: Events[K]) => void): this;
   protected emit<K extends keyof Events>(event: K, ...args: Events[K]): void;
@@ -36,6 +37,7 @@ export declare abstract class EventEmitter<Events extends Record<string, any[]>>
  */
 export declare class Application extends EventEmitter<AppEvents> {
   readonly version: string;
+  private logger;
   protected running: boolean;
   constructor(logger: Logger);
   start(): Promise<void>;
@@ -47,6 +49,8 @@ export declare class Application extends EventEmitter<AppEvents> {
  * Generic container with static factory methods
  */
 export declare class Container<T> {
+  private items;
+  private constructor();
   static empty<T>(): Container<T>;
   static of<T>(...items: T[]): Container<T>;
   static from<T>(iterable: Iterable<T>): Container<T>;
