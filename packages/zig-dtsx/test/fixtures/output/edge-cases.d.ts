@@ -28,11 +28,11 @@ export declare const regexInstance: RegExp;
 export declare const errorInstance: Error;
 // Complex nested structures
 export declare const deeplyNested: {
-  level1: {
-  level2: {
-  level3: {
-  value: 'deep';
-  array: readonly [1, readonly [2, readonly [3, readonly [4]]]]
+  readonly level1: {
+  readonly level2: {
+  readonly level3: {
+  readonly value: 'deep';
+  readonly array: readonly [1, readonly [2, readonly [3, readonly [4]]]]
 }
 }
 }

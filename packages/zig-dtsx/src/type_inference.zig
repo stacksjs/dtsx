@@ -798,7 +798,44 @@ const ObjectProperty = struct {
     key: []const u8,
     value: []const u8,
     is_method: bool,
+    comments: []const u8 = "",
 };
+
+/// Keep leading property comments separate from the key and its modifiers.
+fn splitPropertyComments(raw: []const u8) struct { comments: []const u8, key: []const u8 } {
+    const text = trim(raw);
+    var pos: usize = 0;
+    while (pos < text.len) {
+        while (pos < text.len and ch.isWhitespace(text[pos])) pos += 1;
+        if (ch.startsWith(text[pos..], "/*")) {
+            const end = ch.indexOf(text, "*/", pos + 2) orelse break;
+            pos = end + 2;
+        } else if (ch.startsWith(text[pos..], "//")) {
+            pos = ch.indexOfChar(text, '\n', pos + 2) orelse text.len;
+        } else break;
+    }
+    return .{ .comments = trim(text[0..pos]), .key = trim(text[pos..]) };
+}
+
+/// Move a shorthand method's type parameters from its key to its callable type.
+fn objectProperty(alloc: std.mem.Allocator, raw_key: []const u8, raw_value: []const u8, is_method: bool) InferError!ObjectProperty {
+    const split = splitPropertyComments(raw_key);
+    var key = split.key;
+    var value = trim(raw_value);
+    if (is_method) {
+        if (ch.startsWith(key, "async ")) key = trim(key[6..]);
+        if (findTopLevelToken(key, "<", 0)) |start| {
+            if (findMatchingBracket(key, start, '<', '>')) |end| {
+                if (end == key.len - 1) {
+                    value = try std.fmt.allocPrint(alloc, "{s}{s}", .{ key[start..], value });
+                    key = trim(key[0..start]);
+                }
+            }
+        }
+        value = try convertMethodToFunctionType(alloc, key, value);
+    }
+    return .{ .key = key, .value = value, .is_method = is_method, .comments = split.comments };
+}
 
 fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferError![]ObjectProperty {
     var properties = std.array_list.Managed(ObjectProperty).init(alloc);
@@ -817,6 +854,7 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
     var in_key = true;
     var in_comment = false;
     var is_method = false;
+    var method_awaiting_body = false;
     var arrow_parameter_list_closed = false;
     var in_arrow_return_type = false;
     var type_argument_depth: i32 = 0;
@@ -832,11 +870,6 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         if (!in_string and !in_comment and c == '/' and next == '/') {
             const nl = ch.indexOfChar(content, '\n', i + 2);
             i = if (nl) |n| n else content.len;
-            // Update current_start if in key mode so the key slice doesn't include comment text
-            if (in_key and i < content.len) {
-                current_start = i + 1;
-                while (current_start < content.len and ch.isWhitespace(content[current_start])) current_start += 1;
-            }
             continue;
         }
 
@@ -861,7 +894,7 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         }
 
         if (!in_string) {
-            if (c == '(' and depth == 0 and in_key) {
+            if (c == '(' and depth == 0 and in_key and type_argument_depth == 0) {
                 // Method definition — must check BEFORE general bracket tracking
                 key_start = current_start;
                 key_end = i;
@@ -871,10 +904,12 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                 depth = 1;
             } else if (c == '{' or c == '[' or c == '(') {
                 depth += 1;
+                if (c == '{' and method_awaiting_body) method_awaiting_body = false;
             } else if (c == '}' or c == ']' or c == ')') {
                 depth -= 1;
                 if (c == ')' and depth == 0 and !in_key and !is_method) arrow_parameter_list_closed = true;
-            } else if (c == ':' and depth == 0 and in_key) {
+                if (c == ')' and depth == 0 and is_method) method_awaiting_body = true;
+            } else if (c == ':' and depth == 0 and in_key and type_argument_depth == 0) {
                 key_start = current_start;
                 key_end = i;
                 current_start = i + 1;
@@ -882,32 +917,19 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                 is_method = false;
             } else if (c == ':' and depth == 0 and arrow_parameter_list_closed) {
                 in_arrow_return_type = true;
-            } else if (c == '<' and in_arrow_return_type) {
+            } else if (c == '<' and (in_arrow_return_type or (in_key and depth == 0) or method_awaiting_body)) {
                 type_argument_depth += 1;
             } else if (c == '>' and type_argument_depth > 0 and prev != '=') {
                 type_argument_depth -= 1;
             } else if (c == '=' and next == '>' and in_arrow_return_type and type_argument_depth == 0) {
                 in_arrow_return_type = false;
                 arrow_parameter_list_closed = false;
-            } else if (c == ',' and depth == 0 and type_argument_depth == 0) {
+            } else if (c == ',' and depth == 0 and type_argument_depth == 0 and !method_awaiting_body) {
                 if (!in_key) {
-                    var key = trim(content[key_start..key_end]);
-                    var val = trim(content[current_start..i]);
+                    const key = trim(content[key_start..key_end]);
+                    const val = trim(content[current_start..i]);
                     if (key.len > 0 and val.len > 0) {
-                        // Strip async from key if method
-                        if (is_method and ch.startsWith(key, "async ")) {
-                            key = trim(key[6..]);
-                        }
-                        // Process value based on type - match TS behavior:
-                        // ANY value starting with '(' goes through convertMethodToFunctionType
-                        // An arrow or function value stays raw here, as in the
-                        // TypeScript emitter: inferObjectType infers it and then
-                        // cleans the signature. Cleaning the source first saw
-                        // `x: number = 1` as `number = 1` and wrote `x: number?`.
-                        if (is_method and val.len > 0 and val[0] == '(') {
-                            val = try convertMethodToFunctionType(alloc, key, val);
-                        }
-                        try properties.append(.{ .key = key, .value = val, .is_method = is_method });
+                        try properties.append(try objectProperty(alloc, key, val, is_method));
                     }
                 } else {
                     const shorthand = trim(content[current_start..i]);
@@ -920,6 +942,7 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                 current_start = i + 1;
                 in_key = true;
                 is_method = false;
+                method_awaiting_body = false;
                 arrow_parameter_list_closed = false;
                 in_arrow_return_type = false;
                 type_argument_depth = 0;
@@ -929,16 +952,10 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
 
     // Last property
     if (!in_key) {
-        var key = trim(content[key_start..key_end]);
-        var val = trim(content[current_start..content.len]);
+        const key = trim(content[key_start..key_end]);
+        const val = trim(content[current_start..content.len]);
         if (key.len > 0 and val.len > 0) {
-            if (is_method and ch.startsWith(key, "async ")) {
-                key = trim(key[6..]);
-            }
-            if (is_method and val.len > 0 and val[0] == '(') {
-                val = try convertMethodToFunctionType(alloc, key, val);
-            }
-            try properties.append(.{ .key = key, .value = val, .is_method = is_method });
+            try properties.append(try objectProperty(alloc, key, val, is_method));
         }
     } else {
         const shorthand = trim(content[current_start..content.len]);
@@ -990,7 +1007,7 @@ fn findMatchingBracket(str: []const u8, start: usize, open: u8, close: u8) ?usiz
         }
         if (c == open) {
             depth += 1;
-        } else if (c == close) {
+        } else if (c == close and !(close == '>' and i > 0 and str[i - 1] == '=')) {
             depth -= 1;
             if (depth == 0) return i;
         }
@@ -1950,6 +1967,10 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
         // Add inline @defaultValue for widened primitive properties
         const raw_val = trim(prop.value);
+        if (prop.comments.len > 0) {
+            try parts.appendSlice(prop.comments);
+            try parts.appendSlice("\n  ");
+        }
         if (!is_const and isBaseType(val_type) and isPrimitiveLiteral(raw_val)) {
             try parts.appendSlice("/** @defaultValue ");
             try parts.appendSlice(raw_val);
@@ -1969,6 +1990,7 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             try parts.appendSlice(trim(prop.key[4..]));
             try parts.appendSlice(setter_params);
         } else {
+            if (is_const) try parts.appendSlice("readonly ");
             try parts.appendSlice(prop.key);
             try parts.appendSlice(": ");
             try parts.appendSlice(val_type);

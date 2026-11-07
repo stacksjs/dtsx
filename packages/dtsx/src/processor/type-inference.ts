@@ -1335,7 +1335,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${valueType}`)
     }
     else {
-      propTypes.push(`${commentPrefix}${emitKey}: ${valueType}`)
+      propTypes.push(`${commentPrefix}${isConst ? 'readonly ' : ''}${emitKey}: ${valueType}`)
     }
 
     // Build clean default inline (same pass, no re-parse)

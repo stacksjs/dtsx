@@ -16,26 +16,26 @@ export declare function processWithAsyncResource(): Promise<void>;
 export declare const SIMPLE_CONST: 'hello';
 /** Nested object with as const */
 export declare const CONFIG: {
-  api: {
-  baseUrl: 'https://api.example.com';
-  timeout: 5000;
-  retries: 3
+  readonly api: {
+  readonly baseUrl: 'https://api.example.com';
+  readonly timeout: 5000;
+  readonly retries: 3
 };
-  features: {
-  darkMode: true;
-  notifications: false
+  readonly features: {
+  readonly darkMode: true;
+  readonly notifications: false
 };
-  routes: readonly ['/', '/about', '/contact']
+  readonly routes: readonly ['/', '/about', '/contact']
 };
 /** Array as const */
 export declare const STATUSES: readonly ['pending', 'active', 'completed', 'archived'];
 /** Deeply nested as const */
 export declare const DEEP_CONFIG: {
-  level1: {
-  level2: {
-  level3: {
-  value: 42;
-  items: readonly [1, 2, 3]
+  readonly level1: {
+  readonly level2: {
+  readonly level3: {
+  readonly value: 42;
+  readonly items: readonly [1, 2, 3]
 }
 }
 }

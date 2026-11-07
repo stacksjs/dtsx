@@ -17,9 +17,9 @@ export declare function fetchData<T>(url: string, options?: RequestInit): Promis
  * @see {@link Config}
  */
 export declare const DEFAULT_CONFIG: {
-  debug: false;
-  timeout: 5000;
-  retries: 3
+  readonly debug: false;
+  readonly timeout: 5000;
+  readonly retries: 3
 };
 /**
  * Comment preservation test fixture

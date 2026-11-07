@@ -88,6 +88,7 @@ export declare const complexArrays: {
     readonly [1, 'string', true] |
     readonly ['literal', 42, false]
   ];
+  // TODO: get this part to generate correctly
   mixedArrays: (Date | Promise<string> | (() => Promise<string>) | (() => Generator<any, any, any>))[]
 };
 /**
@@ -96,7 +97,7 @@ export declare const complexArrays: {
  * ```ts
  * {
  *   handlers: {
- *     onSuccess<T>: (data: T) => Promise<void>,
+ *     onSuccess: <T>(data: T) => Promise<void>,
  *     onError: (error: Error & { code?: number }) => never,
  *     someOtherMethod: () => void
  *   },
@@ -110,7 +111,7 @@ export declare const complexArrays: {
  * ```
  */
 export declare const complexObject: {
-  handlers: { onSuccess<T>: (data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
+  handlers: { onSuccess: <T>(data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
   utils: { formatters: { date: (input: Date) => ReturnType<Date["toISOString"]>; currency: (amount: number, currency?: string) => unknown } }
 };
 // Method Decorators and Metadata (declares as unknown, because it should rely on explicit type)
@@ -133,24 +134,24 @@ export declare const methodDecoratorWithExplicitType: (
 ) => SomeType;
 // Complex Constants with Type Inference
 export declare const CONFIG_MAP: {
-  development: {
-  features: {
-  auth: {
-  providers: readonly ['google', 'github'];
-  settings: {
-  timeout: 5000;
-  retries: 3
+  readonly development: {
+  readonly features: {
+  readonly auth: {
+  readonly providers: readonly ['google', 'github'];
+  readonly settings: {
+  readonly timeout: 5000;
+  readonly retries: 3
 }
 }
 }
 };
-  production: {
-  features: {
-  auth: {
-  providers: readonly ['google', 'github', 'microsoft'];
-  settings: {
-  timeout: 3000;
-  retries: 5
+  readonly production: {
+  readonly features: {
+  readonly auth: {
+  readonly providers: readonly ['google', 'github', 'microsoft'];
+  readonly settings: {
+  readonly timeout: 3000;
+  readonly retries: 5
 }
 }
 }

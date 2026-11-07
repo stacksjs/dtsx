@@ -23,16 +23,16 @@ export declare function legacyLoadConfig(): void;
  */
 export declare const APP_CONSTANTS: {
   /** Default port number */
-  DEFAULT_PORT: 3000;
+  readonly DEFAULT_PORT: 3000;
   /** Maximum retry attempts */
-  MAX_RETRIES: 3;
+  readonly MAX_RETRIES: 3;
   /**
    * Timeout duration in milliseconds
    * @default 5000
    */
-  TIMEOUT: 5000;
+  readonly TIMEOUT: 5000;
   /** Application version */
-  VERSION: '1.0.0'
+  readonly VERSION: '1.0.0'
 };
 /** Multi-line comment for exported variable */
 export declare const API_VERSION: '2.0.0';

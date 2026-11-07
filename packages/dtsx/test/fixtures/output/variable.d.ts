@@ -130,24 +130,24 @@ export declare const methodDecoratorWithExplicitType: (
 ) => SomeType;
 // Complex Constants with Type Inference
 export declare const CONFIG_MAP: {
-  development: {
-  features: {
-  auth: {
-  providers: readonly ['google', 'github'];
-  settings: {
-  timeout: 5000;
-  retries: 3
+  readonly development: {
+  readonly features: {
+  readonly auth: {
+  readonly providers: readonly ['google', 'github'];
+  readonly settings: {
+  readonly timeout: 5000;
+  readonly retries: 3
 }
 }
 }
 };
-  production: {
-  features: {
-  auth: {
-  providers: readonly ['google', 'github', 'microsoft'];
-  settings: {
-  timeout: 3000;
-  retries: 5
+  readonly production: {
+  readonly features: {
+  readonly auth: {
+  readonly providers: readonly ['google', 'github', 'microsoft'];
+  readonly settings: {
+  readonly timeout: 3000;
+  readonly retries: 5
 }
 }
 }
