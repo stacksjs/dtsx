@@ -5,6 +5,7 @@ const ch = @import("char_utils.zig");
 const KeyConstants = @import("types.zig").KeyConstants;
 const computed_keys = @import("computed_keys.zig");
 const comment_utils = @import("comments.zig");
+const parameter_order = @import("parameters.zig");
 
 const MAX_INFERENCE_DEPTH = 20;
 
@@ -792,7 +793,11 @@ fn cleanParameterDefaults(alloc: std.mem.Allocator, params: []const u8) InferErr
         try out.appendSlice(try cleanSingleParam(alloc, stripTrailingInlineComment(t)));
     }
     if (had_parens) try out.append(')');
-    return out.toOwnedSlice();
+    const raw = try out.toOwnedSlice();
+    errdefer alloc.free(raw);
+    const result = try parameter_order.normalizeDefaultParameterOrder(alloc, raw);
+    if (result.ptr != raw.ptr) alloc.free(raw);
+    return result;
 }
 
 /// Parse object properties from content between braces.

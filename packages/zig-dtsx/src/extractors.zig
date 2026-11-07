@@ -5,6 +5,7 @@ const ch = @import("char_utils.zig");
 const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
 const module_specifiers = @import("module_specifiers.zig");
+const parameter_order = @import("parameters.zig");
 const scanner = @import("scanner.zig");
 const Scanner = scanner.Scanner;
 const Declaration = types.Declaration;
@@ -745,7 +746,12 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     }
     buf[pos] = ')';
     pos += 1;
-    return buf[0..pos];
+    const result = parameter_order.normalizeDefaultParameterOrder(s.allocator, buf[0..pos]) catch |err| {
+        s.pending_error = err;
+        return buf[0..pos];
+    };
+    if (result.ptr != buf.ptr) s.allocator.free(buf);
+    return result;
 }
 
 /// Build a single DTS parameter from raw source text

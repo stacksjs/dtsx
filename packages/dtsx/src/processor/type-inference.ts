@@ -4,6 +4,7 @@
  */
 import type { KeyConstants } from '../computed-keys'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
+import { normalizeDefaultParameterOrder } from '../parameters'
 import { escapeJsdocContent } from './comments'
 
 /**
@@ -1711,7 +1712,7 @@ function cleanMethodSignature(_signature: string): string {
       result += (separators[i - 1] || ', ') + cleaned[i]
     }
 
-    return hadParens ? `(${result})` : result
+    return normalizeDefaultParameterOrder(hadParens ? `(${result})` : result)
   }
 
   /** Strip trailing inline // comments from a string, respecting string literals */

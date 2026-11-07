@@ -1,0 +1,12 @@
+[
+  { "input": "(first?: number, last: number)", "expected": "(first: (number) | undefined, last: number)" },
+  { "input": "(first?: (value: number) => number, last: number)", "expected": "(first: ((value: number) => number) | undefined, last: number)" },
+  { "input": "(first?: <T>(value: T) => T, last: number)", "expected": "(first: (<T>(value: T) => T) | undefined, last: number)" },
+  { "input": "(first?: string | number, last: number, tail?: boolean)", "expected": "(first: (string | number) | undefined, last: number, tail?: boolean)" },
+  { "input": "(first?: { key?: number }, last: number)", "expected": "(first: ({ key?: number }) | undefined, last: number)" },
+  { "input": "(first?: number /* keep */, last: number)", "expected": "(first: (number) | undefined /* keep */, last: number)" },
+  { "input": "(first?: /* keep */ number, last: number)", "expected": "(first: /* keep */ (number) | undefined, last: number)" },
+  { "input": "(first?: 'comma,?:=>', last: () => number)", "expected": "(first: ('comma,?:=>') | undefined, last: () => number)" },
+  { "input": "(first?: number, ...tail: number[])", "expected": "(first?: number, ...tail: number[])" },
+  { "input": "(first: number, last?: number)", "expected": "(first: number, last?: number)" }
+]

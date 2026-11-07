@@ -114,6 +114,7 @@ pub const Scanner = struct {
     keep_comments: bool,
     isolated_declarations: bool,
     external_module: bool = false,
+    pending_error: ?anyerror = null,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes
@@ -985,6 +986,7 @@ pub const Scanner = struct {
 
         // Main scan loop — delegate to scan_loop module
         try @import("scan_loop.zig").scanMainLoop(self);
+        if (self.pending_error) |err| return err;
 
         // Discard overload implementations before computing the emitted dependency graph.
         if (self.func_body_indices_inited and self.func_body_indices.count() > 0) {

@@ -10,7 +10,7 @@ const Declaration = types.Declaration;
 
 /// Main scan loop: iterate through source and extract declarations
 pub fn scanMainLoop(s: *Scanner) !void {
-    while (s.pos < s.len) {
+    while (s.pos < s.len and s.pending_error == null) {
         s.skipWhitespaceAndComments();
         if (s.pos >= s.len) break;
         if (s.skipRuntimeStatement()) continue;

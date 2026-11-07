@@ -8,6 +8,7 @@ import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { parseImportEquals } from '../module-references'
+import { normalizeDefaultParameterOrder } from '../parameters'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -1562,7 +1563,7 @@ function buildDtsParams(rawParams: string): string {
     dtsParams.push(buildSingleDtsParam(cleanedParam))
   }
 
-  return `(${dtsParams.join(', ')})`
+  return normalizeDefaultParameterOrder(`(${dtsParams.join(', ')})`)
 }
 
 /** Clean a destructured parameter name: strip defaults and rest operators */
