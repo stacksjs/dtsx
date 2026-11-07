@@ -59,8 +59,8 @@ jobs:
           version: 0.11.180
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
-      - name: Verify source identity and output collision safety
-        run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts
+      - name: Verify source identity, output collisions and transactional publication
+        run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts packages/dtsx/test/generation-publication.test.ts
       - name: Build the native CLI for this platform
         working-directory: packages/zig-dtsx
         run: zig build cli -j2

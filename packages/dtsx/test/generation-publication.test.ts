@@ -91,6 +91,87 @@ function options(cwd: string, clean: boolean) {
 }
 
 for (const clean of [false, true]) {
+  for (const conflict of ['bundle-directory', 'bundle-parent-file'] as const) {
+    test(`bundle preparation preserves the complete prior project after a ${conflict} conflict (clean=${clean})`, () => fixture(async (cwd) => {
+      const bundleOutput = conflict === 'bundle-directory' ? 'bundle.d.ts' : 'blocked/bundle.d.ts'
+      if (conflict === 'bundle-directory') await put(join(cwd, 'dist'), 'bundle.d.ts/asset.txt', 'retain destination directory\n')
+      else await writeFile(join(cwd, 'dist/blocked'), 'retain regular parent file\n')
+      const before = await snapshot(cwd)
+      await expect(generate({ ...options(cwd, clean), bundle: true, bundleOutput })).rejects.toBeInstanceOf(Error)
+      expect(await snapshot(cwd)).toEqual(before)
+    }))
+  }
+
+  for (const mode of ['stage', 'install'] as const) {
+    test(`bundle bytes join the project transaction during a real ${mode} failure (clean=${clean})`, () => fixture(async (cwd) => {
+      await writeFile(join(cwd, 'dist/bundle.d.ts'), 'export declare const previousBundle: string;\r\n')
+      const before = await snapshot(cwd)
+      const child = Bun.spawn([
+        process.execPath, '--no-env-file', join(import.meta.dir, 'helpers/publication-fault.ts'),
+        mode, JSON.stringify({ ...options(cwd, clean), bundle: true, bundleOutput: 'bundle.d.ts' }),
+      ], { cwd, stdout: 'pipe', stderr: 'pipe', timeout: 4000 })
+      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+      expect(code, `${stdout}\n${stderr}`).toBe(0)
+      const result = JSON.parse(stdout.trim())
+      expect(result.failed, stdout).toBe(true)
+      expect(result.injected, stdout).toBe(1)
+      expect(result.message).toContain(`Injected publication ${mode} failure`)
+      expect(await snapshot(cwd)).toEqual(before)
+    }))
+  }
+
+  test(`successful bundle publication includes linked bytes and preserves unrelated assets (clean=${clean})`, () => fixture(async (cwd) => {
+    const before = await snapshot(cwd)
+    const stats = await generate({ ...options(cwd, clean), bundle: true, bundleOutput: 'nested/bundle.d.ts', lineEnding: 'crlf' })
+    expect(stats.filesFailed).toBe(0)
+    const bundle = await readFile(join(cwd, 'dist/nested/bundle.d.ts'), 'utf8')
+    expect(bundle).toContain('Bundled TypeScript declarations')
+    expect(bundle).toContain('declare const current: number;')
+    expect(bundle).toContain('export { current };')
+    expect(bundle.replace(/\r\n/g, '')).not.toContain('\n')
+    const after = await snapshot(cwd)
+    for (const path of retained.keys()) expect(after[`dist/${path}`]).toEqual(before[`dist/${path}`])
+    for (const path of stale.keys()) expect(after[`dist/${path}`]).toEqual(clean ? undefined : before[`dist/${path}`])
+  }))
+
+  test(`failed bundle publication does not advance an existing incremental cache (clean=${clean})`, () => fixture(async (cwd) => {
+    const config = { ...options(cwd, clean), bundle: true, bundleOutput: 'bundle.d.ts', incremental: true }
+    await generate(config)
+    await rm(join(cwd, 'dist/bundle.d.ts'))
+    await put(join(cwd, 'dist'), 'bundle.d.ts/asset.txt', 'retain destination directory\n')
+    await writeFile(join(cwd, 'src/a-current.ts'), 'export const changed: boolean = true;\n')
+    const before = await snapshot(cwd)
+    await expect(generate(config)).rejects.toBeInstanceOf(Error)
+    expect(await snapshot(cwd)).toEqual(before)
+  }))
+
+  for (const conflict of [false, true]) {
+    test(`multiple entry bundles ${conflict ? 'preserve all prior outputs on a late conflict' : 'publish every linked entry'} (clean=${clean})`, () => fixture(async (cwd) => {
+      await writeFile(join(cwd, 'src/a-current.ts'), "export type { Shared } from './shared.js'; export const current: number = 1;\n")
+      await writeFile(join(cwd, 'src/shared.ts'), 'export interface Shared { value: number }\n')
+      await writeFile(join(cwd, 'src/z-later.ts'), "export type { Shared } from './shared.js'; export const later: string = 'later';\n")
+      if (conflict) await put(join(cwd, 'dist'), 'z-later.d.ts/asset.txt', 'retain late entry destination\n')
+      const before = await snapshot(cwd)
+      const config = { ...options(cwd, clean), entrypoints: ['a-current.ts', 'z-later.ts'], bundle: true }
+      if (conflict) {
+        await expect(generate(config)).rejects.toBeInstanceOf(Error)
+        expect(await snapshot(cwd)).toEqual(before)
+      }
+      else {
+        const result = await generate(config)
+        expect(result.filesFailed).toBe(0)
+        for (const entry of ['a-current', 'z-later']) {
+          const content = await readFile(join(cwd, `dist/${entry}.d.ts`), 'utf8')
+          expect(content).toContain('Bundled TypeScript declarations')
+          expect(content).toContain('interface Shared')
+          expect(content).not.toContain("from './shared.js'")
+        }
+      }
+    }))
+  }
+}
+
+for (const clean of [false, true]) {
   for (const conflict of ['destination-directory', 'regular-file-parent'] as const) {
     test(`generate preserves prior artifacts after a late ${conflict} conflict (clean=${clean})`, () => fixture(async (cwd) => {
       if (conflict === 'destination-directory') {

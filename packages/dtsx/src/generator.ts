@@ -405,19 +405,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     }
   }
 
-  // Prepare and validate the actual declarations (including plugin hooks,
-  // formatting and alias-to-emitted-source checks) before removing prior output.
-  // Cached declarations and source maps join the same publication phase.
-  if (!config.dryRun) {
-    await publishDeclarationOutputs(config, pendingOutputs)
-  }
-
-  // Save incremental build cache
-  if (buildCache && !config.dryRun) {
-    buildCache.save()
-    logger.debug('Saved build cache')
-  }
-
   // Warn about re-exports that point at siblings dtsx didn't emit.
   // Two cases produce broken consumer types:
   //   1. The relative path doesn't exist on disk at all.
@@ -515,9 +502,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
           logger.info(`[dry-run] Would bundle ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
         }
         else {
-          await mkdir(dirname(bundlePath), { recursive: true })
-          await writeToFile(bundlePath, bundleResult.content, config.lineEnding)
-          logger.info(`Bundled ${bundleResult.files.length} files to: ${relative(config.cwd, bundlePath)}`)
+          await queueOutput(bundlePath, bundleResult.content, config.lineEnding)
+          logger.debug(`Prepared ${bundleResult.files.length} bundled files for: ${relative(config.cwd, bundlePath)}`)
         }
 
         if (useLegacyOutput) break
@@ -526,7 +512,20 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`Bundle failed: ${errorMessage}`)
+      throw error
     }
+  }
+
+  // Prepare linked bundle bytes too before the sole publication commit. A
+  // bundle preparation or destination failure must preserve every prior output.
+  if (!config.dryRun) {
+    await publishDeclarationOutputs(config, pendingOutputs)
+  }
+
+  // Cache entries describe a successfully published project, including bundles.
+  if (buildCache && !config.dryRun) {
+    buildCache.save()
+    logger.debug('Saved build cache')
   }
 
   stats.durationMs = Date.now() - startTime

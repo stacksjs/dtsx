@@ -112,7 +112,8 @@ function publicationFailure(message: string, errors: unknown[], phase: string, r
  * Stage all normalized declaration/map bytes, then commit with reversible
  * renames. This protects detected preparation/commit failures, not atomic
  * visibility to concurrent readers or process/power-loss crash recovery.
- * Cache saving, bundling and processFile remain separate caller operations.
+ * Callers prepare bundles before publication; cache saving and processFile
+ * remain separate caller operations.
  */
 export async function publishDeclarationOutputs(config: DtsGenerationConfig, pending: ReadonlyMap<string, DeclarationOutput>): Promise<void> {
   if (config.dryRun || pending.size === 0 && !config.clean) return
