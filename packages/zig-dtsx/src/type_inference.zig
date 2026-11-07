@@ -2,11 +2,14 @@
 /// Port of processor/type-inference.ts.
 const std = @import("std");
 const ch = @import("char_utils.zig");
+const KeyConstants = @import("types.zig").KeyConstants;
+const computed_keys = @import("computed_keys.zig");
+const comment_utils = @import("comments.zig");
 
 const MAX_INFERENCE_DEPTH = 20;
 
 /// Error type for type inference operations
-pub const InferError = std.mem.Allocator.Error;
+pub const InferError = std.mem.Allocator.Error || error{InvalidContext};
 
 // ---------------------------------------------------------------------------
 // Module-level storage for computing clean default alongside type inference.
@@ -1305,6 +1308,10 @@ const ValueHints = struct {
 /// Infer narrow type from a value expression.
 /// Returns a type string (allocated from `alloc`).
 pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, in_union: bool, depth: usize) InferError![]const u8 {
+    return inferNarrowTypeWithKeyConstants(alloc, value, is_const, in_union, depth, null);
+}
+
+pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u8, is_const: bool, in_union: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     if (value.len == 0) return "unknown";
     if (depth >= MAX_INFERENCE_DEPTH) return "unknown";
 
@@ -1312,7 +1319,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     if (trimmed.len == 0) return "unknown";
 
     while (trimmed.len >= 2 and trimmed[0] == '(' and trimmed[trimmed.len - 1] == ')' and findMatchingBracket(trimmed, 0, '(', ')') == trimmed.len - 1) {
-        return inferNarrowType(alloc, trim(trimmed[1 .. trimmed.len - 1]), is_const, in_union, depth + 1);
+        return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[1 .. trimmed.len - 1]), is_const, in_union, depth + 1, key_constants);
     }
 
     if (isJsxExpression(trimmed)) return "JSX.Element";
@@ -1323,7 +1330,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // The comma operator evaluates to its final operand. Reuse the balanced
     // element splitter so commas inside calls, arrays, and objects are ignored.
-    if (findTopLevelComma(trimmed)) |comma| return inferNarrowType(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1);
+    if (findTopLevelComma(trimmed)) |comma| return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1, key_constants);
 
     if (trimmed.len > 2 and (ch.startsWith(trimmed, "++") or ch.startsWith(trimmed, "--")))
         return inferUpdateType(alloc, trimmed[2..]);
@@ -1331,7 +1338,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         return inferUpdateType(alloc, trimmed[0 .. trimmed.len - 2]);
 
     if (ch.startsWith(trimmed, "await ")) {
-        var awaited = try inferNarrowType(alloc, trim(trimmed[6..]), false, false, depth + 1);
+        var awaited = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[6..]), false, false, depth + 1, key_constants);
         while (ch.startsWith(awaited, "Promise<") and awaited.len > 9 and awaited[awaited.len - 1] == '>')
             awaited = awaited[8 .. awaited.len - 1];
         return awaited;
@@ -1421,9 +1428,9 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     if (ch.endsWith(trimmed, "as const")) {
         const without_as_const = trim(trimmed[0 .. trimmed.len - 8]);
         if (without_as_const.len > 1 and without_as_const[0] == '[' and without_as_const[without_as_const.len - 1] == ']') {
-            return inferArrayType(alloc, without_as_const, true, depth + 1);
+            return inferArrayTypeWithKeyConstants(alloc, without_as_const, true, depth + 1, key_constants);
         }
-        return inferNarrowType(alloc, without_as_const, true, in_union, depth + 1);
+        return inferNarrowTypeWithKeyConstants(alloc, without_as_const, true, in_union, depth + 1, key_constants);
     }
 
     // Named class expressions have the constructor type of their inner name.
@@ -1437,12 +1444,12 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Array literals
     if (trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
-        return inferArrayType(alloc, trimmed, is_const, depth + 1);
+        return inferArrayTypeWithKeyConstants(alloc, trimmed, is_const, depth + 1, key_constants);
     }
 
     // Object literals
     if (trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
-        return inferObjectType(alloc, trimmed, is_const, depth + 1);
+        return inferObjectTypeWithKeyConstants(alloc, trimmed, is_const, depth + 1, key_constants);
     }
 
     // New expressions
@@ -1464,7 +1471,7 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
     // Promise expressions
     if (ch.startsWith(trimmed, "Promise.")) {
-        return inferPromiseType(alloc, trimmed, is_const, depth);
+        return inferPromiseType(alloc, trimmed, is_const, depth, key_constants);
     }
 
     // BigInt literals (digits followed by 'n')
@@ -1484,12 +1491,12 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         if (question + 1 < trimmed.len and trimmed[question + 1] != '?' and trimmed[question + 1] != '.') {
             if (findTopLevelToken(trimmed, ":", question + 1)) |colon| {
                 switch (staticTruthiness(trimmed[0..question])) {
-                    .truthy => return inferNarrowType(alloc, trim(trimmed[question + 1 .. colon]), is_const, in_union, depth + 1),
-                    .falsy => return inferNarrowType(alloc, trim(trimmed[colon + 1 ..]), is_const, in_union, depth + 1),
+                    .truthy => return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[question + 1 .. colon]), is_const, in_union, depth + 1, key_constants),
+                    .falsy => return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[colon + 1 ..]), is_const, in_union, depth + 1, key_constants),
                     .unknown => {},
                 }
-                const when_true = try inferNarrowType(alloc, trim(trimmed[question + 1 .. colon]), true, true, depth + 1);
-                const when_false = try inferNarrowType(alloc, trim(trimmed[colon + 1 ..]), true, true, depth + 1);
+                const when_true = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[question + 1 .. colon]), true, true, depth + 1, key_constants);
+                const when_false = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[colon + 1 ..]), true, true, depth + 1, key_constants);
                 if (std.mem.eql(u8, when_true, when_false)) return when_true;
                 return std.fmt.allocPrint(alloc, "{s} | {s}", .{ when_true, when_false });
             }
@@ -1502,18 +1509,18 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         if (findTopLevelToken(trimmed, operator, 0)) |index| {
             const left_expression = trim(trimmed[0..index]);
             const right_expression = trim(trimmed[index + operator.len ..]);
-            const left = try inferNarrowType(alloc, left_expression, is_const, true, depth + 1);
-            const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), is_const, true, depth + 1);
+            const left = try inferNarrowTypeWithKeyConstants(alloc, left_expression, is_const, true, depth + 1, key_constants);
+            const right = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[index + operator.len ..]), is_const, true, depth + 1, key_constants);
             if (std.mem.eql(u8, operator, "??") and (std.mem.eql(u8, left, "null") or std.mem.eql(u8, left, "undefined"))) return right;
             if (std.mem.eql(u8, operator, "??") and staticTruthiness(left_expression) != .unknown) return left;
             if (std.mem.eql(u8, operator, "&&")) switch (staticTruthiness(left_expression)) {
-                .truthy => return inferNarrowType(alloc, right_expression, is_const, in_union, depth + 1),
+                .truthy => return inferNarrowTypeWithKeyConstants(alloc, right_expression, is_const, in_union, depth + 1, key_constants),
                 .falsy => return left,
                 .unknown => {},
             };
             if (std.mem.eql(u8, operator, "||")) switch (staticTruthiness(left_expression)) {
                 .truthy => return left,
-                .falsy => return inferNarrowType(alloc, right_expression, is_const, in_union, depth + 1),
+                .falsy => return inferNarrowTypeWithKeyConstants(alloc, right_expression, is_const, in_union, depth + 1, key_constants),
                 .unknown => {},
             };
             if (std.mem.eql(u8, left, right)) return left;
@@ -1526,8 +1533,8 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     inline for (.{ ">>>", "<<", ">>", "**", "&", "|", "^" }) |operator| {
         if (findTopLevelToken(trimmed, operator, 0)) |index| {
             if (std.mem.eql(u8, operator, ">>>")) return "number";
-            const left = try inferNarrowType(alloc, trim(trimmed[0..index]), false, false, depth + 1);
-            const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1);
+            const left = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[0..index]), false, false, depth + 1, key_constants);
+            const right = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1, key_constants);
             return if (std.mem.eql(u8, left, "bigint") or std.mem.eql(u8, right, "bigint")) "bigint" else "number";
         }
     }
@@ -1540,8 +1547,8 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
                 const previous = trimmed[index - 1];
                 const next = trimmed[index + operator.len];
                 if (next != '=' and next != operator[0] and previous != operator[0]) {
-                    const left = try inferNarrowType(alloc, trim(trimmed[0..index]), false, false, depth + 1);
-                    const right = try inferNarrowType(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1);
+                    const left = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[0..index]), false, false, depth + 1, key_constants);
+                    const right = try inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[index + operator.len ..]), false, false, depth + 1, key_constants);
                     if (std.mem.eql(u8, operator, "+") and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
                     if (std.mem.eql(u8, left, "bigint") or std.mem.eql(u8, right, "bigint")) return "bigint";
                     return "number";
@@ -1560,11 +1567,19 @@ pub fn inferNarrowType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 
 /// Infer narrow type in union context (widens number/boolean)
 pub fn inferNarrowTypeInUnion(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
-    return inferNarrowType(alloc, value, is_const, true, depth);
+    return inferNarrowTypeInUnionWithKeyConstants(alloc, value, is_const, depth, null);
+}
+
+pub fn inferNarrowTypeInUnionWithKeyConstants(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
+    return inferNarrowTypeWithKeyConstants(alloc, value, is_const, true, depth, key_constants);
 }
 
 /// Infer array type from array literal
 pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
+    return inferArrayTypeWithKeyConstants(alloc, value, is_const, depth, null);
+}
+
+pub fn inferArrayTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     const content = trim(value[1 .. value.len - 1]);
     if (content.len == 0) return if (is_const) "readonly []" else "never[]";
     if (depth >= MAX_INFERENCE_DEPTH) return "unknown[]";
@@ -1595,19 +1610,19 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
                     try parts.appendSlice("readonly [");
                     for (inner_elements, 0..) |inner_el, iidx| {
                         if (iidx > 0) try parts.appendSlice(", ");
-                        const t = try inferNarrowType(alloc, inner_el, true, false, depth + 1);
+                        const t = try inferNarrowTypeWithKeyConstants(alloc, inner_el, true, false, depth + 1, key_constants);
                         try parts.appendSlice(t);
                     }
                     try parts.append(']');
                 } else {
-                    const t = try inferNarrowType(alloc, without, true, false, depth + 1);
+                    const t = try inferNarrowTypeWithKeyConstants(alloc, without, true, false, depth + 1, key_constants);
                     try parts.appendSlice(t);
                 }
             } else if (trimmed_el.len > 1 and trimmed_el[0] == '[' and trimmed_el[trimmed_el.len - 1] == ']') {
-                const t = try inferArrayType(alloc, trimmed_el, true, depth + 1);
+                const t = try inferArrayTypeWithKeyConstants(alloc, trimmed_el, true, depth + 1, key_constants);
                 try parts.appendSlice(t);
             } else {
-                const t = try inferNarrowType(alloc, trimmed_el, true, false, depth + 1);
+                const t = try inferNarrowTypeWithKeyConstants(alloc, trimmed_el, true, false, depth + 1, key_constants);
                 try parts.appendSlice(t);
             }
         }
@@ -1627,7 +1642,7 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
         _clean_default_result = null;
         if (ch.startsWith(trimmed_el, "...") and trimmed_el.len > 3) {
             const spread_value = trim(trimmed_el[3..]);
-            const spread_type = try inferNarrowType(alloc, spread_value, false, false, depth + 1);
+            const spread_type = try inferNarrowTypeWithKeyConstants(alloc, spread_value, false, false, depth + 1, key_constants);
             if (is_const and isEntityName(spread_value)) {
                 try element_types.append(try std.fmt.allocPrint(alloc, "...typeof {s}", .{spread_value}));
             } else if (is_const and ch.startsWith(spread_type, "readonly [")) {
@@ -1640,9 +1655,9 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
                 try element_types.append("unknown");
             }
         } else if (trimmed_el.len > 1 and trimmed_el[0] == '[' and trimmed_el[trimmed_el.len - 1] == ']') {
-            try element_types.append(try inferArrayType(alloc, trimmed_el, is_const, depth + 1));
+            try element_types.append(try inferArrayTypeWithKeyConstants(alloc, trimmed_el, is_const, depth + 1, key_constants));
         } else {
-            try element_types.append(try inferNarrowTypeInUnion(alloc, trimmed_el, is_const, depth + 1));
+            try element_types.append(try inferNarrowTypeInUnionWithKeyConstants(alloc, trimmed_el, is_const, depth + 1, key_constants));
         }
         if (track_defaults) try nested_defaults.append(_clean_default_result);
         _clean_default_result = saved;
@@ -1672,7 +1687,7 @@ pub fn inferArrayType(alloc: std.mem.Allocator, value: []const u8, is_const: boo
                     // Re-infer without union context for the clean default
                     // (types[ei] was inferred via inferNarrowTypeInUnion which
                     // wraps function types in parens and widens return types)
-                    const clean_type = try inferNarrowType(alloc, te, false, false, 0);
+                    const clean_type = try inferNarrowTypeWithKeyConstants(alloc, te, false, false, 0, key_constants);
                     if (!std.mem.eql(u8, clean_type, "unknown")) {
                         try clean_elems.append(clean_type);
                     }
@@ -1907,6 +1922,10 @@ pub fn collapseWhitespace(alloc: std.mem.Allocator, val: []const u8) ![]const u8
 /// When _collect_clean_default is set and !is_const, also builds the @defaultValue
 /// content during the same pass — avoiding double-parsing of parseObjectProperties.
 pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
+    return inferObjectTypeWithKeyConstants(alloc, value, is_const, depth, null);
+}
+
+pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     const content = trim(value[1 .. value.len - 1]);
     if (content.len == 0) return "{}";
     if (depth >= MAX_INFERENCE_DEPTH) return "Record<string, unknown>";
@@ -1917,25 +1936,25 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
     const build_default = _collect_clean_default and !is_const;
     var clean_props = std.array_list.Managed([]const u8).init(alloc);
     var spread_types = std.array_list.Managed([]const u8).init(alloc);
+    var property_types = std.array_list.Managed([]const u8).init(alloc);
+    var string_index = false;
 
     var parts = std.array_list.Managed(u8).init(alloc);
     try parts.ensureTotalCapacity(content.len + 32);
     try parts.appendSlice("{\n  ");
     var emitted_count: usize = 0;
     for (properties) |prop| {
+        if ((ch.startsWith(prop.key, "get ") or ch.startsWith(prop.key, "set ")) and try computed_keys.hasTemplateSubstitution(alloc, trim(prop.key[4..]))) continue;
         if (std.mem.eql(u8, prop.key, "...")) {
             const spread_value = trim(prop.value);
             const spread_type = if (isEntityName(spread_value))
                 try std.fmt.allocPrint(alloc, "typeof {s}", .{spread_value})
             else
-                try inferNarrowType(alloc, spread_value, is_const, false, depth + 1);
+                try inferNarrowTypeWithKeyConstants(alloc, spread_value, is_const, false, depth + 1, key_constants);
             if (!std.mem.eql(u8, spread_type, "unknown")) try spread_types.append(spread_type);
             if (build_default) try clean_props.append(try std.fmt.allocPrint(alloc, "...{s}", .{spread_value}));
             continue;
         }
-        if (emitted_count > 0) try parts.appendSlice(";\n  ");
-        emitted_count += 1;
-
         // Save parent's clean default before recursive call (nested objects overwrite it)
         const saved_default = _clean_default_result;
         _clean_default_result = null;
@@ -1945,7 +1964,7 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
         else if (std.mem.eql(u8, prop.key, prop.value) and isIdentifierName(prop.value))
             try std.fmt.allocPrint(alloc, "typeof {s}", .{prop.value})
         else
-            try inferNarrowType(alloc, prop.value, is_const, false, depth + 1);
+            try inferNarrowTypeWithKeyConstants(alloc, prop.value, is_const, false, depth + 1, key_constants);
 
         // Capture nested clean default (set by recursive inferObjectType/inferArrayType)
         const nested_default = _clean_default_result;
@@ -1965,35 +1984,52 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
             val_type = try cleanMethodSignature(alloc, val_type);
         }
 
-        // Add inline @defaultValue for widened primitive properties
+        if (!try computed_keys.isSymbolKey(alloc, prop.key, key_constants)) try property_types.append(val_type);
+        var emit_key = prop.key;
+        var index_key = false;
         const raw_val = trim(prop.value);
-        if (prop.comments.len > 0) {
-            try parts.appendSlice(prop.comments);
-            try parts.appendSlice("\n  ");
+        if (try computed_keys.resolve(alloc, prop.key, key_constants)) |key| {
+            switch (key) {
+                .name => |name| emit_key = name,
+                .index => {
+                    string_index = true;
+                    index_key = true;
+                },
+            }
         }
-        if (!is_const and isBaseType(val_type) and isPrimitiveLiteral(raw_val)) {
-            try parts.appendSlice("/** @defaultValue ");
-            try parts.appendSlice(raw_val);
-            try parts.appendSlice(" */\n  ");
-        }
-        if (ch.startsWith(prop.key, "get ")) {
-            const arrow = ch.indexOf(val_type, "=>", 0);
-            const getter_type = if (arrow) |index| trim(val_type[index + 2 ..]) else val_type;
-            try parts.appendSlice("get ");
-            try parts.appendSlice(trim(prop.key[4..]));
-            try parts.appendSlice("(): ");
-            try parts.appendSlice(getter_type);
-        } else if (ch.startsWith(prop.key, "set ")) {
-            const arrow = ch.indexOf(val_type, "=>", 0);
-            const setter_params = if (arrow) |index| trim(val_type[0..index]) else "(value: unknown)";
-            try parts.appendSlice("set ");
-            try parts.appendSlice(trim(prop.key[4..]));
-            try parts.appendSlice(setter_params);
-        } else {
-            if (is_const) try parts.appendSlice("readonly ");
-            try parts.appendSlice(prop.key);
-            try parts.appendSlice(": ");
-            try parts.appendSlice(val_type);
+        if (!index_key) {
+            if (emitted_count > 0) try parts.appendSlice(";\n  ");
+            emitted_count += 1;
+
+            // Add inline @defaultValue for widened primitive properties
+            if (prop.comments.len > 0) {
+                try parts.appendSlice(prop.comments);
+                try parts.appendSlice("\n  ");
+            }
+            if (!is_const and isBaseType(val_type) and isPrimitiveLiteral(raw_val)) {
+                try parts.appendSlice("/** @defaultValue ");
+                try parts.appendSlice(try comment_utils.escapeJsdocContent(alloc, raw_val));
+                try parts.appendSlice(" */\n  ");
+            }
+            if (ch.startsWith(prop.key, "get ")) {
+                const arrow = ch.indexOf(val_type, "=>", 0);
+                const getter_type = if (arrow) |index| trim(val_type[index + 2 ..]) else val_type;
+                try parts.appendSlice("get ");
+                try parts.appendSlice(trim(prop.key[4..]));
+                try parts.appendSlice("(): ");
+                try parts.appendSlice(getter_type);
+            } else if (ch.startsWith(prop.key, "set ")) {
+                const arrow = ch.indexOf(val_type, "=>", 0);
+                const setter_params = if (arrow) |index| trim(val_type[0..index]) else "(value: unknown)";
+                try parts.appendSlice("set ");
+                try parts.appendSlice(trim(prop.key[4..]));
+                try parts.appendSlice(setter_params);
+            } else {
+                if (is_const) try parts.appendSlice("readonly ");
+                try parts.appendSlice(emit_key);
+                try parts.appendSlice(": ");
+                try parts.appendSlice(val_type);
+            }
         }
 
         // Build clean default entry for this property (same loop, no re-parse).
@@ -2032,6 +2068,21 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
                 try ps.appendSlice(if (prop.is_method) try cleanMethodSignature(alloc, val_type) else fn_type_raw);
                 try clean_props.append(try ps.toOwnedSlice());
             }
+        }
+    }
+    if (string_index and spread_types.items.len == 0) {
+        if (emitted_count > 0) try parts.appendSlice(";\n  ");
+        if (is_const) try parts.appendSlice("readonly ");
+        try parts.appendSlice("[x: string]: ");
+        var emitted_types = std.array_list.Managed([]const u8).init(alloc);
+        for (property_types.items) |property_type| {
+            if (containsType(emitted_types.items, property_type)) continue;
+            if (emitted_types.items.len > 0) try parts.appendSlice(" | ");
+            const grouped = ch.contains(property_type, "=>") or ch.contains(property_type, " & ");
+            if (grouped) try parts.append('(');
+            try parts.appendSlice(property_type);
+            if (grouped) try parts.append(')');
+            try emitted_types.append(property_type);
         }
     }
     try parts.appendSlice("\n}");
@@ -2159,7 +2210,7 @@ fn inferNewExpressionType(alloc: std.mem.Allocator, value: []const u8) InferErro
     };
 }
 
-fn inferPromiseRaceType(alloc: std.mem.Allocator, value: []const u8, depth: usize) InferError![]const u8 {
+fn inferPromiseRaceType(alloc: std.mem.Allocator, value: []const u8, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown>";
     const paren_end = std.mem.lastIndexOfScalar(u8, value, ')') orelse return "Promise<unknown>";
     if (paren_end <= paren_start + 1) return "Promise<never>";
@@ -2170,7 +2221,7 @@ fn inferPromiseRaceType(alloc: std.mem.Allocator, value: []const u8, depth: usiz
 
     var types = std.array_list.Managed([]const u8).init(alloc);
     for (elements) |element| {
-        var element_type = try inferNarrowType(alloc, element, false, true, depth + 1);
+        var element_type = try inferNarrowTypeWithKeyConstants(alloc, element, false, true, depth + 1, key_constants);
         if (ch.startsWith(element_type, "Promise<") and element_type.len > 9 and element_type[element_type.len - 1] == '>')
             element_type = element_type[8 .. element_type.len - 1];
         if (!containsType(types.items, element_type) and !std.mem.eql(u8, element_type, "never")) try types.append(element_type);
@@ -2194,7 +2245,7 @@ fn unwrapPromiseType(value: []const u8) []const u8 {
     return result;
 }
 
-fn inferPromiseAllSettledType(alloc: std.mem.Allocator, value: []const u8, depth: usize) InferError![]const u8 {
+fn inferPromiseAllSettledType(alloc: std.mem.Allocator, value: []const u8, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<PromiseSettledResult<unknown>[]>";
     const paren_end = std.mem.lastIndexOfScalar(u8, value, ')') orelse return "Promise<PromiseSettledResult<unknown>[]>";
     if (paren_end <= paren_start + 1) return "Promise<[]>";
@@ -2206,7 +2257,7 @@ fn inferPromiseAllSettledType(alloc: std.mem.Allocator, value: []const u8, depth
     try result.appendSlice("Promise<[");
     for (elements, 0..) |element, index| {
         if (index > 0) try result.appendSlice(", ");
-        const element_type = unwrapPromiseType(try inferNarrowType(alloc, element, false, false, depth + 1));
+        const element_type = unwrapPromiseType(try inferNarrowTypeWithKeyConstants(alloc, element, false, false, depth + 1, key_constants));
         try result.appendSlice("PromiseSettledResult<");
         try result.appendSlice(element_type);
         try result.append('>');
@@ -2216,7 +2267,7 @@ fn inferPromiseAllSettledType(alloc: std.mem.Allocator, value: []const u8, depth
 }
 
 /// Infer type from Promise expression
-fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
+fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
     if (ch.startsWith(value, "Promise.resolve(")) {
         // Extract argument — single-byte searches use the SIMD scalar paths.
         const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown>";
@@ -2224,7 +2275,7 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
         if (paren_end > paren_start + 1) {
             const arg = trim(value[paren_start + 1 .. paren_end]);
             // Promise resolved values are immutable, so preserve is_const from context
-            const arg_type = try inferNarrowType(alloc, arg, is_const, false, depth + 1);
+            const arg_type = try inferNarrowTypeWithKeyConstants(alloc, arg, is_const, false, depth + 1, key_constants);
             var result = std.array_list.Managed(u8).init(alloc);
             try result.appendSlice("Promise<");
             try result.appendSlice(arg_type);
@@ -2234,8 +2285,8 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
         return "Promise<unknown>";
     }
     if (ch.startsWith(value, "Promise.reject(")) return "Promise<never>";
-    if (ch.startsWith(value, "Promise.race(") or ch.startsWith(value, "Promise.any(")) return inferPromiseRaceType(alloc, value, depth);
-    if (ch.startsWith(value, "Promise.allSettled(")) return inferPromiseAllSettledType(alloc, value, depth);
+    if (ch.startsWith(value, "Promise.race(") or ch.startsWith(value, "Promise.any(")) return inferPromiseRaceType(alloc, value, depth, key_constants);
+    if (ch.startsWith(value, "Promise.allSettled(")) return inferPromiseAllSettledType(alloc, value, depth, key_constants);
     if (ch.startsWith(value, "Promise.all(")) {
         // Extract the array argument and infer element types
         const paren_start = std.mem.indexOfScalar(u8, value, '(') orelse return "Promise<unknown[]>";
@@ -2262,13 +2313,13 @@ fn inferPromiseType(alloc: std.mem.Allocator, value: []const u8, is_const: bool,
                             };
                             if (pe > ps + 1) {
                                 const inner_arg = trim(elem[ps + 1 .. pe]);
-                                const inner_type = try inferNarrowType(alloc, inner_arg, is_const, false, depth + 1);
+                                const inner_type = try inferNarrowTypeWithKeyConstants(alloc, inner_arg, is_const, false, depth + 1, key_constants);
                                 try result.appendSlice(inner_type);
                             } else {
                                 try result.appendSlice("unknown");
                             }
                         } else {
-                            const elem_type = try inferNarrowType(alloc, elem, is_const, false, depth + 1);
+                            const elem_type = try inferNarrowTypeWithKeyConstants(alloc, elem, is_const, false, depth + 1, key_constants);
                             try result.appendSlice(elem_type);
                         }
                     }

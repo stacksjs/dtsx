@@ -8,6 +8,7 @@ const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const module_specifiers = @import("module_specifiers.zig");
 const references = @import("declaration_references.zig");
+const comment_utils = @import("comments.zig");
 
 /// Check if a character is an identifier character (for word boundary checks)
 inline fn isIdentChar(c: u8) bool {
@@ -232,12 +233,12 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
             type_annotation = sat_type;
         }
     } else if (!decl.preserve_type_annotation and type_annotation.len == 0 and decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
-        type_annotation = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
+        type_annotation = try type_inf.inferNarrowTypeWithKeyConstants(alloc, decl.value, true, false, 0, decl.computed_key_constants);
     } else if (type_annotation.len == 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const")) {
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
         const is_container = trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[');
         if (is_container) type_inf.enableCleanDefaultCollection();
-        type_annotation = try type_inf.inferNarrowType(alloc, decl.value, !is_container, false, 0);
+        type_annotation = try type_inf.inferNarrowTypeWithKeyConstants(alloc, decl.value, !is_container, false, 0, decl.computed_key_constants);
     } else if (decl.preserve_type_annotation and type_annotation.len > 0 and decl.value.len > 0 and type_inf.isGenericType(type_annotation)) {
         const trimmed_val = std.mem.trim(u8, decl.value, " \t\n\r");
         if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
@@ -246,15 +247,15 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
                 std.mem.trim(u8, trimmed_val[0 .. trimmed_val.len - 9], " \t\n\r")
             else
                 trimmed_val;
-            _ = try type_inf.inferNarrowType(alloc, value_for_default, false, false, 0);
+            _ = try type_inf.inferNarrowTypeWithKeyConstants(alloc, value_for_default, false, false, 0, decl.computed_key_constants);
         }
     } else if (!decl.preserve_type_annotation and type_annotation.len > 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const") and type_inf.isGenericType(type_annotation)) {
-        const inferred = try type_inf.inferNarrowType(alloc, decl.value, true, false, 0);
+        const inferred = try type_inf.inferNarrowTypeWithKeyConstants(alloc, decl.value, true, false, 0, decl.computed_key_constants);
         if (!std.mem.eql(u8, inferred, "unknown")) {
             type_annotation = inferred;
         }
     } else if (type_annotation.len == 0 and decl.value.len > 0) {
-        type_annotation = try type_inf.inferNarrowType(alloc, decl.value, std.mem.eql(u8, kind, "const"), false, 0);
+        type_annotation = try type_inf.inferNarrowTypeWithKeyConstants(alloc, decl.value, std.mem.eql(u8, kind, "const"), false, 0, decl.computed_key_constants);
     }
 
     if (type_annotation.len == 0) type_annotation = "unknown";
@@ -292,7 +293,8 @@ fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_
             default_val = null;
         }
 
-        if (default_val) |dv| {
+        if (default_val) |raw_default| {
+            const dv = try comment_utils.escapeJsdocContent(alloc, raw_default);
             // Build the @defaultValue tag content using direct alloc
             const tag_max = 24 + dv.len * 4 + 16; // generous upper bound for multi-line
             const tag_mem = try alloc.alloc(u8, tag_max);
@@ -922,7 +924,7 @@ fn processDeclarationsInternal(
                     if (d.type_annotation.len > 0) {
                         extractWords(&combined_words, d.type_annotation);
                     } else if (d.is_exported and d.value.len > 0) {
-                        extractWords(&combined_words, try type_inf.inferNarrowType(alloc, d.value, true, false, 0));
+                        extractWords(&combined_words, try type_inf.inferNarrowTypeWithKeyConstants(alloc, d.value, true, false, 0, d.computed_key_constants));
                     }
                 },
                 .interface_decl, .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {

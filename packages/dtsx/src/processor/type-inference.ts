@@ -2,6 +2,8 @@
  * Type inference utilities for DTS generation
  * Handles inferring narrow types from values
  */
+import type { KeyConstants } from '../computed-keys'
+import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
 import { escapeJsdocContent } from './comments'
 
 /**
@@ -205,7 +207,7 @@ function collapseWhitespace(s: string): string {
  * @param inUnion - When true, widens number/boolean literals to their base types (used in array union contexts)
  * @param _depth - Internal recursion depth counter (do not set manually)
  */
-export function inferNarrowType(value: unknown, isConst: boolean = false, inUnion: boolean = false, _depth: number = 0): string {
+export function inferNarrowType(value: unknown, isConst: boolean = false, inUnion: boolean = false, _depth: number = 0, keyConstants?: KeyConstants): string {
   if (!value || typeof value !== 'string')
     return 'unknown'
 
@@ -275,12 +277,12 @@ if (trimmed === 'undefined')
 
 // Array literals
 if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-  return inferArrayType(trimmed, isConst, _depth + 1)
+  return inferArrayType(trimmed, isConst, _depth + 1, keyConstants)
 }
 
 // Object literals
 if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-  return inferObjectType(trimmed, isConst, _depth + 1)
+  return inferObjectType(trimmed, isConst, _depth + 1, keyConstants)
 }
 
 // Class expressions — extract the class name and use typeof
@@ -303,11 +305,11 @@ if (trimmed.endsWith('as const')) {
     const elements = parseArrayElements(content)
     const elementTypes: string[] = []
     for (let i = 0; i < elements.length; i++) {
-      elementTypes.push(inferNarrowType(elements[i].trim(), true, false, _depth + 1))
+      elementTypes.push(inferNarrowType(elements[i].trim(), true, false, _depth + 1, keyConstants))
     }
     return `readonly [${elementTypes.join(', ')}]`
   }
-  return inferNarrowType(withoutAsConst, true, inUnion, _depth + 1)
+  return inferNarrowType(withoutAsConst, true, inUnion, _depth + 1, keyConstants)
 }
 
 // Function expressions. Check these after `as const` so an asserted
@@ -324,7 +326,7 @@ if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
 
 // Promise expressions
 if (trimmed.startsWith('Promise.')) {
-  return inferPromiseType(trimmed, isConst, _depth)
+  return inferPromiseType(trimmed, isConst, _depth, keyConstants)
 }
 
 // Await expressions
@@ -490,8 +492,8 @@ function hasTopLevelComparison(value: string): boolean {
  * Infer and narrow types from values in union context (for arrays)
  * Widens number/boolean literals to base types unless const
  */
-export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false, _depth: number = 0): string {
-  return inferNarrowType(value, isConst, true, _depth)
+export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false, _depth: number = 0, keyConstants?: KeyConstants): string {
+  return inferNarrowType(value, isConst, true, _depth, keyConstants)
 }
 
 /**
@@ -933,7 +935,7 @@ function inferClassExpressionType(_value: string): string {
 /**
  * Infer type from Promise expression
  */
-function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): string {
+function inferPromiseType(value: string, isConst: boolean, _depth: number = 0, keyConstants?: KeyConstants): string {
   if (value.startsWith('Promise.resolve(')) {
     // Extract argument between parens using indexOf
     const openIdx = 16 // length of 'Promise.resolve('
@@ -941,7 +943,7 @@ function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): 
     if (closeIdx !== -1) {
       const arg = value.slice(openIdx, closeIdx).trim()
       if (arg) {
-        const argType = inferNarrowType(arg, isConst, false, _depth + 1)
+        const argType = inferNarrowType(arg, isConst, false, _depth + 1, keyConstants)
         return `Promise<${argType}>`
       }
     }
@@ -961,14 +963,14 @@ function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): 
       for (let i = 0; i < elements.length; i++) {
         const trimmed = elements[i].trim()
         if (trimmed.startsWith('Promise.resolve(')) {
-          const promiseType = inferPromiseType(trimmed, isConst, _depth + 1)
+          const promiseType = inferPromiseType(trimmed, isConst, _depth + 1, keyConstants)
           // Extract inner type from Promise<T> using indexOf
           const ltIdx = promiseType.indexOf('<')
           const gtIdx = promiseType.lastIndexOf('>')
           elementTypes.push((ltIdx !== -1 && gtIdx > ltIdx) ? promiseType.slice(ltIdx + 1, gtIdx) : 'unknown')
         }
         else {
-          elementTypes.push(inferNarrowType(trimmed, isConst, false, _depth + 1))
+          elementTypes.push(inferNarrowType(trimmed, isConst, false, _depth + 1, keyConstants))
         }
       }
       return `Promise<[${elementTypes.join(', ')}]>`
@@ -981,7 +983,7 @@ function inferPromiseType(value: string, isConst: boolean, _depth: number = 0): 
 /**
  * Infer array type from array literal
  */
-export function inferArrayType(value: string, isConst: boolean, _depth: number = 0): string {
+export function inferArrayType(value: string, isConst: boolean, _depth: number = 0, keyConstants?: KeyConstants): string {
   // Remove brackets and parse elements
   const content = value.slice(1, -1).trim()
 
@@ -1017,19 +1019,19 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
           const innerElements = parseArrayElements(innerContent)
           const innerTypes: string[] = []
           for (let j = 0; j < innerElements.length; j++) {
-            innerTypes.push(inferNarrowType(innerElements[j].trim(), true, false, _depth + 1))
+            innerTypes.push(inferNarrowType(innerElements[j].trim(), true, false, _depth + 1, keyConstants))
           }
           elementTypes.push(`readonly [${innerTypes.join(', ')}]`)
         }
         else {
-          elementTypes.push(inferNarrowType(withoutAsConst, true, false, _depth + 1))
+          elementTypes.push(inferNarrowType(withoutAsConst, true, false, _depth + 1, keyConstants))
         }
       }
       else if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-        elementTypes.push(inferArrayType(trimmedEl, true, _depth + 1))
+        elementTypes.push(inferArrayType(trimmedEl, true, _depth + 1, keyConstants))
       }
       else {
-        elementTypes.push(inferNarrowType(trimmedEl, true, false, _depth + 1))
+        elementTypes.push(inferNarrowType(trimmedEl, true, false, _depth + 1, keyConstants))
       }
     }
     return `readonly [\n    ${elementTypes.join(' |\n    ')}\n  ]`
@@ -1045,17 +1047,17 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
     _cleanDefaultResult = null
     if (trimmedEl.startsWith('...')) {
       const spreadValue = trimmedEl.slice(3).trim()
-      const spreadType = inferNarrowType(spreadValue, false, false, _depth + 1)
+      const spreadType = inferNarrowType(spreadValue, false, false, _depth + 1, keyConstants)
       if (spreadType.endsWith('[]')) elementTypes.push(spreadType.slice(0, -2))
       else if (spreadType.startsWith('readonly [') && spreadType.endsWith(']')) elementTypes.push(spreadType.slice(10, -1))
       else if (isEntityName(spreadValue)) elementTypes.push(`(typeof ${spreadValue})[number]`)
       else elementTypes.push('unknown')
     }
     else if (trimmedEl.startsWith('[') && trimmedEl.endsWith(']')) {
-      elementTypes.push(inferArrayType(trimmedEl, isConst, _depth + 1))
+      elementTypes.push(inferArrayType(trimmedEl, isConst, _depth + 1, keyConstants))
     }
     else {
-      elementTypes.push(inferNarrowTypeInUnion(trimmedEl, isConst, _depth + 1))
+      elementTypes.push(inferNarrowTypeInUnion(trimmedEl, isConst, _depth + 1, keyConstants))
     }
     if (trackDefaults) nestedDefaults.push(_cleanDefaultResult)
     _cleanDefaultResult = saved
@@ -1082,7 +1084,7 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
         }
         else {
           // Re-infer without union context for the clean default
-          const cleanType = inferNarrowType(te, false, false, 0)
+          const cleanType = inferNarrowType(te, false, false, 0, keyConstants)
           if (cleanType !== 'unknown') cleanElems.push(cleanType)
         }
       }
@@ -1222,7 +1224,7 @@ return true
 /**
  * Infer object type from object literal
  */
-export function inferObjectType(value: string, isConst: boolean, _depth: number = 0): string {
+export function inferObjectType(value: string, isConst: boolean, _depth: number = 0, keyConstants?: KeyConstants): string {
   // Remove braces
   const content = value.slice(1, -1).trim()
 
@@ -1236,6 +1238,8 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   const properties = parseObjectProperties(content)
   const propTypes: string[] = []
   const spreadTypes: string[] = []
+  const propertyTypes: string[] = []
+  let stringIndex = false
 
   // Track whether we should build a clean default inline
   const trackDefaults = _collectCleanDefault && !isConst
@@ -1244,6 +1248,10 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   for (const [key, val] of properties) {
     const { comments: keyComments, key: propertyKey } = splitLeadingCommentsFromKey(key)
     const commentPrefix = keyComments ? `${keyComments}\n  ` : ''
+    const accessor = matchAccessorKey(propertyKey)
+    // TypeScript omits interpolated computed accessors rather than assigning
+    // them a literal name or an index signature. Preserve that public shape.
+    if (accessor && hasTemplateSubstitution(accessor.name)) continue
     // The key actually emitted: a generic method shorthand (`merge<T, U>(…)`)
     // has its type parameters moved onto the function type, see below.
     let emitKey = propertyKey
@@ -1253,7 +1261,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       const spreadValue = val.trim()
       const spreadType = isEntityName(spreadValue)
         ? `typeof ${spreadValue}`
-        : inferNarrowType(spreadValue, isConst, false, _depth + 1)
+        : inferNarrowType(spreadValue, isConst, false, _depth + 1, keyConstants)
       if (spreadType !== 'unknown') spreadTypes.push(spreadType)
       if (trackDefaults && (isEntityName(spreadValue) || spreadValue.startsWith('{'))) cleanProps.push(`...${collapseWhitespace(spreadValue)}`)
       continue
@@ -1293,7 +1301,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       }
     }
     else {
-      valueType = inferNarrowType(val, isConst, false, _depth + 1)
+      valueType = inferNarrowType(val, isConst, false, _depth + 1, keyConstants)
 
       // A property naming another binding (`driver: paymentDriver`,
       // `webhook: manage.webhook`) has that binding's type, exactly as the
@@ -1310,36 +1318,40 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
 
     const nestedDefault = _cleanDefaultResult
     _cleanDefaultResult = saved
-
-    // Add inline @defaultValue for widened primitive properties
+    const sourceKey = emitKey
     const rawVal = val.trim()
-
-    // Getter/setter shorthand — `{ get X() {…} }` parses with a key of
-    // "get X" and a value that converts into `() => T`. Emitted as a
-    // regular property that becomes `get X: () => T`, which is invalid
-    // TS. Reshape into proper accessor signatures (`get X(): T` and
-    // `set X(arg: T): void`). See stacksjs/dtsx#3093.
-    const accessor = matchAccessorKey(propertyKey)
-    if (accessor) {
-      const sig = formatAccessor(accessor.kind, accessor.name, valueType)
-      if (sig) {
-        propTypes.push(`${commentPrefix}${sig}`)
-        // Accessors don't carry @defaultValue; skip the trackDefaults block below.
-        continue
-      }
-    }
-
-    if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-      propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${valueType}`)
-    }
+    const templateKey = resolveTemplateKey(emitKey, keyConstants)
+    if (!isSymbolKey(emitKey, keyConstants)) propertyTypes.push(valueType)
+    if (templateKey && 'index' in templateKey) stringIndex = true
     else {
-      propTypes.push(`${commentPrefix}${isConst ? 'readonly ' : ''}${emitKey}: ${valueType}`)
+      if (templateKey && 'name' in templateKey) emitKey = templateKey.name
+
+      // Getter/setter shorthand — `{ get X() {…} }` parses with a key of
+      // "get X" and a value that converts into `() => T`. Emitted as a
+      // regular property that becomes `get X: () => T`, which is invalid
+      // TS. Reshape into proper accessor signatures (`get X(): T` and
+      // `set X(arg: T): void`). See stacksjs/dtsx#3093.
+      if (accessor) {
+        const sig = formatAccessor(accessor.kind, accessor.name, valueType)
+        if (sig) {
+          propTypes.push(`${commentPrefix}${sig}`)
+          // Accessors don't carry @defaultValue; skip the trackDefaults block below.
+          continue
+        }
+      }
+
+      if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
+        propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${valueType}`)
+      }
+      else {
+        propTypes.push(`${commentPrefix}${isConst ? 'readonly ' : ''}${emitKey}: ${valueType}`)
+      }
     }
 
     // Build clean default inline (same pass, no re-parse)
     // Strip block/JSDoc comments from key to prevent nested */ in @defaultValue code blocks
     if (trackDefaults) {
-      const cleanKey = stripBlockComments(emitKey)
+      const cleanKey = stripBlockComments(sourceKey)
       if (rawVal.endsWith('as const')) {
         // skip — type already narrow
       }
@@ -1380,6 +1392,12 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     }
   }
 
+  // Spread inference preserves named fields and omits unknown computed names;
+  // it does not synthesize a string index as a plain object literal does.
+  if (stringIndex && spreadTypes.length === 0) {
+    const members = [...new Set(propertyTypes)].map(type => type.includes('=>') || type.includes(' & ') ? `(${type})` : type)
+    propTypes.unshift(`${isConst ? 'readonly ' : ''}[x: string]: ${members.join(' | ')}`)
+  }
   const ownType = propTypes.length > 0 ? `{\n  ${propTypes.join(';\n  ')}\n}` : '{}'
   if (spreadTypes.length === 0) return ownType
 

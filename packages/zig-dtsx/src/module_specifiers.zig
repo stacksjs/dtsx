@@ -277,6 +277,15 @@ fn readHex(content: []const u8, start: usize, length: usize) !u32 {
 }
 
 fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
+    const decoded = try decodeStringLiteral(allocator, literal);
+    errdefer allocator.free(decoded);
+    if (std.mem.indexOfScalar(u8, decoded, 0) != null or !std.unicode.utf8ValidateSlice(decoded)) return error.InvalidContext;
+    return decoded;
+}
+
+/// Decode JavaScript string/template text. Lone UTF-16 surrogates use WTF-8
+/// internally and are escaped again by quoteStringLiteral, never written raw.
+pub fn decodeStringLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
     var decoded = std.array_list.Managed(u8).init(allocator);
     errdefer decoded.deinit();
     const body = literal[1 .. literal.len - 1];
@@ -299,7 +308,10 @@ fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
             'b' => try decoded.append(8),
             'f' => try decoded.append(12),
             'v' => try decoded.append(11),
-            '0' => return error.InvalidContext,
+            '0' => {
+                if (i + 1 < body.len and std.ascii.isDigit(body[i + 1])) return error.InvalidContext;
+                try decoded.append(0);
+            },
             'x' => {
                 const codepoint = try readHex(body, i + 1, 2);
                 var bytes: [4]u8 = undefined;
@@ -321,12 +333,16 @@ fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
                     codepoint = try readHex(body, i + 1, 4);
                     i += 4;
                 }
-                if (codepoint >= 0xd800 and codepoint <= 0xdbff) {
-                    if (i + 6 >= body.len or body[i + 1] != '\\' or body[i + 2] != 'u') return error.InvalidContext;
+                if (codepoint >= 0xd800 and codepoint <= 0xdbff and i + 6 < body.len and body[i + 1] == '\\' and body[i + 2] == 'u' and body[i + 3] != '{') {
                     const low = try readHex(body, i + 3, 4);
-                    if (low < 0xdc00 or low > 0xdfff) return error.InvalidContext;
-                    codepoint = 0x10000 + (codepoint - 0xd800) * 0x400 + low - 0xdc00;
-                    i += 6;
+                    if (low >= 0xdc00 and low <= 0xdfff) {
+                        codepoint = 0x10000 + (codepoint - 0xd800) * 0x400 + low - 0xdc00;
+                        i += 6;
+                    }
+                }
+                if (codepoint >= 0xd800 and codepoint <= 0xdfff) {
+                    try decoded.appendSlice(&.{ 0xed, @as(u8, @intCast(0x80 | ((codepoint >> 6) & 0x3f))), @as(u8, @intCast(0x80 | (codepoint & 0x3f))) });
+                    continue;
                 }
                 var bytes: [4]u8 = undefined;
                 const length = std.unicode.utf8Encode(@intCast(codepoint), &bytes) catch return error.InvalidContext;
@@ -341,7 +357,18 @@ fn decodeLiteral(allocator: std.mem.Allocator, literal: []const u8) ![]u8 {
 fn appendLiteral(result: *std.array_list.Managed(u8), value: []const u8, quote: u8) !void {
     const hex = "0123456789abcdef";
     try result.append(quote);
-    for (value) |byte| {
+    var index: usize = 0;
+    while (index < value.len) : (index += 1) {
+        const byte = value[index];
+        // WTF-8 surrogate encodings are internal only. Preserve their actual
+        // UTF-16 identity through a valid escaped declaration literal.
+        if (byte == 0xed and index + 2 < value.len and value[index + 1] >= 0xa0 and value[index + 1] <= 0xbf and value[index + 2] & 0xc0 == 0x80) {
+            const point: u16 = (@as(u16, byte & 15) << 12) | (@as(u16, value[index + 1] & 63) << 6) | @as(u16, value[index + 2] & 63);
+            try result.appendSlice("\\u");
+            for ([_]u4{ 12, 8, 4, 0 }) |shift| try result.append(hex[@as(usize, (point >> shift) & 15)]);
+            index += 2;
+            continue;
+        }
         if (byte == quote or byte == '\\') {
             try result.append('\\');
             try result.append(byte);
@@ -352,6 +379,13 @@ fn appendLiteral(result: *std.array_list.Managed(u8), value: []const u8, quote: 
         } else try result.append(byte);
     }
     try result.append(quote);
+}
+
+pub fn quoteStringLiteral(allocator: std.mem.Allocator, value: []const u8, quote: u8) std.mem.Allocator.Error![]u8 {
+    var result = std.array_list.Managed(u8).init(allocator);
+    errdefer result.deinit();
+    try appendLiteral(&result, value, quote);
+    return result.toOwnedSlice();
 }
 
 /// Emit only grammatical module literals through the resolved context. This

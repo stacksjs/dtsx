@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate declarations accepted before excluded-source delivery checks.
-// Cache hits must satisfy the same source-selection policy as cold generation.
-const CACHE_VERSION = 7
+// Invalidate declarations emitted before computed-key constant evaluation and
+// faithful index inference, alongside the current source-selection policy.
+const CACHE_VERSION = 8
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

@@ -65,6 +65,7 @@ pub fn build(b: *std.Build) void {
         "src/emitter.zig",
         "src/type_inference.zig",
         "src/module_specifiers.zig",
+        "src/computed_keys.zig",
         "src/lib.zig",
         "src/zig_dtsx.zig",
     };

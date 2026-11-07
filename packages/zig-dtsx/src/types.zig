@@ -1,5 +1,8 @@
 const std = @import("std");
 
+pub const KeyConstant = union(enum) { text: []const u8, number: f64, symbol };
+pub const KeyConstants = std.StringHashMap(KeyConstant);
+
 /// Declaration kinds matching the TypeScript scanner output
 pub const DeclarationKind = enum {
     import_decl,
@@ -62,6 +65,8 @@ pub const Declaration = struct {
     value: []const u8 = "",
     /// Original initializer offset, excluding annotation and assignment token.
     initializer_start: usize = 0,
+    /// Eligible string/number constant syntax at this initializer's source site.
+    computed_key_constants: ?*const KeyConstants = null,
     /// Type annotation text
     type_annotation: []const u8 = "",
     /// Inferred identity of a known value, separate from a source annotation.

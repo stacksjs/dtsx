@@ -118,7 +118,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
   if (satisfiesType) typeAnnotation = satisfiesType
   // If we have a value that ends with 'as const' at the top level, infer narrow from value
   else if (!typeAnnotation && value && value.trim().endsWith('as const')) {
-    typeAnnotation = inferNarrowType(value, true)
+    typeAnnotation = inferNarrowType(value, true, false, 0, decl.computedKeyConstants)
   }
   else if (!typeAnnotation && value && kind === 'const') {
     // For const declarations WITHOUT explicit type annotation, infer types from the value
@@ -127,11 +127,11 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     const trimmedVal = value.trim()
     const isContainer = trimmedVal.startsWith('{') || trimmedVal.startsWith('[')
     if (isContainer) enableCleanDefaultCollection()
-    typeAnnotation = inferNarrowType(value, !isContainer)
+    typeAnnotation = inferNarrowType(value, !isContainer, false, 0, decl.computedKeyConstants)
   }
   else if (!typeAnnotation && value) {
     // If no explicit type annotation, try to infer from value
-    typeAnnotation = inferNarrowType(value, kind === 'const')
+    typeAnnotation = inferNarrowType(value, kind === 'const', false, 0, decl.computedKeyConstants)
   }
 
   // Default to unknown if we couldn't determine type
@@ -169,7 +169,7 @@ export function processVariableDeclaration(decl: Declaration, keepComments: bool
     enableCleanDefaultCollection()
     const trimmedValue = value.trim()
     const valueForDefaults = trimmedValue.endsWith('as const') ? trimmedValue.slice(0, -8).trim() : trimmedValue
-    inferNarrowType(valueForDefaults, false)
+    inferNarrowType(valueForDefaults, false, false, 0, decl.computedKeyConstants)
     const cleanDefault = consumeCleanDefault()
     if (cleanDefault) {
       if (cleanDefault.includes('\n')) {

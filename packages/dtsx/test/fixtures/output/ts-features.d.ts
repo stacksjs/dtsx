@@ -50,7 +50,7 @@ export declare const computedObject: {
   /** @defaultValue 'value' */
   [COMPUTED_KEY]: string;
   /** @defaultValue 'prefixed' */
-  [`prefix_${COMPUTED_KEY}`]: string
+  'prefix_dynamicProperty': string
 };
 /** Custom symbol */
 export declare const customSymbol: symbol;

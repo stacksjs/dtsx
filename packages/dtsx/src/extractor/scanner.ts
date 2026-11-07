@@ -4,6 +4,7 @@
  * Produces the same Declaration[] shape that the processor expects.
  */
 import type { Declaration } from '../types'
+import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { parseImportEquals } from '../module-references'
@@ -4066,6 +4067,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
     }
 
+    attachComputedKeyConstants(declarations, nonExportedTypes)
     if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)
 
     // Resolve referenced non-exported types from the surviving public signatures.

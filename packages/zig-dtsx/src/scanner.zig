@@ -993,6 +993,7 @@ pub const Scanner = struct {
             while (groups.next()) |group| removeOverloadImplementations(group);
         }
 
+        try @import("computed_keys.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         if (!self.isolated_declarations) try value_inference.inferDeclarationValueAliases(self.allocator, self.source, self.declarations.items, &self.non_exported_types);
 
         // Resolve referenced non-exported types from the surviving public signatures.

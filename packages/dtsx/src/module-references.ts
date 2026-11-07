@@ -95,7 +95,7 @@ export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
 }
 
 /** Decode a quoted module literal without executing or transpiling source. */
-function decodeLiteral(literal: string): string | undefined {
+export function decodeStringLiteral(literal: string): string | undefined {
   let value = ''
   const end = literal.length - 1
   for (let position = 1; position < end; position++) {
@@ -160,7 +160,7 @@ export function parseImportEquals(source: string): { name: string, source: strin
     || text(binding + 3) !== '(' || items[binding + 4]?.kind !== 'quoted' || text(binding + 5) !== ')') return undefined
   const end = binding + 6
   if (items.length !== end && !(items.length === end + 1 && text(end) === ';')) return undefined
-  const specifier = decodeLiteral(text(binding + 4))
+  const specifier = decodeStringLiteral(text(binding + 4))
   if (specifier === undefined) return undefined
   return { name: text(binding), source: specifier, isTypeOnly, end: items[items.length - 1].end }
 }
@@ -192,7 +192,7 @@ export function scanModuleReferences(source: string): ModuleReference[] {
   function add(index: number, kind: ModuleReference['kind'], isTypeOnly: boolean, category: ModuleReference['category']): void {
     const token = tokens[index]
     if (!token || token.kind !== 'quoted' || seen.has(token.start)) return
-    const specifier = decodeLiteral(source.slice(token.start, token.end))
+    const specifier = decodeStringLiteral(source.slice(token.start, token.end))
     if (specifier === undefined) return
     seen.add(token.start)
     references.push({ specifier, kind, isTypeOnly, category, start: token.start, end: token.end })
