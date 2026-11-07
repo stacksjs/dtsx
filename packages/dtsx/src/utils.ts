@@ -32,7 +32,8 @@ export async function writeToFile(filePath: string, content: string, lineEnding:
     normalized += '\n'
   }
   if (lineEnding === 'crlf') normalized = normalized.replace(/\n/g, '\r\n')
-  await write(filePath, normalized)
+  const written = await write(filePath, normalized)
+  if (written !== Buffer.byteLength(normalized, 'utf8')) throw new Error(`Incomplete declaration write: ${filePath}`)
 }
 
 export async function getAllTypeScriptFiles(directory?: string): Promise<string[]> {

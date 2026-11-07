@@ -1,15 +1,16 @@
 import type { ModuleResolver } from './module-graph'
 import type { TypeMapper } from './type-mappings'
 import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
-import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
-import { basename, dirname, isAbsolute, parse, relative, resolve } from 'node:path'
+import { basename, dirname, relative, resolve } from 'node:path'
 import { linkBundle } from './bundle-linker'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
 import { normalizeConcurrency } from './concurrency'
 import { config as defaultConfig } from './config'
-import { createDeclarationReferenceResolver, getDeclarationOutputPath, isExcluded, isWithinRoot, planDeclarationProject } from './declaration-project'
+import { createDeclarationReferenceResolver, getDeclarationOutputPath, isExcluded, planDeclarationProject } from './declaration-project'
+import { assertSafeOutputConfiguration, publishDeclarationOutputs } from './declaration-publication'
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
@@ -407,11 +408,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   // formatting and alias-to-emitted-source checks) before removing prior output.
   // Cached declarations and source maps join the same publication phase.
   if (!config.dryRun) {
-    if (config.clean) await cleanDeclarationOutputs(config)
-    for (const [path, output] of pendingOutputs) {
-      await mkdir(dirname(path), { recursive: true })
-      await writeToFile(path, output.content, output.lineEnding)
-    }
+    await publishDeclarationOutputs(config, pendingOutputs)
   }
 
   // Save incremental build cache
@@ -589,77 +586,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   logger.debug('DTS generation complete!')
 
   return stats
-}
-
-async function getCanonicalPath(path: string): Promise<string> {
-  try {
-    return await realpath(path)
-  }
-  catch {
-    return resolve(path)
-  }
-}
-
-async function assertSafeOutputConfiguration(config: DtsGenerationConfig): Promise<void> {
-  const outdir = resolve(config.cwd, config.outdir)
-
-  if (config.bundle && config.bundleOutput) {
-    if (isAbsolute(config.bundleOutput)) {
-      throw new Error('bundleOutput must be relative to outdir')
-    }
-    const bundlePath = resolve(outdir, config.bundleOutput)
-    if (!isWithinRoot(bundlePath, outdir)) {
-      throw new Error('bundleOutput must stay within outdir')
-    }
-  }
-
-  if (!config.clean || config.dryRun) return
-  if (outdir === parse(outdir).root) {
-    throw new Error('Refusing to clean declarations from the filesystem root')
-  }
-
-  const [canonicalOutdir, canonicalRoot] = await Promise.all([
-    getCanonicalPath(outdir),
-    getCanonicalPath(resolve(config.cwd, config.root)),
-  ])
-  if (isWithinRoot(canonicalRoot, canonicalOutdir)) {
-    throw new Error('Refusing to clean an outdir that contains the source root')
-  }
-}
-
-async function cleanDeclarationOutputs(config: DtsGenerationConfig): Promise<void> {
-  const outdir = resolve(config.cwd, config.outdir)
-
-  async function walk(dir: string): Promise<void> {
-    let entries
-    try {
-      entries = await readdir(dir, { withFileTypes: true })
-    }
-    catch {
-      return
-    }
-
-    await Promise.all(entries.map(async (entry) => {
-      const path = resolve(dir, entry.name)
-      if (entry.isDirectory()) {
-        await walk(path)
-        return
-      }
-
-      if (
-        entry.name.endsWith('.d.ts')
-          || entry.name.endsWith('.d.mts')
-          || entry.name.endsWith('.d.cts')
-          || entry.name.endsWith('.d.ts.map')
-          || entry.name.endsWith('.d.mts.map')
-          || entry.name.endsWith('.d.cts.map')
-      ) {
-        await rm(path, { force: true })
-      }
-    }))
-  }
-
-  await walk(outdir)
 }
 
 async function rewriteRelativeDeclarationSpecifiers(content: string, filePath: string, config: DtsGenerationConfig): Promise<string> {
