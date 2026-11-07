@@ -18,7 +18,11 @@
  * inferred type is the one per-file generation produced.
  */
 import { relative } from 'node:path'
+import { isExternalModuleSource } from './declaration-references'
+import { scanAmbientDeclarationMembers } from './extractor/scanner'
 import { resolveRelativeSpecifier } from './module-graph'
+import { decodeStringLiteral, tokenizeDeclarationSyntax } from './module-references'
+import { parseImportDetailed } from './processor/imports'
 
 export interface LinkBundleOptions {
   /** Base for the `// From:` file headers */
@@ -48,12 +52,6 @@ type Binding =
 | { kind: 'external', source: string, imported: string }
 | { kind: 'external-namespace', source: string }
 
-interface ImportClause {
-  defaultName?: string
-  namespaceName?: string
-  named: Array<{ imported: string, local: string }>
-}
-
 interface ExportSpecifier {
   local: string
   exported: string
@@ -76,8 +74,31 @@ interface ModuleInfo {
   namespaceReExports: Array<{ specifier: string, exported: string }>
   /** `declare module 'x'`, `declare global`, `export as namespace` */
   verbatim: DeclarationStatement[]
+  augmentations: Array<{ statement: DeclarationStatement, specifier: string, body: string }>
   /** Triple-slash directives */
   directives: string[]
+}
+
+function ambientBlock(text: string): { specifier?: string, body: string, start: number, end: number } | undefined {
+  const tokens = tokenizeDeclarationSyntax(text)
+  const word = (index: number): string => tokens[index] ? text.slice(tokens[index].start, tokens[index].end) : ''
+  let index = word(0) === 'export' ? 1 : 0
+  if (word(index++) !== 'declare') return undefined
+  let specifier: string | undefined
+  if (word(index) === 'module' && tokens[index + 1]?.kind === 'quoted') {
+    specifier = decodeStringLiteral(word(index + 1))
+    if (specifier === undefined) return undefined
+    index += 2
+  }
+  else if (word(index++) !== 'global') return undefined
+  if (word(index) !== '{') return undefined
+  const start = tokens[index].end
+  let depth = 1
+  for (index++; index < tokens.length; index++) {
+    if (word(index) === '{') depth++
+    else if (word(index) === '}' && --depth === 0) return { specifier, body: text.slice(start, tokens[index].start), start, end: tokens[index].start }
+  }
+  return undefined
 }
 
 const IDENT = /^[A-Z_$][\w$]*$/i
@@ -207,24 +228,6 @@ function parseSpecifierList(list: string): ExportSpecifier[] {
   return result
 }
 
-function parseImportClause(clause: string): ImportClause {
-  const result: ImportClause = { named: [] }
-  let rest = clause.trim().replace(/^type\s+/, '')
-  const braces = rest.match(/\{([\s\S]*)\}/)
-  if (braces) {
-    for (const spec of parseSpecifierList(braces[1])) result.named.push({ imported: spec.local, local: spec.exported })
-    rest = rest.replace(braces[0], '')
-  }
-  const namespace = rest.match(/\*\s*as\s+([\w$]+)/)
-  if (namespace) {
-    result.namespaceName = namespace[1]
-    rest = rest.replace(namespace[0], '')
-  }
-  const defaultName = rest.replace(/,/g, '').trim()
-  if (defaultName && IDENT.test(defaultName)) result.defaultName = defaultName
-  return result
-}
-
 const DECLARATION_HEAD = /^(?:export\s+)?(default\s+)?(?:declare\s+)?(abstract\s+)?(class|interface|type|function\s*\*?|enum|const\s+enum|namespace|module|const|let|var|async\s+function)\b\s*([\w$]+)?/
 
 /** Turn an `export`ed statement into its unexported, ambient form. */
@@ -240,7 +243,7 @@ function toLocalDeclaration(text: string, name: string): string {
   return `declare ${body}`
 }
 
-function parseModule(file: string, dts: string): ModuleInfo {
+function parseModule(file: string, dts: string, nested = false): ModuleInfo {
   const info: ModuleInfo = {
     file,
     declarations: [],
@@ -251,10 +254,13 @@ function parseModule(file: string, dts: string): ModuleInfo {
     starReExports: [],
     namespaceReExports: [],
     verbatim: [],
+    augmentations: [],
     directives: [],
   }
 
-  const statements = splitTopLevelStatements(dts)
+  const statements = nested
+    ? scanAmbientDeclarationMembers(dts, file).map(declaration => ({ text: declaration.text, comments: [...declaration.leadingComments ?? []] }))
+    : splitTopLevelStatements(dts)
   for (const statement of statements) {
     // Triple-slash directives arrive as leading comments; keep them apart.
     statement.comments = statement.comments.filter((comment) => {
@@ -267,13 +273,12 @@ function parseModule(file: string, dts: string): ModuleInfo {
 
     const text = statement.text.replace(/;\s*$/, '').trim()
 
-    let match = text.match(/^import\s+(type\s+)?([\s\S]+?)\s+from\s+(['"])([^'"]+)\3/)
-    if (match) {
-      const clause = parseImportClause(match[2])
-      const specifier = match[4]
-      if (clause.defaultName) info.imports.set(clause.defaultName, { specifier, imported: 'default' })
-      if (clause.namespaceName) info.imports.set(clause.namespaceName, { specifier, imported: '*' })
-      for (const named of clause.named) info.imports.set(named.local, { specifier, imported: named.imported })
+    const imported = text.startsWith('import') ? parseImportDetailed(text) : null
+    if (imported && !imported.isImportEquals) {
+      const specifier = imported.source
+      if (imported.defaultName) info.imports.set(imported.defaultName, { specifier, imported: 'default' })
+      if (imported.namespaceName) info.imports.set(imported.namespaceName, { specifier, imported: '*' })
+      for (const named of imported.namedItems) info.imports.set(named.name, { specifier, imported: /^['"]/.test(named.originalName) ? decodeStringLiteral(named.originalName)! : named.originalName })
       continue
     }
     if (/^import\s+['"]/.test(text)) {
@@ -281,7 +286,7 @@ function parseModule(file: string, dts: string): ModuleInfo {
       continue
     }
 
-    match = text.match(/^export\s+(?:type\s+)?\*\s+as\s+([\w$]+)\s+from\s+(['"])([^'"]+)\2/)
+    let match = text.match(/^export\s+(?:type\s+)?\*\s+as\s+([\w$]+)\s+from\s+(['"])([^'"]+)\2/)
     if (match) {
       info.namespaceReExports.push({ specifier: match[3], exported: match[1] })
       continue
@@ -306,7 +311,12 @@ function parseModule(file: string, dts: string): ModuleInfo {
       info.localExports.set('default', match[1])
       continue
     }
-    if (/^export\s+as\s+namespace\b/.test(text) || /^(?:export\s+)?declare\s+(?:global\b|module\s+['"])/.test(text)) {
+    const block = ambientBlock(text)
+    if (block?.specifier !== undefined && isExternalModuleSource(dts)) {
+      info.augmentations.push({ statement, specifier: block.specifier, body: block.body })
+      continue
+    }
+    if (/^export\s+as\s+namespace\b/.test(text) || block) {
       info.verbatim.push(statement)
       continue
     }
@@ -337,11 +347,82 @@ function parseModule(file: string, dts: string): ModuleInfo {
  */
 export function renameIdentifiers(text: string, renames: Map<string, string>): string {
   if (renames.size === 0) return text
+  const tokens = tokenizeDeclarationSyntax(text)
+  const literalEnds = new Map(tokens.filter(token => token.kind === 'literal').map(token => [token.start, token.end]))
+  const tokenText = (index: number): string => tokens[index] ? text.slice(tokens[index].start, tokens[index].end) : ''
+  const pairs = new Map<number, number>()
+  const stack: number[] = []
+  for (let index = 0; index < tokens.length; index++) {
+    const word = tokenText(index)
+    if (['(', '[', '{', '<'].includes(word)) stack.push(index)
+    else if ([')', ']', '}', '>'].includes(word) && !(word === '>' && tokenText(index - 1) === '=')) {
+      const open = stack.at(-1)
+      if (open !== undefined && ['()', '[]', '{}', '<>'].includes(tokenText(open) + word)) {
+        stack.pop()
+        pairs.set(open, index)
+      }
+    }
+  }
+  const signatureEnd = (start: number): number => {
+    for (let index = start; index < tokens.length; index++) {
+      if ([';', ',', ')', ']', '}'].includes(tokenText(index)) || tokenText(index) === '>' && tokenText(index - 1) !== '=') return index
+      const close = pairs.get(index)
+      if (close !== undefined) index = close
+    }
+    return tokens.length
+  }
+  const shadowed = new Set<number>()
+  for (let open = 0; open < tokens.length; open++) {
+    const close = pairs.get(open)
+    if (tokenText(open) !== '<' || close === undefined) continue
+    const declaration = ['class', 'interface', 'type'].includes(tokenText(open - 2))
+    if (!declaration && tokenText(close + 1) !== '(') continue
+    const names = new Set<string>()
+    for (let index = open + 1; index < close; index++) {
+      if (index === open + 1 || tokenText(index - 1) === ',') {
+        while (['const', 'in', 'out'].includes(tokenText(index))) index++
+        if (tokens[index]?.kind === 'word') names.add(tokenText(index))
+      }
+      const nested = pairs.get(index)
+      if (nested !== undefined) index = nested
+    }
+    let end = signatureEnd(close + 1)
+    if (declaration && tokenText(open - 2) !== 'type') {
+      for (let index = close + 1; index < tokens.length; index++) {
+        if (tokenText(index) === '{') { end = pairs.get(index) ?? end; break }
+        const nested = pairs.get(index)
+        if (nested !== undefined) index = nested
+      }
+    }
+    for (let index = open + 1; index < end; index++) {
+      const valueHeritage = tokenText(open - 2) === 'class' && index > close && tokenText(index - 1) === 'extends'
+      if (names.has(tokenText(index)) && tokenText(index - 1) !== 'typeof' && !valueHeritage) shadowed.add(tokens[index].start)
+    }
+  }
+  for (let index = 0; index < tokens.length; index++) {
+    if (!['namespace', 'module'].includes(tokenText(index)) || tokens[index + 1]?.kind !== 'word' || tokenText(index + 2) !== '{') continue
+    const close = pairs.get(index + 2)
+    if (close === undefined) continue
+    const declarations = scanAmbientDeclarationMembers(text.slice(tokens[index + 2].end, tokens[close].start), 'bundle-namespace.ts')
+    const typeNames = new Set(declarations.filter(item => ['class', 'interface', 'type', 'enum', 'module', 'namespace'].includes(item.kind)).map(item => item.name))
+    const valueNames = new Set(declarations.filter(item => ['class', 'variable', 'function', 'enum', 'module', 'namespace'].includes(item.kind)).map(item => item.name))
+    for (let member = index + 3; member < close; member++) {
+      const names = tokenText(member - 1) === 'typeof' ? valueNames : typeNames
+      if (names.has(tokenText(member))) shadowed.add(tokens[member].start)
+    }
+  }
   let out = ''
   let i = 0
   const n = text.length
   let lastSignificant = '\n'
   while (i < n) {
+    const literalEnd = literalEnds.get(i)
+    if (literalEnd !== undefined) {
+      out += text.slice(i, literalEnd)
+      i = literalEnd
+      lastSignificant = '`'
+      continue
+    }
     const c = text[i]
     if (c === '/' && text[i + 1] === '*') {
       const end = text.indexOf('*/', i + 2)
@@ -373,7 +454,7 @@ export function renameIdentifiers(text: string, renames: Map<string, string>): s
       while (j < n && /[\w$]/.test(text[j])) j++
       const word = text.slice(i, j)
       const replacement = renames.get(word)
-      if (replacement !== undefined && lastSignificant !== '.') {
+      if (replacement !== undefined && lastSignificant !== '.' && !shadowed.has(i)) {
         let k = j
         while (k < n && (text[k] === ' ' || text[k] === '\t')) k++
         const isKey = (text[k] === ':' || (text[k] === '?' && text[k + 1] === ':'))
@@ -456,13 +537,15 @@ export function linkBundle(
   const exportCache = new Map<string, Map<string, Binding>>()
   const externalStars = new Map<string, Set<string>>()
   const inProgress = new Set<string>()
+  const augmentationExports = new Map<string, Map<string, Binding>>()
+  let discoveringAugmentations = true
 
   const resolveImport = (info: ModuleInfo, specifier: string, imported: string): Binding | null => {
     const target = resolveFile(specifier, info.file)
     if (target) {
       if (imported === '*') return { kind: 'namespace', file: target }
       const binding = exportsOf(target).get(imported)
-      if (!binding) warnings.push(`${relative(options.cwd, info.file)}: '${imported}' is not exported by '${specifier}'`)
+      if (!binding && !discoveringAugmentations) warnings.push(`${relative(options.cwd, info.file)}: '${imported}' is not exported by '${specifier}'`)
       return binding ?? null
     }
     if (isRelative(specifier)) {
@@ -516,12 +599,32 @@ export function linkBundle(
         stars.add(specifier)
       }
     }
+    for (const [name, binding] of augmentationExports.get(file) ?? []) result.set(name, binding)
 
     inProgress.delete(file)
     exportCache.set(file, result)
     externalStars.set(file, stars)
     return result
   }
+
+  // Augmentations can introduce exported interfaces/types as well as merge an
+  // existing binding. Register those identities before resolving entry exports.
+  for (const [file, info] of modules) {
+    for (const augmentation of info.augmentations) {
+      const target = resolveFile(augmentation.specifier, file)
+      if (!target) continue
+      for (const name of parseModule(file, augmentation.body, true).declared) {
+        if (exportsOf(target).has(name)) continue
+        let additions = augmentationExports.get(target)
+        if (!additions) { additions = new Map(); augmentationExports.set(target, additions) }
+        additions.set(name, { kind: 'local', name: allocate(name) })
+        exportCache.clear()
+      }
+    }
+  }
+  discoveringAugmentations = false
+  exportCache.clear()
+  externalStars.clear()
 
   // 3. Namespaces for `import * as ns` / `export * as ns` of bundled files.
   const namespaceNames = new Map<string, string>()
@@ -579,7 +682,36 @@ export function linkBundle(
     }
     for (const statement of info.verbatim) {
       if (options.keepComments) verbatim.push(...statement.comments)
-      verbatim.push(renameIdentifiers(statement.text, renames))
+      const block = ambientBlock(statement.text)
+      if (block) {
+        const scoped = new Map(renames)
+        for (const name of parseModule(file, block.body, true).declared) scoped.delete(name)
+        verbatim.push(statement.text.slice(0, block.start) + renameIdentifiers(block.body, scoped) + statement.text.slice(block.end))
+      }
+      else {
+        const sideEffect = tokenizeDeclarationSyntax(statement.text)
+        const module = sideEffect[1]?.kind === 'quoted' ? decodeStringLiteral(statement.text.slice(sideEffect[1].start, sideEffect[1].end)) : undefined
+        if (module === undefined || !resolveFile(module, file)) verbatim.push(renameIdentifiers(statement.text, renames))
+      }
+    }
+    for (const augmentation of info.augmentations) {
+      const target = resolveFile(augmentation.specifier, file)
+      const members = parseModule(file, augmentation.body, true)
+      const scoped = new Map(renames)
+      if (!target) {
+        for (const name of members.declared) scoped.delete(name)
+        const block = ambientBlock(augmentation.statement.text)!
+        if (options.keepComments) verbatim.push(...augmentation.statement.comments)
+        verbatim.push(augmentation.statement.text.slice(0, block.start) + renameIdentifiers(block.body, scoped) + augmentation.statement.text.slice(block.end))
+        continue
+      }
+      for (const [name, binding] of exportsOf(target)) scoped.set(name, bindingName(binding, name))
+      if (options.keepComments) lines.push(...augmentation.statement.comments)
+      for (const member of members.declarations) {
+        if (!member.name || !exportsOf(target).has(member.name)) throw new Error(`Cannot link augmentation '${augmentation.specifier}' member '${member.name ?? member.emit}'`)
+        if (options.keepComments) lines.push(...member.statement.comments)
+        lines.push(renameIdentifiers(member.emit, scoped))
+      }
     }
     if (lines.length > 0) declarationBlocks.push(`// From: ${relative(options.cwd, file)}\n${lines.join('\n')}`)
   }

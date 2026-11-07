@@ -115,8 +115,13 @@ export function scanSemanticDeclarations(source: string, filename: string, keepC
   return scanDeclarationsInternal(source, filename, keepComments, false)
 }
 
+/** Ambient block members bind implicitly; retain them without public-root pruning. */
+export function scanAmbientDeclarationMembers(source: string, filename: string, keepComments = true): Declaration[] {
+  return scanDeclarationsInternal(source, filename, keepComments, true, true)
+}
+
 /** Scan TypeScript source code without constructing a TypeScript AST. */
-function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean): Declaration[] {
+function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean, retainAmbientMembers = false): Declaration[] {
   const source = _source
   const keepComments = _keepComments
   const isolatedDeclarations = _isolatedDeclarations
@@ -4038,6 +4043,14 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
     attachEnumBodies(declarations, nonExportedTypes)
     attachComputedKeyConstants(declarations, nonExportedTypes)
     if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)
+
+    if (retainAmbientMembers) {
+      const present = new Set(declarations)
+      for (const declaration of [...nonExportedTypes.values(), ...[...nonExportedFunctionGroups.values()].flat()]) {
+        if (!present.has(declaration)) { declarations.push(declaration); present.add(declaration) }
+      }
+      return declarations.sort((left, right) => (left.start ?? 0) - (right.start ?? 0))
+    }
 
     // Resolve referenced non-exported types from the surviving public signatures.
     if (nonExportedTypes.size > 0) {

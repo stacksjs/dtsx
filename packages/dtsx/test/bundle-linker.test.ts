@@ -31,4 +31,13 @@ describe('renameIdentifiers', () => {
       'declare function f(options: Options_1, o: { Options: string, x?: Options_1 }): Ns.Options | \'Options\';',
     )
   })
+
+  it('preserves generic bindings and scopes while renaming outer type and value references', () => {
+    const renames = new Map([['T', 'T_1'], ['Box', 'Box_1']])
+    expect(renameIdentifiers('declare class Box<T> extends T { value: T; source: typeof T; }', renames)).toBe('declare class Box_1<T> extends T_1 { value: T; source: typeof T_1; }')
+    expect(renameIdentifiers('interface Box<T> { value: T; }', renames)).toBe('interface Box_1<T> { value: T; }')
+    expect(renameIdentifiers('type Methods = { pick: <T>(value: T) => T; outer: T; };', renames)).toBe('type Methods = { pick: <T>(value: T) => T; outer: T_1; };')
+    expect(renameIdentifiers('declare namespace Box { interface T { value: number } function make(value: T): T; }', renames)).toBe('declare namespace Box_1 { interface T { value: number } function make(value: T): T; }')
+    expect(renameIdentifiers('type Label = `T-${T}`;', renames)).toBe('type Label = `T-${T_1}`;')
+  })
 })
