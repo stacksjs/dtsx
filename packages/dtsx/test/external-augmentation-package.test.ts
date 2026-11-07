@@ -7,6 +7,7 @@ import { dts } from '../../bun-plugin/src'
 import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
 import { isAvailable, runTsc } from './helpers/tsc'
+import { assertPackageControls } from './helpers/package-controls'
 
 const external = 'external-activation-contract'
 const parent = `import { install } from './provider.js'; import type { Remote } from '${external}'; export type { Remote }; install({ base: 'ok', add: (a, b) => a + b });`
@@ -55,17 +56,13 @@ const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../../zig-d
 const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
 
 async function controls(root: string, specifier: string, hiddenCode = 'TS2305'): Promise<void> {
-  await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions, files: ['control.ts'] }))
-  for (const type of ['number', 'string']) {
-    await writeFile(join(root, 'control.ts'), `import type { Remote } from '${specifier}'; declare const api: Remote; const value: ${type} = api.add(1, 2); void value`)
-    const result = runTsc(root, ['--project', 'tsconfig.json'])
-    expect(result.ok, result.output).toBe(type === 'number')
-    expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual(type === 'number' ? [] : ['error TS2322'])
-  }
-  await writeFile(join(root, 'control.ts'), `import { install } from '${specifier}'; void install`)
-  const hidden = runTsc(root, ['--project', 'tsconfig.json'])
-  expect(hidden.ok, hidden.output).toBe(false)
-  expect(hidden.output.match(/error TS\d+/g) ?? [], hidden.output).toEqual([`error ${hiddenCode}`])
+  await assertPackageControls(root, specifier, {
+    positive: 'declare const remote: api.Remote; const value: number = remote.add(1, 2); void value;',
+    negatives: [
+      { text: 'declare const remote: api.Remote; const value: string = remote.add(1, 2); void value;', code: 'TS2322' },
+      { text: `import { install } from '${specifier}'; void install;`, code: hiddenCode },
+    ],
+  })
 }
 
 async function put(root: string, files: Record<string, string>): Promise<void> {
