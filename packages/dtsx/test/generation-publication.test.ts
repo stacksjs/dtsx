@@ -1,6 +1,6 @@
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { expect, test } from 'bun:test'
 import { generate } from '../src/generator'
 
@@ -260,9 +260,10 @@ for (const clean of [false, true]) {
       expect(result.retryMessage).toContain('active or requires recovery')
       const manifest = JSON.parse(await readFile(join(result.recoveryDirectory, 'manifest.json'), 'utf8'))
       for (const target of manifest.targets) {
-        const previous = before[`dist/${target.path}`]
+        const previous = before[`dist/${target.path.split(sep).join('/')}`]
+        expect(previous).toBeDefined()
         if (mode === 'finalize' || target.path === 'a-current.d.ts') {
-          expect(after[`dist/.dtsx-publication/${target.backup}`]).toEqual(previous)
+          expect(after[`dist/.dtsx-publication/${target.backup.split(sep).join('/')}`]).toEqual(previous)
         }
       }
       if (mode === 'rollback') {
