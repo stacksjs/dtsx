@@ -18,6 +18,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { traceSync } from './phase-trace'
 
 /** Where TypeScript's CLI entry lives, or null if it is not installed. */
 function findTscEntry(): string | null {
@@ -50,10 +51,10 @@ export function runTsc(cwd: string, files: string[]): TscResult {
   if (!tscEntry)
     return { ok: true, output: '' }
 
-  const proc = Bun.spawnSync(
+  const proc = traceSync('TypeScript CLI', () => Bun.spawnSync(
     [process.execPath, tscEntry, '--noEmit', '--strict', ...files],
     { cwd },
-  )
+  ), { cwd, args: [process.execPath, tscEntry, '--noEmit', '--strict', ...files] })
 
   const output = `${proc.stdout.toString()}${proc.stderr.toString()}`
 

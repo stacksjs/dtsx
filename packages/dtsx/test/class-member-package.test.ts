@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { dts } from '../../bun-plugin/src'
 import { generate } from '../src'
 import { isAvailable, runTsc } from './helpers/tsc'
+import { traceAsync, traceSync } from './helpers/phase-trace'
 
 type Producer = 'core' | 'bun-plugin' | 'cli'
 
@@ -57,28 +58,29 @@ async function packedClass(fixture: ClassCase, producer: Producer): Promise<void
     expect(sourceCheck.ok, sourceCheck.output).toBe(true)
 
     const entrypoints = [join(library, 'src/index.ts')]
-    const baseline = await Bun.build({ entrypoints, outdir: join(library, 'dist'), target: 'bun' })
+    const details = { library, producer, fixture: fixture.name, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
+    const baseline = await traceAsync('Class runtime build', () => Bun.build({ entrypoints, outdir: join(library, 'dist'), target: 'bun' }), details)
     expect(baseline.success).toBe(true)
     if (producer === 'cli') {
       const cli = resolve(import.meta.dir, '../bin/cli.ts')
-      const generated = Bun.spawnSync([process.execPath, cli, 'generate', '--cwd', library, '--root', './src', '--entrypoints', 'index.ts', '--outdir', './dist'], { cwd: library })
+      const generated = traceSync('Class CLI generation', () => Bun.spawnSync([process.execPath, cli, 'generate', '--cwd', library, '--root', './src', '--entrypoints', 'index.ts', '--outdir', './dist'], { cwd: library }), details)
       expect(generated.exitCode, generated.stderr.toString()).toBe(0)
     }
     else if (producer === 'core') {
-      await generate({ cwd: library, root: './src', entrypoints: ['index.ts'], outdir: './dist' })
+      await traceAsync('Class core generation', () => generate({ cwd: library, root: './src', entrypoints: ['index.ts'], outdir: './dist' }), details)
     }
     else {
-      const built = await Bun.build({ entrypoints, outdir: join(library, 'dist'), target: 'bun', plugins: [dts({ cwd: library, root: './src', entrypoints: ['index.ts'], outdir: './dist' })] })
+      const built = await traceAsync('Class plugin build', () => Bun.build({ entrypoints, outdir: join(library, 'dist'), target: 'bun', plugins: [dts({ cwd: library, root: './src', entrypoints: ['index.ts'], outdir: './dist' })] }), details)
       expect(built.success).toBe(true)
     }
 
     const archive = join(directory, 'library.tgz')
-    const packed = Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library })
+    const packed = traceSync('Class normal package archive', () => Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library }), details)
     expect(packed.exitCode, packed.stderr.toString()).toBe(0)
     await writeFile(join(consumer, 'package.json'), JSON.stringify({ name: 'strict-class-consumer', private: true, type: 'module', dependencies: { 'class-member-library': `file:${archive}` } }))
-    const installed = Bun.spawnSync([process.execPath, 'install'], { cwd: consumer })
+    const installed = traceSync('Class normal consumer installation', () => Bun.spawnSync([process.execPath, 'install'], { cwd: consumer }), details)
     expect(installed.exitCode, installed.stderr.toString()).toBe(0)
-    const frozen = Bun.spawnSync([process.execPath, 'install', '--frozen-lockfile'], { cwd: consumer })
+    const frozen = traceSync('Class frozen consumer installation', () => Bun.spawnSync([process.execPath, 'install', '--frozen-lockfile'], { cwd: consumer }), details)
     expect(frozen.exitCode, frozen.stderr.toString()).toBe(0)
     const instance = fixture.instance ?? 'new Calculate()'
     const header = `import { Calculate } from 'class-member-library';\n`

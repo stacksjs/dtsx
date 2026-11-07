@@ -139,7 +139,18 @@ jobs:
         run: zig build
 
       - name: Unit Test
+        id: unit-tests
         run: bun run test
+        env:
+          DTSX_TEST_TRACE: ${{ runner.temp }}/dtsx-test-phases.jsonl
+
+      - name: Retain unit test operation phases
+        if: always() && steps.unit-tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: unit-test-operation-phases
+          path: ${{ runner.temp }}/dtsx-test-phases.jsonl
+          if-no-files-found: error
 
       - name: Run Zig Unit Tests
         working-directory: packages/zig-dtsx

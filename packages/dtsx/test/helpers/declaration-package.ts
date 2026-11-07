@@ -5,6 +5,7 @@ import { expect } from 'bun:test'
 import { dts } from '../../../bun-plugin/src'
 import { processSource, ZIG_AVAILABLE } from '../../../zig-dtsx/src'
 import { generate } from '../../src'
+import { traceAsync, traceSync } from './phase-trace'
 import { isAvailable, runTsc } from './tsc'
 
 export type DeclarationProducer = 'core' | 'bun-plugin' | 'native'
@@ -44,19 +45,20 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
     }
 
     await checkConsumers(library, './src/index.js')
-    const built = await Bun.build({ entrypoints: [join(library, 'src/index.ts')], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] })] : [] })
+    const details = { library, producer, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
+    const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src/index.ts')], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] })] : [] }), details)
     expect(built.success, JSON.stringify(built.logs)).toBe(true)
-    if (producer === 'core') await generate({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] })
-    else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), processSource(fixture.source, true))
+    if (producer === 'core') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] }), details)
+    else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), traceSync('Native declaration generation', () => processSource(fixture.source, true), details))
 
     const declaration = await readFile(join(library, 'dist/index.d.ts'), 'utf8')
     fixture.inspect?.(declaration)
     const archive = join(directory, 'library.tgz')
-    const packed = Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library })
+    const packed = traceSync('Normal package archive', () => Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library }), details)
     expect(packed.exitCode, packed.stderr.toString()).toBe(0)
     await writeFile(join(consumer, 'package.json'), JSON.stringify({ name: 'strict-consumer', private: true, type: 'module', dependencies: { 'declaration-contract': `file:${archive}` } }))
     for (const flags of [[], ['--frozen-lockfile']]) {
-      const installed = Bun.spawnSync([process.execPath, 'install', ...flags], { cwd: consumer })
+      const installed = traceSync(flags.length ? 'Frozen consumer installation' : 'Normal consumer installation', () => Bun.spawnSync([process.execPath, 'install', ...flags], { cwd: consumer }), details)
       expect(installed.exitCode, installed.stderr.toString()).toBe(0)
     }
     expect(await readFile(join(consumer, 'node_modules/declaration-contract/dist/index.d.ts'), 'utf8')).toBe(declaration)
