@@ -17,7 +17,7 @@
         "mitata": "^1.0.34",
         "oxc-parser": "^0.157.0",
         "oxc-transform": "^0.157.0",
-        "pickier": "^0.1.86",
+        "pickier": "^0.1.88",
         "typescript": "^7.0.2",
       },
     },
@@ -599,7 +599,7 @@
 
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
-    "pickier": ["pickier@0.1.86", "", { "dependencies": { "@stacksjs/clapp": "^0.2.3", "@stacksjs/clarity": "^0.3.24" }, "optionalDependencies": { "@stacksjs/ts-spell-check": "^0.1.1" }, "bin": { "pickier": "./dist/bin/cli.js" } }, "sha512-GVYddvyj37atQyXU6n8Io2rkOPgwqZlh8TQKomzCfYo3DvlUPtP5lOU1CF2eNfqrGXxCkzvRynjhKyg+mTSfJw=="],
+    "pickier": ["pickier@0.1.88", "", { "dependencies": { "@stacksjs/clapp": "^0.2.3", "@stacksjs/clarity": "^0.3.24" }, "optionalDependencies": { "@stacksjs/ts-spell-check": "^0.1.1" }, "bin": { "pickier": "./dist/bin/cli.js" } }, "sha512-zVqJ45idoa3DnZBR/R6XBFmkfFAGBHVL8TWgntOgN0ywPRhCJUqihuuVIcrG4dSHJlfmz2KbTFJXSzI/BjCOQA=="],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 

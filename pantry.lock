@@ -17,7 +17,7 @@
         "mitata": "^1.0.34",
         "oxc-parser": "^0.157.0",
         "oxc-transform": "^0.157.0",
-        "pickier": "^0.1.86",
+        "pickier": "^0.1.88",
         "typescript": "^7.0.2"
       },
       "system": {
