@@ -13,6 +13,8 @@ export interface NativeSourceEmissionContext {
   sourceFile: string
   outputFile: string
   sourceHash: string
+  /** Original imports needed to load project module augmentation providers. */
+  augmentationImports?: string[]
   rewrites: Array<{
     specifier: string
     resolvedSource: string
@@ -65,6 +67,8 @@ export async function planNativeDeclarationProject(options?: Partial<DtsGenerati
       version: 1, moduleSpecifierMode: mode, sourceFile, outputFile,
       sourceHash: createHash('sha256').update(bytes).digest('hex'), rewrites,
     }
+    const augmentationImports = plan.augmentationImports.get(sourceFile)
+    if (augmentationImports?.size) context.augmentationImports = [...augmentationImports]
     files.push(Object.freeze({ sourceFile, outputFile, source, context }))
   }
   return Object.freeze({ version: 1, rootPath: resolve(config.cwd, config.root), outdirPath: resolve(config.cwd, config.outdir), files: Object.freeze(files) })

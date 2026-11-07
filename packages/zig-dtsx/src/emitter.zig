@@ -984,6 +984,12 @@ fn processDeclarationsInternal(
                     try import_buf.appendSlice(original);
                     if (!ch.endsWith(original, ";")) try import_buf.append(';');
                     try processed_imports.append(try import_buf.toOwnedSlice());
+                } else if (context != null and context.?.requiresImport(parsed.source)) {
+                    import_buf.clearRetainingCapacity();
+                    try import_buf.appendSlice("import ");
+                    try module_specifiers.appendImportSourceLiteral(alloc, imp.text, &import_buf);
+                    try import_buf.append(';');
+                    try processed_imports.append(try import_buf.toOwnedSlice());
                 }
                 continue;
             }
@@ -1040,6 +1046,12 @@ fn processDeclarationsInternal(
                 try module_specifiers.appendImportSourceLiteral(alloc, imp.text, &import_buf);
                 try import_buf.append(';');
 
+                try processed_imports.append(try import_buf.toOwnedSlice());
+            } else if (context != null and context.?.requiresImport(parsed.source)) {
+                import_buf.clearRetainingCapacity();
+                try import_buf.appendSlice("import ");
+                try module_specifiers.appendImportSourceLiteral(alloc, imp.text, &import_buf);
+                try import_buf.append(';');
                 try processed_imports.append(try import_buf.toOwnedSlice());
             }
         }

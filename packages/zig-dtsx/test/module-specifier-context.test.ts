@@ -70,3 +70,32 @@ test('native context rejects empty or NUL-bearing identities and mappings before
   expect(() => native.processSourceWithContext('', { ...contextFor(''), outputFile: 'bad\0path' }))
     .toThrow('Invalid native emission context')
 })
+
+for (const statement of [
+  "import { install } from './options'",
+  "import install from './options'",
+  "import * as Installer from './options'",
+  "import type { Activation } from './options'",
+  "import Activation = require('./options')",
+] as const) {
+  test(`native augmentation context retains an unused activation path from ${statement}`, () => {
+    expect(native.ZIG_CONTEXT_AVAILABLE).toBe(true)
+    const source = `${statement}; export interface Public { value: number }`
+    const context = { ...contextFor(source), augmentationImports: ['./options'] }
+    expect(native.processSourceWithContext(source, context)).toContain("import './options.js';")
+    const ordinary = native.processSourceWithContext(source, contextFor(source))
+    expect(ordinary).not.toContain('./options')
+    const unrelated = native.processSourceWithContext(source, { ...contextFor(source), augmentationImports: ['./unrelated'] })
+    expect(unrelated).not.toContain('./unrelated')
+    expect(unrelated).not.toContain('./options')
+  })
+}
+
+test('native augmentation context rewrites its target identity and rejects invalid requirements', () => {
+  expect(native.ZIG_CONTEXT_AVAILABLE).toBe(true)
+  const source = "export {}; declare module './options' { interface Public { value: number } }"
+  expect(native.processSourceWithContext(source, contextFor(source))).toContain("declare module './options.js'")
+  for (const invalid of ['', 'bad\0path']) {
+    expect(() => native.processSourceWithContext(source, { ...contextFor(source), augmentationImports: [invalid] })).toThrow('Invalid native emission context')
+  }
+})

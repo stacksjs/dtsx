@@ -18,6 +18,7 @@ const WireContext = struct {
     outputFile: []const u8,
     sourceHash: []const u8,
     rewrites: []const Rewrite,
+    augmentationImports: []const []const u8 = &.{},
 };
 
 pub const Context = struct {
@@ -25,6 +26,13 @@ pub const Context = struct {
 
     pub fn deinit(self: Context) void {
         self.parsed.deinit();
+    }
+
+    pub fn requiresImport(self: *const Context, specifier: []const u8) bool {
+        for (self.parsed.value.augmentationImports) |required| {
+            if (std.mem.eql(u8, required, specifier)) return true;
+        }
+        return false;
     }
 
     fn lookup(self: *const Context, specifier: []const u8) ![]const u8 {
@@ -48,7 +56,10 @@ fn validString(value: []const u8) bool {
 }
 
 pub fn parse(allocator: std.mem.Allocator, json: []const u8, source: []const u8) !Context {
-    const parsed = std.json.parseFromSlice(WireContext, allocator, json, .{ .allocate = .alloc_always }) catch return error.InvalidContext;
+    const parsed = std.json.parseFromSlice(WireContext, allocator, json, .{ .allocate = .alloc_always }) catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        else => return error.InvalidContext,
+    };
     errdefer parsed.deinit();
     const wire = parsed.value;
     if (wire.version != 1) return error.UnsupportedContextVersion;
@@ -71,6 +82,9 @@ pub fn parse(allocator: std.mem.Allocator, json: []const u8, source: []const u8)
                     !std.mem.eql(u8, previous.declarationOutput, entry.declarationOutput) or
                     !std.mem.eql(u8, previous.emittedSpecifier, entry.emittedSpecifier))) return error.InvalidContext;
         }
+    }
+    for (wire.augmentationImports) |specifier| {
+        if (!validString(specifier)) return error.InvalidContext;
     }
     return .{ .parsed = parsed };
 }
@@ -388,6 +402,18 @@ pub fn quoteStringLiteral(allocator: std.mem.Allocator, value: []const u8, quote
     return result.toOwnedSlice();
 }
 
+fn isExternalModule(content: []const u8, items: []const Token) bool {
+    var depth: usize = 0;
+    for (items, 0..) |token, index| {
+        const member = index > 0 and (isToken(content, items, index - 1, ".") or isToken(content, items, index - 1, "#"));
+        if (depth == 0 and token.kind == .word and !member and
+            (isToken(content, items, index, "export") or
+                (isToken(content, items, index, "import") and !isToken(content, items, index + 1, "(") and !isToken(content, items, index + 1, ".")))) return true;
+        if (isToken(content, items, index, "{") or isToken(content, items, index, "(") or isToken(content, items, index, "[")) depth += 1 else if (depth > 0 and (isToken(content, items, index, "}") or isToken(content, items, index, ")") or isToken(content, items, index, "]"))) depth -= 1;
+    }
+    return false;
+}
+
 /// Emit only grammatical module literals through the resolved context. This
 /// runs inside the native emitter before its result allocation is finalized.
 pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *const Context) ![]u8 {
@@ -398,9 +424,16 @@ pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *cons
     var result = std.array_list.Managed(u8).init(allocator);
     errdefer result.deinit();
     var copied: usize = 0;
+    const external_module = isExternalModule(content, items);
+    var depth: usize = 0;
     for (items, 0..) |token, index| {
+        const top_level = depth == 0;
+        if (isToken(content, items, index, "{") or isToken(content, items, index, "(") or isToken(content, items, index, "[")) depth += 1 else if (depth > 0 and (isToken(content, items, index, "}") or isToken(content, items, index, ")") or isToken(content, items, index, "]"))) depth -= 1;
         if (token.kind != .word) continue;
-        const literal_index = moduleLiteral(content, items, index) orelse continue;
+        const augmentation = top_level and external_module and isToken(content, items, index, "declare") and
+            isToken(content, items, index + 1, "module") and index + 3 < items.len and
+            items[index + 2].kind == .quoted and isToken(content, items, index + 3, "{");
+        const literal_index = if (augmentation) index + 2 else moduleLiteral(content, items, index) orelse continue;
         const literal = items[literal_index];
         if (literal.start < copied) continue;
         const decoded = try decodeLiteral(allocator, content[literal.start..literal.end]);
@@ -416,6 +449,10 @@ pub fn rewrite(allocator: std.mem.Allocator, content: []const u8, context: *cons
 }
 
 fn testContext(allocator: std.mem.Allocator, mode: []const u8, source: []const u8, rewrites: []const u8) !Context {
+    return testContextWithImports(allocator, mode, source, rewrites, "[]");
+}
+
+fn testContextWithImports(allocator: std.mem.Allocator, mode: []const u8, source: []const u8, rewrites: []const u8, imports: []const u8) !Context {
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(source, &digest, .{});
     const alphabet = "0123456789abcdef";
@@ -424,7 +461,7 @@ fn testContext(allocator: std.mem.Allocator, mode: []const u8, source: []const u
         hash[i * 2] = alphabet[byte >> 4];
         hash[i * 2 + 1] = alphabet[byte & 15];
     }
-    const json = try std.fmt.allocPrint(allocator, "{{\"version\":1,\"moduleSpecifierMode\":\"{s}\",\"sourceFile\":\"/src/index.ts\",\"outputFile\":\"/dist/index.d.ts\",\"sourceHash\":\"{s}\",\"rewrites\":{s}}}", .{ mode, hash, rewrites });
+    const json = try std.fmt.allocPrint(allocator, "{{\"version\":1,\"moduleSpecifierMode\":\"{s}\",\"sourceFile\":\"/src/index.ts\",\"outputFile\":\"/dist/index.d.ts\",\"sourceHash\":\"{s}\",\"rewrites\":{s},\"augmentationImports\":{s}}}", .{ mode, hash, rewrites, imports });
     defer allocator.free(json);
     return parse(allocator, json, source);
 }
@@ -443,7 +480,7 @@ test "context maps only actual emitted module literals" {
         "import Value = require('./value');\n" ++
         "export type T = import('./value').Value;\n" ++
         "export interface X { value: typeof import('./value'); literal: './missing'; from: './missing'; }\n" ++
-        "declare module './missing' { export type T = import('./value').Value }\n" ++
+        "declare module './value' { export type T = import('./value').Value }\n" ++
         "export type Template = `import('./missing')`;\n" ++
         "export type Name = './missing';\n" ++
         "import type { External } from 'external';\n";
@@ -453,7 +490,7 @@ test "context maps only actual emitted module literals" {
     try std.testing.expect(std.mem.indexOf(u8, output, "from './value.js'") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "require('./value.js')") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "typeof import('./value.js')") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "declare module './missing'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "declare module './value.js'") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "literal: './missing'") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "`import('./missing')`") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "from 'external'") != null);
@@ -525,4 +562,34 @@ test "template substitutions recurse through syntax while raw characters remain 
     defer a.free(output);
     try std.testing.expectEqualStrings(expected, output);
     try std.testing.expectError(error.InvalidContext, rewrite(a, "type T = `${{ name: import('./value') }`;", &context));
+}
+
+test "augmentation module literals resolve while ambient script definitions retain their identity" {
+    const a = std.testing.allocator;
+    const context = try testContext(a, "node", "source", "[{\"specifier\":\"local/value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]");
+    defer context.deinit();
+    const ambient = "declare module 'local/value' { export interface Added {} }";
+    const unchanged = try rewrite(a, ambient, &context);
+    defer a.free(unchanged);
+    try std.testing.expectEqualStrings(ambient, unchanged);
+    const augmented = try rewrite(a, "export {}; declare /* module */ module 'local/value' { interface Added {} }", &context);
+    defer a.free(augmented);
+    try std.testing.expect(std.mem.indexOf(u8, augmented, "module './value.js'") != null);
+    try std.testing.expectError(error.UnresolvedModuleSpecifier, rewrite(a, "export {}; declare module './missing' { interface Added {} }", &context));
+    try std.testing.expectError(error.InvalidContext, testContextWithImports(a, "node", "source", "[]", "[\"\"]"));
+    try std.testing.expectError(error.InvalidContext, testContextWithImports(a, "node", "source", "[]", "[\"bad\\u0000path\"]"));
+}
+
+fn checkAugmentationContextAllocations(a: std.mem.Allocator) !void {
+    const context = try testContextWithImports(a, "node", "source", "[{\"specifier\":\"local/value\",\"resolvedSource\":\"/src/value.ts\",\"declarationOutput\":\"/dist/value.d.ts\",\"emittedSpecifier\":\"./value.js\"}]", "[\"local/value\"]");
+    defer context.deinit();
+    try std.testing.expect(context.requiresImport("local/value"));
+    try std.testing.expect(!context.requiresImport("unrelated"));
+    const output = try rewrite(a, "export {}; declare module 'local/value' { interface Added {} }", &context);
+    defer a.free(output);
+    try std.testing.expect(std.mem.indexOf(u8, output, "module './value.js'") != null);
+}
+
+test "augmentation context parsing and rewriting propagate every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkAugmentationContextAllocations, .{});
 }

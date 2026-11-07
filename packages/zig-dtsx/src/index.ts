@@ -194,6 +194,8 @@ export interface SourceEmissionContext {
   outputFile: string
   /** SHA-256 of the exact UTF-8 source bytes. */
   sourceHash: string
+  /** Original imports required by the owning project's augmentation graph. */
+  augmentationImports?: string[]
   rewrites: Array<{
     specifier: string
     resolvedSource: string

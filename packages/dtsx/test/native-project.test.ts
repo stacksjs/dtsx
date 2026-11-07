@@ -5,6 +5,43 @@ import { join } from 'node:path'
 import * as native from '../../zig-dtsx/src/index'
 import { isAvailable, runTsc } from './helpers/tsc'
 
+test('native contextual planning preserves a strict-valid augmentation graph and its private alias identities', async () => {
+  expect(native.ZIG_CONTEXT_AVAILABLE).toBe(true)
+  expect(isAvailable).toBe(true)
+  const directory = await mkdtemp(join(tmpdir(), 'dtsx-native-augmentation-seam-'))
+  try {
+    await mkdir(join(directory, 'src'))
+    await mkdir(join(directory, 'dist'))
+    await writeFile(join(directory, 'package.json'), '{"private":true,"type":"module"}')
+    await writeFile(join(directory, 'src/index.ts'), "import { install } from 'private/provider'; export class ParentThing implements ParentThing {} install(ParentThing.prototype);")
+    await writeFile(join(directory, 'src/provider.ts'), "import type { ParentThing } from 'private/index'; declare module 'private/index' { interface ParentThing { add: (a: number, b: number) => number } } export function install(target: ParentThing): void { target.add = (a: number, b: number) => a + b }")
+    const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, types: [], paths: { 'private/*': ['./src/*.ts'] }, noEmit: true }
+    await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions, files: ['control.ts'] }))
+    async function check(specifier: string): Promise<void> {
+      for (const type of ['number', 'string']) {
+        await writeFile(join(directory, 'control.ts'), `import { ParentThing } from '${specifier}'; const value: ${type} = new ParentThing().add(1,2); void value`)
+        const result = runTsc(directory, ['--project', 'tsconfig.json'])
+        expect(result.ok, result.output).toBe(type === 'number')
+        expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual(type === 'number' ? [] : ['error TS2322'])
+      }
+    }
+    await check('./src/index.js')
+    const { planNativeDeclarationProject } = await import('../src/native-project')
+    const plan = await planNativeDeclarationProject({ cwd: directory, root: './src', outdir: './dist', entrypoints: ['index.ts'], moduleSpecifierMode: 'node' })
+    expect(plan.files[0].context.augmentationImports).toEqual(['private/provider'])
+    for (const file of plan.files) {
+      const output = native.processSourceWithContext(file.source, file.context)
+      expect(output).not.toContain('private/')
+      await writeFile(file.outputFile, output)
+    }
+    expect(await readFile(join(directory, 'dist/index.d.ts'), 'utf8')).toContain("import './provider.js';")
+    expect(await readFile(join(directory, 'dist/provider.d.ts'), 'utf8')).toContain("declare module './index.js'")
+    await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...compilerOptions, paths: {} }, files: ['control.ts'] }))
+    await check('./dist/index.js')
+  }
+  finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 // This seam uses the real graph planner and actual native emitter. Publishing
 // outputs and strict installed-package delivery have separate acceptance gates.
 test('a native project plan derives source contexts from the canonical resolved graph', async () => {
