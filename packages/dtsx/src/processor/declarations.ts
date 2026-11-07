@@ -78,8 +78,12 @@ export function processFunctionDeclaration(decl: Declaration, keepComments: bool
  * Process variable declaration to DTS format
  */
 export function processVariableDeclaration(decl: Declaration, keepComments: boolean = true): string {
+  if (decl.inferenceError) {
+    throw Object.assign(new Error(`Cannot infer alias '${decl.name}': unsupported source value flow`), { code: decl.inferenceError })
+  }
   // Add comments if present
   const comments = formatComments(decl.leadingComments, keepComments)
+  if (!decl.typeAnnotation && decl.inferredType) return comments + decl.text
 
   // Fast path: if we have an explicit type annotation and no value needing special inference,
   // use the scanner's pre-built text directly

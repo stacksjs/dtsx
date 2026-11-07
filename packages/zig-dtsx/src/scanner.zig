@@ -3,7 +3,11 @@
 /// and builds DTS text inline. Port of scanner.ts (~3200 lines).
 const std = @import("std");
 const ch = @import("char_utils.zig");
+const lexical = @import("lexical.zig");
+const module_syntax = @import("module_specifiers.zig");
 const types = @import("types.zig");
+const declaration_refs = @import("declaration_references.zig");
+const value_inference = @import("value_inference.zig");
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
@@ -109,6 +113,7 @@ pub const Scanner = struct {
     func_body_indices_inited: bool,
     keep_comments: bool,
     isolated_declarations: bool,
+    external_module: bool = false,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes
@@ -341,79 +346,14 @@ pub const Scanner = struct {
         self.pos = len;
     }
 
-    /// Check if `/` at current pos starts a regex literal (not division)
+    /// Check if `/` at current pos starts a regex literal (not division).
     pub fn isRegexStart(self: *const Scanner) bool {
-        var p: isize = @as(isize, @intCast(self.pos)) - 1;
-        while (p >= 0 and ch.isWhitespace(self.source[@intCast(p)])) p -= 1;
-        if (p < 0) return true; // start of file
-        const prev = self.source[@intCast(p)];
-        // After these chars, `/` starts a regex
-        if (prev == ch.CH_EQUAL or prev == ch.CH_LPAREN or prev == ch.CH_LBRACKET or
-            prev == ch.CH_EXCL or prev == ch.CH_AMP or prev == ch.CH_PIPE or
-            prev == ch.CH_QUESTION or prev == ch.CH_COLON or prev == ch.CH_COMMA or
-            prev == ch.CH_SEMI or prev == ch.CH_LBRACE or prev == ch.CH_RBRACE or
-            prev == ch.CH_CARET or prev == ch.CH_TILDE or
-            prev == ch.CH_PLUS or prev == ch.CH_MINUS or prev == ch.CH_STAR or
-            prev == ch.CH_PERCENT or prev == ch.CH_LANGLE or prev == ch.CH_RANGLE)
-        {
-            return true;
-        }
-        // After keywords like return, typeof, void, etc.
-        if (ch.isIdentChar(prev)) {
-            var wp = p;
-            while (wp >= 0 and ch.isIdentChar(self.source[@intCast(wp)])) wp -= 1;
-            const word_start: usize = @intCast(wp + 1);
-            const word_end: usize = @intCast(p + 1);
-            const word = self.source[word_start..word_end];
-            // First-char dispatch to avoid 12 std.mem.eql calls per slash. The
-            // hot path here runs on every '/' that might start division.
-            if (word.len < 2 or word.len > 10) return false;
-            return switch (word[0]) {
-                'r' => std.mem.eql(u8, word, "return"),
-                't' => std.mem.eql(u8, word, "typeof") or std.mem.eql(u8, word, "throw"),
-                'v' => std.mem.eql(u8, word, "void"),
-                'd' => std.mem.eql(u8, word, "delete"),
-                'n' => std.mem.eql(u8, word, "new"),
-                'i' => std.mem.eql(u8, word, "in") or std.mem.eql(u8, word, "instanceof"),
-                'o' => std.mem.eql(u8, word, "of"),
-                'c' => std.mem.eql(u8, word, "case"),
-                'y' => std.mem.eql(u8, word, "yield"),
-                'a' => std.mem.eql(u8, word, "await"),
-                else => false,
-            };
-        }
-        return false;
+        return lexical.isRegexStart(self.source, self.pos);
     }
 
-    /// Skip a regex literal /.../ including flags
+    /// Skip a regex literal /.../ including flags.
     pub fn skipRegex(self: *Scanner) void {
-        self.pos += 1; // skip opening /
-        var in_char_class = false;
-        while (self.pos < self.len) {
-            const c = self.source[self.pos];
-            if (c == ch.CH_BACKSLASH) {
-                self.pos += 2;
-                continue;
-            }
-            if (in_char_class) {
-                if (c == ch.CH_RBRACKET) in_char_class = false;
-                self.pos += 1;
-                continue;
-            }
-            if (c == ch.CH_LBRACKET) {
-                in_char_class = true;
-                self.pos += 1;
-                continue;
-            }
-            if (c == ch.CH_SLASH) {
-                self.pos += 1;
-                break;
-            }
-            if (c == ch.CH_LF or c == ch.CH_CR) break;
-            self.pos += 1;
-        }
-        // Skip flags
-        while (self.pos < self.len and ch.isIdentChar(self.source[self.pos])) self.pos += 1;
+        self.pos = lexical.skipRegex(self.source, self.pos);
     }
 
     /// Skip past a string/comment/template literal if at one. Returns true if skipped.
@@ -518,6 +458,73 @@ pub const Scanner = struct {
         const result = self.pos >= self.len or self.isTopLevelKeyword() or self.source[self.pos] == ch.CH_RBRACE;
         self.pos = saved;
         return result;
+    }
+
+    /// An initializer may end before an ordinary identifier statement, not
+    /// only a declaration keyword. Look at both operands of the line break.
+    /// Canonical tokens keep comment prose and quoted operators out of this
+    /// decision. This predicate leaves the scanner position unchanged.
+    pub fn checkASIAfterInitializer(self: *const Scanner, initializer_start: usize, completed_jsx_end: ?usize) bool {
+        if (self.pos >= self.len or self.pos <= initializer_start) return false;
+        const current = self.source[self.pos];
+        if (current != ch.CH_LF and current != ch.CH_CR and
+            !(current == ch.CH_SLASH and self.pos + 1 < self.len and
+                (self.source[self.pos + 1] == ch.CH_SLASH or self.source[self.pos + 1] == ch.CH_STAR))) return false;
+
+        var look = self.pos;
+        var line_break = false;
+        while (look < self.len) {
+            const c = self.source[look];
+            if (c == ch.CH_SPACE or c == ch.CH_TAB or c == ch.CH_LF or c == ch.CH_CR) {
+                line_break = line_break or c == ch.CH_LF or c == ch.CH_CR;
+                look += 1;
+            } else if (c == ch.CH_SLASH and look + 1 < self.len and self.source[look + 1] == ch.CH_SLASH) {
+                look += 2;
+                while (look < self.len and self.source[look] != ch.CH_LF and self.source[look] != ch.CH_CR) look += 1;
+            } else if (c == ch.CH_SLASH and look + 1 < self.len and self.source[look + 1] == ch.CH_STAR) {
+                look += 2;
+                while (look < self.len) {
+                    if (look + 1 < self.len and self.source[look] == ch.CH_STAR and self.source[look + 1] == ch.CH_SLASH) {
+                        look += 2;
+                        break;
+                    }
+                    line_break = line_break or self.source[look] == ch.CH_LF or self.source[look] == ch.CH_CR;
+                    look += 1;
+                }
+            } else break;
+        }
+        if (!line_break) return false;
+
+        // A completed JSX span is an operand proven by this source scanner.
+        // Its closing tags need not obey the declaration lexer's regex rules.
+        // Only code after that span can make the operand incomplete again.
+        const completed_jsx = completed_jsx_end != null and completed_jsx_end.? < self.pos;
+        const prefix_start = if (completed_jsx) completed_jsx_end.? + 1 else initializer_start;
+        const prefix = self.source[prefix_start..self.pos];
+        const items = module_syntax.tokenizeDeclarationSyntax(self.allocator, prefix) catch @panic("OOM");
+        defer self.allocator.free(items);
+        if (items.len == 0) {
+            if (!completed_jsx) return false;
+        } else {
+            const last = items[items.len - 1];
+            const last_text = prefix[last.start..last.end];
+            if (last.kind == .punctuation and last_text.len == 1 and
+                std.mem.indexOfScalar(u8, "+-*/%=<>&|^!~?:,.([{", last_text[0]) != null) return false;
+            if (last.kind == .word) {
+                const operators = [_][]const u8{ "as", "in", "of", "new", "typeof", "keyof", "extends", "instanceof", "satisfies", "await", "return", "yield", "void" };
+                for (operators) |operator| if (std.mem.eql(u8, last_text, operator)) return false;
+            }
+        }
+        if (look >= self.len) return true;
+        // Calls, element access, tags, operators and assertions can continue a
+        // complete operand across a line break. A bare identifier cannot.
+        if (std.mem.indexOfScalar(u8, ".?:)]},+-*/%<>=&|^`([", self.source[look]) != null) return false;
+        const words = [_][]const u8{ "as", "satisfies", "instanceof", "in" };
+        for (words) |word| {
+            if (look + word.len <= self.len and std.mem.eql(u8, self.source[look .. look + word.len], word) and
+                (look + word.len == self.len or !ch.isIdentChar(self.source[look + word.len]))) return false;
+        }
+        return true;
     }
 
     /// Check for ASI boundary in class member context
@@ -832,6 +839,15 @@ pub const Scanner = struct {
                     self.pos += 1;
                     return;
                 }
+                if (closes_nested_brace and brace_depth == 0 and paren_depth == 0 and bracket_depth == 0 and jsx_depth == 0) {
+                    const after_block = self.pos + 1;
+                    self.pos = after_block;
+                    self.skipWhitespaceAndComments();
+                    const starts_declaration = self.isTopLevelKeyword();
+                    self.pos = after_block;
+                    if (starts_declaration) return;
+                    continue;
+                }
                 self.pos += 1;
                 continue;
             }
@@ -959,6 +975,7 @@ pub const Scanner = struct {
 
     /// Scan TypeScript source and extract all declarations
     pub fn scan(self: *Scanner) !ScanResult {
+        self.external_module = try declaration_refs.isExternalModuleSource(self.allocator, self.source);
         // Skip UTF-8 BOM (EF BB BF). Check exact bytes — the previous `>= 0xEF`
         // guard was over-permissive, accepting non-BOM high bytes only to fall
         // through the strict triple-check.
@@ -976,9 +993,11 @@ pub const Scanner = struct {
             while (groups.next()) |group| removeOverloadImplementations(group);
         }
 
+        if (!self.isolated_declarations) try value_inference.inferDeclarationValueAliases(self.allocator, self.source, self.declarations.items, &self.non_exported_types);
+
         // Resolve referenced non-exported types from the surviving public signatures.
         if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {
-            resolveReferencedTypes(&self.declarations, &self.non_exported_types, &self.non_exported_function_groups);
+            try resolveReferencedTypes(&self.declarations, &self.non_exported_types, &self.non_exported_function_groups);
         }
 
         return .{
@@ -1012,7 +1031,7 @@ pub fn isWordInText(name: []const u8, text: []const u8) bool {
 }
 
 /// Resolve non-exported types that are referenced by exported declarations
-fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration), non_exported_function_groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) void {
+fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration), non_exported_function_groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) !void {
     var resolved = std.StringHashMap(void).init(declarations.allocator);
     defer resolved.deinit();
     var decl_names = std.StringHashMap(void).init(declarations.allocator);
@@ -1034,8 +1053,11 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
     var word_set = std.StringHashMap(void).init(declarations.allocator);
     defer word_set.deinit();
+    var value_references = std.StringHashMap(void).init(declarations.allocator);
+    defer value_references.deinit();
     for (declarations.items) |d| {
         if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
+        if (d.kind != .import_decl) try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
     }
 
     // Track how far we've extracted words — only process new text_parts each iteration
@@ -1075,7 +1097,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
             if (resolved.contains(name)) continue;
 
             // O(1) lookup instead of O(n*m) text scanning
-            if (word_set.contains(name)) {
+            if (if (entry.value_ptr.kind == .function_decl) value_references.contains(name) else word_set.contains(name)) {
                 if (!decl_names.contains(name)) {
                     const group = if (entry.value_ptr.kind == .function_decl) non_exported_function_groups.get(name) else null;
                     if (group) |members| {
@@ -1122,6 +1144,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
             if (d.kind != .import_decl) {
                 text_parts.append(d.text) catch {};
                 if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
+                try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
             }
         }
     }

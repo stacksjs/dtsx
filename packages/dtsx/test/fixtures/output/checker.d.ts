@@ -296,3 +296,4 @@ declare namespace JsxNames {
   export const IntrinsicClassAttributes: __String;
   export const LibraryManagedAttributes: __String;
 }
+export {};

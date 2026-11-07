@@ -2,6 +2,7 @@
 //! package delivery belong to the project planner, not this source-only pass.
 const std = @import("std");
 const ch = @import("char_utils.zig");
+const lexical = @import("lexical.zig");
 
 pub const Rewrite = struct {
     specifier: []const u8,
@@ -80,7 +81,11 @@ const Token = struct {
     kind: enum { word, quoted, punctuation, template },
 };
 
-fn tokens(allocator: std.mem.Allocator, content: []const u8) ![]Token {
+pub const SyntaxToken = Token;
+pub const SyntaxError = std.mem.Allocator.Error || error{InvalidContext};
+pub const tokenizeDeclarationSyntax = tokens;
+
+fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token {
     var result = std.array_list.Managed(Token).init(allocator);
     errdefer result.deinit();
     var i: usize = 0;
@@ -90,7 +95,7 @@ fn tokens(allocator: std.mem.Allocator, content: []const u8) ![]Token {
 
 // Template raw text is literal data. Only ${...} switches back to TypeScript
 // syntax, including nested templates and object/type braces in a substitution.
-fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, position: *usize) anyerror!void {
+fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, position: *usize) SyntaxError!void {
     var raw_start = position.*;
     position.* += 1;
     while (position.* < content.len) {
@@ -113,7 +118,7 @@ fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, pos
     return error.InvalidContext;
 }
 
-fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, position: *usize, substitution: bool) anyerror!void {
+fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, position: *usize, substitution: bool) SyntaxError!void {
     var braces: usize = 0;
     while (position.* < content.len) {
         const i = position.*;
@@ -131,6 +136,11 @@ fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, positio
             while (position.* + 1 < content.len and !(content[position.*] == '*' and content[position.* + 1] == '/')) position.* += 1;
             if (position.* + 1 >= content.len) return error.InvalidContext;
             position.* += 2;
+            continue;
+        }
+        if (content[i] == '/' and lexical.isRegexStart(content, i)) {
+            position.* = lexical.skipRegex(content, i);
+            try result.append(.{ .start = i, .end = position.*, .kind = .template });
             continue;
         }
         if (content[i] == '`') {

@@ -65,3 +65,4 @@ export declare class DataStore implements Serializable {
   serialize(): string;
   deserialize(data: string): void;
 }
+export {};

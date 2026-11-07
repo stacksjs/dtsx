@@ -120,12 +120,12 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Unit Test
-        run: bun test
-
       - name: Build Zig
         working-directory: packages/zig-dtsx
         run: zig build
+
+      - name: Unit Test
+        run: bun test
 
       - name: Run Zig Unit Tests
         working-directory: packages/zig-dtsx

@@ -69,3 +69,4 @@ export declare class DecoratedClass {
   name: string;
   oldMethod(): string;
 }
+export {};

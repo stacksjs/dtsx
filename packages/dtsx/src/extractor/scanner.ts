@@ -4,9 +4,11 @@
  * Produces the same Declaration[] shape that the processor expects.
  */
 import type { Declaration } from '../types'
+import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { parseImportEquals } from '../module-references'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
+import { inferDeclarationValueAliases } from '../value-inference'
 
 // Character codes for fast comparison
 const CH_SPACE = 32
@@ -116,6 +118,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const keepComments = _keepComments
   const isolatedDeclarations = _isolatedDeclarations
   const len = source.length
+  const externalModule = isExternalModuleSource(source)
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
   const nonExportedFunctionGroups = new Map<string, Declaration[]>()
@@ -828,6 +831,14 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         if (!closesNestedBrace && stopBeforeUnmatchedBrace && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx; return }
         if (closesNestedBrace) braceDepth--
         if ((!closesNestedBrace || terminateOnBalancedBrace) && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) { pos = idx + 1; return }
+        if (closesNestedBrace && braceDepth === 0 && parenDepth === 0 && bracketDepth === 0 && jsxDepth === 0) {
+          pos = idx + 1
+          const afterBlock = pos
+          skipWhitespaceAndComments()
+          const startsDeclaration = isTopLevelKeyword()
+          pos = afterBlock
+          if (startsDeclaration) return
+        }
         STMT_DELIM_RE.lastIndex = idx + 1
         continue
       }
@@ -2181,6 +2192,7 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
 
     let typeAnnotation: string | undefined
     let initializerText: string | undefined
+    let initializerStart: number | undefined
     let isAsConst = false
 
     // Type annotation
@@ -2222,6 +2234,7 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
         pos++ // skip =
         skipWhitespaceAndComments()
         const initStart = pos
+        initializerStart = initStart
         // Read initializer until ; or , at depth 0, or ASI.
         //
         // `<` is genuinely ambiguous in a value position: it opens a generic in
@@ -2321,6 +2334,7 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
       isExported,
       typeAnnotation,
       value: initializerText,
+      initializerStart,
       modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
       leadingComments: comments,
       start: declStart,
@@ -3541,6 +3555,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         name,
         text,
         isExported,
+        moduleForm: isAmbient ? 'quoted' : keyword === 'namespace' ? 'namespace' : 'identifier',
         source: isAmbient ? name.slice(1, -1) : undefined,
         leadingComments: comments,
         start: declStart,
@@ -4051,6 +4066,8 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
     }
 
+    if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)
+
     // Resolve referenced non-exported types from the surviving public signatures.
     if (nonExportedTypes.size > 0) {
       resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups)
@@ -4148,7 +4165,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
           pos = savedPos
           const decls = extractVariable(stmtStart, 'const', isExported)
           for (let _di = 0; _di < decls.length; _di++) {
-            if (isExported) declarations.push(decls[_di])
+            if (isExported || !externalModule) declarations.push(decls[_di])
             else nonExportedTypes.set(decls[_di].name, decls[_di])
           }
         }
@@ -4157,7 +4174,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         const kind = matchWord('let') ? 'let' : 'var'
         const decls = extractVariable(stmtStart, kind, isExported)
         for (let _di = 0; _di < decls.length; _di++) {
-          if (isExported) declarations.push(decls[_di])
+          if (isExported || !externalModule) declarations.push(decls[_di])
           else nonExportedTypes.set(decls[_di].name, decls[_di])
         }
       }
@@ -4181,6 +4198,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
           name: 'global',
           text,
           isExported: false,
+          moduleForm: 'global',
           leadingComments: comments,
           start: stmtStart,
           end: pos,
@@ -4291,12 +4309,14 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
 
     // Build a word set from all declaration texts — O(1) lookups per type name
     const wordSet = new Set<string>()
+    const valueReferences = new Set<string>()
     const textParts: string[] = []
     for (let i = 0; i < declarations.length; i++) {
       const declaration = declarations[i]
       if (declaration.kind !== 'import') {
         textParts.push(declaration.text)
         addWordsToSet(declaration.text, wordSet)
+        collectDeclarationValueReferences(declaration, valueReferences)
         if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, wordSet)
       }
     }
@@ -4307,7 +4327,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const [name, decl] of nonExportedTypes) {
         if (resolved.has(name))
           continue
-        if (wordSet.has(name)) {
+        if ((decl.kind === 'function' ? valueReferences : wordSet).has(name)) {
           if (!declNames.has(name)) {
             const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
             if (group) {
@@ -4343,6 +4363,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         if (decl.kind !== 'import') {
           textParts.push(decl.text)
           addWordsToSet(decl.text, wordSet)
+          collectDeclarationValueReferences(decl, valueReferences)
           if (typeof decl.value === 'string') addInitializerReferences(decl.value, wordSet)
         }
       }

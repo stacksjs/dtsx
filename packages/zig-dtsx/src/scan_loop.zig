@@ -103,8 +103,11 @@ pub fn scanMainLoop(s: *Scanner) !void {
                 s.skipToStatementEnd();
             }
         } else if ((ch0 == 'l' and s.matchWord("let")) or (ch0 == 'v' and s.matchWord("var"))) {
-            // Top-level let/var without `export` are skipped — same handling for both.
-            s.skipToStatementEnd();
+            // Retain source metadata for value-site inference and private
+            // closure; this does not make a private variable an emission root.
+            const kind: []const u8 = if (ch0 == 'l') "let" else "var";
+            const decls = ext.extractVariable(s, stmt_start, kind, false);
+            for (decls) |decl| s.putNonExportedType(decl.name, decl);
         } else if ((ch0 == 'm' and s.matchWord("module")) or (ch0 == 'n' and s.matchWord("namespace"))) {
             // Both module/namespace dispatch to the same extractor; share the
             // append step and pick the keyword from the first byte.

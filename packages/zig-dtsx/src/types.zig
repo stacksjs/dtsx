@@ -60,8 +60,16 @@ pub const Declaration = struct {
     has_body: bool = false,
     /// Initializer text for variable declarations
     value: []const u8 = "",
+    /// Original initializer offset, excluding annotation and assignment token.
+    initializer_start: usize = 0,
     /// Type annotation text
     type_annotation: []const u8 = "",
+    /// Inferred identity of a known value, separate from a source annotation.
+    inferred_type: []const u8 = "",
+    /// Deferred diagnostic; unused private declarations need not be emitted.
+    inference_error: enum { none, unsupported_value_flow } = .none,
+    /// Quoted modules and global augmentations bind no top-level local name.
+    module_form: enum { none, namespace, identifier, quoted, global } = .none,
     /// Preserve an explicit public annotation instead of narrowing from its initializer
     preserve_type_annotation: bool = false,
     /// Whether this is async

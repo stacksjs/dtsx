@@ -1219,6 +1219,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
 
         var type_annotation: []const u8 = "";
         var initializer_text: []const u8 = "";
+        var initializer_start: usize = 0;
         var is_as_const = false;
 
         // Type annotation
@@ -1234,7 +1235,11 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                     depth += 1;
                 } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
                     depth -= 1;
-                } else if (depth == 0 and (tc == ch.CH_EQUAL or tc == ch.CH_SEMI or tc == ch.CH_COMMA)) {
+                } else if (depth == 0 and (tc == ch.CH_SEMI or tc == ch.CH_COMMA or
+                    (tc == ch.CH_EQUAL and (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_RANGLE))))
+                {
+                    // The equals in an arrow belongs to the annotation, not
+                    // the initializer. isArrowGT above handles its other half.
                     break;
                 }
                 if (depth == 0 and s.checkASITopLevel()) break;
@@ -1250,10 +1255,12 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                 s.pos += 1;
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
+                initializer_start = init_start;
                 var depth: isize = 0;
                 var angle_depth: isize = 0;
                 var jsx_depth: isize = 0;
                 var jsx_tag_end: ?usize = null;
+                var completed_jsx_end: ?usize = null;
                 while (s.pos < s.len) {
                     // SIMD fast-skip: bulk-skip bytes that can't be structural
                     if (depth > 0) {
@@ -1304,11 +1311,14 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                         }
                     }
                     if (s.pos >= s.len) break;
-                    // The slash in a JSX closing tag has already been
-                    // classified by jsxTagAt at the preceding `<`. Do not let
-                    // regex detection consume through a later closing tag.
-                    const jsx_closing_slash = s.source[s.pos] == ch.CH_SLASH and s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE;
-                    if (!jsx_closing_slash and s.skipNonCode()) continue;
+                    if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and jsx_tag_end == null and s.checkASIAfterInitializer(init_start, completed_jsx_end)) break;
+                    // Tag syntax already proven by jsxTagAt is not a regex.
+                    // This includes the self-closing slash after an attribute
+                    // expression's '}', which otherwise looks like a regex start.
+                    const jsx_syntax_slash = s.source[s.pos] == ch.CH_SLASH and
+                        ((s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE) or
+                            (jsx_tag_end != null and s.pos + 1 == jsx_tag_end.? and s.source[s.pos + 1] == ch.CH_RANGLE));
+                    if (!jsx_syntax_slash and s.skipNonCode()) continue;
                     const ic = s.source[s.pos];
                     if (ic == ch.CH_LANGLE and depth == 0) {
                         if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
@@ -1321,13 +1331,13 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
                         depth -= 1;
                     } else if (ic == ch.CH_RANGLE and depth == 0) {
                         if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
+                            if (jsx_depth == 0) completed_jsx_end = s.pos;
                             jsx_tag_end = null;
                         } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
                             (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
                     } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
                         break;
                     }
-                    if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and s.checkASITopLevel()) break;
                     s.pos += 1;
                 }
                 initializer_text = if (skip_isolated_initializer) "" else s.sliceTrimmed(init_start, s.pos);
@@ -1399,6 +1409,7 @@ pub fn extractVariable(s: *Scanner, decl_start: usize, kind: []const u8, is_expo
             .type_annotation = type_annotation,
             .preserve_type_annotation = type_annotation.len > 0,
             .value = initializer_text,
+            .initializer_start = initializer_start,
             .leading_comments = comments,
             .start = decl_start,
             .end = s.pos,
@@ -2457,6 +2468,7 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
         .text = text,
         .is_exported = is_exported,
         .source_module = if (is_ambient and name.len > 2) name[1 .. name.len - 1] else "",
+        .module_form = if (is_ambient) .quoted else if (std.mem.eql(u8, keyword, "namespace")) .namespace else .identifier,
         .leading_comments = comments,
         .start = decl_start,
         .end = s.pos,
@@ -3232,7 +3244,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
                 s.pos = saved_pos;
                 const decls = extractVariable(s, stmt_start, "const", is_exported);
                 for (decls) |d| {
-                    if (is_exported) {
+                    if (is_exported or !s.external_module) {
                         s.declarations.append(d) catch {};
                     } else s.putNonExportedType(d.name, d);
                 }
@@ -3252,7 +3264,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
         const kind: []const u8 = if (c0 == 'l') "let" else "var";
         const decls = extractVariable(s, stmt_start, kind, is_exported);
         for (decls) |d| {
-            if (is_exported) {
+            if (is_exported or !s.external_module) {
                 s.declarations.append(d) catch {};
             } else s.putNonExportedType(d.name, d);
         }
@@ -3280,6 +3292,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
             .name = "global",
             .text = text_buf,
             .is_exported = false,
+            .module_form = .global,
             .leading_comments = comments,
             .start = stmt_start,
             .end = s.pos,

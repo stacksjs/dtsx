@@ -129,3 +129,4 @@ export declare class ResourceManager {
   add(resource: Disposable): void;
   [Symbol.dispose](): void;
 }
+export {};

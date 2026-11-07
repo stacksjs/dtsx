@@ -1,7 +1,7 @@
 /** Shared grammatical module literals for graph discovery and declaration rewriting. */
 import { isIdentChar, isIdentStart, isRegexStart, skipRegexLiteral } from './lexical'
 
-interface Token {
+export interface SyntaxToken {
   start: number
   end: number
   kind: 'word' | 'quoted' | 'punctuation' | 'literal'
@@ -18,8 +18,8 @@ export interface ModuleReference {
   end: number
 }
 
-function tokenize(source: string): Token[] {
-  const tokens: Token[] = []
+export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
+  const tokens: SyntaxToken[] = []
   let position = 0
 
   function template(): void {
@@ -151,7 +151,7 @@ export function quoteModuleSpecifier(value: string, quote: string): string {
 
 /** Parse one complete external import-equals declaration, including trivia. */
 export function parseImportEquals(source: string): { name: string, source: string, isTypeOnly: boolean, end: number } | undefined {
-  const items = tokenize(source)
+  const items = tokenizeDeclarationSyntax(source)
   const text = (index: number): string => items[index] ? source.slice(items[index].start, items[index].end) : ''
   if (text(0) !== 'import') return undefined
   const isTypeOnly = text(1) === 'type' && text(2) !== '='
@@ -167,7 +167,7 @@ export function parseImportEquals(source: string): { name: string, source: strin
 
 /** Source-order grammatical module literals, retaining spans for safe rewriting. */
 export function scanModuleReferences(source: string): ModuleReference[] {
-  const tokens = tokenize(source)
+  const tokens = tokenizeDeclarationSyntax(source)
   const references: ModuleReference[] = []
   const seen = new Set<number>()
   const text = (index: number): string => index >= 0 && index < tokens.length ? source.slice(tokens[index].start, tokens[index].end) : ''

@@ -466,6 +466,12 @@ export interface Declaration {
   isExported: boolean
   isDefault?: boolean
   typeAnnotation?: string
+  /** Signature inferred from a known value binding, distinct from a source annotation. */
+  inferredType?: string
+  /** Deferred semantic diagnostic, checked only when this declaration is emitted. */
+  inferenceError?: 'DTSX_UNSUPPORTED_VALUE_FLOW'
+  /** Module syntax form; quoted modules and global augmentations bind no local name. */
+  moduleForm?: 'namespace' | 'identifier' | 'quoted' | 'global'
   modifiers?: string[]
   generics?: string
   extends?: string
@@ -474,6 +480,8 @@ export interface Declaration {
   parameters?: ParameterDeclaration[]
   returnType?: string
   value?: unknown
+  /** Original initializer offset, excluding source annotation and assignment token. */
+  initializerStart?: number
   source?: string // for imports
   specifiers?: ImportSpecifier[] // for imports
   isTypeOnly?: boolean // for imports/exports

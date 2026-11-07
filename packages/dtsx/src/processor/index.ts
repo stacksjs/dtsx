@@ -2,6 +2,7 @@
  * Processor module - converts declarations to DTS format
  */
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
+import { isExternalModuleSource, isPrivateImportableDeclaration } from '../declaration-references'
 import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
 import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
@@ -415,12 +416,13 @@ export function processDeclarations(
     result += defaultExport[i]
   }
 
-  // Type-only imports and private runtime statements can leave a module with
-  // no public declarations. Preserve its module boundary so consumers can
-  // resolve the generated entrypoint instead of treating an empty file as an
-  // ambient script.
-  if (!result && (imports.length > 0 || exports.length > 0))
-    return 'export {};'
+  // Keep original module identity when imports were pruned, and prevent ambient
+  // local bindings from becoming implicit named exports. Augmentations alone
+  // introduce no local binding and need no extra clause in an existing module.
+  if (isExternalModuleSource(context.sourceCode) && exports.length === 0
+    && (!isExternalModuleSource(result) || declarations.some(isPrivateImportableDeclaration))) {
+    result += `${result ? '\n' : ''}export {};`
+  }
 
   return result
 }

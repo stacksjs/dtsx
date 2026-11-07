@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate declarations emitted before private ambient symbol retention and
-// grammar-aware module reference handling.
-const CACHE_VERSION = 5
+// Invalidate declarations emitted before scoped private references, original
+// module boundaries and source-position alias inference.
+const CACHE_VERSION = 6
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

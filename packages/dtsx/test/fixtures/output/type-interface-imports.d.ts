@@ -33,3 +33,4 @@ declare type FileInfo = {
 export type PathInfo = ParsedPath & {
   exists: boolean
 }
+export {};

@@ -7,6 +7,7 @@ const type_inf = @import("type_inference.zig");
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const module_specifiers = @import("module_specifiers.zig");
+const references = @import("declaration_references.zig");
 
 /// Check if a character is an identifier character (for word boundary checks)
 inline fn isIdentChar(c: u8) bool {
@@ -178,7 +179,15 @@ fn extractAllImportedItems(decl: Declaration) []const []const u8 {
 
 /// Process a variable declaration for DTS output
 fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
+    if (decl.inference_error == .unsupported_value_flow) return error.UnsupportedValueFlow;
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
+    if (decl.type_annotation.len == 0 and decl.inferred_type.len > 0) {
+        if (comments.len == 0) return decl.text;
+        const output = try alloc.alloc(u8, comments.len + decl.text.len);
+        @memcpy(output[0..comments.len], comments);
+        @memcpy(output[comments.len..], decl.text);
+        return output;
+    }
 
     // Fast path: if we have type annotation and no value needing special inference
     if (decl.type_annotation.len > 0 and decl.value.len == 0) {
@@ -1243,6 +1252,17 @@ fn processDeclarationsInternal(
     for (default_exports.items) |stmt| {
         if (result.items.len > 0) try result.append('\n');
         try result.appendSlice(stmt);
+    }
+
+    if (exports_idx.len == 0 and try references.isExternalModuleSource(alloc, source_code)) {
+        var needs_boundary = !try references.isExternalModuleSource(alloc, result.items);
+        for (declarations) |declaration| {
+            if (references.isPrivateImportableDeclaration(declaration)) needs_boundary = true;
+        }
+        if (needs_boundary) {
+            if (result.items.len > 0) try result.append('\n');
+            try result.appendSlice("export {};");
+        }
     }
 
     if (context) |resolved| {
