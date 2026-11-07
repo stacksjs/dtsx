@@ -71,7 +71,7 @@ fn parseNumber(allocator: Allocator, source: []const u8) Error!?f64 {
 }
 
 /// ECMAScript's shortest decimal representation and exponent thresholds.
-fn numberText(allocator: Allocator, value: f64) Error![]const u8 {
+pub fn numberText(allocator: Allocator, value: f64) Error![]const u8 {
     if (value == 0) return "0";
     const scientific = @abs(value) >= 1e21 or @abs(value) < 1e-6;
     var buffer: [std.fmt.float.bufferSize(.decimal, f64)]u8 = undefined;

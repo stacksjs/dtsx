@@ -1,0 +1,14 @@
+[
+  {"input":"{ Zero, Next, Last }","expected":"{ Zero = 0, Next = 1, Last = 2 }"},
+  {"input":"{ Start = 8, After }","expected":"{ Start = 8, After = 9 }"},
+  {"input":"{ Value = Math.abs(-1), Reset = 7, After }","expected":"{ Value , Reset = 7, After = 8 }"},
+  {"input":"{ Value = Math.max(1, 2), Other = (() => { return 3 })() }","expected":"{ Value , Other  }"},
+  {"input":"{ A = 1 << 2, B = A | 1, C = E.B + 1, D }","expected":"{ A = 4, B = 5, C = 6, D = 7 }"},
+  {"input":"{ A = 'a', B = A + 'b', C = `prefix_${B}` }","expected":"{ A = 'a', B = 'ab', C = 'prefix_ab' }"},
+  {"input":"{ 'with,comma' = 3, After }","expected":"{ 'with,comma' = 3, After = 4 }"},
+  {"input":"{ A /* , = */ = 0xff, B = /* value */ A >>> 1 }","expected":"{ A /* , = */ = 255, B = 127 }"},
+  {"input":"{ A = seed, B = label }","constants":[{"name":"seed","number":7},{"name":"label","text":"value"}],"expected":"{ A = 7, B = 'value' }"},
+  {"input":"{ A = Previous.Value, B = E.A + 1 }","constants":[{"name":"Previous.Value","number":7}],"expected":"{ A = 7, B = 8 }"},
+  {"input":"{ A = Math.abs(-1), B = A }","constants":[{"name":"A","number":7}],"expected":"{ A , B  }"},
+  {"input":"{ A = -0, B = -1, C = ~B, D = 2 ** 3 }","expected":"{ A = 0, B = -1, C = 0, D = 8 }"}
+]

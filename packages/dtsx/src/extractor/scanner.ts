@@ -6,6 +6,7 @@
 import type { Declaration } from '../types'
 import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
+import { attachEnumBodies } from '../enum-declarations'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { parseImportEquals } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
@@ -4068,6 +4069,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
     }
 
+    attachEnumBodies(declarations, nonExportedTypes)
     attachComputedKeyConstants(declarations, nonExportedTypes)
     if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)
 
