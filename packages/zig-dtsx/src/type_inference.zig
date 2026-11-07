@@ -8,6 +8,7 @@ const comment_utils = @import("comments.zig");
 const parameter_order = @import("parameters.zig");
 
 const ClassScope = @import("scanner.zig").Scanner;
+const return_scopes = @import("return_type_scope.zig");
 const MAX_INFERENCE_DEPTH = 20;
 
 /// Error type for type inference operations
@@ -1235,7 +1236,13 @@ pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, p
 }
 
 pub fn inferFunctionBodyReturnTypeScoped(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope) InferError![]const u8 {
+    return inferFunctionBodyReturnTypeGeneric(alloc, body, parameters, depth, class_scope, "");
+}
+
+pub fn inferFunctionBodyReturnTypeGeneric(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, generics: []const u8) InferError![]const u8 {
     const content = if (body.len >= 2 and body[0] == '{' and body[body.len - 1] == '}') body[1 .. body.len - 1] else body;
+    var return_scope = return_scopes.Scope.init(alloc, class_scope, content, generics);
+    defer return_scope.deinit();
     var return_types = std.array_list.Managed([]const u8).init(alloc);
     var i: usize = 0;
     while (i < content.len) {
@@ -1307,26 +1314,26 @@ pub fn inferFunctionBodyReturnTypeScoped(alloc: std.mem.Allocator, body: []const
             }
         }
         const expression = trim(content[expression_start..i]);
-        const inferred = try inferBodyExpressionTypeScoped(alloc, expression, parameters, depth + 1, class_scope);
+        const inferred = try inferBodyExpressionTypeScoped(alloc, expression, parameters, depth + 1, class_scope, &return_scope);
         if (!containsType(return_types.items, inferred)) try return_types.append(inferred);
     }
 
     if (return_types.items.len == 0) return "void";
-    if (containsType(return_types.items, "unknown")) return "unknown";
-    if (return_types.items.len == 1) return return_types.items[0];
+    if (containsType(return_types.items, "unknown")) return return_scope.finish("unknown");
+    if (return_types.items.len == 1) return return_scope.finish(return_types.items[0]);
     var result = std.array_list.Managed(u8).init(alloc);
     for (return_types.items, 0..) |return_type, index| {
         if (index > 0) try result.appendSlice(" | ");
         try result.appendSlice(return_type);
     }
-    return result.toOwnedSlice();
+    return return_scope.finish(try result.toOwnedSlice());
 }
 
 fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize) InferError![]const u8 {
-    return inferBodyExpressionTypeScoped(alloc, expression, parameters, depth, null);
+    return inferBodyExpressionTypeScoped(alloc, expression, parameters, depth, null, null);
 }
 
-fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope) InferError![]const u8 {
+fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, return_scope: ?*return_scopes.Scope) InferError![]const u8 {
     var value = trim(expression);
     while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
         value = trim(value[1 .. value.len - 1]);
@@ -1338,14 +1345,32 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
     if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
 
+    if (return_scope != null) {
+        if (findTopLevelToken(value, "?", 0)) |question| {
+            if (question + 1 < value.len and value[question + 1] != '?' and value[question + 1] != '.') {
+                if (findTopLevelToken(value, ":", question + 1)) |colon| {
+                    const left = try inferBodyExpressionTypeScoped(alloc, value[question + 1 .. colon], parameters, depth + 1, class_scope, return_scope);
+                    const right = try inferBodyExpressionTypeScoped(alloc, value[colon + 1 ..], parameters, depth + 1, class_scope, return_scope);
+                    if (std.mem.eql(u8, left, right)) return left;
+                    return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
+                }
+            }
+        }
+    }
+    if (return_scope) |scope| {
+        if (try return_scopes.assertion(alloc, value)) |asserted| {
+            if (try scope.resolve(asserted)) |resolved| return resolved;
+        }
+    }
+
     var expression_depth: i32 = 0;
     var i = value.len;
     while (i > 0) {
         i -= 1;
         const c = value[i];
         if (c == ')' or c == ']' or c == '}') expression_depth += 1 else if (c == '(' or c == '[' or c == '{') expression_depth -= 1 else if (expression_depth == 0 and (c == '+' or c == '-' or c == '*' or c == '/' or c == '%')) {
-            const left = try inferBodyExpressionTypeScoped(alloc, value[0..i], parameters, depth + 1, class_scope);
-            const right = try inferBodyExpressionTypeScoped(alloc, value[i + 1 ..], parameters, depth + 1, class_scope);
+            const left = try inferBodyExpressionTypeScoped(alloc, value[0..i], parameters, depth + 1, class_scope, return_scope);
+            const right = try inferBodyExpressionTypeScoped(alloc, value[i + 1 ..], parameters, depth + 1, class_scope, return_scope);
             if (c == '+' and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
             if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
             break;

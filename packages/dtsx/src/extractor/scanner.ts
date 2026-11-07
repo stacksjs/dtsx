@@ -9,6 +9,7 @@ import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
 import { attachFunctionProperties } from '../function-properties'
+import { createReturnTypeScope } from '../return-type-scope'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
@@ -2116,7 +2117,13 @@ function extractFunction(declStart: number, isExported: boolean, isAsync: boolea
     // so `function make() { return { ... } }` published as returning nothing
     // and every type derived from it (`ReturnType<typeof make>`) was empty.
     if (!hasExplicitReturnType && !isGenerator) {
-      returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams, scopedClassExpression)
+      const body = source.slice(bodyStart, pos - 1)
+      const scope = createReturnTypeScope(body, _filename, () => {
+        let name: string
+        do { name = `__dtsx_return_${classHelperCounter++}` } while (source.includes(name))
+        return name
+      }, declaration => nonExportedTypes.set(declaration.name, { ...declaration, start: pos, end: pos }), generics)
+      returnType = scope.finish(inferFunctionBodyReturnType(body, isAsync, rawParams, scopedClassExpression, scope.resolve))
     }
   }
   else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {

@@ -179,7 +179,7 @@ fn extractAllImportedItems(decl: Declaration) []const []const u8 {
 }
 
 /// Process a variable declaration for DTS output
-fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
+pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
     if (decl.inference_error == .unsupported_value_flow) return error.UnsupportedValueFlow;
     const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
     if (decl.type_annotation.len == 0 and decl.inferred_type.len > 0) {

@@ -1201,7 +1201,7 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
         const body_start = s.pos;
         _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
         if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-            const inferred = type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], raw_params, 0, s) catch |err| blk: {
+            const inferred = type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics) catch |err| blk: {
                 s.pending_error = err;
                 break :blk return_type;
             };
@@ -2223,7 +2223,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
             if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-                const inferred = try type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], raw_params, 0, s);
+                const inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics);
                 ret_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
                     try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred})
                 else
