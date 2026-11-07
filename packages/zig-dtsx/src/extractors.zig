@@ -116,6 +116,7 @@ pub fn extractLeadingComments(s: *Scanner, decl_start: usize) ?[]const []const u
 pub fn extractImport(s: *Scanner, start: usize) Declaration {
     const stmt_start = start;
     var found_quote = false;
+    var binding_braces: usize = 0;
     var import_equals: ?module_specifiers.ImportEquals = null;
     while (s.pos < s.len) {
         const c = s.source[s.pos];
@@ -127,14 +128,19 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
             s.pos += 1;
             break;
         }
+        if (c == ch.CH_LBRACE) binding_braces += 1 else if (c == ch.CH_RBRACE and binding_braces > 0) binding_braces -= 1;
         if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE) {
             s.skipString(c);
+            if (binding_braces > 0) continue;
             found_quote = true;
             const quote_end = s.pos;
             s.skipWhitespaceAndComments();
             if (s.pos < s.len and s.source[s.pos] == ch.CH_RPAREN) {
                 const close_end = s.pos + 1;
-                import_equals = module_specifiers.parseImportEquals(s.allocator, s.source[stmt_start..close_end]) catch null;
+                import_equals = module_specifiers.parseImportEquals(s.allocator, s.source[stmt_start..close_end]) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
                 if (import_equals != null) s.pos = close_end else s.pos = quote_end;
             } else s.pos = quote_end;
             while (s.pos < s.len and (s.source[s.pos] == ch.CH_SPACE or s.source[s.pos] == ch.CH_TAB)) s.pos += 1;
@@ -146,53 +152,47 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
     }
 
     const text = s.sliceTrimmed(stmt_start, s.pos);
+    const syntax = module_specifiers.normalizeImportSyntax(s.allocator, text) catch |err| {
+        s.pending_error = err;
+        return .{ .kind = .unknown_decl };
+    };
+    const clause_end = module_specifiers.importClauseEnd(s.allocator, syntax) catch |err| {
+        s.pending_error = err;
+        return .{ .kind = .unknown_decl };
+    };
     // Check for 'import type '
-    const is_type_only = if (import_equals) |binding| binding.is_type_only else text.len > 11 and text[7] == 't' and
-        (ch.startsWith(text, "import type ") or ch.startsWith(text, "import type{"));
+    const is_type_only = if (import_equals) |binding| binding.is_type_only else if (clause_end) |end|
+        ch.startsWith(ch.sliceTrimmed(syntax, 0, end), "import type ") and !ch.startsWith(ch.sliceTrimmed(syntax, 12, end), ",")
+    else
+        false;
 
     // Detect side-effect imports
     var is_side_effect = false;
     {
         var si: usize = 6; // skip 'import'
-        while (si < text.len and (text[si] == ch.CH_SPACE or text[si] == ch.CH_TAB)) si += 1;
-        if (si < text.len and text[si] == 't' and si + 4 <= text.len and std.mem.eql(u8, text[si .. si + 4], "type")) {
+        while (si < syntax.len and (syntax[si] == ch.CH_SPACE or syntax[si] == ch.CH_TAB)) si += 1;
+        if (si < syntax.len and syntax[si] == 't' and si + 4 <= syntax.len and std.mem.eql(u8, syntax[si .. si + 4], "type")) {
             si += 4;
-            while (si < text.len and (text[si] == ch.CH_SPACE or text[si] == ch.CH_TAB)) si += 1;
+            while (si < syntax.len and (syntax[si] == ch.CH_SPACE or syntax[si] == ch.CH_TAB)) si += 1;
         }
-        if (si < text.len) {
-            const qc = text[si];
+        if (si < syntax.len) {
+            const qc = syntax[si];
             is_side_effect = qc == ch.CH_SQUOTE or qc == ch.CH_DQUOTE;
         }
     }
 
-    // Extract source module — use indexOfChar (single-byte SIMD scan) for the
-    // closing quote instead of indexOf with a 1-char needle.
+    // Decode the grammatical module literal; trivia is never part of its name.
     var module_src: []const u8 = "";
     if (import_equals) |binding| {
         module_src = binding.source;
-    } else {
-        const from_idx = ch.indexOf(text, "from ", 0);
-        if (from_idx) |fi| {
-            var mi = fi + 5;
-            while (mi < text.len and (text[mi] == ch.CH_SPACE or text[mi] == ch.CH_TAB)) mi += 1;
-            if (mi < text.len) {
-                const q = text[mi];
-                if (q == ch.CH_SQUOTE or q == ch.CH_DQUOTE) {
-                    if (ch.indexOfChar(text, q, mi + 1)) |ei| {
-                        module_src = text[mi + 1 .. ei];
-                    }
-                }
-            }
-        } else if (is_side_effect) {
-            var mi: usize = 6;
-            while (mi < text.len and text[mi] != ch.CH_SQUOTE and text[mi] != ch.CH_DQUOTE) mi += 1;
-            if (mi < text.len) {
-                const q = text[mi];
-                if (ch.indexOfChar(text, q, mi + 1)) |ei| {
-                    module_src = text[mi + 1 .. ei];
-                }
-            }
-        }
+    } else if (module_specifiers.importSourceLiteral(s.allocator, text) catch |err| {
+        s.pending_error = err;
+        return .{ .kind = .unknown_decl };
+    }) |literal| {
+        module_src = module_specifiers.decodeStringLiteral(s.allocator, literal) catch |err| {
+            s.pending_error = err;
+            return .{ .kind = .unknown_decl };
+        };
     }
 
     const comments = extractLeadingComments(s, stmt_start);
@@ -200,7 +200,10 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
     // Parse import clause once (cached in Declaration to avoid re-parsing in emitter)
     var parsed_import: ?types.ParsedImport = null;
     if (import_equals) |binding| {
-        const resolved_items: [][]const u8 = s.allocator.alloc([]const u8, 1) catch &.{};
+        const resolved_items: [][]const u8 = s.allocator.alloc([]const u8, 1) catch |err| {
+            s.pending_error = err;
+            return .{ .kind = .unknown_decl };
+        };
         if (resolved_items.len > 0) resolved_items[0] = binding.name;
         parsed_import = .{
             .default_name = binding.name,
@@ -211,26 +214,32 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
         };
     }
     if (!is_side_effect and parsed_import == null) pi: {
-        const from_idx = ch.indexOf(text, " from ", 0) orelse break :pi;
-        var import_part = ch.sliceTrimmed(text, 0, from_idx);
+        const from_idx = clause_end orelse break :pi;
+        var import_part = ch.sliceTrimmed(syntax, 0, from_idx);
 
         // Strip 'import' and optional 'type'
-        if (ch.startsWith(import_part, "import type ")) {
+        if (is_type_only and ch.startsWith(import_part, "import type ")) {
             import_part = ch.sliceTrimmed(import_part, 12, import_part.len);
         } else if (ch.startsWith(import_part, "import ")) {
             import_part = ch.sliceTrimmed(import_part, 7, import_part.len);
         }
-        if (ch.startsWith(import_part, "type ")) {
+        if (is_type_only and ch.startsWith(import_part, "type ")) {
             import_part = ch.sliceTrimmed(import_part, 5, import_part.len);
         }
 
         var default_name: ?[]const u8 = null;
         var named_items = std.array_list.Managed([]const u8).init(s.allocator);
-        named_items.ensureTotalCapacity(8) catch break :pi;
+        named_items.ensureTotalCapacity(8) catch |err| {
+            s.pending_error = err;
+            return .{ .kind = .unknown_decl };
+        };
 
         // Also collect "resolved" items (with type/as stripped) for filtering
         var resolved_items = std.array_list.Managed([]const u8).init(s.allocator);
-        resolved_items.ensureTotalCapacity(8) catch break :pi;
+        resolved_items.ensureTotalCapacity(8) catch |err| {
+            s.pending_error = err;
+            return .{ .kind = .unknown_decl };
+        };
 
         var is_namespace = false;
         var namespace_name: ?[]const u8 = null;
@@ -239,12 +248,24 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
         const brace_end = std.mem.lastIndexOf(u8, import_part, "}");
 
         // Check for namespace import: * as Name
-        if (ch.indexOf(import_part, "* as ", 0)) |star_idx| {
+        if (if (brace_start == null) ch.indexOf(import_part, "* as ", 0) else null) |star_idx| {
             is_namespace = true;
             const ns_name = ch.sliceTrimmed(import_part, star_idx + 5, if (brace_start) |bs| bs else import_part.len);
             if (ns_name.len > 0) {
                 namespace_name = ns_name;
-                resolved_items.append(ns_name) catch {};
+                resolved_items.append(ns_name) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
+            }
+            var before = ch.sliceTrimmed(import_part, 0, star_idx);
+            if (before.len > 0 and before[before.len - 1] == ',') before = ch.sliceTrimmed(before, 0, before.len - 1);
+            if (before.len > 0) {
+                default_name = before;
+                resolved_items.append(before) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
             }
         }
 
@@ -260,45 +281,69 @@ pub fn extractImport(s: *Scanner, start: usize) Declaration {
                 }
                 if (before.len > 0 and !ch.contains(before, "*")) {
                     default_name = before;
-                    resolved_items.append(before) catch {};
+                    resolved_items.append(before) catch |err| {
+                        s.pending_error = err;
+                        return .{ .kind = .unknown_decl };
+                    };
                 }
             }
 
             // Named imports — splitScalar is faster than splitSequence for a 1-byte separator.
             const named_part = import_part[bs + 1 .. be];
-            var iter = std.mem.splitScalar(u8, named_part, ',');
-            while (iter.next()) |raw_item| {
+            const items = module_specifiers.splitImportItems(s.allocator, named_part) catch |err| {
+                s.pending_error = err;
+                return .{ .kind = .unknown_decl };
+            };
+            for (items) |raw_item| {
                 const trimmed = ch.sliceTrimmed(raw_item, 0, raw_item.len);
                 if (trimmed.len == 0) continue;
-                named_items.append(trimmed) catch {};
+                named_items.append(trimmed) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
 
                 // Resolve: strip 'type ' prefix, use alias after ' as '
                 var resolved = trimmed;
-                if (ch.startsWith(resolved, "type ")) {
+                if (module_specifiers.isTypeOnlyImportItem(s.allocator, resolved) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                }) {
                     resolved = ch.sliceTrimmed(resolved, 5, resolved.len);
                 }
-                if (ch.indexOf(resolved, " as ", 0)) |as_idx| {
+                if (std.mem.lastIndexOf(u8, resolved, " as ")) |as_idx| {
                     resolved = ch.sliceTrimmed(resolved, as_idx + 4, resolved.len);
                 }
-                if (resolved.len > 0) resolved_items.append(resolved) catch {};
+                if (resolved.len > 0) resolved_items.append(resolved) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
             }
         } else if (!is_namespace) {
             // Default import only
             if (import_part.len > 0 and !ch.contains(import_part, "*")) {
                 default_name = import_part;
-                resolved_items.append(import_part) catch {};
+                resolved_items.append(import_part) catch |err| {
+                    s.pending_error = err;
+                    return .{ .kind = .unknown_decl };
+                };
             }
         }
 
         // toOwnedSlice trims unused capacity — important for non-arena callers.
         parsed_import = .{
             .default_name = default_name,
-            .named_items = named_items.toOwnedSlice() catch named_items.items,
+            .named_items = named_items.toOwnedSlice() catch |err| {
+                s.pending_error = err;
+                return .{ .kind = .unknown_decl };
+            },
             .source = module_src,
             .is_type_only = is_type_only,
             .is_namespace = is_namespace,
             .namespace_name = namespace_name,
-            .resolved_items = resolved_items.toOwnedSlice() catch resolved_items.items,
+            .resolved_items = resolved_items.toOwnedSlice() catch |err| {
+                s.pending_error = err;
+                return .{ .kind = .unknown_decl };
+            },
         };
     }
 

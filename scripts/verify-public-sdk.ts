@@ -497,7 +497,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   // A dependency error must not be misreported as the expected negative error.
   if (positive.code === 0) {
     const negatives = primary.directory === 'dtsx'
-      ? [{ file: 'negative-brand.ts', code: 'TS2322' }, { file: 'negative-private.ts', code: 'TS2724' }]
+      ? [{ file: 'negative-brand.ts', code: 'TS2322' }, { file: 'negative-private.ts', code: 'TS2724' }, { file: 'negative-native-options.ts', code: 'TS2322' }, { file: 'negative-native-result.ts', code: 'TS2322' }]
       : [{ file: 'negative-mode.ts', code: 'TS2322' }]
     for (const negative of negatives) {
       if (negative.file === 'negative-private.ts') await verifyAuthoredPrivateContract(consumer, name, core)

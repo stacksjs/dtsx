@@ -22,7 +22,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Build core library and CLI
@@ -56,7 +56,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Verify source identity and output collision safety
@@ -67,7 +67,7 @@ jobs:
       - name: Verify actual native project traversal and installed delivery
         env:
           DTSX_NATIVE_CLI: ${{ github.workspace }}/packages/zig-dtsx/zig-out/bin/zig-dtsx${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: bun test packages/zig-dtsx/test/cli-project.test.ts
+        run: bun test packages/zig-dtsx/test/cli-project.test.ts packages/zig-dtsx/test/cli-context.test.ts packages/dtsx/test/native-generation.test.ts packages/dtsx/test/module-augmentation-package.test.ts
 
   lint:
     runs-on: ubuntu-latest
@@ -78,7 +78,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -103,7 +103,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -128,7 +128,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -179,7 +179,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile

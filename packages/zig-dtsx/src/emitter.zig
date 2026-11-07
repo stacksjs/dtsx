@@ -997,10 +997,10 @@ fn processDeclarationsInternal(
 
             for (parsed.named_items) |item| {
                 var clean_item = item;
-                if (ch.startsWith(clean_item, "type ")) {
+                if (try module_specifiers.isTypeOnlyImportItem(alloc, clean_item)) {
                     clean_item = ch.sliceTrimmed(clean_item, 5, clean_item.len);
                 }
-                if (ch.indexOf(clean_item, " as ", 0)) |as_idx| {
+                if (std.mem.lastIndexOf(u8, clean_item, " as ")) |as_idx| {
                     clean_item = ch.sliceTrimmed(clean_item, as_idx + 4, clean_item.len);
                 }
                 if (used_import_items.contains(clean_item)) {
@@ -1017,6 +1017,10 @@ fn processDeclarationsInternal(
                 }
 
                 if (used_namespace and parsed.is_namespace) {
+                    if (used_default) {
+                        try import_buf.appendSlice(parsed.default_name.?);
+                        try import_buf.appendSlice(", ");
+                    }
                     try import_buf.appendSlice("* as ");
                     try import_buf.appendSlice(parsed.namespace_name.?);
                 } else if (used_default) {

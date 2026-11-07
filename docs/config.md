@@ -177,7 +177,7 @@ dtsx generate --module-specifier-mode node
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `keepComments` | `boolean` | `true` | Preserve comments in output |
-| `clean` | `boolean` | `true` | Clean output directory before generation |
+| `clean` | `boolean` | `true` | Remove stale managed declarations while preserving runtime files |
 | `outputStructure` | `'mirror' \| 'flat'` | `'mirror'` | Output directory structure |
 | `moduleSpecifierMode` | `'preserve' \| 'node'` | `'preserve'` | Keep existing spelling or use explicit runtime extensions from resolved targets |
 
@@ -200,6 +200,42 @@ to the project `cwd` and defaults to `.dtsx-cache`. `clearCache(cacheDir)` from
 Its standalone `clearCache` resolves a relative path against the calling process's
 working directory. When building with a different project `cwd`, pass the absolute
 cache directory to `clearCache`.
+
+Local module augmentations participate in the project graph. Imports needed to
+activate those augmentations remain in declarations, with unused bindings
+converted to bare imports. Required providers must be included in the build.
+Incremental builds also track changes to this activation graph.
+
+### Native Project Generation
+
+Use the Bun API with an actual `zig-dtsx` executable supporting project protocol
+v1 to plan sources, emit a native batch, and publish the declarations together:
+
+```ts
+import { generateNativeDeclarationProject } from '@stacksjs/dtsx'
+
+const result = await generateNativeDeclarationProject('/path/to/zig-dtsx', {
+  root: './src',
+  outdir: './dist',
+  entrypoints: ['index.ts'],
+  moduleSpecifierMode: 'node',
+}, { timeoutMs: 30_000 })
+
+console.log(result.outputFiles)
+```
+
+The planner supplies source snapshots, hashes, resolved output paths and module
+augmentation imports. The native emitter checks the batch and its retained local
+references. A failed native batch leaves the prior declarations intact. Successful
+publication uses the same staging and rollback owner as `generate()` and preserves
+unrelated runtime files. A missing or incompatible executable fails the request;
+there is no JavaScript emission fallback.
+
+The supported options are `cwd`, `root`, `outdir`, `entrypoints`, `include`,
+`exclude`, `autoIncludeReExports`, `outputStructure`, `tsconfigPath`,
+`moduleSpecifierMode`, `keepComments`, `isolatedDeclarations`, `clean` and
+`lineEnding`. Execution accepts an `AbortSignal` and a batch deadline (30 seconds
+by default). Unsupported transformations are rejected before publication.
 
 ### Build Options
 

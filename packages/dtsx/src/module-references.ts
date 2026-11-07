@@ -229,7 +229,7 @@ export function scanModuleReferences(source: string): ModuleReference[] {
         if (text(next + 2) === ')' || text(next + 2) === ',') add(next + 1, 'import', false, 'import-type')
         continue
       }
-      const typeOnly = text(next) === 'type' && text(next + 1) !== 'from' && text(next + 1) !== '='
+      const typeOnly = text(next) === 'type' && text(next + 1) !== 'from' && text(next + 1) !== '=' && text(next + 1) !== ','
       if (typeOnly) next++
       if (word(next)) {
         next++

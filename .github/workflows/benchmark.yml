@@ -60,7 +60,7 @@ jobs:
       - name: Setup Pantry
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
         with:
-          version: 0.11.179
+          version: 0.11.180
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0

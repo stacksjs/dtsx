@@ -176,5 +176,19 @@ test('normally packed native CLI generates nested declarations after normal and 
     const command = Bun.spawnSync([process.execPath, 'run', 'emit', '--project', join(consumer, 'independent'), '--outdir', output], { cwd: consumer, timeout: 4000 })
     expect(command.exitCode, command.stderr.toString()).toBe(0)
     expect(await readFile(join(output, 'nested/index.d.ts'), 'utf8')).toBe(await readFile(join(library, 'dist/nested/index.d.ts'), 'utf8'))
+    const sourceFile = join(consumer, 'independent/nested/index.ts')
+    const source = await readFile(sourceFile, 'utf8')
+    const outputFile = join(consumer, 'batch-output/nested/index.d.ts')
+    const context = { version: 1, moduleSpecifierMode: 'node', sourceFile, outputFile, sourceHash: Bun.SHA256.hash(source, 'hex'), rewrites: [] }
+    const batch = Bun.spawnSync([process.execPath, 'run', 'emit', '--batch'], { cwd: consumer, stdin: new TextEncoder().encode(JSON.stringify({ protocol: 'zig-dtsx-project', version: 1, files: [{ source, context }] })), timeout: 4000 })
+    expect(batch.exitCode, batch.stderr.toString()).toBe(0)
+    const response = JSON.parse(batch.stdout.toString())
+    expect(response.protocol).toBe('zig-dtsx-project')
+    expect(response.version).toBe(1)
+    expect(response.files).toHaveLength(1)
+    expect(response.files[0]).toMatchObject({ sourceFile, outputFile, sourceHash: context.sourceHash })
+    // Legacy file publication adds exactly one newline to the emitter's bytes.
+    expect(`${response.files[0].content}\n`).toBe(await readFile(join(library, 'dist/nested/index.d.ts'), 'utf8'))
+    expect(existsSync(outputFile)).toBe(false)
   }
 }), 15000)

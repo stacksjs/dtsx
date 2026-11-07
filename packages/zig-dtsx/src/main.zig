@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
+const module_specifiers = @import("module_specifiers.zig");
 
 // Platform-aware C stdio bindings.
 //
@@ -22,6 +23,8 @@ const emitter = @import("emitter.zig");
 const c = if (builtin.os.tag == .windows) struct {
     pub const FILE = opaque {};
     pub extern "c" fn __acrt_iob_func(index: c_int) *FILE;
+    pub extern "c" fn _fileno(stream: *FILE) c_int;
+    pub extern "c" fn _setmode(fd: c_int, mode: c_int) c_int;
     pub extern "c" fn _wfopen(filename: [*:0]const u16, mode: [*:0]const u16) ?*FILE;
     pub extern "c" fn fclose(stream: *FILE) c_int;
     pub extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
@@ -268,6 +271,7 @@ const FileTask = struct {
     input_name_z: [*:0]const u8,
     output_name_z: [*:0]const u8,
     keep_comments: bool,
+    isolated_declarations: bool,
 };
 
 /// Thread context: directory fds + task slice.
@@ -307,7 +311,7 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
         break :read_source buf;
     };
 
-    var scanner = Scanner.init(alloc, source, task.keep_comments, false);
+    var scanner = Scanner.init(alloc, source, task.keep_comments, task.isolated_declarations);
     _ = try scanner.scan();
     const output = try emitter.processDeclarations(
         alloc,
@@ -374,7 +378,7 @@ fn checkTaskFailures(tasks: []const FileTask, failures: []const ?anyerror) !void
 
 /// Process all .ts files in a directory, writing .d.ts outputs to outdir.
 /// Uses openat with directory fds (POSIX) and multi-threaded processing.
-fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []const u8, keep_comments: bool) !void {
+fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []const u8, keep_comments: bool, isolated_declarations: bool) !void {
     _ = alloc;
 
     var setup_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -429,6 +433,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
                 .input_name_z = (try sa.dupeSentinel(u8, in_str, 0)).ptr,
                 .output_name_z = (try sa.dupeSentinel(u8, out_str, 0)).ptr,
                 .keep_comments = keep_comments,
+                .isolated_declarations = isolated_declarations,
             };
         }
     } else {
@@ -443,6 +448,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
                 .input_name_z = name_z.ptr,
                 .output_name_z = @ptrCast(out_buf.ptr),
                 .keep_comments = keep_comments,
+                .isolated_declarations = isolated_declarations,
             };
         }
     }
@@ -528,36 +534,147 @@ fn mainLegacy() !void {
     };
 }
 
+fn optionValue(args: []const []const u8, index: *usize) ![]const u8 {
+    if (index.* + 1 >= args.len) return error.InvalidArguments;
+    index.* += 1;
+    const value = args[index.*];
+    if (value.len == 0 or value[0] == '-') return error.InvalidArguments;
+    return value;
+}
+
+const BatchRequest = struct {
+    protocol: []const u8,
+    version: u32,
+    files: []const struct {
+        source: []const u8,
+        context: module_specifiers.WireContext,
+    },
+};
+
+fn batchPathIdentity(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (builtin.os.tag != .windows) return path;
+    const key = try alloc.dupe(u8, path);
+    for (key) |*byte| byte.* = if (byte.* == '/') '\\' else std.ascii.toLower(byte.*);
+    return key;
+}
+
+/// A checked, source-snapshot protocol for an owning project's publisher. The
+/// process writes no declaration files. Nonzero status invalidates the entire
+/// response, including any prefix already streamed to stdout.
+fn processBatchRequest(alloc: std.mem.Allocator, keep_comments: bool, isolated_declarations: bool) !void {
+    const input = try readStdin(alloc);
+    defer alloc.free(input);
+    const parsed = std.json.parseFromSlice(BatchRequest, alloc, input, .{ .allocate = .alloc_always }) catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        else => return error.InvalidProjectRequest,
+    };
+    defer parsed.deinit();
+    const request = parsed.value;
+    if (!std.mem.eql(u8, request.protocol, "zig-dtsx-project") or request.version != 1) return error.UnsupportedProjectProtocol;
+    var delivered = std.StringHashMap([]const u8).init(alloc);
+    defer delivered.deinit();
+    var identities = std.heap.ArenaAllocator.init(alloc);
+    defer identities.deinit();
+    var source_ids = std.StringHashMap(void).init(identities.allocator());
+    var output_ids = std.StringHashMap(void).init(identities.allocator());
+    // Validate all identities before emitting a response prefix.
+    for (request.files) |file| {
+        var context = try module_specifiers.fromWire(file.context, file.source);
+        context.deinit();
+        const source_id = try batchPathIdentity(identities.allocator(), file.context.sourceFile);
+        const output_id = try batchPathIdentity(identities.allocator(), file.context.outputFile);
+        if ((try source_ids.getOrPut(source_id)).found_existing or (try output_ids.getOrPut(output_id)).found_existing) return error.InvalidProjectRequest;
+        try delivered.put(file.context.sourceFile, file.context.outputFile);
+    }
+    try writeAll("{\"protocol\":\"zig-dtsx-project\",\"version\":1,\"files\":[");
+    for (request.files, 0..) |file, index| {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const a = arena.allocator();
+        var context = try module_specifiers.fromWire(file.context, file.source);
+        defer context.deinit();
+        context.delivered_sources = &delivered;
+        var scanner = Scanner.init(a, file.source, keep_comments, isolated_declarations);
+        _ = scanner.scan() catch |err| {
+            writeErr("error: ");
+            writeErr(file.context.sourceFile);
+            writeErr(": ");
+            writeErr(@errorName(err));
+            writeErr("\n");
+            return err;
+        };
+        const import_order = [_][]const u8{"bun"};
+        const output = emitter.processDeclarationsWithContext(a, a, scanner.declarations.items, file.source, keep_comments, &import_order, &context) catch |err| {
+            writeErr("error: ");
+            writeErr(file.context.sourceFile);
+            writeErr(": ");
+            writeErr(@errorName(err));
+            writeErr("\n");
+            return err;
+        };
+        const json = try std.json.Stringify.valueAlloc(a, .{
+            .sourceFile = file.context.sourceFile,
+            .outputFile = file.context.outputFile,
+            .sourceHash = file.context.sourceHash,
+            .content = output,
+        }, .{});
+        if (index > 0) try writeAll(",");
+        try writeAll(json);
+    }
+    try writeAll("]}\n");
+}
+
 fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
+    // Preserve exact source hashes and declaration bytes through Windows pipes.
+    // UCRT's default text mode otherwise translates CRLF while reading stdin.
+    if (builtin.os.tag == .windows) {
+        if (c._setmode(c._fileno(getStdin()), 0x8000) < 0) return error.InputReadFailure;
+        if (c._setmode(c._fileno(getStdout()), 0x8000) < 0) return error.OutputWriteFailure;
+    }
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var project_dir: ?[]const u8 = null;
     var out_dir: ?[]const u8 = null;
+    var context_file: ?[]const u8 = null;
+    var batch = false;
     var keep_comments: bool = true;
     var isolated_declarations: bool = false;
     var show_help: bool = false;
+    var positional_only = false;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+        if (positional_only) {
+            if (input_file != null or arg.len == 0) return error.InvalidArguments;
+            input_file = arg;
+        } else if (std.mem.eql(u8, arg, "--")) {
+            positional_only = true;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             show_help = true;
         } else if (std.mem.eql(u8, arg, "--no-comments")) {
             keep_comments = false;
         } else if (std.mem.eql(u8, arg, "--isolated-declarations")) {
             isolated_declarations = true;
+        } else if (std.mem.eql(u8, arg, "--batch")) {
+            if (batch) return error.InvalidArguments;
+            batch = true;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
-            i += 1;
-            if (i < args.len) output_file = args[i];
+            if (output_file != null) return error.InvalidArguments;
+            output_file = try optionValue(args, &i);
         } else if (std.mem.eql(u8, arg, "--project")) {
-            i += 1;
-            if (i < args.len) project_dir = args[i];
+            if (project_dir != null) return error.InvalidArguments;
+            project_dir = try optionValue(args, &i);
         } else if (std.mem.eql(u8, arg, "--outdir")) {
-            i += 1;
-            if (i < args.len) out_dir = args[i];
+            if (out_dir != null) return error.InvalidArguments;
+            out_dir = try optionValue(args, &i);
+        } else if (std.mem.eql(u8, arg, "--context")) {
+            if (context_file != null) return error.InvalidArguments;
+            context_file = try optionValue(args, &i);
         } else if (arg.len > 0 and arg[0] != '-') {
+            if (input_file != null) return error.InvalidArguments;
             input_file = arg;
-        }
+        } else return error.InvalidArguments;
     }
 
     if (show_help) {
@@ -572,6 +689,8 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
             \\  -o, --output FILE Write output to FILE instead of stdout
             \\  --project DIR     Process .ts sources recursively (batch mode)
             \\  --outdir DIR      Output directory for --project mode
+            \\  --context FILE    Apply resolved project context to one source
+            \\  --batch           Emit a resolved project request from stdin
             \\  --no-comments     Strip comments from output
             \\  --isolated-declarations  Skip initializer parsing when type annotations exist
             \\
@@ -581,15 +700,23 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    // Project mode: process entire directory
-    if (project_dir) |dir| {
-        const outdir = out_dir orelse {
-            writeErr("error: --project requires --outdir\n");
-            return;
-        };
-        try processProject(alloc, dir, outdir, keep_comments);
+    if (batch) {
+        if (input_file != null or output_file != null or project_dir != null or out_dir != null or context_file != null) return error.InvalidArguments;
+        try processBatchRequest(alloc, keep_comments, isolated_declarations);
         return;
     }
+
+    // Project mode: process entire directory
+    if (project_dir) |dir| {
+        if (input_file != null or output_file != null or context_file != null) return error.InvalidArguments;
+        const outdir = out_dir orelse {
+            writeErr("error: --project requires --outdir\n");
+            return error.InvalidArguments;
+        };
+        try processProject(alloc, dir, outdir, keep_comments, isolated_declarations);
+        return;
+    }
+    if (out_dir != null) return error.InvalidArguments;
 
     // Single-file mode
     const source = if (input_file) |path|
@@ -597,6 +724,13 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     else
         try readStdin(alloc);
     defer alloc.free(source);
+    var context: ?module_specifiers.Context = null;
+    defer if (context) |*value| value.deinit();
+    if (context_file) |path| {
+        const json = try readFile(alloc, path);
+        defer alloc.free(json);
+        context = try module_specifiers.parse(alloc, json, source);
+    }
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -606,7 +740,15 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     _ = try scanner.scan();
 
     const default_import_order = [_][]const u8{"bun"};
-    const dts_output = try emitter.processDeclarations(
+    const dts_output = if (context) |*value| try emitter.processDeclarationsWithContext(
+        arena_alloc,
+        arena_alloc,
+        scanner.declarations.items,
+        source,
+        keep_comments,
+        &default_import_order,
+        value,
+    ) else try emitter.processDeclarations(
         arena_alloc,
         arena_alloc,
         scanner.declarations.items,

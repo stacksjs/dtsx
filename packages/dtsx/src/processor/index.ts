@@ -7,7 +7,7 @@ import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
 import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
 import { analyzeDeclarationImportUsage } from './import-usage'
-import { getImportSourceLiteral, parseImportStatement } from './imports'
+import { getImportSourceLiteral, parseImportDetailed } from './imports'
 
 function assertNever(value: never, message?: string): never {
   throw new Error(message || `Unexpected value: ${value}`)
@@ -154,14 +154,15 @@ export function processDeclarations(
       }
 
       // Parse import using string operations to avoid regex backtracking
-      const parsed = parseImportStatement(imp.text)
+      const parsed = parseImportDetailed(imp.text)
       if (!parsed)
         continue
 
-      const { defaultName, namedItems, isTypeOnly, isNamespace } = parsed
+      const { defaultName, namedItems, isTypeOnly, namespaceName } = parsed
 
       // Filter to only used items (manual loop avoids closure allocation)
       const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
+      const usedNamespace = namespaceName ? usedImportItems.has(namespaceName) : false
       if (parsed.isImportEquals) {
         if (usedDefault) {
           const original = imp.text.trim()
@@ -178,27 +179,22 @@ export function processDeclarations(
       let usedNamedCount = 0
       for (let ni = 0; ni < namedItems.length; ni++) {
         const item = namedItems[ni]
-        let cleanItem = item.charCodeAt(0) === 116 && item.startsWith('type ') ? item.slice(5).trim() : item.trim()
-        const asIndex = cleanItem.indexOf(' as ')
-        if (asIndex !== -1) {
-          cleanItem = cleanItem.slice(asIndex + 4).trim()
-        }
-        if (usedImportItems.has(cleanItem)) {
+        if (usedImportItems.has(item.name)) {
           if (usedNamedCount > 0) usedNamedStr += ', '
-          usedNamedStr += item
+          if (!isTypeOnly && item.isTypeOnly) usedNamedStr += 'type '
+          usedNamedStr += item.originalName === item.name ? item.name : `${item.originalName} as ${item.name}`
           usedNamedCount++
         }
       }
 
-      if (usedDefault || usedNamedCount > 0) {
+      if (usedDefault || usedNamespace || usedNamedCount > 0) {
         let importStatement = isTypeOnly ? 'import type ' : 'import '
-        if (usedDefault && defaultName) {
-          if (isNamespace) {
-            importStatement += `* as ${defaultName}`
-          }
-          else {
-            importStatement += usedNamedCount > 0 ? `${defaultName}, { ${usedNamedStr} }` : defaultName
-          }
+        if (usedNamespace && namespaceName) {
+          if (usedDefault && defaultName) importStatement += `${defaultName}, `
+          importStatement += `* as ${namespaceName}`
+        }
+        else if (usedDefault && defaultName) {
+          importStatement += usedNamedCount > 0 ? `${defaultName}, { ${usedNamedStr} }` : defaultName
         }
         else if (usedNamedCount > 0) {
           importStatement += `{ ${usedNamedStr} }`

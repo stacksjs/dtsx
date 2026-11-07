@@ -57,6 +57,14 @@ The Zig implementation mirrors the TypeScript dtsx pipeline:
 The TypeScript binding calls the native shared library through Bun FFI. It is not
 a Node.js or browser runtime entrypoint.
 
+The executable also accepts `--context FILE` for a single source and `--batch`
+for a resolved project request on stdin. Project protocol v1 returns JSON with
+source/output identities, source hashes and emitted contents. It writes no
+declaration files; a nonzero exit status invalidates the complete response.
+The `generateNativeDeclarationProject` Bun API in `@stacksjs/dtsx` owns graph
+planning and transactional publication for this protocol. The older `--project`
+directory mode retains direct per-file publication.
+
 ## Benchmarks
 
 Benchmarked on Apple M3 Pro, macOS _(bun 1.3.11, arm64-darwin)_.

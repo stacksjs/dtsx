@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { dts } from '../../bun-plugin/src'
 import { generate } from '../src/generator'
+import { generateNativeDeclarationProject } from '../src/native-generation'
 import { traceSync } from './helpers/phase-trace'
 import { isAvailable, runTsc } from './helpers/tsc'
 
@@ -17,6 +19,50 @@ interface Fixture {
 }
 const fixtures: Record<string, Fixture> = {
   direct: { files: { 'index.ts': parent, 'provider.ts': provider }, retained: { 'index.d.ts': ["import './provider.js';"] }, pruned: { 'index.d.ts': ['install'] } },
+  'from comments': {
+    files: { 'index.ts': parent.replace("from './provider.js'", "from /* activation */ './provider.js'"), 'provider.ts': provider.replace("from './index.js'", "from /* type binding */ './index.js'") },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['import type { ParentThing }'] },
+  },
+  'multiline imports': {
+    files: { 'index.ts': parent.replace("from './provider.js'", "from\n'./provider.js'"), 'provider.ts': provider.replace("import type { ParentThing } from './index.js'", "import\ntype\n{ ParentThing }\nfrom\n'./index.js'") },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['import type { ParentThing }'] },
+  },
+  'binding and alias comments': {
+    files: { 'index.ts': parent.replace('{ install }', '{ /* binding */ install }'), 'provider.ts': provider.replace("import type { ParentThing }", "import /* declaration */ type { ParentThing as /* alias */ Parent }").replace('target: ParentThing', 'target: Parent') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['ParentThing as Parent'] },
+  },
+  'quoted named bindings': {
+    files: { 'index.ts': parent, 'provider.ts': provider.replace('import type { ParentThing }', "import type { 'ParentThing' as Parent }").replace('target: ParentThing', 'target: Parent') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ["'ParentThing' as Parent"] },
+  },
+  'side effect import trivia': {
+    files: { 'index.ts': "import /* activation */ './provider.js'; " + parent, 'provider.ts': provider },
+    retained: { 'index.d.ts': ["import /* activation */ './provider.js';"], 'provider.d.ts': ['import type { ParentThing }'] },
+  },
+  'namespace import trivia': {
+    files: { 'index.ts': parent.replace('import { install }', 'import * /* namespace */ as Installer').replace('install(ParentThing', 'Installer.install(ParentThing'), 'provider.ts': provider.replace("import type { ParentThing }", 'import type * /* namespace */ as Model').replace('target: ParentThing', 'target: Model.ParentThing') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['import type * as Model'] },
+  },
+  'default import trivia': {
+    files: { 'index.ts': parent.replace('import { install }', 'import /* default */ install'), 'provider.ts': provider + '; export default install;' },
+    retained: { 'index.d.ts': ["import './provider.js';"] },
+  },
+  'mixed default and namespace type bindings': {
+    files: { 'index.ts': parent + '; export default ParentThing;', 'provider.ts': provider.replace('import type { ParentThing }', 'import Parent, * as Model').replace('target: ParentThing', 'target: Parent').replace('): void {', '): Model.ParentThing {').replace('=> a + b }', '=> a + b; return target }') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['import Parent, * as Model'] },
+  },
+  'quoted bindings containing punctuation and contextual words': {
+    files: { 'index.ts': parent + '; export { ParentThing as "ParentThing from, as label" };', 'provider.ts': provider.replace('import type { ParentThing }', 'import type { "ParentThing from, as label" as Parent }').replace('target: ParentThing', 'target: Parent') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['"ParentThing from, as label" as Parent'] },
+  },
+  'a value binding named type': {
+    files: { 'index.ts': parent + '; export { ParentThing as type };', 'provider.ts': provider.replace('import type { ParentThing }', 'import { type as Parent }').replace('target: ParentThing', 'target: Parent') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['type as Parent'] },
+  },
+  'a default binding named from': {
+    files: { 'index.ts': parent + '; export default ParentThing;', 'provider.ts': provider.replace('import type { ParentThing }', 'import from').replace('target: ParentThing', 'target: from') },
+    retained: { 'index.d.ts': ["import './provider.js';"], 'provider.d.ts': ['import from from'] },
+  },
   transitive: {
     files: {
       'index.ts': parent.replace('./provider.js', './bridge.js'),
@@ -93,7 +139,7 @@ test('the strict-valid augmentation graph has the real TS9026 isolated declarati
   finally { await rm(root, { recursive: true, force: true }) }
 })
 
-for (const producer of ['core', 'bun-plugin'] as const) {
+for (const producer of ['core', 'bun-plugin', 'native-project'] as const) {
   for (const [name, fixture] of Object.entries(fixtures)) {
     test(`${producer} preserves ${name} augmentations in a strict normally installed package`, async () => {
       expect(isAvailable).toBe(true)
@@ -109,6 +155,12 @@ for (const producer of ['core', 'bun-plugin'] as const) {
         if (producer === 'core') {
           const stats = await generate(options)
           expect(stats.filesFailed, JSON.stringify(stats.errors)).toBe(0)
+        }
+        else if (producer === 'native-project') {
+          const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../../zig-dtsx/zig-out/bin/zig-dtsx${process.platform === 'win32' ? '.exe' : ''}`)
+          expect(existsSync(cli), `Build the actual native CLI: ${cli}`).toBe(true)
+          const result = await generateNativeDeclarationProject(cli, options, { timeoutMs: 4000 })
+          expect(result.filesGenerated).toBe(Object.keys(fixture.files).length)
         }
         const archive = join(root, 'library.tgz')
         const packed = Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library, timeout: 4000 })

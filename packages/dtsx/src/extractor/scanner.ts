@@ -8,7 +8,7 @@ import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
-import { parseImportEquals } from '../module-references'
+import { parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 import { inferDeclarationValueAliases } from '../value-inference'
@@ -1046,6 +1046,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     // Scan to semicolon or end of statement (handle ASI - no semicolons)
     // Imports end after the module specifier string: from '...' or import '...'
     let foundQuote = false
+    let bindingBraces = 0
     let importEquals: ReturnType<typeof parseImportEquals>
     while (pos < len) {
       const ch = source.charCodeAt(pos)
@@ -1054,8 +1055,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         continue
       }
       if (ch === CH_SEMI) { pos++; break }
+      if (ch === CH_LBRACE) bindingBraces++
+      else if (ch === CH_RBRACE && bindingBraces > 0) bindingBraces--
       if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
         skipString(ch)
+        if (bindingBraces > 0) continue
         foundQuote = true
         const quoteEnd = pos
         skipWhitespaceAndComments()
@@ -1078,51 +1082,11 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
 
     const text = sliceTrimmed(stmtStart, pos)
-    const isTypeOnly = importEquals?.isTypeOnly ?? (text.charCodeAt(7) === 116 /* t */ && (text.startsWith('import type ') || text.startsWith('import type{')))
-
-    // Detect side-effect imports: import 'foo' or import "foo" (no names imported)
-    // After 'import' + optional 'type', next non-ws must be a quote
-    let isSideEffectImport = false
-    {
-      let si = 6 // skip 'import'
-      while (si < text.length && (text.charCodeAt(si) === CH_SPACE || text.charCodeAt(si) === CH_TAB)) si++
-      if (si < text.length && text.charCodeAt(si) === 116 /* t */ && text.startsWith('type', si)) {
-        si += 4
-        while (si < text.length && (text.charCodeAt(si) === CH_SPACE || text.charCodeAt(si) === CH_TAB)) si++
-      }
-      if (si < text.length) {
-        const qc = text.charCodeAt(si)
-        isSideEffectImport = qc === CH_SQUOTE || qc === CH_DQUOTE
-      }
-    }
-
-    // Extract source module: find 'from' or direct quote after import
-    let moduleSrc = ''
-    if (importEquals) moduleSrc = importEquals.source
-    else {
-      const fromIdx = text.indexOf('from ')
-      if (fromIdx !== -1) {
-        let mi = fromIdx + 5
-        while (mi < text.length && (text.charCodeAt(mi) === CH_SPACE || text.charCodeAt(mi) === CH_TAB)) mi++
-        if (mi < text.length) {
-          const q = text.charCodeAt(mi)
-          if (q === CH_SQUOTE || q === CH_DQUOTE) {
-            const end = text.indexOf(String.fromCharCode(q), mi + 1)
-            if (end !== -1) moduleSrc = text.slice(mi + 1, end)
-          }
-        }
-      }
-      else if (isSideEffectImport) {
-        // import 'module' — find the quote
-        let mi = 6
-        while (mi < text.length && text.charCodeAt(mi) !== CH_SQUOTE && text.charCodeAt(mi) !== CH_DQUOTE) mi++
-        if (mi < text.length) {
-          const q = text.charCodeAt(mi)
-          const end = text.indexOf(String.fromCharCode(q), mi + 1)
-          if (end !== -1) moduleSrc = text.slice(mi + 1, end)
-        }
-      }
-    }
+    const reference = scanModuleReferences(text).find(item => item.category === 'static-import')
+    const tokens = tokenizeDeclarationSyntax(text)
+    const isTypeOnly = importEquals?.isTypeOnly ?? reference?.isTypeOnly ?? false
+    const isSideEffectImport = tokens[1]?.kind === 'quoted'
+    const moduleSrc = importEquals?.source ?? reference?.specifier ?? ''
 
     const comments = extractLeadingComments(stmtStart)
 

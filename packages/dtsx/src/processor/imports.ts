@@ -2,7 +2,7 @@
  * Import statement parsing and processing utilities
  */
 import type { ModuleReference } from '../module-references'
-import { parseImportEquals, quoteModuleSpecifier, scanModuleReferences } from '../module-references'
+import { parseImportEquals, quoteModuleSpecifier, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { getImportItemsFromCache, setImportItemsCache } from './cache'
 
 /**
@@ -43,6 +43,16 @@ function getStaticImportReference(importText: string): ModuleReference | undefin
   return scanModuleReferences(importText).find(item => item.category === 'static-import')
 }
 
+/** Ignore grammatical trivia while keeping quoted names and module values intact. */
+function normalizeImportSyntax(source: string): string {
+  return tokenizeDeclarationSyntax(source).map(token => source.slice(token.start, token.end)).join(' ')
+}
+
+function importClauseEnd(source: string): number {
+  const reference = getStaticImportReference(source)
+  return reference ? source.lastIndexOf(' from ', reference.start) : -1
+}
+
 /** Canonically quote the decoded value of a grammatical module literal. */
 export function getImportSourceLiteral(importText: string): string | undefined {
   const reference = getStaticImportReference(importText)
@@ -59,174 +69,41 @@ export function parseImportStatement(importText: string): {
   source: string
   isTypeOnly: boolean
   isNamespace: boolean
+  namespaceName?: string | null
   isImportEquals?: boolean
 } | null {
-  const importEquals = parseImportEquals(importText)
-  if (importEquals) return {
-    defaultName: importEquals.name,
-    namedItems: [],
-    source: importEquals.source,
-    isTypeOnly: importEquals.isTypeOnly,
-    isNamespace: false,
-    isImportEquals: true,
+  const parsed = parseImportDetailed(importText)
+  if (!parsed) return null
+  return {
+    defaultName: parsed.defaultName ?? parsed.namespaceName,
+    namedItems: parsed.namedItems.map(item => `${!parsed.isTypeOnly && item.isTypeOnly ? 'type ' : ''}${item.originalName === item.name ? item.name : `${item.originalName} as ${item.name}`}`),
+    source: parsed.source, isTypeOnly: parsed.isTypeOnly, isNamespace: parsed.isNamespace,
+    namespaceName: parsed.namespaceName, isImportEquals: parsed.isImportEquals,
   }
-  // Find 'from' and extract source
-  const fromIndex = importText.indexOf(' from ')
-  if (fromIndex === -1)
-    return null
-
-  const reference = getStaticImportReference(importText)
-  if (!reference) return null
-  const source = reference.specifier
-
-  // Parse the import part (before 'from')
-  let importPart = importText.slice(0, fromIndex).trim()
-
-  // Check for 'import type'
-  const isTypeOnly = importPart.startsWith('import type ')
-  if (importPart.startsWith('import ')) {
-    importPart = importPart.slice(7).trim()
-  }
-  if (importPart.startsWith('type ')) {
-    importPart = importPart.slice(5).trim()
-  }
-
-  let defaultName: string | null = null
-  const namedItems: string[] = []
-  let isNamespace = false
-
-  // Check for braces (named imports)
-  const braceStart = importPart.indexOf('{')
-  const braceEnd = importPart.lastIndexOf('}')
-
-  if (braceStart !== -1 && braceEnd !== -1) {
-    // Check for default import before braces
-    const beforeBrace = importPart.slice(0, braceStart).trim()
-    if (beforeBrace.endsWith(',')) {
-      defaultName = beforeBrace.slice(0, -1).trim() || null
-    }
-
-    // Extract named imports
-    const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    // Single-pass parsing: avoid split().map().filter() triple allocation
-    let itemStart = 0
-    for (let i = 0; i <= namedPart.length; i++) {
-      if (i === namedPart.length || namedPart.charCodeAt(i) === 44 /* , */) {
-        let s = itemStart, e = i
-        while (s < e && (namedPart.charCodeAt(s) === 32 || namedPart.charCodeAt(s) === 9 || namedPart.charCodeAt(s) === 10)) s++
-        while (e > s && (namedPart.charCodeAt(e - 1) === 32 || namedPart.charCodeAt(e - 1) === 9 || namedPart.charCodeAt(e - 1) === 10)) e--
-        if (s < e) namedItems.push(namedPart.slice(s, e))
-        itemStart = i + 1
-      }
-    }
-  }
-  else {
-    const trimmed = importPart.trim()
-    // Namespace import: `* as X` — strip prefix so defaultName = alias and
-    // mark it so the emitter reconstructs `import * as X from '...'`.
-    if (trimmed.startsWith('* as ')) {
-      defaultName = trimmed.slice(5).trim() || null
-      isNamespace = true
-    }
-    else {
-      // Default import only
-      defaultName = trimmed || null
-    }
-  }
-
-  return { defaultName, namedItems, source, isTypeOnly, isNamespace }
 }
 
-/**
- * Extract all imported items from an import statement (with caching)
- * Uses simple string operations to avoid regex backtracking
- */
+/** Imported local names, sharing the same binding grammar as emission. */
 export function extractAllImportedItems(importText: string): string[] {
-  // Check cache first
   const cached = getImportItemsFromCache(importText)
-  if (cached) {
-    return cached
-  }
-
-  const items: string[] = []
-
-  const importEquals = parseImportEquals(importText)
-  if (importEquals) {
-    items.push(importEquals.name)
-    setImportItemsCache(importText, items)
-    return items
-  }
-
-  // Find 'from' keyword position
-  const fromIndex = importText.indexOf(' from ')
-  if (fromIndex === -1) {
-    setImportItemsCache(importText, items)
-    return items
-  }
-
-  // Get the part between 'import' and 'from'
-  let importPart = importText.slice(0, fromIndex).trim()
-
-  // Remove 'import' keyword and optional 'type' keyword
-  if (importPart.startsWith('import ')) {
-    importPart = importPart.slice(7).trim()
-  }
-  if (importPart.startsWith('type ')) {
-    importPart = importPart.slice(5).trim()
-  }
-
-  // Check for named imports with braces
-  const braceStart = importPart.indexOf('{')
-  const braceEnd = importPart.lastIndexOf('}')
-
-  if (braceStart !== -1 && braceEnd !== -1) {
-    // Check for default import before braces (mixed import)
-    const beforeBrace = importPart.slice(0, braceStart).trim()
-    if (beforeBrace.endsWith(',')) {
-      // Mixed import: defaultName, { a, b }
-      const defaultName = beforeBrace.slice(0, -1).trim()
-      if (defaultName) {
-        items.push(defaultName)
-      }
-    }
-    else if (beforeBrace && !beforeBrace.includes(',')) {
-      // Default import before braces without comma (shouldn't happen but handle it)
-      items.push(beforeBrace)
-    }
-
-    // Extract named imports from braces (inline clean to avoid closure allocation)
-    const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const rawItems = namedPart.split(',')
-    for (let ri = 0; ri < rawItems.length; ri++) {
-      let trimmed = rawItems[ri].trim()
-      if (!trimmed) continue
-      if (trimmed.startsWith('type ')) {
-        trimmed = trimmed.slice(5).trim()
-      }
-      const asIndex = trimmed.indexOf(' as ')
-      if (asIndex !== -1) {
-        trimmed = trimmed.slice(asIndex + 4).trim()
-      }
-      if (trimmed) items.push(trimmed)
-    }
-  }
-  else {
-    const trimmed = importPart.trim()
-    // Namespace import: `* as X` — register the alias so word-detection
-    // finds it when the code uses `X.something`.
-    if (trimmed.startsWith('* as ')) {
-      const alias = trimmed.slice(5).trim()
-      if (alias) items.push(alias)
-    }
-    else if (trimmed) {
-      // Default import: `import defaultName from 'module'`
-      items.push(trimmed)
-    }
-  }
-
+  if (cached) return cached
+  const parsed = parseImportDetailed(importText)
+  const items = parsed ? [parsed.defaultName, parsed.namespaceName, ...parsed.namedItems.map(item => item.name)].filter((name): name is string => name !== null) : []
   setImportItemsCache(importText, items)
-
   return items
+}
+
+function splitImportItems(source: string): string[] {
+  const result: string[] = []
+  let start = 0
+  for (const token of tokenizeDeclarationSyntax(source)) {
+    if (token.kind !== 'punctuation' || source.slice(token.start, token.end) !== ',') continue
+    const item = source.slice(start, token.start).trim()
+    if (item) result.push(item)
+    start = token.end
+  }
+  const item = source.slice(start).trim()
+  if (item) result.push(item)
+  return result
 }
 
 /**
@@ -234,6 +111,7 @@ export function extractAllImportedItems(importText: string): string[] {
  * Handles: import type { X }, import { type X, Y }, import * as X, etc.
  */
 export function parseImportDetailed(importText: string): ParsedImport | null {
+  importText = normalizeImportSyntax(importText)
   const importEquals = parseImportEquals(importText)
   if (importEquals) return {
     defaultName: importEquals.name,
@@ -245,7 +123,7 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
     isImportEquals: true,
   }
   // Find 'from' and extract source
-  const fromIndex = importText.indexOf(' from ')
+  const fromIndex = importClauseEnd(importText)
   if (fromIndex === -1)
     return null
 
@@ -257,7 +135,7 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
   let importPart = importText.slice(0, fromIndex).trim()
 
   // Check for 'import type' (entire import is type-only)
-  const isTypeOnly = importPart.startsWith('import type ')
+  const isTypeOnly = reference.isTypeOnly
   if (importPart.startsWith('import ')) {
     importPart = importPart.slice(7).trim()
   }
@@ -271,11 +149,13 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
   let namespaceName: string | null = null
 
   // Check for namespace import (import * as X)
-  if (importPart.startsWith('* as ')) {
+  const namespaceIndex = importPart.includes('{') ? -1 : importPart.indexOf('* as ')
+  if (namespaceIndex !== -1) {
     isNamespace = true
-    namespaceName = importPart.slice(5).trim()
+    namespaceName = importPart.slice(namespaceIndex + 5).trim()
+    defaultName = importPart.slice(0, namespaceIndex).trim().replace(/,$/, '').trim() || null
     return {
-      defaultName: null,
+      defaultName,
       namedItems: [],
       source,
       isTypeOnly,
@@ -297,26 +177,14 @@ export function parseImportDetailed(importText: string): ParsedImport | null {
 
     // Extract named imports with type-only detection (single-pass parsing)
     const namedPart = importPart.slice(braceStart + 1, braceEnd)
-    const items: string[] = []
-    {
-      let _s = 0
-      for (let _i = 0; _i <= namedPart.length; _i++) {
-        if (_i === namedPart.length || namedPart.charCodeAt(_i) === 44) {
-          let a = _s, b = _i
-          while (a < b && (namedPart.charCodeAt(a) <= 32)) a++
-          while (b > a && (namedPart.charCodeAt(b - 1) <= 32)) b--
-          if (a < b) items.push(namedPart.slice(a, b))
-          _s = _i + 1
-        }
-      }
-    }
+    const items = splitImportItems(namedPart)
 
     for (const item of items) {
-      const itemIsTypeOnly = item.startsWith('type ')
+      const itemIsTypeOnly = isTypeOnlyImportItem(item)
       const cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
 
       // Handle aliases: 'OriginalName as AliasName'
-      const asIndex = cleanItem.indexOf(' as ')
+      const asIndex = cleanItem.lastIndexOf(' as ')
       let name: string
       let originalName: string
 
@@ -450,11 +318,11 @@ export function parseExportDetailed(exportText: string): {
   }
 
   for (const item of items) {
-    const itemIsTypeOnly = item.startsWith('type ')
+    const itemIsTypeOnly = isTypeOnlyImportItem(item)
     const cleanItem = itemIsTypeOnly ? item.slice(5).trim() : item
 
     // Handle aliases: 'OriginalName as AliasName'
-    const asIndex = cleanItem.indexOf(' as ')
+    const asIndex = cleanItem.lastIndexOf(' as ')
     let name: string
     let originalName: string
 
@@ -488,7 +356,10 @@ export function parseExportDetailed(exportText: string): {
  * Check if an import item is type-only
  */
 export function isTypeOnlyImportItem(itemText: string): boolean {
-  return itemText.trim().startsWith('type ')
+  const tokens = tokenizeDeclarationSyntax(itemText)
+  const first = tokens[0]
+  if (!first || first.kind !== 'word' || itemText.slice(first.start, first.end) !== 'type' || tokens.length < 2) return false
+  return !(tokens.length === 3 && itemText.slice(tokens[1].start, tokens[1].end) === 'as')
 }
 
 /**
@@ -520,7 +391,7 @@ export function mergeImports(imports: string[]): string[] {
     const parsed = parseImportDetailed(imp)
     if (!parsed)
       continue
-    if (parsed.isImportEquals) {
+    if (parsed.isImportEquals || parsed.isNamespace) {
       preservedEquals.push(imp)
       continue
     }

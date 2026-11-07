@@ -36,6 +36,7 @@ export * from './formats'
 export * from './formatter'
 // Core API - essential for dts generation
 export * from './generator'
+export * from './native-generation'
 export * from './import-sorter'
 
 export * from './incremental'
