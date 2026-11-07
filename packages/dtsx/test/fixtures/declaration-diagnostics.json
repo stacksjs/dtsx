@@ -1,0 +1,171 @@
+{
+  "9007": {
+    "files": {
+      "index.ts": "export function read(value:number){if(value)return 1;return 2}"
+    },
+    "positive": "const value:number=api.read(1);void value;",
+    "negative": "const value:string=api.read(1);void value;",
+    "negativeCode": 2322
+  },
+  "9008": {
+    "files": {
+      "index.ts": "export class Counter { read(value:number){if(value)return 1;return 2} }"
+    },
+    "positive": "const value:number=new api.Counter().read(1);void value;",
+    "negative": "const value:string=new api.Counter().read(1);void value;",
+    "negativeCode": 2322
+  },
+  "9009": {
+    "files": {
+      "index.ts": "export class Counter { get value(){if(Math.random()>0.5)return 7;return \"seven\"} }"
+    },
+    "positive": "const value:number|string=new api.Counter().value;void value;",
+    "negative": "const value:boolean=new api.Counter().value;void value;",
+    "negativeCode": 2322
+  },
+  "9010": {
+    "files": {
+      "index.ts": "export const value=Math.abs(-1)"
+    },
+    "positive": "const value:number=api.value;void value;",
+    "negative": "const value:string=api.value;void value;",
+    "negativeCode": 2322
+  },
+  "9011": {
+    "files": {
+      "index.ts": "export function read(value=Math.abs(-1)):number{return value}"
+    },
+    "positive": "const a:number=api.read();const b:number=api.read(2);void[a,b];",
+    "negative": "api.read(\"bad\");",
+    "negativeCode": 2345
+  },
+  "9012": {
+    "files": {
+      "index.ts": "export class Counter { value=Math.abs(-1) }"
+    },
+    "positive": "const value:number=new api.Counter().value;void value;",
+    "negative": "const value:string=new api.Counter().value;void value;",
+    "negativeCode": 2322
+  },
+  "9013": {
+    "files": {
+      "index.ts": "export const object={value:1+2}"
+    },
+    "positive": "const value:number=api.object.value;void value;",
+    "negative": "const value:string=api.object.value;void value;",
+    "negativeCode": 2322
+  },
+  "9015": {
+    "files": {
+      "index.ts": "const base={value:7};export const object={...base,own:true}"
+    },
+    "positive": "const value:number=api.object.value;api.object.value=8;api.object.own=false;void value;",
+    "negative": "const value:string=api.object.value;void value;",
+    "negativeCode": 2322
+  },
+  "9016": {
+    "files": {
+      "index.ts": "const value=7;export const object={value}"
+    },
+    "positive": "const value:number=api.object.value;api.object.value=8;void value;",
+    "negative": "const value:string=api.object.value;void value;",
+    "negativeCode": 2322
+  },
+  "9017": {
+    "files": {
+      "index.ts": "export const list=[{value:7}]"
+    },
+    "positive": "const value:number=api.list[0].value;api.list.push({value:8});void value;",
+    "negative": "const value:string=api.list[0].value;void value;",
+    "negativeCode": 2322
+  },
+  "9018": {
+    "files": {
+      "index.ts": "const base=[1,2]as const;export const list=[...base]as const"
+    },
+    "positive": "const value:1=api.list[0];void value;",
+    "negative": "const value:2=api.list[0];void value;",
+    "negativeCode": 2322
+  },
+  "9019": {
+    "files": {
+      "index.ts": "export const {value=7}={} as {value?:number}"
+    },
+    "positive": "const value:number=api.value;void value;",
+    "negative": "const value:string=api.value;void value;",
+    "negativeCode": 2322
+  },
+  "9020": {
+    "files": {
+      "index.ts": "const seed=Math.abs(-1);export enum Numbered {Value=seed}"
+    },
+    "positive": "const value:number=api.Numbered.Value;void value;",
+    "negative": "const value:string=api.Numbered.Value;void value;",
+    "negativeCode": 2322
+  },
+  "9021": {
+    "files": {
+      "index.ts": "function base(){return class {value=7}};export class Counter extends base(){}"
+    },
+    "positive": "const value:number=new api.Counter().value;void value;",
+    "negative": "const value:string=new api.Counter().value;void value;",
+    "negativeCode": 2322
+  },
+  "9022": {
+    "files": {
+      "index.ts": "export const Counter=class {value=7}"
+    },
+    "positive": "const value:number=new api.Counter().value;void value;",
+    "negative": "const value:string=new api.Counter().value;void value;",
+    "negativeCode": 2322
+  },
+  "9023": {
+    "files": {
+      "index.ts": "export function read():number{return 7};read.version=\"value\""
+    },
+    "positive": "const a:number=api.read();const b:string=api.read.version;api.read.version=\"updated\";void[a,b];",
+    "negative": "api.read.version=7;",
+    "negativeCode": 2322
+  },
+  "9025": {
+    "files": {
+      "index.ts": "export function read(first = Math.abs(-1), last: number): number { return first + last }"
+    },
+    "positive": "const value:number=api.read(undefined,2);void value;",
+    "negative": "api.read(\"bad\",2);",
+    "negativeCode": 2345
+  },
+  "9026": {
+    "files": {
+      "index.ts": "import { install } from './provider.js'; export class ParentThing implements ParentThing {} install(ParentThing.prototype);",
+      "provider.ts": "import type { ParentThing } from './index.js'; declare module './index.js' { interface ParentThing { add: (a: number, b: number) => number } } export function install(target: ParentThing): void { target.add = (a: number, b: number) => a + b }"
+    },
+    "positive": "const value: number = new api.ParentThing().add(1, 2); void value;",
+    "negative": "new api.ParentThing().add(\"bad\", 2);",
+    "negativeCode": 2345
+  },
+  "9037": {
+    "files": {
+      "index.ts": "export default Math.abs(-1)"
+    },
+    "positive": "const value:number=api.default;void value;",
+    "negative": "const value:string=api.default;void value;",
+    "negativeCode": 2322
+  },
+  "9038": {
+    "files": {
+      "index.ts": "const KEY=\"value\";export class Counter {[KEY]=7}"
+    },
+    "positive": "const value:number=new api.Counter().value;void value;",
+    "negative": "const value:string=new api.Counter().value;void value;",
+    "negativeCode": 2322
+  },
+  "9039": {
+    "files": {
+      "index.ts": "export function read(){type Private={value:number};return{value:7}as Private}"
+    },
+    "positive": "const value:number=api.read().value;void value;",
+    "negative": "const value:string=api.read().value;void value;",
+    "negativeCode": 2322
+  }
+}
