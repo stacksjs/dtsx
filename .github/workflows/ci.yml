@@ -61,6 +61,13 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Verify source identity and output collision safety
         run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts
+      - name: Build the native CLI for this platform
+        working-directory: packages/zig-dtsx
+        run: zig build cli -j2
+      - name: Verify actual native project traversal and installed delivery
+        env:
+          DTSX_NATIVE_CLI: ${{ github.workspace }}/packages/zig-dtsx/zig-out/bin/zig-dtsx${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: bun test packages/zig-dtsx/test/cli-project.test.ts
 
   lint:
     runs-on: ubuntu-latest

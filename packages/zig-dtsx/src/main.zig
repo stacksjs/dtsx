@@ -13,15 +13,16 @@ const emitter = @import("emitter.zig");
 // headers. This also keeps cross-compilation working on CI runners where
 // `addTranslateC` blows up with `CacheCheckFailed` for cross targets.
 //
-// On Windows we use UCRT's `_findfirst`/`__acrt_iob_func` family. On POSIX
-// (Linux + the BSD-derived Apple platforms) we use stdio + dirent + open(2)
-// directly. Stdio FILE* globals have different external symbol names
+// Directory traversal uses the platform-aware std.Io filesystem API.
+// Checked file operations retain UCRT stdio on Windows and stdio/openat(2)
+// on POSIX (Linux and the BSD-derived Apple platforms). Stdio FILE* globals
+// have different external symbol names
 // across libcs (`stdin`/`stdout`/`stderr` on glibc/musl, `__stdinp` etc.
 // on Apple), so we expose them as functions that resolve via `@extern`.
 const c = if (builtin.os.tag == .windows) struct {
     pub const FILE = opaque {};
     pub extern "c" fn __acrt_iob_func(index: c_int) *FILE;
-    pub extern "c" fn fopen(filename: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
+    pub extern "c" fn _wfopen(filename: [*:0]const u16, mode: [*:0]const u16) ?*FILE;
     pub extern "c" fn fclose(stream: *FILE) c_int;
     pub extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
     pub extern "c" fn fwrite(ptr: [*]const u8, size: usize, nmemb: usize, stream: *FILE) usize;
@@ -31,20 +32,6 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn ftell(stream: *FILE) c_long;
     pub const SEEK_END: c_int = 2;
     pub const SEEK_SET: c_int = 0;
-
-    // Windows directory iteration via UCRT _findfirst/_findnext
-    pub const _finddata_t = extern struct {
-        attrib: c_uint,
-        time_create: isize,
-        time_access: isize,
-        time_write: isize,
-        size: usize,
-        name: [260]u8,
-    };
-    pub extern "c" fn _findfirst(filespec: [*:0]const u8, fileinfo: *_finddata_t) isize;
-    pub extern "c" fn _findnext(handle: isize, fileinfo: *_finddata_t) c_int;
-    pub extern "c" fn _findclose(handle: isize) c_int;
-    pub extern "c" fn _mkdir(path: [*:0]const u8) c_int;
 } else struct {
     pub const FILE = opaque {};
 
@@ -73,7 +60,6 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn read(fd: c_int, buf: [*]u8, count: usize) isize;
     pub extern "c" fn write(fd: c_int, buf: [*]const u8, count: usize) isize;
     pub extern "c" fn lseek(fd: c_int, offset: c_long, whence: c_int) c_long;
-    pub extern "c" fn mkdir(path: [*:0]const u8, mode: c_uint) c_int;
 
     // fcntl.h flag values. BSD-derived libcs (Darwin/FreeBSD/DragonFly) use
     // hex bits; glibc/musl Linux use octal — these specific constants are
@@ -150,11 +136,23 @@ fn writeErr(data: []const u8) void {
     _ = c.fwrite(data.ptr, 1, data.len, getStderr());
 }
 
-fn readFile(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
+/// Preserve Windows filename identity rather than passing UTF-8 through the
+/// active ANSI codepage. File reads/writes retain the checked stdio lifecycle.
+fn openFilePath(alloc: std.mem.Allocator, path: []const u8, mode: [:0]const u8) !?*c.FILE {
+    if (builtin.os.tag == .windows) {
+        const wide_path = try std.unicode.wtf8ToWtf16LeAllocZ(alloc, path);
+        defer alloc.free(wide_path);
+        const wide_mode = try std.unicode.wtf8ToWtf16LeAllocZ(alloc, mode);
+        defer alloc.free(wide_mode);
+        return c._wfopen(wide_path.ptr, wide_mode.ptr);
+    }
     const path_z = try alloc.dupeSentinel(u8, path, 0);
     defer alloc.free(path_z);
+    return c.fopen(path_z.ptr, mode.ptr);
+}
 
-    const fp = c.fopen(path_z.ptr, "rb") orelse return error.InputReadFailure;
+fn readFile(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const fp = (try openFilePath(alloc, path, "rb")) orelse return error.InputReadFailure;
     var closed = false;
     defer if (!closed) {
         _ = c.fclose(fp);
@@ -192,10 +190,7 @@ fn readStdin(alloc: std.mem.Allocator) ![]const u8 {
 }
 
 fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void {
-    const path_z = try alloc.dupeSentinel(u8, path, 0);
-    defer alloc.free(path_z);
-
-    const fp = c.fopen(path_z.ptr, "wb") orelse return error.OutputWriteFailure;
+    const fp = (try openFilePath(alloc, path, "wb")) orelse return error.OutputWriteFailure;
     var closed = false;
     defer if (!closed) {
         _ = c.fclose(fp);
@@ -209,60 +204,62 @@ fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void
     if (close_result != 0) return error.OutputWriteFailure;
 }
 
-/// Collect .ts filenames from a directory (excluding .d.ts files).
-fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8) ![][]const u8 {
+fn samePath(left: []const u8, right: []const u8) bool {
+    return if (builtin.os.tag == .windows) std.ascii.eqlIgnoreCase(left, right) else std.mem.eql(u8, left, right);
+}
+
+fn withinPath(path: []const u8, root: []const u8) bool {
+    const prefix = std.mem.trimEnd(u8, root, if (builtin.os.tag == .windows) "\\/" else "/");
+    return path.len >= prefix.len and samePath(path[0..prefix.len], prefix) and
+        (path.len == prefix.len or std.fs.path.isSep(path[prefix.len]));
+}
+
+fn fileOrder(_: void, left: []const u8, right: []const u8) bool {
+    return std.mem.lessThan(u8, left, right);
+}
+
+/// Discover relative source paths without following directory symlinks. The
+/// output tree is identified physically, including when roots use aliases.
+fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8, out_path: []const u8) ![][]const u8 {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var root = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return error.DirNotFound;
+    defer root.close(io);
+    const source_root = try std.Io.Dir.cwd().realPathFileAlloc(io, dir_path, alloc);
+    defer alloc.free(source_root);
+    const output_root = try std.Io.Dir.cwd().realPathFileAlloc(io, out_path, alloc);
+    defer alloc.free(output_root);
+    const exclude_output = !samePath(source_root, output_root) and withinPath(output_root, source_root);
     var files = std.array_list.Managed([]const u8).init(alloc);
     errdefer {
         for (files.items) |name| alloc.free(name);
         files.deinit();
     }
-
-    if (builtin.os.tag == .windows) {
-        // Windows: use _findfirst/_findnext
-        const pattern_str = try std.fmt.allocPrint(alloc, "{s}\\*.ts", .{dir_path});
-        const pattern = try alloc.dupeSentinel(u8, pattern_str, 0);
-        alloc.free(pattern_str);
-        defer alloc.free(pattern);
-
-        var fdata: c._finddata_t = undefined;
-        const handle = c._findfirst(pattern.ptr, &fdata);
-        if (handle == -1) return files.toOwnedSlice();
-        defer _ = c._findclose(handle);
-
-        while (true) {
-            const name_ptr: [*:0]const u8 = @ptrCast(&fdata.name);
-            const name = std.mem.span(name_ptr);
-            if (std.mem.endsWith(u8, name, ".ts") and !std.mem.endsWith(u8, name, ".d.ts")) {
-                try files.append(try alloc.dupe(u8, name));
+    var walker = try root.walkSelectively(alloc);
+    defer walker.deinit();
+    while (try walker.next(io)) |value| {
+        var entry = value;
+        if (entry.kind == .unknown) entry.kind = (try entry.dir.statFile(io, entry.basename, .{ .follow_symlinks = false })).kind;
+        if (entry.kind == .directory) {
+            if (std.mem.eql(u8, entry.basename, "node_modules") or std.mem.eql(u8, entry.basename, ".git") or std.mem.eql(u8, entry.basename, ".dtsx-cache")) continue;
+            if (exclude_output) {
+                const full_path = try std.fs.path.resolve(alloc, &.{ source_root, entry.path });
+                defer alloc.free(full_path);
+                if (withinPath(full_path, output_root)) continue;
             }
-            if (c._findnext(handle, &fdata) != 0) break;
+            try walker.enter(io, entry);
+            continue;
         }
-    } else {
-        // POSIX: use std.c's per-platform `dirent` layout + `opendir` /
-        // `readdir` / `closedir`. Zig's std already encodes the right
-        // struct shape for glibc/musl, Darwin, FreeBSD, DragonFly, etc.,
-        // so we don't have to (and `readdir` is dispatched to the right
-        // symbol on macOS x86_64 — `readdir$INODE64` — automatically).
-        const dir_z = try alloc.dupeSentinel(u8, dir_path, 0);
-        defer alloc.free(dir_z);
-
-        const dir = std.c.opendir(dir_z.ptr) orelse return error.DirNotFound;
-        defer _ = std.c.closedir(dir);
-
-        while (true) {
-            std.c._errno().* = 0;
-            const entry = std.c.readdir(dir) orelse {
-                if (std.c._errno().* != 0) return error.DirectoryReadFailure;
-                break;
-            };
-            const name_ptr: [*:0]const u8 = @ptrCast(&entry.*.name);
-            const name = std.mem.span(name_ptr);
-            if (std.mem.endsWith(u8, name, ".ts") and !std.mem.endsWith(u8, name, ".d.ts")) {
-                try files.append(try alloc.dupe(u8, name));
-            }
+        if (!std.mem.endsWith(u8, entry.basename, ".ts") or std.mem.endsWith(u8, entry.basename, ".d.ts")) continue;
+        if (entry.kind == .sym_link) {
+            // Preserve unreadable file links as tasks, so checked reads report
+            // their failures. Directory links never become recursive roots.
+            if (entry.dir.statFile(io, entry.basename, .{})) |target| {
+                if (target.kind == .directory) continue;
+            } else |_| {}
         }
+        try files.append(try alloc.dupe(u8, entry.path));
     }
-
+    std.mem.sort([]const u8, files.items, {}, fileOrder);
     return files.toOwnedSlice();
 }
 
@@ -384,13 +381,12 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     defer setup_arena.deinit();
     const sa = setup_arena.allocator();
 
-    // Ensure output directory exists
+    // Prepare parent paths through the platform-aware filesystem API. Worker
+    // stdio still checks writes, flushes and closes independently per file.
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var output_root = try std.Io.Dir.cwd().createDirPathOpen(io, out_dir, .{});
+    defer output_root.close(io);
     const out_z = try sa.dupeSentinel(u8, out_dir, 0);
-    if (builtin.os.tag == .windows) {
-        _ = c._mkdir(out_z.ptr);
-    } else {
-        _ = c.mkdir(out_z.ptr, 0o755);
-    }
 
     // Open directory file descriptors for openat (POSIX only)
     var input_dir_fd: c_int = -1;
@@ -411,7 +407,13 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     };
 
     // Collect .ts filenames
-    const filenames = try collectTsFiles(sa, project_dir);
+    const filenames = try collectTsFiles(sa, project_dir, out_dir);
+    for (filenames) |filename| {
+        if (std.fs.path.dirname(filename)) |parent| {
+            var output_parent = try output_root.createDirPathOpen(io, parent, .{});
+            output_parent.close(io);
+        }
+    }
     if (filenames.len == 0) return;
 
     // Build file tasks
@@ -568,7 +570,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
             \\Options:
             \\  -h, --help        Show this help message
             \\  -o, --output FILE Write output to FILE instead of stdout
-            \\  --project DIR     Process all .ts files in DIR (batch mode)
+            \\  --project DIR     Process .ts sources recursively (batch mode)
             \\  --outdir DIR      Output directory for --project mode
             \\  --no-comments     Strip comments from output
             \\  --isolated-declarations  Skip initializer parsing when type annotations exist
