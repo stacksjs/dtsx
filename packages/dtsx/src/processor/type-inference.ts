@@ -711,18 +711,28 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     const root = tokens[index + 1]
     if (!root || root.kind !== 'word') continue
     let type = parameterTypes.get(inferred.slice(root.start, root.end))
-    // Implementation locals do not exist in the emitted signature. Never
-    // turn their unresolved queries into invalid names such as unknown.json.
-    if (!type) return 'unknown'
+    const unresolved = !type
+    let start = token.start
     let end = root.end
+    const queryIndex = index
     index++
     while (tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '.' && tokens[index + 2]?.kind === 'word') {
       const property = tokens[index + 2]
-      type = `(${type})["${inferred.slice(property.start, property.end)}"]`
+      if (!unresolved) type = `(${type})["${inferred.slice(property.start, property.end)}"]`
       end = property.end
       index += 2
     }
-    result += inferred.slice(cursor, token.start) + type
+    // Keep the enclosing object/tuple shape. An unresolved query alone is a
+    // valid unknown property; a ReturnType over that query must collapse as
+    // one node, rather than forming ReturnType<unknown> or unknown.member.
+    if (unresolved && queryIndex >= 2
+      && inferred.slice(tokens[queryIndex - 2].start, tokens[queryIndex - 2].end) === 'ReturnType'
+      && inferred.slice(tokens[queryIndex - 1].start, tokens[queryIndex - 1].end) === '<'
+      && tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '>') {
+      start = tokens[queryIndex - 2].start
+      end = tokens[++index].end
+    }
+    result += inferred.slice(cursor, start) + (type ?? 'unknown')
     cursor = end
   }
   return result + inferred.slice(cursor)
