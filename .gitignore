@@ -26,11 +26,3 @@ benchmark/oxc-emit
 *.node
 /packages/dtsx/.test-cli
 pantry
-
-# Stacks deployment keeps private keys and runtime state local.
-.env.keys
-storage/cloud/
-storage/framework/defaults/
-storage/framework/runtime/
-storage/framework/stx/
-!.env.production
