@@ -1048,16 +1048,16 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     defer decl_names.deinit();
 
     for (declarations.items) |d| {
-        decl_names.put(d.name, {}) catch {};
+        try decl_names.put(d.name, {});
     }
 
     // Collect text parts for searching
     var text_parts = std.array_list.Managed([]const u8).init(declarations.allocator);
-    text_parts.ensureTotalCapacity(declarations.items.len) catch {};
+    try text_parts.ensureTotalCapacity(declarations.items.len);
     defer text_parts.deinit();
     for (declarations.items) |d| {
         if (d.kind != .import_decl) {
-            text_parts.append(d.text) catch {};
+            try text_parts.append(d.text);
         }
     }
 
@@ -1065,8 +1065,10 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     defer word_set.deinit();
     var value_references = std.StringHashMap(void).init(declarations.allocator);
     defer value_references.deinit();
+    var initializer_references = std.StringHashMap(void).init(declarations.allocator);
+    defer initializer_references.deinit();
     for (declarations.items) |d| {
-        if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
+        if (d.value.len > 0) try addInitializerReferences(d.value, &initializer_references);
         if (d.kind != .import_decl) try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
     }
 
@@ -1075,11 +1077,11 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
     // Move outside loop — reuse across iterations
     var to_insert = std.array_list.Managed(Declaration).init(declarations.allocator);
-    to_insert.ensureTotalCapacity(non_exported_types.count()) catch {};
+    try to_insert.ensureTotalCapacity(non_exported_types.count());
     defer to_insert.deinit();
 
     var merged = std.array_list.Managed(Declaration).init(declarations.allocator);
-    merged.ensureTotalCapacity(declarations.items.len + non_exported_types.count()) catch {};
+    try merged.ensureTotalCapacity(declarations.items.len + non_exported_types.count());
     defer merged.deinit();
 
     while (true) {
@@ -1091,7 +1093,7 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
                     const start = i;
                     i += 1;
                     while (i < part.len and ch.isIdentChar(part[i])) i += 1;
-                    word_set.put(part[start..i], {}) catch {};
+                    try word_set.put(part[start..i], {});
                 } else {
                     i += 1;
                 }
@@ -1107,17 +1109,19 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
             if (resolved.contains(name)) continue;
 
             // O(1) lookup instead of O(n*m) text scanning
-            if (if (entry.value_ptr.kind == .function_decl) value_references.contains(name) else word_set.contains(name)) {
+            const value_only = entry.value_ptr.kind == .function_decl or entry.value_ptr.kind == .variable_decl;
+            const referenced = if (value_only) value_references.contains(name) else word_set.contains(name);
+            if (referenced or (entry.value_ptr.kind != .function_decl and initializer_references.contains(name))) {
                 if (!decl_names.contains(name)) {
                     const group = if (entry.value_ptr.kind == .function_decl) non_exported_function_groups.get(name) else null;
                     if (group) |members| {
-                        to_insert.appendSlice(members.items) catch {};
+                        try to_insert.appendSlice(members.items);
                     } else {
-                        to_insert.append(entry.value_ptr.*) catch {};
+                        try to_insert.append(entry.value_ptr.*);
                     }
-                    decl_names.put(name, {}) catch {};
+                    try decl_names.put(name, {});
                 }
-                resolved.put(name, {}) catch {};
+                try resolved.put(name, {});
             }
         }
 
@@ -1132,35 +1136,35 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
 
         // Merge at correct source positions
         merged.clearRetainingCapacity();
-        merged.ensureTotalCapacity(declarations.items.len + to_insert.items.len) catch {};
+        try merged.ensureTotalCapacity(declarations.items.len + to_insert.items.len);
         var ti: usize = 0;
         for (declarations.items) |d| {
             while (ti < to_insert.items.len and to_insert.items[ti].start <= d.start) {
-                merged.append(to_insert.items[ti]) catch {};
+                try merged.append(to_insert.items[ti]);
                 ti += 1;
             }
-            merged.append(d) catch {};
+            try merged.append(d);
         }
         while (ti < to_insert.items.len) {
-            merged.append(to_insert.items[ti]) catch {};
+            try merged.append(to_insert.items[ti]);
             ti += 1;
         }
 
         declarations.clearRetainingCapacity();
-        declarations.appendSlice(merged.items) catch {};
+        try declarations.appendSlice(merged.items);
 
         // Add new texts to search
         for (to_insert.items) |d| {
             if (d.kind != .import_decl) {
-                text_parts.append(d.text) catch {};
-                if (d.value.len > 0) addInitializerReferences(d.value, &word_set);
+                try text_parts.append(d.text);
+                if (d.value.len > 0) try addInitializerReferences(d.value, &initializer_references);
                 try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
             }
         }
     }
 }
 
-fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(void)) void {
+fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(void)) !void {
     var i: usize = 0;
     while (i < value.len) {
         const c = value[i];
@@ -1199,7 +1203,7 @@ fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(vo
         const is_spread = start >= 3 and std.mem.eql(u8, value[start - 3 .. start], "...");
         if (next == ':' or (previous == '.' and !is_spread)) continue;
         if (next == '(' and (previous == '{' or previous == ',')) continue;
-        references.put(value[start..i], {}) catch {};
+        try references.put(value[start..i], {});
     }
 }
 
@@ -1432,4 +1436,50 @@ test "isRegexStart keyword dispatch covers all branches" {
         s.pos = slash_idx;
         try std.testing.expectEqual(c.expected, s.isRegexStart());
     }
+}
+
+fn checkPrivateValueClosureAllocations(allocator: Allocator) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const owned = arena.allocator();
+    var declarations = std.array_list.Managed(Declaration).init(owned);
+    defer declarations.deinit();
+    try declarations.append(.{ .kind = .interface_decl, .name = "Public", .text = "export interface Public { type: string; member: number; [brand]: typeof direct }", .is_exported = true });
+    try declarations.append(.{ .kind = .variable_decl, .name = "selected", .text = "export declare const selected: typeof alias;", .is_exported = true });
+    var candidates = std.StringHashMap(Declaration).init(owned);
+    defer candidates.deinit();
+    const private = [_]Declaration{
+        .{ .kind = .variable_decl, .name = "type", .text = "declare const type: string;", .value = "'unused'" },
+        .{ .kind = .variable_decl, .name = "member", .text = "declare const member: number;", .value = "7" },
+        .{ .kind = .variable_decl, .name = "brand", .text = "declare const brand: unique symbol;" },
+        .{ .kind = .variable_decl, .name = "direct", .text = "declare const direct: number;", .value = "7" },
+        .{ .kind = .variable_decl, .name = "alias", .text = "declare const alias: unknown;", .value = "origin" },
+        .{ .kind = .variable_decl, .name = "origin", .text = "declare const origin: Shape;", .value = "new Shape()" },
+        .{ .kind = .class_decl, .name = "Shape", .text = "declare class Shape { value: number; }" },
+    };
+    for (private) |entry| try candidates.put(entry.name, entry);
+    var groups: std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)) = .empty;
+    defer groups.deinit(owned);
+    try resolveReferencedTypes(&declarations, &candidates, &groups);
+    try std.testing.expectEqual(@as(usize, 7), declarations.items.len);
+    for (declarations.items) |entry| {
+        try std.testing.expect(!std.mem.eql(u8, entry.name, "type"));
+        try std.testing.expect(!std.mem.eql(u8, entry.name, "member"));
+    }
+    for ([_][]const u8{ "brand", "direct", "alias", "origin", "Shape" }) |name| {
+        var found = false;
+        for (declarations.items) |entry| if (std.mem.eql(u8, entry.name, name)) {
+            found = true;
+            break;
+        };
+        try std.testing.expect(found);
+    }
+}
+
+test "private values use value references while retaining real initializer dependencies" {
+    try checkPrivateValueClosureAllocations(std.testing.allocator);
+}
+
+test "private value closure propagates backing allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkPrivateValueClosureAllocations, .{});
 }

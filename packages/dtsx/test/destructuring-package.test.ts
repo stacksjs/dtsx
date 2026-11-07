@@ -9,7 +9,7 @@ import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
 import { isAvailable, runTsc } from './helpers/tsc'
 
-interface Fixture { files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }>, helperPrivacyCode?: string }
+interface Fixture { files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }>, helperPrivacyCode?: string, inspect?: (output: string) => void }
 const fixtures: Record<string, Fixture> = {
   'object aliases and private source identity': {
     files: { 'index.ts': "const source = { count: 7, label: 'ready' }; export const { count, label: title } = source;" },
@@ -68,9 +68,18 @@ const fixtures: Record<string, Fixture> = {
     negatives: [{ text: 'const bad: string = api.count; void bad;', code: 'TS2322' }, { text: 'const bad: number = api.default; void bad;', code: 'TS2322' }, { text: 'api.title;', code: 'TS2339' }],
   },
   'private unique symbol keys remain private': {
-    files: { 'index.ts': 'const key: unique symbol = Symbol("key"); const source = { [key]: "secret", keep: true }; export const { [key]: secret, ...rest } = source;' },
+    files: { 'index.ts': 'const key: unique symbol = Symbol("key"); const source = { [key]: "secret", keep: true }; const { [key]: secret, ...rest } = source; export { secret, rest };' },
     positive: 'const s: string = api.secret; const b: boolean = api.rest.keep; void [s,b];',
     negatives: [{ text: 'const bad: number = api.secret; void bad;', code: 'TS2322' }, { text: 'api.key;', code: 'TS2339' }],
+  },
+  'member names do not retain unused private binding patterns': {
+    files: { 'index.ts': 'const { type, member } = { type: "unused", member: 7 }; export interface Public { type: string; member: number }' },
+    positive: 'const value: api.Public = { type: "ready", member: 7 }; void value;',
+    negatives: [{ text: 'const value: api.Public = { type: "ready", member: "bad" }; void value;', code: 'TS2322' }, { text: 'api.type;', code: 'TS2339' }],
+    inspect(output) {
+      expect(output).not.toContain('__dtsx_binding_')
+      expect(output).not.toMatch(/declare const (?:type|member)\b/)
+    },
   },
   'generated names avoid implementation bindings': {
     files: { 'index.ts': "const __dtsx_binding_0 = 'keep'; export const marker = __dtsx_binding_0; export const { count } = { count: 7 };" },
@@ -136,6 +145,7 @@ for (const producer of ['core', 'bun-plugin', 'native-ffi', 'native-project'] as
           expect(installed.exitCode, installed.stderr.toString()).toBe(0)
           const output = await readFile(join(consumer, 'node_modules/destructuring-contract/dist/index.d.ts'), 'utf8')
           expect(output).toBe(await readFile(join(library, 'dist/index.d.ts'), 'utf8'))
+          fixture.inspect?.(output)
           await controls(consumer, 'destructuring-contract', fixture)
           const helper = output.match(/declare (?:const|function|type) (__dtsx_binding_\d+)/)?.[1]
           if (helper) {

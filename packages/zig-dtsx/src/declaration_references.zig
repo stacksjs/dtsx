@@ -1,5 +1,6 @@
 //! Value references of private function candidates, separate from type names.
 const std = @import("std");
+const binding_patterns = @import("binding_patterns.zig");
 const syntax = @import("module_specifiers.zig");
 const Declaration = @import("types.zig").Declaration;
 const Token = syntax.SyntaxToken;
@@ -127,12 +128,11 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
             }
             var first = parameter;
             while (oneOf(text(source, items, first), &.{ ".", "public", "private", "protected", "readonly", "override" })) first += 1;
-            if (first < items.len and items[first].kind == .word) try names.put(text(source, items, first), {});
-            var i = parameter;
-            while (i < binding_end) : (i += 1) {
-                if (items[i].kind == .word and !eq(source, items, i + 1, ":") and
-                    !oneOf(text(source, items, i), &.{ "public", "private", "protected", "readonly", "override" })) try names.put(text(source, items, i), {});
-            }
+            if (eq(source, items, first, "{") or eq(source, items, first, "[")) {
+                const bound = try binding_patterns.bindingPatternNames(allocator, source[items[first].start..items[binding_end - 1].end]);
+                defer allocator.free(bound);
+                for (bound) |name| try names.put(name, {});
+            } else if (first < items.len and items[first].kind == .word) try names.put(text(source, items, first), {});
             parameter = end + 1;
         }
         var end = close + @as(usize, if (eq(source, items, close + 1, ":")) 2 else 3);
@@ -191,4 +191,12 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
             break;
         }
     }
+}
+
+test "computed parameter keys remain free while binding targets are scoped" {
+    var references = std.StringHashMap(void).init(std.testing.allocator);
+    defer references.deinit();
+    try collectValueReferences(std.testing.allocator, .{ .kind = .function_decl, .name = "read", .text = "declare function read({ [key]: localValue }: { [key]: number }): [typeof localValue, typeof key];" }, &references);
+    try std.testing.expect(references.contains("key"));
+    try std.testing.expect(!references.contains("localValue"));
 }

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { collectDeclarationValueReferences } from '../src/declaration-references'
 import { bindingPatternNames, projectBindingPattern } from '../src/binding-patterns'
 import vectors from '../../zig-dtsx/src/fixtures/binding-patterns.json'
 
@@ -13,3 +14,10 @@ for (const vector of vectors) {
     if (vector.names.length) expect(declarations[0].isExported).toBe(false)
   })
 }
+
+test('computed parameter keys remain free while binding targets are scoped', () => {
+  const references = new Set<string>()
+  collectDeclarationValueReferences({ kind: 'function', name: 'read', text: 'declare function read({ [key]: localValue }: { [key]: number }): [typeof localValue, typeof key];', isExported: false }, references)
+  expect(references.has('key')).toBe(true)
+  expect(references.has('localValue')).toBe(false)
+})

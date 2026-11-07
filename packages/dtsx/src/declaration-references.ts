@@ -1,4 +1,5 @@
 import type { Declaration } from './types'
+import { bindingPatternNames } from './binding-patterns'
 import { tokenizeDeclarationSyntax } from './module-references'
 
 /** A direct const alias preserves the referenced value's type identity. */
@@ -85,10 +86,10 @@ export function collectDeclarationValueReferences(declaration: Declaration, refe
       }
       let first = parameter
       while (['.', 'public', 'private', 'protected', 'readonly', 'override'].includes(text(first))) first++
-      if (word(first)) names.add(text(first))
-      for (let i = parameter; i < bindingEnd; i++) {
-        if (word(i) && text(i + 1) !== ':' && !['public', 'private', 'protected', 'readonly', 'override'].includes(text(i))) names.add(text(i))
+      if (text(first) === '{' || text(first) === '[') {
+        for (const name of bindingPatternNames(source.slice(tokens[first].start, tokens[bindingEnd - 1].end))) names.add(name)
       }
+      else if (word(first)) names.add(text(first))
       parameter = end + 1
     }
     let end = close + (text(close + 1) === ':' ? 2 : 3)

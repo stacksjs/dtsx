@@ -4325,6 +4325,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
     // Build a word set from all declaration texts — O(1) lookups per type name
     const wordSet = new Set<string>()
     const valueReferences = new Set<string>()
+    const initializerReferences = new Set<string>()
     const textParts: string[] = []
     for (let i = 0; i < declarations.length; i++) {
       const declaration = declarations[i]
@@ -4332,7 +4333,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         textParts.push(declaration.text)
         addWordsToSet(declaration.text, wordSet)
         collectDeclarationValueReferences(declaration, valueReferences)
-        if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, wordSet)
+        if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, initializerReferences)
       }
     }
 
@@ -4342,7 +4343,8 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const [name, decl] of nonExportedTypes) {
         if (resolved.has(name))
           continue
-        if ((decl.kind === 'function' ? valueReferences : wordSet).has(name)) {
+        const references = decl.kind === 'function' || decl.kind === 'variable' ? valueReferences : wordSet
+        if (references.has(name) || (decl.kind !== 'function' && initializerReferences.has(name))) {
           if (!declNames.has(name)) {
             const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
             if (group) {
@@ -4379,7 +4381,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
           textParts.push(decl.text)
           addWordsToSet(decl.text, wordSet)
           collectDeclarationValueReferences(decl, valueReferences)
-          if (typeof decl.value === 'string') addInitializerReferences(decl.value, wordSet)
+          if (typeof decl.value === 'string') addInitializerReferences(decl.value, initializerReferences)
         }
       }
     }

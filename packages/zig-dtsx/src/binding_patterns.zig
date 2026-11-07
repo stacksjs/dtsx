@@ -142,9 +142,10 @@ fn appendNames(target: *const Target, names: *std.array_list.Managed([]const u8)
 }
 
 pub fn bindingPatternNames(allocator: Allocator, pattern: []const u8) ![]const []const u8 {
-    var parser = Parser{ .allocator = allocator, .source = pattern, .tokens = try syntax.tokenizeDeclarationSyntax(allocator, pattern), .pairs = std.AutoHashMap(usize, usize).init(allocator) };
-    defer allocator.free(parser.tokens);
-    defer parser.pairs.deinit();
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const temporary = arena.allocator();
+    var parser = Parser{ .allocator = temporary, .source = pattern, .tokens = try syntax.tokenizeDeclarationSyntax(temporary, pattern), .pairs = std.AutoHashMap(usize, usize).init(temporary) };
     var names = std.array_list.Managed([]const u8).init(allocator);
     defer names.deinit();
     try appendNames(try parser.parse(), &names);
