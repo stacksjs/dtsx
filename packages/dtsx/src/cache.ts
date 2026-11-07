@@ -40,7 +40,7 @@ export interface CacheManifest {
 
 // Invalidate declarations emitted before computed-key constant evaluation and
 // faithful index inference, alongside the current source-selection policy.
-const CACHE_VERSION = 8
+const CACHE_VERSION = 9
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

@@ -1918,6 +1918,21 @@ pub fn collapseWhitespace(alloc: std.mem.Allocator, val: []const u8) ![]const u8
     return result.toOwnedSlice();
 }
 
+/// Accessor implementation functions are not the property's readable type.
+fn accessorValueType(getter: bool, value: []const u8) []const u8 {
+    const input = trim(value);
+    if (!ch.startsWith(input, "(")) return "unknown";
+    const end = findMatchingBracket(input, 0, '(', ')') orelse return "unknown";
+    if (getter) {
+        const tail = trim(input[end + 1 ..]);
+        return if (ch.startsWith(tail, "=>")) trim(tail[2..]) else "unknown";
+    }
+    const parameter = trim(input[1..end]);
+    const binding_end = if (ch.startsWith(parameter, "{")) findMatchingBracket(parameter, 0, '{', '}') orelse return "unknown" else if (ch.startsWith(parameter, "[")) findMatchingBracket(parameter, 0, '[', ']') orelse return "unknown" else 0;
+    const colon = ch.indexOfChar(parameter, ':', binding_end) orelse return "unknown";
+    return trim(parameter[colon + 1 ..]);
+}
+
 /// Infer object type from object literal.
 /// When _collect_clean_default is set and !is_const, also builds the @defaultValue
 /// content during the same pass — avoiding double-parsing of parseObjectProperties.
@@ -1931,6 +1946,11 @@ pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     if (depth >= MAX_INFERENCE_DEPTH) return "Record<string, unknown>";
 
     const properties = try parseObjectProperties(alloc, content);
+    var getter_names = std.StringHashMap(void).init(alloc);
+    defer getter_names.deinit();
+    for (properties) |property| {
+        if (ch.startsWith(property.key, "get ")) try getter_names.put(trim(property.key[4..]), {});
+    }
 
     // Track clean default parts when collecting and this is a non-const container
     const build_default = _collect_clean_default and !is_const;
@@ -1984,7 +2004,12 @@ pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
             val_type = try cleanMethodSignature(alloc, val_type);
         }
 
-        if (!try computed_keys.isSymbolKey(alloc, prop.key, key_constants)) try property_types.append(val_type);
+        const is_getter = ch.startsWith(prop.key, "get ");
+        const is_setter = ch.startsWith(prop.key, "set ");
+        const property_name = if (is_getter or is_setter) trim(prop.key[4..]) else prop.key;
+        const has_getter = is_setter and getter_names.contains(property_name);
+        if (!try computed_keys.isSymbolKey(alloc, property_name, key_constants) and !has_getter)
+            try property_types.append(if (is_getter or is_setter) accessorValueType(is_getter, val_type) else val_type);
         var emit_key = prop.key;
         var index_key = false;
         const raw_val = trim(prop.value);
@@ -2012,15 +2037,14 @@ pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
                 try parts.appendSlice(" */\n  ");
             }
             if (ch.startsWith(prop.key, "get ")) {
-                const arrow = ch.indexOf(val_type, "=>", 0);
-                const getter_type = if (arrow) |index| trim(val_type[index + 2 ..]) else val_type;
+                const getter_type = accessorValueType(true, val_type);
                 try parts.appendSlice("get ");
                 try parts.appendSlice(trim(prop.key[4..]));
                 try parts.appendSlice("(): ");
                 try parts.appendSlice(getter_type);
             } else if (ch.startsWith(prop.key, "set ")) {
-                const arrow = ch.indexOf(val_type, "=>", 0);
-                const setter_params = if (arrow) |index| trim(val_type[0..index]) else "(value: unknown)";
+                const end = if (ch.startsWith(val_type, "(")) findMatchingBracket(val_type, 0, '(', ')') else null;
+                const setter_params = if (end) |index| val_type[0 .. index + 1] else "(value: unknown)";
                 try parts.appendSlice("set ");
                 try parts.appendSlice(trim(prop.key[4..]));
                 try parts.appendSlice(setter_params);

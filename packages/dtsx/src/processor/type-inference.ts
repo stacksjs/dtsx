@@ -1236,6 +1236,10 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
 
   // Parse object properties
   const properties = parseObjectProperties(content)
+  const getterNames = new Set(properties.flatMap(([key]) => {
+    const accessor = matchAccessorKey(splitLeadingCommentsFromKey(key).key)
+    return accessor?.kind === 'get' ? [accessor.name] : []
+  }))
   const propTypes: string[] = []
   const spreadTypes: string[] = []
   const propertyTypes: string[] = []
@@ -1321,7 +1325,8 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     const sourceKey = emitKey
     const rawVal = val.trim()
     const templateKey = resolveTemplateKey(emitKey, keyConstants)
-    if (!isSymbolKey(emitKey, keyConstants)) propertyTypes.push(valueType)
+    if (!isSymbolKey(accessor?.name ?? emitKey, keyConstants) && !(accessor?.kind === 'set' && getterNames.has(accessor.name)))
+      propertyTypes.push(accessor ? accessorValueType(accessor.kind, valueType) : valueType)
     if (templateKey && 'index' in templateKey) stringIndex = true
     else {
       if (templateKey && 'name' in templateKey) emitKey = templateKey.name
@@ -2122,6 +2127,22 @@ function cleanMethodSignature(_signature: string): string {
     }
     // Setter signatures don't have a return type in TS.
     return `set ${name}(${params})`
+  }
+
+  /** Index signatures describe property reads, not the functions implementing accessors. */
+  function accessorValueType(kind: 'get' | 'set', valueType: string): string {
+    const input = valueType.trim()
+    const end = findMatchingBracket(input, 0, '(', ')')
+    if (!input.startsWith('(') || end === -1) return 'unknown'
+    if (kind === 'get') {
+      const tail = input.slice(end + 1).trim()
+      return tail.startsWith('=>') ? tail.slice(2).trim() : 'unknown'
+    }
+    const parameter = input.slice(1, end).trim()
+    const bindingEnd = parameter.startsWith('{') ? findMatchingBracket(parameter, 0, '{', '}')
+      : parameter.startsWith('[') ? findMatchingBracket(parameter, 0, '[', ']') : 0
+    const colon = parameter.indexOf(':', Math.max(0, bindingEnd))
+    return colon === -1 ? 'unknown' : parameter.slice(colon + 1).trim()
   }
 
   /** Check if value looks like a method definition (not an arrow function).

@@ -109,7 +109,7 @@ describe('BuildCache', () => {
 
       const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      expect(manifest.version).toBe(8)
+      expect(manifest.version).toBe(9)
       expect(Object.keys(manifest.entries)).toHaveLength(1)
       // Construct a previous-format fixture with every other field intact.
       // This does not claim that an historical SDK produced the fixture.
@@ -198,7 +198,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(8)
+      expect(parsed.version).toBe(9)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')

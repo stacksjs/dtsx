@@ -69,6 +69,14 @@ const cases: Record<string, DeclarationPackageCase> = {
       { code: 2322, content: 'const invalid: number = api.computedObject.stable\nvoid invalid' },
     ],
   },
+  'accessor value types in computed string indices': {
+    source: "const WIDE: string = 'key'\nconst SYMBOL_KEY: unique symbol = Symbol('key')\nexport const exposedSymbol: typeof SYMBOL_KEY = SYMBOL_KEY\nexport const computedObject = { get stable(): number { return 7 }, set flag(value: boolean) { void value }, get writable(): number { return 9 }, set writable(value: RegExp) { void value }, get [SYMBOL_KEY](): Date { return new Date() }, [`prefix_${WIDE}`]: 'value' }\n",
+    positive: 'const stable: number = api.computedObject.stable\nconst flag: boolean = api.computedObject.flag\nconst symbol: Date = api.computedObject[api.exposedSymbol]\nconst indexed: string | number | boolean = api.computedObject.anything\napi.computedObject.writable = /value/\nvoid [stable, flag, symbol, indexed]',
+    negatives: [
+      { code: 2322, content: 'const invalid: string = api.computedObject.stable\nvoid invalid' },
+      { code: 2322, content: 'const invalid: Date = api.computedObject.anything\nvoid invalid' },
+    ],
+  },
   'arithmetic, nested templates and comments in constant keys': {
     source: "const KEY = 'root'\nconst ORDINAL = 1 + 2\nexport const computedObject = { [`pre_${`nested_${/* key */ KEY}`}_${(1 + 2) * 4}`]: 7, [`num_${ORDINAL}`]: false }\n",
     positive: 'const nested: number = api.computedObject.pre_nested_root_12\nconst ordinal: boolean = api.computedObject.num_3\nvoid [nested, ordinal]',
