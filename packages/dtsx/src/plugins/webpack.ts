@@ -2,7 +2,6 @@
  * webpack plugin for dtsx
  * Generates TypeScript declaration files during webpack builds
  */
-
 import type { DtsGenerationConfig, GenerationStats } from '../types'
 import { generate } from '../generator'
 

@@ -778,18 +778,18 @@ function buildParams(params?: Declaration['parameters']): string {
  */
 export function minifyDts(content: string): string {
   return content
-    // Remove single-line comments (but keep JSDoc)
+  // Remove single-line comments (but keep JSDoc)
     .replace(/(?<!\/\*\*)\/\/[^\n]*/g, '')
-    // Remove empty lines
+  // Remove empty lines
     .replace(/^\s*[\r\n]/gm, '')
-    // Collapse multiple spaces
+  // Collapse multiple spaces
     .replace(/ {2,}/g, ' ')
-    // Remove space before/after brackets
+  // Remove space before/after brackets
     .replace(/\s*([{}[\]();,:])\s*/g, '$1')
-    // Add back necessary spaces
+  // Add back necessary spaces
     .replace(/(\w)(\{)/g, '$1 $2')
     .replace(/(\})([a-z])/gi, '$1 $2')
     .replace(/(export|import|type|interface|class|function|const|let|var|extends|implements|declare)\s*/g, '$1 ')
-    // Clean up
+  // Clean up
     .trim()
 }

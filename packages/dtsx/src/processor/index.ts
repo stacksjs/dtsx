@@ -1,19 +1,10 @@
 /**
  * Processor module - converts declarations to DTS format
  */
-
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
-import {
-  processClassDeclaration,
-  processEnumDeclaration,
-  processFunctionDeclaration,
-  processInterfaceDeclaration,
-  processModuleDeclaration,
-  processTypeDeclaration,
-  processVariableDeclaration,
-} from './declarations'
+import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
 import { extractAllImportedItems, parseImportStatement } from './imports'
 
 function assertNever(value: never, message?: string): never {

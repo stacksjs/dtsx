@@ -5,24 +5,8 @@
  * blocks. Both forms are collected into one virtual TypeScript module before
  * the normal semantic or isolated declaration scanner runs.
  */
-
-import {
-  collapseTypeText,
-  extractDefaultExportOptions,
-  filterLocalValueStatements,
-  findMacroCall,
-  findMatching,
-  getOptionValue,
-  mapRuntimeProps,
-  maskNonCode,
-  removeInlinedDeclaration,
-  resolveEmitsType,
-  resolveExposedType,
-  resolvePropsType,
-  skipNonCode,
-  stripMacroStatements,
-  type PropsResolution,
-} from './vue'
+import type { PropsResolution } from './vue'
+import { collapseTypeText, extractDefaultExportOptions, filterLocalValueStatements, findMacroCall, findMatching, getOptionValue, mapRuntimeProps, maskNonCode, removeInlinedDeclaration, resolveEmitsType, resolveExposedType, resolvePropsType, skipNonCode, stripMacroStatements } from './vue'
 
 export interface StxScriptBlock {
   /** TypeScript or JavaScript source contained by the block. */
@@ -52,7 +36,7 @@ function parseScriptBlocks(source: string): StxScriptBlock[] {
   while ((match = scriptTag.exec(source)) !== null) {
     const attrs = match[1] ?? ''
     const lang = /\blang\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1]?.toLowerCase()
-      ?? (/\b(?:type\s*=\s*["'](?:text\/)?typescript["']|typescript)\b/i.test(attrs) ? 'ts' : 'js')
+    ?? (/\b(?:type\s*=\s*["'](?:text\/)?typescript["']|typescript)\b/i.test(attrs) ? 'ts' : 'js')
     const context = /\bserver\b/i.test(attrs)
       ? 'server'
       : /\bclient\b/i.test(attrs) ? 'client' : 'universal'

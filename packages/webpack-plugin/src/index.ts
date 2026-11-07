@@ -2,12 +2,11 @@
  * Webpack plugin for dtsx - TypeScript declaration file generation
  * Integrates with webpack's compilation pipeline for seamless .d.ts generation
  */
-
-import type { Compiler, Compilation } from 'webpack'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { Compilation, Compiler } from 'webpack'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { generate } from '@stacksjs/dtsx'
-import { resolve, relative, join, dirname } from 'node:path'
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 
 /**
  * Plugin configuration options
@@ -253,14 +252,14 @@ export class DtsxWebpackPlugin {
 
       console.log(`[${PLUGIN_NAME}] Generated ${this.state.generatedFiles.size} declaration file(s)`)
     }
-catch (error) {
+    catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
       this.state.errors.push(err)
 
       if (onError) {
         await onError(err)
       }
-else {
+      else {
         console.error(`[${PLUGIN_NAME}] Error generating declarations:`, err.message)
       }
     }
@@ -283,19 +282,19 @@ else {
       if (typeof entries === 'string') {
         files.push(resolve(entries))
       }
-else if (Array.isArray(entries)) {
+      else if (Array.isArray(entries)) {
         for (const entry of entries) {
           if (typeof entry === 'string') {
             files.push(resolve(entry))
           }
         }
       }
-else if (typeof entries === 'object') {
+      else if (typeof entries === 'object') {
         for (const [, entry] of Object.entries(entries)) {
           if (typeof entry === 'string') {
             files.push(resolve(entry))
           }
-else if (typeof entry === 'object' && entry.import) {
+          else if (typeof entry === 'object' && entry.import) {
             const imports = Array.isArray(entry.import) ? entry.import : [entry.import]
             for (const imp of imports) {
               if (typeof imp === 'string') {
@@ -306,7 +305,7 @@ else if (typeof entry === 'object' && entry.import) {
         }
       }
     }
-else {
+    else {
       // Get all TypeScript files from compilation
       for (const module of compilation.modules) {
         const resource = (module as any).resource as string | undefined
@@ -342,7 +341,7 @@ else {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return false
         }
-else if (pattern.test(file)) {
+        else if (pattern.test(file)) {
           return false
         }
       }
@@ -353,7 +352,7 @@ else if (pattern.test(file)) {
           if (typeof pattern === 'string') {
             if (file.includes(pattern)) return true
           }
-else if (pattern.test(file)) {
+          else if (pattern.test(file)) {
             return true
           }
         }

@@ -7,7 +7,6 @@
  * - Processing timeouts
  * - Symlink attacks
  */
-
 import { lstat, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, normalize, relative, resolve } from 'node:path'
 
@@ -86,14 +85,14 @@ export class SecurityError extends Error {
  * Security error codes
  */
 export type SecurityErrorCode =
-  | 'PATH_TRAVERSAL'
-  | 'FILE_TOO_LARGE'
-  | 'TOTAL_SIZE_EXCEEDED'
-  | 'TIMEOUT'
-  | 'SYMLINK_NOT_ALLOWED'
-  | 'MAX_FILES_EXCEEDED'
-  | 'BLOCKED_PATTERN'
-  | 'INVALID_PATH'
+| 'PATH_TRAVERSAL'
+| 'FILE_TOO_LARGE'
+| 'TOTAL_SIZE_EXCEEDED'
+| 'TIMEOUT'
+| 'SYMLINK_NOT_ALLOWED'
+| 'MAX_FILES_EXCEEDED'
+| 'BLOCKED_PATTERN'
+| 'INVALID_PATH'
 
 /**
  * Validate that a path is safe and within the allowed root directory
@@ -400,11 +399,11 @@ export function createSecureBatchProcessor<T>(
  */
 export function sanitizeFilename(filename: string): string {
   let result = filename
-    // Normalize slashes first
+  // Normalize slashes first
     .replace(/\\/g, '/')
-    // Remove null bytes
+  // Remove null bytes
     .replace(/\0/g, '')
-    // Remove absolute path indicators
+  // Remove absolute path indicators
     .replace(/^\/+/, '')
     .replace(/^[A-Z]:/i, '')
 

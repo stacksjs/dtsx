@@ -57,11 +57,11 @@ export interface TypeMappingConfig {
  * Available type mapping presets
  */
 export type TypeMappingPreset =
-  | 'strict' // Convert 'any' to 'unknown'
-  | 'readonly' // Add readonly to array types
-  | 'nullable' // Convert undefined unions to optional
-  | 'branded' // Use branded types for primitives
-  | 'simplified' // Simplify complex utility types
+| 'strict' // Convert 'any' to 'unknown'
+| 'readonly' // Add readonly to array types
+| 'nullable' // Convert undefined unions to optional
+| 'branded' // Use branded types for primitives
+| 'simplified' // Simplify complex utility types
 
 /**
  * Default type mappings for common patterns

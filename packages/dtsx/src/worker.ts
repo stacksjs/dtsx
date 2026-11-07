@@ -2,7 +2,6 @@
  * Worker thread support for parallel file processing
  * Uses Bun workers for high-performance parallel declaration generation
  */
-
 import type { Declaration, DtsGenerationConfig } from './types'
 import { cpus } from 'node:os'
 import { resolve } from 'node:path'
@@ -470,8 +469,8 @@ catch (error) {
       const instance = this.workers[i]
       if (
         !instance.busy
-        && now - instance.lastActive > this.config.idleTimeout
-        && this.workers.length > minWorkers
+          && now - instance.lastActive > this.config.idleTimeout
+          && this.workers.length > minWorkers
       ) {
         this.removeWorker(instance)
       }

@@ -2,7 +2,6 @@
  * Error handling utilities for dtsx
  * Provides custom error classes and formatting utilities
  */
-
 import type { DtsError, SourceLocation } from './types'
 
 /**

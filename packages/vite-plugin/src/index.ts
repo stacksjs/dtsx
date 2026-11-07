@@ -1,8 +1,8 @@
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
-import type { Plugin, ResolvedConfig, ViteDevServer, ModuleNode } from 'vite'
+import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite'
+import { watch as fsWatch } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import { generate } from '@stacksjs/dtsx'
-import { resolve, relative, join, dirname, basename } from 'node:path'
-import { existsSync, watch as fsWatch } from 'node:fs'
 
 /**
  * Configuration interface extending DtsGenerationOption with Vite-specific properties
@@ -182,20 +182,20 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
 
       return stats
     }
-catch (error) {
+    catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
 
       if (onError) {
         await onError(err)
       }
-else {
+      else {
         console.error('[vite-plugin-dtsx] Error generating declarations:', err.message)
         throw err
       }
 
       return null
     }
-finally {
+    finally {
       state.isGenerating = false
     }
   }
@@ -239,7 +239,7 @@ finally {
 
       console.log('[vite-plugin-dtsx] Watching for file changes...')
     }
-catch (error) {
+    catch (error) {
       console.error('[vite-plugin-dtsx] Failed to start watcher:', error)
     }
   }

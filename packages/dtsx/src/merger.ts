@@ -2,7 +2,6 @@
  * Declaration merging module
  * Merges related declarations (interfaces, namespaces, etc.)
  */
-
 import type { Declaration } from './types'
 
 /**

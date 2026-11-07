@@ -2,7 +2,6 @@
  * Source map support for .d.ts files
  * Maps generated declarations back to original source positions
  */
-
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, relative, resolve } from 'node:path'
 
@@ -347,8 +346,8 @@ export class SourceMapConsumer {
     for (const mapping of mappings) {
       if (
         mapping.sourceIndex === sourceIndex
-        && mapping.original.line === original.line
-        && mapping.original.column <= original.column
+          && mapping.original.line === original.line
+          && mapping.original.column <= original.column
       ) {
         return mapping.generated
       }
@@ -635,12 +634,12 @@ export function buildDeclarationMappings(
     originalColumn: number
   }>,
 ): Array<{
-    generatedLine: number
-    generatedColumn: number
-    originalLine: number
-    originalColumn: number
-    name: string
-  }> {
+  generatedLine: number
+  generatedColumn: number
+  originalLine: number
+  originalColumn: number
+  name: string
+}> {
   const generatedContent = _generatedContent
   const declarationInfos = _declarationInfos
   const lines = generatedContent.split('\n')

@@ -1,7 +1,6 @@
 /**
  * Declaration processors - convert declarations to DTS format
  */
-
 import type { Declaration } from '../types'
 import { escapeJsdocContent, formatComments } from './comments'
 import { consumeCleanDefault, enableCleanDefaultCollection, extractSatisfiesType, inferNarrowType, isGenericType } from './type-inference'

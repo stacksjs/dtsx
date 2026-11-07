@@ -2,12 +2,11 @@
  * esbuild plugin for dtsx - TypeScript declaration file generation
  * Integrates with esbuild's build pipeline for seamless .d.ts generation
  */
-
-import type { Plugin, BuildOptions, BuildResult, OnLoadArgs, OnLoadResult } from 'esbuild'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { BuildOptions, BuildResult, Plugin } from 'esbuild'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { generate } from '@stacksjs/dtsx'
-import { resolve, dirname, basename, extname, relative, join } from 'node:path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 
 /**
  * Plugin configuration options
@@ -155,8 +154,8 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
 
       // Determine if we should run
       const shouldRun = trigger === 'both' ||
-        (trigger === 'build' && !state.isWatchMode) ||
-        (trigger === 'watch' && state.isWatchMode)
+      (trigger === 'build' && !state.isWatchMode) ||
+      (trigger === 'watch' && state.isWatchMode)
 
       if (!shouldRun) {
         return
@@ -184,7 +183,7 @@ export function dtsx(options: DtsxEsbuildOptions = {}): Plugin {
           if (entryPointsOnly) {
             filesToProcess = getEntryPoints(state.buildOptions!)
           }
-else {
+          else {
             // Get all TypeScript files from the build
             filesToProcess = getTypeScriptFiles(result, state.buildOptions!)
           }
@@ -219,14 +218,14 @@ else {
 
           console.log(`[dtsx] Generated ${state.generatedFiles.size} declaration file(s)`)
         }
-catch (error) {
+        catch (error) {
           const err = error instanceof Error ? error : new Error(String(error))
           state.errors.push(err)
 
           if (onError) {
             await onError(err)
           }
-else {
+          else {
             console.error('[dtsx] Error generating declarations:', err.message)
           }
         }
@@ -329,7 +328,7 @@ function filterFiles(
       if (typeof pattern === 'string') {
         if (file.includes(pattern)) return false
       }
-else if (pattern.test(file)) {
+      else if (pattern.test(file)) {
         return false
       }
     }
@@ -340,7 +339,7 @@ else if (pattern.test(file)) {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return true
         }
-else if (pattern.test(file)) {
+        else if (pattern.test(file)) {
           return true
         }
       }

@@ -7,12 +7,11 @@
  *
  * Usage: bun benchmark/ci-summary.ts [--results path] [--base path]
  */
-
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { isolatedDeclarationSync } from 'oxc-transform'
 
 // ---------------------------------------------------------------------------
@@ -240,7 +239,7 @@ function tsgoGenerate(source: string, filename: string): string {
   spawnSync(tsgoBin, [...tsgoFlags, tmpFile], { stdio: 'pipe', timeout: 30000 })
   const dtsFile = join(tsgoOutDir, safeFilename.replace(/\.ts$/, '.d.ts'))
   try { return readFileSync(dtsFile, 'utf8') }
-catch { return '' }
+  catch { return '' }
 }
 
 // Benchmark runner
@@ -318,8 +317,8 @@ for (const count of projectCounts) {
 
   const zigProject = hasZigDtsx
     ? benchFn(() => {
-        for (const f of projectFiles) zigDtsxGenerate(f.source)
-      }, 1, 5)
+    for (const f of projectFiles) zigDtsxGenerate(f.source)
+  }, 1, 5)
     : null
 
   const dtsxProject = benchFn(() => {

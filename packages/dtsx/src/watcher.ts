@@ -1,7 +1,6 @@
 /**
  * Watch mode for automatic .d.ts regeneration on source changes
  */
-
 import type { FSWatcher } from 'node:fs'
 import type { DtsGenerationConfig } from './types'
 import { watch } from 'node:fs'

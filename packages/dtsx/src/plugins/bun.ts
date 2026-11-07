@@ -2,10 +2,9 @@
  * Bun build plugin for dtsx
  * Generates TypeScript declaration files during Bun builds
  */
-
 import type { DtsGenerationConfig, GenerationStats } from '../types'
-import { dirname, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
+import { dirname, relative, resolve, sep } from 'node:path'
 import { generate } from '../generator'
 
 /**

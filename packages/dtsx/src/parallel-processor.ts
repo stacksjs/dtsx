@@ -4,7 +4,6 @@
  * Builds a dependency graph and processes independent files in parallel
  * while respecting dependencies between files.
  */
-
 import type { DtsGenerationConfig, ProcessingContext } from './types'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -422,12 +421,12 @@ export function getProcessingLevels(graph: Map<string, ProcessingNode>): string[
 export function analyzeParallelizationPotential(
   graph: Map<string, ProcessingNode>,
 ): {
-    totalFiles: number
-    independentFiles: number
-    maxParallelism: number
-    levels: number
-    estimatedSpeedup: number
-  } {
+  totalFiles: number
+  independentFiles: number
+  maxParallelism: number
+  levels: number
+  estimatedSpeedup: number
+} {
   const levels = getProcessingLevels(graph)
   const independent = findIndependentFiles(graph)
   const maxParallelism = Math.max(...levels.map(l => l.length))

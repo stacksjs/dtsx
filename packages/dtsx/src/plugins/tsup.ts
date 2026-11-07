@@ -2,7 +2,6 @@
  * tsup plugin for dtsx
  * Generates TypeScript declaration files during tsup builds
  */
-
 import type { DtsGenerationConfig, GenerationStats } from '../types'
 import { generate } from '../generator'
 

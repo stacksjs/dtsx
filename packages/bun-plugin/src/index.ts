@@ -1,9 +1,9 @@
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
+import process from 'node:process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import process from 'node:process'
 import { generate } from '@stacksjs/dtsx/generator'
 
 /**
@@ -65,11 +65,11 @@ export interface BuildEvent {
 }
 
 export type BuildEventData =
-  | { type: 'start', files: string[], config: DtsGenerationOption }
-  | { type: 'progress', processed: number, total: number, currentFile: string }
-  | { type: 'file', file: string, outputFile: string, duration: number, cached: boolean }
-  | { type: 'complete', stats: GenerationStats, duration: number, fromCache: number }
-  | { type: 'error', error: DtsxPluginError, file?: string }
+| { type: 'start', files: string[], config: DtsGenerationOption }
+| { type: 'progress', processed: number, total: number, currentFile: string }
+| { type: 'file', file: string, outputFile: string, duration: number, cached: boolean }
+| { type: 'complete', stats: GenerationStats, duration: number, fromCache: number }
+| { type: 'error', error: DtsxPluginError, file?: string }
 
 /**
  * Event listener function

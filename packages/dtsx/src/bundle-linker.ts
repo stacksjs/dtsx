@@ -17,7 +17,6 @@
  * It works on generated declaration text rather than on source, so every
  * inferred type is the one per-file generation produced.
  */
-
 import { relative } from 'node:path'
 import { resolveRelativeSpecifier } from './module-graph'
 
@@ -44,10 +43,10 @@ export interface DeclarationStatement {
 }
 
 type Binding =
-  | { kind: 'local', name: string }
-  | { kind: 'namespace', file: string }
-  | { kind: 'external', source: string, imported: string }
-  | { kind: 'external-namespace', source: string }
+| { kind: 'local', name: string }
+| { kind: 'namespace', file: string }
+| { kind: 'external', source: string, imported: string }
+| { kind: 'external-namespace', source: string }
 
 interface ImportClause {
   defaultName?: string

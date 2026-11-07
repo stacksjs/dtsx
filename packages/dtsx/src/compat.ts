@@ -4,7 +4,6 @@
  * Provides cross-runtime compatibility for Bun and Node.js
  * Automatically detects the runtime and uses the appropriate APIs
  */
-
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import { readFile, stat, writeFile } from 'node:fs/promises'
@@ -161,8 +160,8 @@ export async function write(path: string, content: string | Uint8Array | ArrayBu
   const data = typeof content === 'string'
     ? content
     : content instanceof ArrayBuffer
-      ? Buffer.from(content)
-      : content
+    ? Buffer.from(content)
+    : content
 
   await writeFile(path, data)
   return typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength
@@ -275,4 +274,3 @@ export function getRuntimeInfo(): RuntimeInfo {
     isNode: true,
   }
 }
-

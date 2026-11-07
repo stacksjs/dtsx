@@ -2,7 +2,6 @@
  * Incremental build support for faster rebuilds
  * Caches AST, declarations, and file hashes to skip unchanged files
  */
-
 import type { Declaration, DtsGenerationConfig } from './types'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'

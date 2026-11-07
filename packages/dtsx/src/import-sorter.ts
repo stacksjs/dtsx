@@ -65,15 +65,15 @@ export interface ImportSortConfig {
  * Import group types
  */
 export type ImportGroup =
-  | 'builtin'
-  | 'external'
-  | 'internal'
-  | 'parent'
-  | 'sibling'
-  | 'index'
-  | 'type'
-  | 'unknown'
-  | string // Custom group name
+| 'builtin'
+| 'external'
+| 'internal'
+| 'parent'
+| 'sibling'
+| 'index'
+| 'type'
+| 'unknown'
+| string // Custom group name
 
 /**
  * Parsed import information
@@ -285,16 +285,16 @@ export function sortImports(
   type CompiledOrder = { regex?: RegExp, prefix: string }
   const compiledOrder: CompiledOrder[] = order.length > 0
     ? order.map((pattern): CompiledOrder => {
-        if (pattern.startsWith('^')) {
-          try {
-            return { regex: new RegExp(pattern), prefix: pattern.slice(1) }
-          }
-          catch {
-            return { prefix: pattern.slice(1) }
-          }
-        }
-        return { prefix: pattern }
-      })
+    if (pattern.startsWith('^')) {
+      try {
+        return { regex: new RegExp(pattern), prefix: pattern.slice(1) }
+      }
+      catch {
+        return { prefix: pattern.slice(1) }
+      }
+    }
+    return { prefix: pattern }
+  })
     : []
   const orderIndex = (source: string): number => {
     for (let i = 0; i < compiledOrder.length; i++) {

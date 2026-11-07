@@ -3,7 +3,6 @@
  * Replaces ts.createSourceFile() + AST walk with direct string scanning.
  * Produces the same Declaration[] shape that the processor expects.
  */
-
 import type { Declaration } from '../types'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
@@ -570,7 +569,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const c = pos < len ? source[pos] : ''
     const two = source.slice(pos, pos + 2)
     const continuesExpression
-      = c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
+     = c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
       || c === ',' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%'
       || c === '<' || c === '>' || c === '=' || c === '&' || c === '|' || c === '^'
       || c === '`' || two === '=>'
@@ -683,8 +682,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     // Select the right regex for this bracket type
     const re = open === CH_LBRACE ? BRACE_DELIM_RE
       : open === CH_LPAREN ? PAREN_DELIM_RE
-        : open === CH_LBRACKET ? BRACKET_DELIM_RE
-          : ANGLE_DELIM_RE
+      : open === CH_LBRACKET ? BRACKET_DELIM_RE
+      : ANGLE_DELIM_RE
 
     re.lastIndex = pos
     let match
@@ -1199,1012 +1198,1012 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           const ch1 = trimmed.charCodeAt(1)
           if (ch1 === CH_SLASH) continue // //
           if (ch1 === CH_STAR) { // /* or /**
-            if (!trimmed.includes('*/'))
-              inBlockComment = true
-            continue
-          }
+          if (!trimmed.includes('*/'))
+            inBlockComment = true
+          continue
         }
-        if (ch0 === CH_STAR) continue
+      }
+      if (ch0 === CH_STAR) continue
 
-        // Remove trailing inline comments without regex
-        let cleaned = stripTrailingComment(line)
-        // Strip trailing semicolons from member lines (DTS convention for interfaces)
-        if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
-          cleaned = cleaned.slice(0, -1)
-        // Strip default values from method parameters in interface members
-        cleaned = cleanMemberLineDefaults(cleaned)
-        const ct = cleaned.trim()
-        if (!ct) continue
+      // Remove trailing inline comments without regex
+      let cleaned = stripTrailingComment(line)
+      // Strip trailing semicolons from member lines (DTS convention for interfaces)
+      if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
+        cleaned = cleaned.slice(0, -1)
+      // Strip default values from method parameters in interface members
+      cleaned = cleanMemberLineDefaults(cleaned)
+      const ct = cleaned.trim()
+      if (!ct) continue
 
-        filtered.push(cleaned)
-        trimCache.push(ct)
+      filtered.push(cleaned)
+      trimCache.push(ct)
 
-        // Compute indent simultaneously
-        let iw = 0
-        while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
-        if (ct !== '{' && ct !== '}') {
-          if (iw < minIndent) minIndent = iw
-        }
-        indentCache.push(iw)
+      // Compute indent simultaneously
+      let iw = 0
+      while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
+      if (ct !== '{' && ct !== '}') {
+        if (iw < minIndent) minIndent = iw
+      }
+      indentCache.push(iw)
+    }
+    else {
+      // No comments — skip comment detection and stripTrailingComment
+      // Just trim trailing whitespace (what stripTrailingComment does when no comments)
+      let end = line.length
+      while (end > 0 && (line.charCodeAt(end - 1) === CH_SPACE || line.charCodeAt(end - 1) === CH_TAB || line.charCodeAt(end - 1) === CH_CR)) end--
+      if (end === 0) continue // empty line
+      let cleaned = end < line.length ? line.slice(0, end) : line
+      // Strip trailing semicolons
+      if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
+        cleaned = cleaned.slice(0, -1)
+      // Strip default values from method parameters in interface members
+      cleaned = cleanMemberLineDefaults(cleaned)
+      const ct = cleaned.trim()
+      if (!ct) continue
+
+      filtered.push(cleaned)
+      trimCache.push(ct)
+
+      let iw = 0
+      while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
+      if (ct !== '{' && ct !== '}') {
+        if (iw < minIndent) minIndent = iw
+      }
+      indentCache.push(iw)
+    }
+  }
+
+  if (filtered.length === 0)
+    return '{}'
+
+  if (minIndent === Infinity || minIndent <= 2)
+    return filtered.join('\n') // Already at correct indent
+
+  // Pass 2: re-indent using cached values
+  const offset = minIndent - 2
+  const rebased: string[] = new Array(filtered.length)
+  for (let i = 0; i < filtered.length; i++) {
+    const t = trimCache[i]
+    if (t === '{') {
+      rebased[i] = t
+      continue
+    }
+    const currentIndent = indentCache[i]
+    if (currentIndent > minIndent) {
+      rebased[i] = filtered[i]
+    }
+    else if (currentIndent === minIndent && (t.charCodeAt(0) === CH_RBRACE || t.charCodeAt(0) === CH_RBRACKET || t.charCodeAt(0) === CH_RPAREN)) {
+      rebased[i] = filtered[i]
+    }
+    else {
+      const newIndent = Math.max(0, currentIndent - offset)
+      rebased[i] = ' '.repeat(newIndent) + t
+    }
+  }
+
+  return rebased.join('\n')
+}
+
+/** Extract type parameters <...> (normalized to single line) */
+function extractGenerics(): string {
+  if (pos >= len || source.charCodeAt(pos) !== CH_LANGLE)
+    return ''
+  const start = pos
+  findMatchingClose(CH_LANGLE, CH_RANGLE)
+  const raw = source.slice(start, pos)
+  // Normalize multi-line generics to single line (avoid regex)
+  if (raw.includes('\n')) {
+    // Collapse whitespace/newlines to single spaces
+    let result = ''
+    let prevSpace = false
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw.charCodeAt(i)
+      if (c === 32 || c === 9 || c === 10 || c === 13) {
+        if (!prevSpace && result.length > 0) { result += ' '; prevSpace = true }
       }
       else {
-        // No comments — skip comment detection and stripTrailingComment
-        // Just trim trailing whitespace (what stripTrailingComment does when no comments)
-        let end = line.length
-        while (end > 0 && (line.charCodeAt(end - 1) === CH_SPACE || line.charCodeAt(end - 1) === CH_TAB || line.charCodeAt(end - 1) === CH_CR)) end--
-        if (end === 0) continue // empty line
-        let cleaned = end < line.length ? line.slice(0, end) : line
-        // Strip trailing semicolons
-        if (cleaned.charCodeAt(cleaned.length - 1) === CH_SEMI)
-          cleaned = cleaned.slice(0, -1)
-        // Strip default values from method parameters in interface members
-        cleaned = cleanMemberLineDefaults(cleaned)
-        const ct = cleaned.trim()
-        if (!ct) continue
-
-        filtered.push(cleaned)
-        trimCache.push(ct)
-
-        let iw = 0
-        while (iw < cleaned.length && isWhitespace(cleaned.charCodeAt(iw))) iw++
-        if (ct !== '{' && ct !== '}') {
-          if (iw < minIndent) minIndent = iw
-        }
-        indentCache.push(iw)
+        result += raw[i]
+        prevSpace = false
       }
     }
-
-    if (filtered.length === 0)
-      return '{}'
-
-    if (minIndent === Infinity || minIndent <= 2)
-      return filtered.join('\n') // Already at correct indent
-
-    // Pass 2: re-indent using cached values
-    const offset = minIndent - 2
-    const rebased: string[] = new Array(filtered.length)
-    for (let i = 0; i < filtered.length; i++) {
-      const t = trimCache[i]
-      if (t === '{') {
-        rebased[i] = t
-        continue
-      }
-      const currentIndent = indentCache[i]
-      if (currentIndent > minIndent) {
-        rebased[i] = filtered[i]
-      }
-      else if (currentIndent === minIndent && (t.charCodeAt(0) === CH_RBRACE || t.charCodeAt(0) === CH_RBRACKET || t.charCodeAt(0) === CH_RPAREN)) {
-        rebased[i] = filtered[i]
-      }
-      else {
-        const newIndent = Math.max(0, currentIndent - offset)
-        rebased[i] = ' '.repeat(newIndent) + t
-      }
-    }
-
-    return rebased.join('\n')
+    // Trim spaces around < and >
+    if (result.charCodeAt(1) === 32) result = `<${result.slice(2)}`
+    if (result.charCodeAt(result.length - 2) === 32) result = `${result.slice(0, -2)}>`
+    return result
   }
+  return raw
+}
 
-  /** Extract type parameters <...> (normalized to single line) */
-  function extractGenerics(): string {
-    if (pos >= len || source.charCodeAt(pos) !== CH_LANGLE)
-      return ''
-    const start = pos
-    findMatchingClose(CH_LANGLE, CH_RANGLE)
-    const raw = source.slice(start, pos)
-    // Normalize multi-line generics to single line (avoid regex)
-    if (raw.includes('\n')) {
-      // Collapse whitespace/newlines to single spaces
-      let result = ''
-      let prevSpace = false
-      for (let i = 0; i < raw.length; i++) {
-        const c = raw.charCodeAt(i)
-        if (c === 32 || c === 9 || c === 10 || c === 13) {
-          if (!prevSpace && result.length > 0) { result += ' '; prevSpace = true }
-        }
-        else {
-          result += raw[i]
-          prevSpace = false
-        }
-      }
-      // Trim spaces around < and >
-      if (result.charCodeAt(1) === 32) result = `<${result.slice(2)}`
-      if (result.charCodeAt(result.length - 2) === 32) result = `${result.slice(0, -2)}>`
-      return result
-    }
-    return raw
-  }
+/** Extract parameter list (...) as raw text */
+function extractParamList(): string {
+  if (pos >= len || source.charCodeAt(pos) !== CH_LPAREN)
+    return '()'
+  const start = pos
+  findMatchingClose(CH_LPAREN, CH_RPAREN)
+  return source.slice(start, pos)
+}
 
-  /** Extract parameter list (...) as raw text */
-  function extractParamList(): string {
-    if (pos >= len || source.charCodeAt(pos) !== CH_LPAREN)
-      return '()'
-    const start = pos
-    findMatchingClose(CH_LPAREN, CH_RPAREN)
-    return source.slice(start, pos)
-  }
-
-  /**
+/**
    * Build DTS-safe parameter text from raw parameter text.
    * Removes default values and handles destructuring.
    */
-  /**
+/**
    * A parameter's text without its comments. The splitters keep a JSDoc block
    * that precedes a parameter as part of it, and everything downstream reads
    * the text positionally: a commented `public readonly body?: string` lost
    * its modifiers and emitted the comment's prose as a class member, which is
    * a declaration file TypeScript cannot parse.
    */
-  function stripParamComments(text: string): string {
-    if (text.indexOf('/') === -1)
-      return text
-    let out = ''
-    let inStr = false
-    let strCh = 0
-    for (let i = 0; i < text.length; i++) {
-      const ch = text.charCodeAt(i)
-      if (inStr) {
-        out += text[i]
-        if (ch === CH_BACKSLASH && i + 1 < text.length) {
-          out += text[++i]
-          continue
-        }
-        if (ch === strCh)
-          inStr = false
-        continue
-      }
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-        inStr = true
-        strCh = ch
-        out += text[i]
-        continue
-      }
-      if (ch === CH_SLASH && i + 1 < text.length) {
-        const nc = text.charCodeAt(i + 1)
-        if (nc === CH_STAR) {
-          const end = text.indexOf('*/', i + 2)
-          i = end === -1 ? text.length : end + 1
-          out += ' '
-          continue
-        }
-        if (nc === CH_SLASH) {
-          const end = text.indexOf('\n', i + 2)
-          i = end === -1 ? text.length : end - 1
-          continue
-        }
-      }
+function stripParamComments(text: string): string {
+  if (text.indexOf('/') === -1)
+    return text
+  let out = ''
+  let inStr = false
+  let strCh = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i)
+    if (inStr) {
       out += text[i]
+      if (ch === CH_BACKSLASH && i + 1 < text.length) {
+        out += text[++i]
+        continue
+      }
+      if (ch === strCh)
+        inStr = false
+      continue
     }
-    return out.trim()
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+      inStr = true
+      strCh = ch
+      out += text[i]
+      continue
+    }
+    if (ch === CH_SLASH && i + 1 < text.length) {
+      const nc = text.charCodeAt(i + 1)
+      if (nc === CH_STAR) {
+        const end = text.indexOf('*/', i + 2)
+        i = end === -1 ? text.length : end + 1
+        out += ' '
+        continue
+      }
+      if (nc === CH_SLASH) {
+        const end = text.indexOf('\n', i + 2)
+        i = end === -1 ? text.length : end - 1
+        continue
+      }
+    }
+    out += text[i]
   }
+  return out.trim()
+}
 
-  function buildDtsParams(rawParams: string): string {
-    // Strip outer parens
-    const inner = rawParams.slice(1, -1).trim()
-    if (!inner)
-      return '()'
+function buildDtsParams(rawParams: string): string {
+  // Strip outer parens
+  const inner = rawParams.slice(1, -1).trim()
+  if (!inner)
+    return '()'
 
-    // Fast path: if params are already in DTS-safe form, return as-is
-    // Requirements: no newlines in raw string, all params typed (have ':'), no destructuring/defaults/decorators/rest/modifiers
-    if (rawParams.indexOf('\n') === -1 && inner.indexOf(':') !== -1
-      && inner.indexOf('{') === -1 && inner.indexOf('[') === -1 && inner.indexOf('=') === -1
-      && inner.indexOf('@') === -1 && inner.indexOf('...') === -1) {
-      // Verify every param has a type annotation: count colons at depth 0 vs commas at depth 0
-      let colons = 0
-      let commas = 0
-      let depth = 0
-      for (let fi = 0; fi < inner.length; fi++) {
-        const fc = inner.charCodeAt(fi)
-        if (fc === CH_LPAREN || fc === CH_LANGLE || fc === CH_LBRACE) depth++
-        else if (fc === CH_RPAREN || fc === CH_RANGLE || fc === CH_RBRACE) depth--
-        else if (depth === 0) {
-          if (fc === CH_COLON) colons++
-          else if (fc === CH_COMMA) commas++
-        }
-      }
-      // Every param needs at least one colon (commas + 1 params)
-      if (colons >= commas + 1) {
-        let hasModifier = false
-        for (let m = 0; m < PARAM_MODIFIERS.length; m++) {
-          const mod = PARAM_MODIFIERS[m]
-          const modIdx = inner.indexOf(mod)
-          if (modIdx !== -1) {
-            const afterIdx = modIdx + mod.length
-            if ((modIdx === 0 || !isIdentChar(inner.charCodeAt(modIdx - 1)))
-              && (afterIdx >= inner.length || !isIdentChar(inner.charCodeAt(afterIdx)))) {
-              hasModifier = true
-              break
-            }
-          }
-        }
-        if (!hasModifier) return rawParams
-      }
-    }
-
-    // Split parameters by comma at depth 0
-    const params: string[] = []
-    let paramStart = 0
+  // Fast path: if params are already in DTS-safe form, return as-is
+  // Requirements: no newlines in raw string, all params typed (have ':'), no destructuring/defaults/decorators/rest/modifiers
+  if (rawParams.indexOf('\n') === -1 && inner.indexOf(':') !== -1
+    && inner.indexOf('{') === -1 && inner.indexOf('[') === -1 && inner.indexOf('=') === -1
+    && inner.indexOf('@') === -1 && inner.indexOf('...') === -1) {
+    // Verify every param has a type annotation: count colons at depth 0 vs commas at depth 0
+    let colons = 0
+    let commas = 0
     let depth = 0
-    let inStr = false
-    let strCh = 0
-
-    for (let i = 0; i <= inner.length; i++) {
-      if (i === inner.length) {
-        params.push(stripParamComments(inner.slice(paramStart).trim()))
-        break
-      }
-      const ch = inner.charCodeAt(i)
-      if (inStr) {
-        if (ch === CH_BACKSLASH) { i++; continue }
-        if (ch === strCh)
-          inStr = false
-        continue
-      }
-      // Skip block and line comments — JSDoc prose (e.g. "error's") can
-      // contain unmatched quote chars that would otherwise put the scanner
-      // into a string-literal mode it never escapes.
-      if (ch === CH_SLASH && i + 1 < inner.length) {
-        const nc = inner.charCodeAt(i + 1)
-        if (nc === CH_STAR) {
-          i += 2
-          while (i + 1 < inner.length && !(inner.charCodeAt(i) === CH_STAR && inner.charCodeAt(i + 1) === CH_SLASH)) i++
-          i++ // position on the closing '/'; loop's i++ moves past
-          continue
-        }
-        if (nc === CH_SLASH) {
-          while (i < inner.length && inner.charCodeAt(i) !== 10 /* \n */) i++
-          continue
-        }
-      }
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-        inStr = true
-        strCh = ch
-        continue
-      }
-      if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) {
-        depth++
-      }
-      else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET || (ch === CH_RANGLE && !(i > 0 && inner.charCodeAt(i - 1) === CH_EQUAL))) {
-        depth--
-      }
-      else if (ch === CH_COMMA && depth === 0) {
-        params.push(stripParamComments(inner.slice(paramStart, i).trim()))
-        paramStart = i + 1
+    for (let fi = 0; fi < inner.length; fi++) {
+      const fc = inner.charCodeAt(fi)
+      if (fc === CH_LPAREN || fc === CH_LANGLE || fc === CH_LBRACE) depth++
+      else if (fc === CH_RPAREN || fc === CH_RANGLE || fc === CH_RBRACE) depth--
+      else if (depth === 0) {
+        if (fc === CH_COLON) colons++
+        else if (fc === CH_COMMA) commas++
       }
     }
-
-    const dtsParams: string[] = []
-    for (const param of params) {
-      if (!param)
-        continue
-      // Skip parameters that are entirely inline comments (e.g. "// 7 days default")
-      const trimmedParam = param.trim()
-      if (trimmedParam.startsWith('//') || trimmedParam.startsWith('/*'))
-        continue
-      // Strip trailing inline comments from the parameter
-      let cleanedParam = param
-      {
-        // Strip line comments — but only those that aren't inside an inline
-        // object/generic/parens type. A `// eslint-disable-next-line` between
-        // fields of an inline object type was previously chopping off the
-        // remaining fields plus all the closing braces.
-        let si = false
-        let sc = 0
-        let cdepth = 0
-        let lineStart = 0
-        for (let ci = 0; ci < cleanedParam.length - 1; ci++) {
-          const cc = cleanedParam.charCodeAt(ci)
-          if (cc === CH_LF) {
-            lineStart = ci + 1
-            continue
-          }
-          if (si) {
-            if (cc === CH_BACKSLASH) { ci++; continue }
-            if (cc === sc) si = false
-            continue
-          }
-          if (cc === CH_SQUOTE || cc === CH_DQUOTE || cc === CH_BACKTICK) { si = true; sc = cc; continue }
-          if (cc === CH_LBRACE || cc === CH_LBRACKET || cc === CH_LPAREN || cc === CH_LANGLE) {
-            cdepth++
-            continue
-          }
-          if (cc === CH_RBRACE || cc === CH_RBRACKET || cc === CH_RPAREN || cc === CH_RANGLE) {
-            if (cdepth > 0) cdepth--
-            continue
-          }
-          if (cc === CH_SLASH && cleanedParam.charCodeAt(ci + 1) === CH_SLASH) {
-            if (cdepth === 0) {
-              // Trailing comment on the param itself — strip it and stop.
-              cleanedParam = cleanedParam.slice(0, ci).trimEnd()
-              break
-            }
-            // Comment nested inside a type — drop just this line, keep the rest.
-            const eol = cleanedParam.indexOf('\n', ci)
-            if (eol === -1) {
-              cleanedParam = cleanedParam.slice(0, lineStart).trimEnd()
-              break
-            }
-            const prefix = cleanedParam.slice(0, lineStart)
-            const suffix = cleanedParam.slice(eol + 1)
-            cleanedParam = `${prefix}${suffix}`
-            ci = lineStart - 1
-          }
-        }
-      }
-      if (!cleanedParam.trim())
-        continue
-      dtsParams.push(buildSingleDtsParam(cleanedParam))
-    }
-
-    return `(${dtsParams.join(', ')})`
-  }
-
-  /** Clean a destructured parameter name: strip defaults and rest operators */
-  function cleanDestructuredName(name: string): string {
-    if (!name.startsWith('{') && !name.startsWith('['))
-      return name
-
-    let result = ''
-    let i = 0
-    let depth = 0
-    let inStr = false
-    let strCh = 0
-
-    while (i < name.length) {
-      const ch = name.charCodeAt(i)
-
-      if (inStr) {
-        if (ch === CH_BACKSLASH && i + 1 < name.length) { result += name[i] + name[i + 1]; i += 2; continue }
-        if (ch === strCh)
-          inStr = false
-        result += name[i]; i++; continue
-      }
-      // Preserve block and line comments verbatim — they're useful JSDoc
-      // documentation. Crucially, skip parsing inside them so apostrophes in
-      // prose (e.g. "error's") don't put us in an inescapable string mode.
-      if (ch === CH_SLASH && i + 1 < name.length) {
-        const nc = name.charCodeAt(i + 1)
-        if (nc === CH_STAR) {
-          const start = i
-          i += 2
-          while (i + 1 < name.length && !(name.charCodeAt(i) === CH_STAR && name.charCodeAt(i + 1) === CH_SLASH)) i++
-          i = Math.min(i + 2, name.length) // past closing */
-          result += name.slice(start, i)
-          continue
-        }
-        if (nc === CH_SLASH) {
-          const start = i
-          while (i < name.length && name.charCodeAt(i) !== 10) i++
-          result += name.slice(start, i)
-          continue
-        }
-      }
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-        inStr = true; strCh = ch
-        result += name[i]; i++; continue
-      }
-
-      if (ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LPAREN)
-        depth++
-      else if (ch === CH_RBRACE || ch === CH_RBRACKET || ch === CH_RPAREN)
-        depth--
-
-      // At depth 1+, strip `= <default>` by skipping until , or closing bracket
-      if (depth >= 1 && ch === CH_EQUAL
-        && (i + 1 >= name.length || (name.charCodeAt(i + 1) !== CH_EQUAL && name.charCodeAt(i + 1) !== CH_RANGLE))) {
-        // Also strip preceding whitespace
-        while (result.length > 0 && (result[result.length - 1] === ' ' || result[result.length - 1] === '\t' || result[result.length - 1] === '\n'))
-          result = result.slice(0, -1)
-        // Skip the default value
-        i++
-        let skipDepth = 0
-        while (i < name.length) {
-          const sc = name.charCodeAt(i)
-          if (sc === CH_SQUOTE || sc === CH_DQUOTE || sc === CH_BACKTICK) {
-            const q = sc; i++
-            while (i < name.length) {
-              if (name.charCodeAt(i) === CH_BACKSLASH) { i += 2; continue }
-              if (name.charCodeAt(i) === q) { i++; break }
-              i++
-            }
-            continue
-          }
-          if (sc === CH_LBRACE || sc === CH_LBRACKET || sc === CH_LPAREN) {
-            skipDepth++
-          }
-          else if (sc === CH_RBRACE || sc === CH_RBRACKET || sc === CH_RPAREN) {
-            if (skipDepth === 0)
-              break
-            skipDepth--
-          }
-          else if (sc === CH_COMMA && skipDepth === 0) {
+    // Every param needs at least one colon (commas + 1 params)
+    if (colons >= commas + 1) {
+      let hasModifier = false
+      for (let m = 0; m < PARAM_MODIFIERS.length; m++) {
+        const mod = PARAM_MODIFIERS[m]
+        const modIdx = inner.indexOf(mod)
+        if (modIdx !== -1) {
+          const afterIdx = modIdx + mod.length
+          if ((modIdx === 0 || !isIdentChar(inner.charCodeAt(modIdx - 1)))
+            && (afterIdx >= inner.length || !isIdentChar(inner.charCodeAt(afterIdx)))) {
+            hasModifier = true
             break
           }
-          i++
         }
+      }
+      if (!hasModifier) return rawParams
+    }
+  }
+
+  // Split parameters by comma at depth 0
+  const params: string[] = []
+  let paramStart = 0
+  let depth = 0
+  let inStr = false
+  let strCh = 0
+
+  for (let i = 0; i <= inner.length; i++) {
+    if (i === inner.length) {
+      params.push(stripParamComments(inner.slice(paramStart).trim()))
+      break
+    }
+    const ch = inner.charCodeAt(i)
+    if (inStr) {
+      if (ch === CH_BACKSLASH) { i++; continue }
+      if (ch === strCh)
+        inStr = false
+      continue
+    }
+    // Skip block and line comments — JSDoc prose (e.g. "error's") can
+    // contain unmatched quote chars that would otherwise put the scanner
+    // into a string-literal mode it never escapes.
+    if (ch === CH_SLASH && i + 1 < inner.length) {
+      const nc = inner.charCodeAt(i + 1)
+      if (nc === CH_STAR) {
+        i += 2
+        while (i + 1 < inner.length && !(inner.charCodeAt(i) === CH_STAR && inner.charCodeAt(i + 1) === CH_SLASH)) i++
+        i++ // position on the closing '/'; loop's i++ moves past
         continue
       }
-
-      // At depth 1, strip `...` rest operator
-      if (depth === 1 && ch === CH_DOT && i + 2 < name.length
-        && name.charCodeAt(i + 1) === CH_DOT && name.charCodeAt(i + 2) === CH_DOT) {
-        i += 3
+      if (nc === CH_SLASH) {
+        while (i < inner.length && inner.charCodeAt(i) !== 10 /* \n */) i++
         continue
       }
+    }
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+      inStr = true
+      strCh = ch
+      continue
+    }
+    if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) {
+      depth++
+    }
+    else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET || (ch === CH_RANGLE && !(i > 0 && inner.charCodeAt(i - 1) === CH_EQUAL))) {
+      depth--
+    }
+    else if (ch === CH_COMMA && depth === 0) {
+      params.push(stripParamComments(inner.slice(paramStart, i).trim()))
+      paramStart = i + 1
+    }
+  }
 
-      result += name[i]
+  const dtsParams: string[] = []
+  for (const param of params) {
+    if (!param)
+      continue
+    // Skip parameters that are entirely inline comments (e.g. "// 7 days default")
+    const trimmedParam = param.trim()
+    if (trimmedParam.startsWith('//') || trimmedParam.startsWith('/*'))
+      continue
+    // Strip trailing inline comments from the parameter
+    let cleanedParam = param
+    {
+      // Strip line comments — but only those that aren't inside an inline
+      // object/generic/parens type. A `// eslint-disable-next-line` between
+      // fields of an inline object type was previously chopping off the
+      // remaining fields plus all the closing braces.
+      let si = false
+      let sc = 0
+      let cdepth = 0
+      let lineStart = 0
+      for (let ci = 0; ci < cleanedParam.length - 1; ci++) {
+        const cc = cleanedParam.charCodeAt(ci)
+        if (cc === CH_LF) {
+          lineStart = ci + 1
+          continue
+        }
+        if (si) {
+          if (cc === CH_BACKSLASH) { ci++; continue }
+          if (cc === sc) si = false
+          continue
+        }
+        if (cc === CH_SQUOTE || cc === CH_DQUOTE || cc === CH_BACKTICK) { si = true; sc = cc; continue }
+        if (cc === CH_LBRACE || cc === CH_LBRACKET || cc === CH_LPAREN || cc === CH_LANGLE) {
+          cdepth++
+          continue
+        }
+        if (cc === CH_RBRACE || cc === CH_RBRACKET || cc === CH_RPAREN || cc === CH_RANGLE) {
+          if (cdepth > 0) cdepth--
+          continue
+        }
+        if (cc === CH_SLASH && cleanedParam.charCodeAt(ci + 1) === CH_SLASH) {
+          if (cdepth === 0) {
+            // Trailing comment on the param itself — strip it and stop.
+            cleanedParam = cleanedParam.slice(0, ci).trimEnd()
+            break
+          }
+          // Comment nested inside a type — drop just this line, keep the rest.
+          const eol = cleanedParam.indexOf('\n', ci)
+          if (eol === -1) {
+            cleanedParam = cleanedParam.slice(0, lineStart).trimEnd()
+            break
+          }
+          const prefix = cleanedParam.slice(0, lineStart)
+          const suffix = cleanedParam.slice(eol + 1)
+          cleanedParam = `${prefix}${suffix}`
+          ci = lineStart - 1
+        }
+      }
+    }
+    if (!cleanedParam.trim())
+      continue
+    dtsParams.push(buildSingleDtsParam(cleanedParam))
+  }
+
+  return `(${dtsParams.join(', ')})`
+}
+
+/** Clean a destructured parameter name: strip defaults and rest operators */
+function cleanDestructuredName(name: string): string {
+  if (!name.startsWith('{') && !name.startsWith('['))
+    return name
+
+  let result = ''
+  let i = 0
+  let depth = 0
+  let inStr = false
+  let strCh = 0
+
+  while (i < name.length) {
+    const ch = name.charCodeAt(i)
+
+    if (inStr) {
+      if (ch === CH_BACKSLASH && i + 1 < name.length) { result += name[i] + name[i + 1]; i += 2; continue }
+      if (ch === strCh)
+        inStr = false
+      result += name[i]; i++; continue
+    }
+    // Preserve block and line comments verbatim — they're useful JSDoc
+    // documentation. Crucially, skip parsing inside them so apostrophes in
+    // prose (e.g. "error's") don't put us in an inescapable string mode.
+    if (ch === CH_SLASH && i + 1 < name.length) {
+      const nc = name.charCodeAt(i + 1)
+      if (nc === CH_STAR) {
+        const start = i
+        i += 2
+        while (i + 1 < name.length && !(name.charCodeAt(i) === CH_STAR && name.charCodeAt(i + 1) === CH_SLASH)) i++
+        i = Math.min(i + 2, name.length) // past closing */
+        result += name.slice(start, i)
+        continue
+      }
+      if (nc === CH_SLASH) {
+        const start = i
+        while (i < name.length && name.charCodeAt(i) !== 10) i++
+        result += name.slice(start, i)
+        continue
+      }
+    }
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+      inStr = true; strCh = ch
+      result += name[i]; i++; continue
+    }
+
+    if (ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LPAREN)
+      depth++
+    else if (ch === CH_RBRACE || ch === CH_RBRACKET || ch === CH_RPAREN)
+      depth--
+
+    // At depth 1+, strip `= <default>` by skipping until , or closing bracket
+    if (depth >= 1 && ch === CH_EQUAL
+      && (i + 1 >= name.length || (name.charCodeAt(i + 1) !== CH_EQUAL && name.charCodeAt(i + 1) !== CH_RANGLE))) {
+      // Also strip preceding whitespace
+      while (result.length > 0 && (result[result.length - 1] === ' ' || result[result.length - 1] === '\t' || result[result.length - 1] === '\n'))
+        result = result.slice(0, -1)
+      // Skip the default value
       i++
-    }
-
-    return result
-  }
-
-  /** Build a single DTS parameter from raw source text */
-  function buildSingleDtsParam(raw: string): string {
-    let p = raw.trim()
-
-    // Handle rest parameter
-    const isRest = p.startsWith('...')
-    if (isRest)
-      p = p.slice(3).trim()
-
-    // Handle decorators (skip @... before param)
-    while (p.startsWith('@')) {
-      // Skip decorator and its argument
-      let di = 1
-      while (di < p.length && isIdentChar(p.charCodeAt(di))) di++
-      if (di < p.length && p.charCodeAt(di) === CH_LPAREN) {
-        let dd = 1
-        di++
-        while (di < p.length && dd > 0) {
-          if (p.charCodeAt(di) === CH_LPAREN)
-            dd++
-          else if (p.charCodeAt(di) === CH_RPAREN)
-            dd--
-          di++
-        }
-      }
-      p = p.slice(di).trim()
-    }
-
-    // Strip TypeScript constructor parameter modifiers (these only appear in constructor params)
-    // Loop to handle stacked modifiers like `public readonly x: number`
-    let strippedMod = true
-    while (strippedMod) {
-      strippedMod = false
-      for (const mod of PARAM_MODIFIERS) {
-        if (p.startsWith(mod) && p.length > mod.length && !isIdentChar(p.charCodeAt(mod.length))) {
-          const rest = p.slice(mod.length).trim()
-          // If the remainder starts with ':' or '?:', the "modifier" was actually the parameter name
-          if (rest.charCodeAt(0) === CH_COLON || (rest.charCodeAt(0) === CH_QUESTION && rest.length > 1 && rest.charCodeAt(1) === CH_COLON)) {
-            break
+      let skipDepth = 0
+      while (i < name.length) {
+        const sc = name.charCodeAt(i)
+        if (sc === CH_SQUOTE || sc === CH_DQUOTE || sc === CH_BACKTICK) {
+          const q = sc; i++
+          while (i < name.length) {
+            if (name.charCodeAt(i) === CH_BACKSLASH) { i += 2; continue }
+            if (name.charCodeAt(i) === q) { i++; break }
+            i++
           }
-          p = rest
-          strippedMod = true
+          continue
+        }
+        if (sc === CH_LBRACE || sc === CH_LBRACKET || sc === CH_LPAREN) {
+          skipDepth++
+        }
+        else if (sc === CH_RBRACE || sc === CH_RBRACKET || sc === CH_RPAREN) {
+          if (skipDepth === 0)
+            break
+          skipDepth--
+        }
+        else if (sc === CH_COMMA && skipDepth === 0) {
           break
         }
+        i++
       }
+      continue
     }
 
-    // Split into name, type annotation, and default value
-    // Need to find `:` and `=` at depth 0
-    let colonIdx = -1
-    let equalIdx = -1
-    let depth = 0
-    let inStr2 = false
-    let strCh2 = 0
+    // At depth 1, strip `...` rest operator
+    if (depth === 1 && ch === CH_DOT && i + 2 < name.length
+      && name.charCodeAt(i + 1) === CH_DOT && name.charCodeAt(i + 2) === CH_DOT) {
+      i += 3
+      continue
+    }
 
-    for (let i = 0; i < p.length; i++) {
-      const ch = p.charCodeAt(i)
-      if (inStr2) {
-        if (ch === CH_BACKSLASH) { i++; continue }
-        if (ch === strCh2)
-          inStr2 = false
+    result += name[i]
+    i++
+  }
+
+  return result
+}
+
+/** Build a single DTS parameter from raw source text */
+function buildSingleDtsParam(raw: string): string {
+  let p = raw.trim()
+
+  // Handle rest parameter
+  const isRest = p.startsWith('...')
+  if (isRest)
+    p = p.slice(3).trim()
+
+  // Handle decorators (skip @... before param)
+  while (p.startsWith('@')) {
+    // Skip decorator and its argument
+    let di = 1
+    while (di < p.length && isIdentChar(p.charCodeAt(di))) di++
+    if (di < p.length && p.charCodeAt(di) === CH_LPAREN) {
+      let dd = 1
+      di++
+      while (di < p.length && dd > 0) {
+        if (p.charCodeAt(di) === CH_LPAREN)
+          dd++
+        else if (p.charCodeAt(di) === CH_RPAREN)
+          dd--
+        di++
+      }
+    }
+    p = p.slice(di).trim()
+  }
+
+  // Strip TypeScript constructor parameter modifiers (these only appear in constructor params)
+  // Loop to handle stacked modifiers like `public readonly x: number`
+  let strippedMod = true
+  while (strippedMod) {
+    strippedMod = false
+    for (const mod of PARAM_MODIFIERS) {
+      if (p.startsWith(mod) && p.length > mod.length && !isIdentChar(p.charCodeAt(mod.length))) {
+        const rest = p.slice(mod.length).trim()
+        // If the remainder starts with ':' or '?:', the "modifier" was actually the parameter name
+        if (rest.charCodeAt(0) === CH_COLON || (rest.charCodeAt(0) === CH_QUESTION && rest.length > 1 && rest.charCodeAt(1) === CH_COLON)) {
+          break
+        }
+        p = rest
+        strippedMod = true
+        break
+      }
+    }
+  }
+
+  // Split into name, type annotation, and default value
+  // Need to find `:` and `=` at depth 0
+  let colonIdx = -1
+  let equalIdx = -1
+  let depth = 0
+  let inStr2 = false
+  let strCh2 = 0
+
+  for (let i = 0; i < p.length; i++) {
+    const ch = p.charCodeAt(i)
+    if (inStr2) {
+      if (ch === CH_BACKSLASH) { i++; continue }
+      if (ch === strCh2)
+        inStr2 = false
+      continue
+    }
+    // Skip block and line comments so JSDoc apostrophes don't trip string mode.
+    if (ch === CH_SLASH && i + 1 < p.length) {
+      const nc = p.charCodeAt(i + 1)
+      if (nc === CH_STAR) {
+        i += 2
+        while (i + 1 < p.length && !(p.charCodeAt(i) === CH_STAR && p.charCodeAt(i + 1) === CH_SLASH)) i++
+        i++
         continue
       }
-      // Skip block and line comments so JSDoc apostrophes don't trip string mode.
-      if (ch === CH_SLASH && i + 1 < p.length) {
-        const nc = p.charCodeAt(i + 1)
-        if (nc === CH_STAR) {
-          i += 2
-          while (i + 1 < p.length && !(p.charCodeAt(i) === CH_STAR && p.charCodeAt(i + 1) === CH_SLASH)) i++
-          i++
-          continue
-        }
-        if (nc === CH_SLASH) {
-          while (i < p.length && p.charCodeAt(i) !== 10) i++
-          continue
-        }
-      }
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-        inStr2 = true
-        strCh2 = ch
+      if (nc === CH_SLASH) {
+        while (i < p.length && p.charCodeAt(i) !== 10) i++
         continue
       }
-      if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) {
-        depth++
+    }
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+      inStr2 = true
+      strCh2 = ch
+      continue
+    }
+    if (ch === CH_LPAREN || ch === CH_LBRACE || ch === CH_LBRACKET || ch === CH_LANGLE) {
+      depth++
+    }
+    else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET || (ch === CH_RANGLE && !(i > 0 && p.charCodeAt(i - 1) === CH_EQUAL))) {
+      depth--
+    }
+    else if (depth === 0) {
+      if (ch === CH_COLON && colonIdx === -1) {
+        colonIdx = i
       }
-      else if (ch === CH_RPAREN || ch === CH_RBRACE || ch === CH_RBRACKET || (ch === CH_RANGLE && !(i > 0 && p.charCodeAt(i - 1) === CH_EQUAL))) {
-        depth--
-      }
-      else if (depth === 0) {
-        if (ch === CH_COLON && colonIdx === -1) {
-          colonIdx = i
-        }
-        else if (ch === CH_EQUAL && equalIdx === -1 && (i === 0 || p.charCodeAt(i - 1) !== CH_EQUAL) && (i + 1 >= p.length || (p.charCodeAt(i + 1) !== CH_EQUAL && p.charCodeAt(i + 1) !== CH_RANGLE))) {
-          equalIdx = i
-        }
+      else if (ch === CH_EQUAL && equalIdx === -1 && (i === 0 || p.charCodeAt(i - 1) !== CH_EQUAL) && (i + 1 >= p.length || (p.charCodeAt(i + 1) !== CH_EQUAL && p.charCodeAt(i + 1) !== CH_RANGLE))) {
+        equalIdx = i
       }
     }
+  }
 
-    let name: string
-    let type: string
-    const hasDefault = equalIdx !== -1
+  let name: string
+  let type: string
+  const hasDefault = equalIdx !== -1
 
-    if (colonIdx !== -1 && (equalIdx === -1 || colonIdx < equalIdx)) {
-      name = p.slice(0, colonIdx).trim()
-      if (equalIdx !== -1) {
-        type = p.slice(colonIdx + 1, equalIdx).trim()
-      }
-      else {
-        type = p.slice(colonIdx + 1).trim()
-      }
-    }
-    else if (equalIdx !== -1) {
-      name = p.slice(0, equalIdx).trim()
-      type = inferTypeFromDefault(p.slice(equalIdx + 1).trim())
+  if (colonIdx !== -1 && (equalIdx === -1 || colonIdx < equalIdx)) {
+    name = p.slice(0, colonIdx).trim()
+    if (equalIdx !== -1) {
+      type = p.slice(colonIdx + 1, equalIdx).trim()
     }
     else {
-      name = p
-      type = 'unknown'
+      type = p.slice(colonIdx + 1).trim()
     }
-
-    // Clean destructured parameter names (strip defaults, rest operators)
-    name = cleanDestructuredName(name)
-    if ((name.startsWith('{') || name.startsWith('[')) && name.includes('\n')) {
-      // Collapse to single line only if short enough, otherwise normalize indent
-      const collapsed = name.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
-      if (collapsed.length <= 40) {
-        name = collapsed
-      }
-      else {
-        // Normalize to 2-space indent per line, keep braces unindented
-        const lines = name.split('\n')
-        name = lines.map((l) => {
-          const t = l.trim()
-          if (!t)
-            return ''
-          if (t === '{' || t === '}' || t === '[' || t === ']' || t.startsWith('}') || t.startsWith(']'))
-            return t
-          return `  ${t}`
-        }).join('\n')
-      }
-    }
-
-    // Handle optional marker
-    const isOptional = name.endsWith('?') || hasDefault
-    if (name.endsWith('?'))
-      name = name.slice(0, -1).trim()
-    const optionalMarker = isOptional && !isRest ? '?' : ''
-
-    if (isRest) {
-      return `...${name}: ${type}`
-    }
-    return `${name}${optionalMarker}: ${type}`
+  }
+  else if (equalIdx !== -1) {
+    name = p.slice(0, equalIdx).trim()
+    type = inferTypeFromDefault(p.slice(equalIdx + 1).trim())
+  }
+  else {
+    name = p
+    type = 'unknown'
   }
 
-  /** Check if string is a numeric literal (integer or decimal, optionally negative) */
-  function isNumericLiteral(v: string): boolean {
-    let i = 0
-    if (i < v.length && v.charCodeAt(i) === 45 /* - */) i++
-    if (i >= v.length) return false
-    const c = v.charCodeAt(i)
-    if (c < 48 || c > 57) return false // not a digit
+  // Clean destructured parameter names (strip defaults, rest operators)
+  name = cleanDestructuredName(name)
+  if ((name.startsWith('{') || name.startsWith('[')) && name.includes('\n')) {
+    // Collapse to single line only if short enough, otherwise normalize indent
+    const collapsed = name.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ')
+    if (collapsed.length <= 40) {
+      name = collapsed
+    }
+    else {
+      // Normalize to 2-space indent per line, keep braces unindented
+      const lines = name.split('\n')
+      name = lines.map((l) => {
+        const t = l.trim()
+        if (!t)
+          return ''
+        if (t === '{' || t === '}' || t === '[' || t === ']' || t.startsWith('}') || t.startsWith(']'))
+          return t
+        return `  ${t}`
+      }).join('\n')
+    }
+  }
+
+  // Handle optional marker
+  const isOptional = name.endsWith('?') || hasDefault
+  if (name.endsWith('?'))
+    name = name.slice(0, -1).trim()
+  const optionalMarker = isOptional && !isRest ? '?' : ''
+
+  if (isRest) {
+    return `...${name}: ${type}`
+  }
+  return `${name}${optionalMarker}: ${type}`
+}
+
+/** Check if string is a numeric literal (integer or decimal, optionally negative) */
+function isNumericLiteral(v: string): boolean {
+  let i = 0
+  if (i < v.length && v.charCodeAt(i) === 45 /* - */) i++
+  if (i >= v.length) return false
+  const c = v.charCodeAt(i)
+  if (c < 48 || c > 57) return false // not a digit
+  while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
+  if (i < v.length && v.charCodeAt(i) === 46 /* . */) {
+    i++
+    if (i >= v.length || v.charCodeAt(i) < 48 || v.charCodeAt(i) > 57) return false
     while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    if (i < v.length && v.charCodeAt(i) === 46 /* . */) {
-      i++
-      if (i >= v.length || v.charCodeAt(i) < 48 || v.charCodeAt(i) > 57) return false
-      while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    }
-    return i === v.length
   }
+  return i === v.length
+}
 
-  /** Infer type from a default value expression (simple cases) */
-  function inferTypeFromDefault(value: string): string {
-    const v = value.trim()
-    if (v === 'true' || v === 'false')
-      return 'boolean'
-    if (isNumericLiteral(v))
-      return 'number'
-    if ((v.startsWith('\'') && v.endsWith('\'')) || (v.startsWith('"') && v.endsWith('"')))
-      return 'string'
-    if (v.startsWith('['))
-      return 'unknown[]'
-    if (v.startsWith('{'))
-      return 'Record<string, unknown>'
-    return 'unknown'
-  }
+/** Infer type from a default value expression (simple cases) */
+function inferTypeFromDefault(value: string): string {
+  const v = value.trim()
+  if (v === 'true' || v === 'false')
+    return 'boolean'
+  if (isNumericLiteral(v))
+    return 'number'
+  if ((v.startsWith('\'') && v.endsWith('\'')) || (v.startsWith('"') && v.endsWith('"')))
+    return 'string'
+  if (v.startsWith('['))
+    return 'unknown[]'
+  if (v.startsWith('{'))
+    return 'Record<string, unknown>'
+  return 'unknown'
+}
 
-  /** Infer literal type from initializer value (for const-like / static readonly) */
-  function inferLiteralType(value: string): string {
-    let v = value.trim()
-    // `x as const` narrows to the literal type of `x` — strip the assertion
-    // and infer from the underlying value (e.g. `'threads' as const` → "threads").
-    if (v.endsWith('as const'))
-      v = v.slice(0, -8).trim()
-    if (v === 'true' || v === 'false')
-      return v
-    if (isNumericLiteral(v))
-      return v
-    // String-literal concatenations: `'a' + 'b'` narrows to the joined
-    // literal, `'a' + expr` widens to string, and purely numeric arithmetic
-    // (`60 * 1000`) widens to number. Anything else composed of quotes is
-    // only a literal type when it is exactly one string literal.
-    const expressionType = inferLiteralExpressionType(v)
-    if (expressionType !== null)
-      return expressionType
-    return 'unknown'
-  }
+/** Infer literal type from initializer value (for const-like / static readonly) */
+function inferLiteralType(value: string): string {
+  let v = value.trim()
+  // `x as const` narrows to the literal type of `x` — strip the assertion
+  // and infer from the underlying value (e.g. `'threads' as const` → "threads").
+  if (v.endsWith('as const'))
+    v = v.slice(0, -8).trim()
+  if (v === 'true' || v === 'false')
+    return v
+  if (isNumericLiteral(v))
+    return v
+  // String-literal concatenations: `'a' + 'b'` narrows to the joined
+  // literal, `'a' + expr` widens to string, and purely numeric arithmetic
+  // (`60 * 1000`) widens to number. Anything else composed of quotes is
+  // only a literal type when it is exactly one string literal.
+  const expressionType = inferLiteralExpressionType(v)
+  if (expressionType !== null)
+    return expressionType
+  return 'unknown'
+}
 
-  /**
+/**
    * Classify a literal-ish initializer expression. Returns the literal/type
    * to emit, or null when the expression is not recognizable.
    */
-  function inferLiteralExpressionType(v: string): string | null {
-    if (v === '') return null
-    // Exactly one string literal?
-    if (v.charCodeAt(0) === CH_SQUOTE || v.charCodeAt(0) === CH_DQUOTE) {
-      if (findQuotedValueEnd(v, 0, v.charCodeAt(0)) === v.length)
-        return v
-    }
-    // Split top-level `+` parts to detect string concatenation.
-    const plusParts = splitTopLevelOperator(v, '+')
-    if (plusParts.length > 1) {
-      let hasStringPart = false
-      let allStringParts = true
-      const evaluated: string[] = []
-      for (const part of plusParts) {
-        const p = part.trim()
-        const code = p.charCodeAt(0)
-        if ((code === CH_SQUOTE || code === CH_DQUOTE) && findQuotedValueEnd(p, 0, code) === p.length) {
-          hasStringPart = true
-          evaluated.push(unquoteStringLiteral(p))
-        }
-        else {
-          allStringParts = false
-        }
+function inferLiteralExpressionType(v: string): string | null {
+  if (v === '') return null
+  // Exactly one string literal?
+  if (v.charCodeAt(0) === CH_SQUOTE || v.charCodeAt(0) === CH_DQUOTE) {
+    if (findQuotedValueEnd(v, 0, v.charCodeAt(0)) === v.length)
+      return v
+  }
+  // Split top-level `+` parts to detect string concatenation.
+  const plusParts = splitTopLevelOperator(v, '+')
+  if (plusParts.length > 1) {
+    let hasStringPart = false
+    let allStringParts = true
+    const evaluated: string[] = []
+    for (const part of plusParts) {
+      const p = part.trim()
+      const code = p.charCodeAt(0)
+      if ((code === CH_SQUOTE || code === CH_DQUOTE) && findQuotedValueEnd(p, 0, code) === p.length) {
+        hasStringPart = true
+        evaluated.push(unquoteStringLiteral(p))
       }
-      if (allStringParts)
-        return quoteStringLiteral(evaluated.join(''))
-      // `+` with at least one string literal operand always produces a string.
-      if (hasStringPart)
-        return 'string'
-      return null
+      else {
+        allStringParts = false
+      }
     }
-    // Purely numeric arithmetic (`60 * 1000`, `(1 / 2) * 60`) widens to number.
-    if (/^[\d\s()+*/%.\-]+$/.test(v) && /\d/.test(v) && /[+*/%\-\s]/.test(v))
-      return 'number'
+    if (allStringParts)
+      return quoteStringLiteral(evaluated.join(''))
+    // `+` with at least one string literal operand always produces a string.
+    if (hasStringPart)
+      return 'string'
     return null
   }
+  // Purely numeric arithmetic (`60 * 1000`, `(1 / 2) * 60`) widens to number.
+  if (/^[\d\s()+*/%.\-]+$/.test(v) && /\d/.test(v) && /[+*/%\-\s]/.test(v))
+    return 'number'
+  return null
+}
 
-  /** Split an expression on a top-level binary operator (strings/comments aware). */
-  function splitTopLevelOperator(text: string, operator: string): string[] {
-    const parts: string[] = []
-    let depth = 0
-    let current = ''
-    let i = 0
-    while (i < text.length) {
-      const code = text.charCodeAt(i)
-      if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) {
-        const end = findQuotedValueEnd(text, i, code)
+/** Split an expression on a top-level binary operator (strings/comments aware). */
+function splitTopLevelOperator(text: string, operator: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let current = ''
+  let i = 0
+  while (i < text.length) {
+    const code = text.charCodeAt(i)
+    if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) {
+      const end = findQuotedValueEnd(text, i, code)
+      current += text.slice(i, end)
+      i = end
+      continue
+    }
+    if (code === CH_SLASH && (text.charCodeAt(i + 1) === CH_SLASH || text.charCodeAt(i + 1) === 42 /* * */)) {
+      // Keep comments attached to their part; find their end.
+      if (text.charCodeAt(i + 1) === CH_SLASH) {
+        const nl = text.indexOf('\n', i + 2)
+        const end = nl === -1 ? text.length : nl
         current += text.slice(i, end)
         i = end
         continue
       }
-      if (code === CH_SLASH && (text.charCodeAt(i + 1) === CH_SLASH || text.charCodeAt(i + 1) === 42 /* * */)) {
-        // Keep comments attached to their part; find their end.
-        if (text.charCodeAt(i + 1) === CH_SLASH) {
-          const nl = text.indexOf('\n', i + 2)
-          const end = nl === -1 ? text.length : nl
-          current += text.slice(i, end)
-          i = end
-          continue
-        }
-        const close = text.indexOf('*/', i + 2)
-        const end = close === -1 ? text.length : close + 2
-        current += text.slice(i, end)
-        i = end
-        continue
-      }
-      if (code === CH_LPAREN || code === CH_LBRACKET || code === CH_LBRACE) depth++
-      else if (code === CH_RPAREN || code === CH_RBRACKET || code === CH_RBRACE) depth--
-      if (text[i] === operator && depth === 0) {
-        parts.push(current)
-        current = ''
-        i++
-        continue
-      }
-      current += text[i]
+      const close = text.indexOf('*/', i + 2)
+      const end = close === -1 ? text.length : close + 2
+      current += text.slice(i, end)
+      i = end
+      continue
+    }
+    if (code === CH_LPAREN || code === CH_LBRACKET || code === CH_LBRACE) depth++
+    else if (code === CH_RPAREN || code === CH_RBRACKET || code === CH_RBRACE) depth--
+    if (text[i] === operator && depth === 0) {
+      parts.push(current)
+      current = ''
       i++
+      continue
     }
-    parts.push(current)
-    return parts
+    current += text[i]
+    i++
   }
+  parts.push(current)
+  return parts
+}
 
-  /** Decode a single-quoted or double-quoted string literal to its value. */
-  function unquoteStringLiteral(literal: string): string {
-    const body = literal.slice(1, -1)
-    return body.replace(/\\(.)/g, (_m, ch: string) => {
-      if (ch === 'n') return '\n'
-      if (ch === 't') return '\t'
-      if (ch === 'r') return '\r'
-      if (ch === '0') return '\0'
-      return ch
-    })
-  }
+/** Decode a single-quoted or double-quoted string literal to its value. */
+function unquoteStringLiteral(literal: string): string {
+  const body = literal.slice(1, -1)
+  return body.replace(/\\(.)/g, (_m, ch: string) => {
+    if (ch === 'n') return '\n'
+    if (ch === 't') return '\t'
+    if (ch === 'r') return '\r'
+    if (ch === '0') return '\0'
+    return ch
+  })
+}
 
-  /** Encode a string value as a single-quoted string literal type. */
-  function quoteStringLiteral(value: string): string {
-    const escaped = value
-      .replace(/\\/g, '\\\\')
-      .replace(/'/g, '\\\'')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t')
-    return `'${escaped}'`
-  }
+/** Encode a string value as a single-quoted string literal type. */
+function quoteStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, '\\\'')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+  return `'${escaped}'`
+}
 
-  /** Extract type from `as Type` assertion in initializer */
-  function extractAssertion(initText: string): string | null {
-    if (initText.endsWith('as const'))
-      return null
-    // Find last ' as ' at depth 0 (not nested inside brackets/braces/parens)
-    let depth = 0
-    let lastAsIdx = -1
-    for (let i = 0; i < initText.length; i++) {
-      const ch = initText.charCodeAt(i)
-      if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-        i = findQuotedValueEnd(initText, i, ch) - 1
-      }
-      else if (ch === 123 /* { */ || ch === 91 /* [ */ || ch === 40 /* ( */) depth++
-      else if (ch === 125 /* } */ || ch === 93 /* ] */ || ch === 41 /* ) */) depth--
-      else if (depth === 0 && ch === 32 /* space */ && i + 4 <= initText.length && initText.substring(i, i + 4) === ' as ') {
-        lastAsIdx = i
-      }
+/** Extract type from `as Type` assertion in initializer */
+function extractAssertion(initText: string): string | null {
+  if (initText.endsWith('as const'))
+    return null
+  // Find last ' as ' at depth 0 (not nested inside brackets/braces/parens)
+  let depth = 0
+  let lastAsIdx = -1
+  for (let i = 0; i < initText.length; i++) {
+    const ch = initText.charCodeAt(i)
+    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
+      i = findQuotedValueEnd(initText, i, ch) - 1
     }
-    if (lastAsIdx === -1) return null
-    const afterAs = initText.slice(lastAsIdx + 4).trim()
-    return afterAs || null
+    else if (ch === 123 /* { */ || ch === 91 /* [ */ || ch === 40 /* ( */) depth++
+    else if (ch === 125 /* } */ || ch === 93 /* ] */ || ch === 41 /* ) */) depth--
+    else if (depth === 0 && ch === 32 /* space */ && i + 4 <= initText.length && initText.substring(i, i + 4) === ' as ') {
+      lastAsIdx = i
+    }
   }
+  if (lastAsIdx === -1) return null
+  const afterAs = initText.slice(lastAsIdx + 4).trim()
+  return afterAs || null
+}
 
-  /** Extract return type annotation `: ReturnType` after params, before `{` or `;` */
-  function extractReturnType(): string {
+/** Extract return type annotation `: ReturnType` after params, before `{` or `;` */
+function extractReturnType(): string {
+  skipWhitespaceAndComments()
+  if (pos < len && source.charCodeAt(pos) === CH_COLON) {
+    pos++ // skip :
     skipWhitespaceAndComments()
-    if (pos < len && source.charCodeAt(pos) === CH_COLON) {
-      pos++ // skip :
-      skipWhitespaceAndComments()
-      const start = pos
-      // Read type, respecting nesting. Track {/} in depth when part of type (object literal types).
-      let depth = 0
-      let lastTypeTokenEnd = start
-      function expectsTypeOperand(): boolean {
-        const prefix = sliceTrimmed(start, lastTypeTokenEnd)
-        const endsWithWord = (word: string) => {
-          const index = prefix.length - word.length
-          return index >= 0 && prefix.endsWith(word) && (index === 0 || !isIdentChar(prefix.charCodeAt(index - 1)))
-        }
-        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || endsWithWord('is') || endsWithWord('extends')
+    const start = pos
+    // Read type, respecting nesting. Track {/} in depth when part of type (object literal types).
+    let depth = 0
+    let lastTypeTokenEnd = start
+    function expectsTypeOperand(): boolean {
+      const prefix = sliceTrimmed(start, lastTypeTokenEnd)
+      const endsWithWord = (word: string) => {
+        const index = prefix.length - word.length
+        return index >= 0 && prefix.endsWith(word) && (index === 0 || !isIdentChar(prefix.charCodeAt(index - 1)))
       }
-      while (pos < len) {
-        const tokenStart = pos
-        if (skipNonCode()) {
-          // Literal types are significant; comments between type tokens are trivia.
-          if (source.charCodeAt(tokenStart) !== CH_SLASH) lastTypeTokenEnd = pos
-          continue
-        }
-        const ch = source.charCodeAt(pos)
-        if (ch === CH_LPAREN || ch === CH_LBRACKET || ch === CH_LANGLE) {
+      return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || endsWithWord('is') || endsWithWord('extends')
+    }
+    while (pos < len) {
+      const tokenStart = pos
+      if (skipNonCode()) {
+        // Literal types are significant; comments between type tokens are trivia.
+        if (source.charCodeAt(tokenStart) !== CH_SLASH) lastTypeTokenEnd = pos
+        continue
+      }
+      const ch = source.charCodeAt(pos)
+      if (ch === CH_LPAREN || ch === CH_LBRACKET || ch === CH_LANGLE) {
+        depth++
+      }
+      else if (ch === CH_RPAREN || ch === CH_RBRACKET || (ch === CH_RANGLE && !isArrowGT())) {
+        depth--
+      }
+      else if (ch === CH_LBRACE) {
+        if (depth > 0) {
+          // Inside generics/parens/brackets, { is always part of type
           depth++
         }
-        else if (ch === CH_RPAREN || ch === CH_RBRACKET || (ch === CH_RANGLE && !isArrowGT())) {
-          depth--
-        }
-        else if (ch === CH_LBRACE) {
-          if (depth > 0) {
-            // Inside generics/parens/brackets, { is always part of type
+        else {
+          // At depth 0: { is part of return type if it starts the type or follows a type operator
+          if (expectsTypeOperand()) {
             depth++
           }
           else {
-            // At depth 0: { is part of return type if it starts the type or follows a type operator
-            if (expectsTypeOperand()) {
-              depth++
-            }
-            else {
-              break // function body
-            }
+            break // function body
           }
         }
-        else if (ch === CH_RBRACE) {
-          if (depth === 0)
-            break
-          depth--
-        }
-        else if (depth === 0 && ch === CH_SEMI) {
-          break
-        }
-        if (depth === 0 && checkASIMember() && !expectsTypeOperand())
-          break
-        if (!isWhitespace(ch)) lastTypeTokenEnd = pos + 1
-        pos++
       }
-      return sliceTrimmed(start, pos)
+      else if (ch === CH_RBRACE) {
+        if (depth === 0)
+          break
+        depth--
+      }
+      else if (depth === 0 && ch === CH_SEMI) {
+        break
+      }
+      if (depth === 0 && checkASIMember() && !expectsTypeOperand())
+        break
+      if (!isWhitespace(ch)) lastTypeTokenEnd = pos + 1
+      pos++
     }
-    return ''
+    return sliceTrimmed(start, pos)
   }
+  return ''
+}
 
-  /**
+/**
    * Extract a function declaration and build DTS text.
    * pos should be at `function` keyword.
    */
-  function extractFunction(declStart: number, isExported: boolean, isAsync: boolean, isDefault: boolean): Declaration | null {
-    pos += 8 // skip 'function'
-    skipWhitespaceAndComments()
+function extractFunction(declStart: number, isExported: boolean, isAsync: boolean, isDefault: boolean): Declaration | null {
+  pos += 8 // skip 'function'
+  skipWhitespaceAndComments()
 
-    // Check for generator
-    const isGenerator = pos < len && source.charCodeAt(pos) === CH_STAR
-    if (isGenerator) { pos++; skipWhitespaceAndComments() }
+  // Check for generator
+  const isGenerator = pos < len && source.charCodeAt(pos) === CH_STAR
+  if (isGenerator) { pos++; skipWhitespaceAndComments() }
 
-    // Read name
-    const name = readIdent()
-    if (!name && !isDefault)
-      return null
-    skipWhitespaceAndComments()
+  // Read name
+  const name = readIdent()
+  if (!name && !isDefault)
+    return null
+  skipWhitespaceAndComments()
 
-    // Generics
-    const generics = extractGenerics()
-    skipWhitespaceAndComments()
+  // Generics
+  const generics = extractGenerics()
+  skipWhitespaceAndComments()
 
-    // Parameters
-    const rawParams = extractParamList()
-    skipWhitespaceAndComments()
+  // Parameters
+  const rawParams = extractParamList()
+  skipWhitespaceAndComments()
 
-    // Return type
-    let returnType = extractReturnType()
-    const hasExplicitReturnType = returnType.length > 0
+  // Return type
+  let returnType = extractReturnType()
+  const hasExplicitReturnType = returnType.length > 0
 
-    // Default return type based on async/generator
-    if (!returnType) {
-      if (isAsync && isGenerator)
-        returnType = 'AsyncGenerator<unknown, void, unknown>'
-      else if (isGenerator)
-        returnType = 'Generator<unknown, void, unknown>'
-      else if (isAsync)
-        returnType = 'Promise<void>'
-      else returnType = 'void'
-    }
-
-    // Skip function body if present
-    skipWhitespaceAndComments()
-    let hasBody = false
-    if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
-      hasBody = true
-      const bodyStart = pos + 1
-      findMatchingClose(CH_LBRACE, CH_RBRACE)
-      // Isolated mode prefers annotations, but an unannotated function still
-      // returns what its body returns. It used to be declared `void` unread,
-      // so `function make() { return { ... } }` published as returning nothing
-      // and every type derived from it (`ReturnType<typeof make>`) was empty.
-      if (!hasExplicitReturnType && !isGenerator) {
-        returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
-      }
-    }
-    else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
-      pos++ // skip ;
-    }
-
-    // Build DTS text. `export default function X` must keep the
-    // `default` keyword so consumers can `import { default as Y }`
-    // re-export the value — without it the .d.ts has no default
-    // export at all. The `declare` keyword is *omitted* in that
-    // case (the standard form for an ambient default export in a
-    // .d.ts file).
-    const dtsParams = buildDtsParams(rawParams)
-    const exportPrefix = isExported
-      ? (isDefault ? 'export default function ' : 'export declare function ')
-      : 'declare function '
-    const declarationName = name || (isDefault ? '' : 'default')
-    const text = `${exportPrefix}${declarationName}${generics}${dtsParams}: ${returnType};`
-    const comments = extractLeadingComments(declStart)
-
-    const declaration: Declaration = {
-      kind: 'function',
-      name: name || 'default',
-      text,
-      isExported,
-      isDefault,
-      isAsync,
-      isGenerator,
-      returnType,
-      generics: generics || undefined,
-      leadingComments: comments,
-      start: declStart,
-      end: pos,
-    }
-    // Declaration identity survives insertion of retained local declarations.
-    if (hasBody) functionBodies.add(declaration)
-    return declaration
+  // Default return type based on async/generator
+  if (!returnType) {
+    if (isAsync && isGenerator)
+      returnType = 'AsyncGenerator<unknown, void, unknown>'
+    else if (isGenerator)
+      returnType = 'Generator<unknown, void, unknown>'
+    else if (isAsync)
+      returnType = 'Promise<void>'
+    else returnType = 'void'
   }
 
-  /**
+  // Skip function body if present
+  skipWhitespaceAndComments()
+  let hasBody = false
+  if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+    hasBody = true
+    const bodyStart = pos + 1
+    findMatchingClose(CH_LBRACE, CH_RBRACE)
+    // Isolated mode prefers annotations, but an unannotated function still
+    // returns what its body returns. It used to be declared `void` unread,
+    // so `function make() { return { ... } }` published as returning nothing
+    // and every type derived from it (`ReturnType<typeof make>`) was empty.
+    if (!hasExplicitReturnType && !isGenerator) {
+      returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
+    }
+  }
+  else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
+    pos++ // skip ;
+  }
+
+  // Build DTS text. `export default function X` must keep the
+  // `default` keyword so consumers can `import { default as Y }`
+  // re-export the value — without it the .d.ts has no default
+  // export at all. The `declare` keyword is *omitted* in that
+  // case (the standard form for an ambient default export in a
+  // .d.ts file).
+  const dtsParams = buildDtsParams(rawParams)
+  const exportPrefix = isExported
+    ? (isDefault ? 'export default function ' : 'export declare function ')
+    : 'declare function '
+  const declarationName = name || (isDefault ? '' : 'default')
+  const text = `${exportPrefix}${declarationName}${generics}${dtsParams}: ${returnType};`
+  const comments = extractLeadingComments(declStart)
+
+  const declaration: Declaration = {
+    kind: 'function',
+    name: name || 'default',
+    text,
+    isExported,
+    isDefault,
+    isAsync,
+    isGenerator,
+    returnType,
+    generics: generics || undefined,
+    leadingComments: comments,
+    start: declStart,
+    end: pos,
+  }
+  // Declaration identity survives insertion of retained local declarations.
+  if (hasBody) functionBodies.add(declaration)
+  return declaration
+}
+
+/**
    * Extract variable declaration(s).
    * pos should be at const/let/var keyword.
    */
-  function extractVariable(declStart: number, kind: string, isExported: boolean): Declaration[] {
-    pos += kind.length // skip const/let/var
+function extractVariable(declStart: number, kind: string, isExported: boolean): Declaration[] {
+  pos += kind.length // skip const/let/var
+  skipWhitespaceAndComments()
+
+  const results: Declaration[] = []
+
+  // Handle destructuring patterns and multiple declarations
+  // For DTS, we only care about the name and type
+  do {
+    skipWhitespaceAndComments()
+    if (pos >= len)
+      break
+
+    const ch = source.charCodeAt(pos)
+
+    // Skip destructuring patterns - these are implementation details
+    if (ch === CH_LBRACE || ch === CH_LBRACKET) {
+      // Can't represent destructuring in DTS, skip this statement
+      skipToStatementEnd()
+      return results
+    }
+
+    const name = readIdent()
+    if (!name) { skipToStatementEnd(); return results }
     skipWhitespaceAndComments()
 
-    const results: Declaration[] = []
+    let typeAnnotation: string | undefined
+    let initializerText: string | undefined
+    let isAsConst = false
 
-    // Handle destructuring patterns and multiple declarations
-    // For DTS, we only care about the name and type
-    do {
+    // Type annotation
+    if (pos < len && source.charCodeAt(pos) === CH_COLON) {
+      pos++ // skip :
       skipWhitespaceAndComments()
-      if (pos >= len)
-        break
-
-      const ch = source.charCodeAt(pos)
-
-      // Skip destructuring patterns - these are implementation details
-      if (ch === CH_LBRACE || ch === CH_LBRACKET) {
-        // Can't represent destructuring in DTS, skip this statement
-        skipToStatementEnd()
-        return results
-      }
-
-      const name = readIdent()
-      if (!name) { skipToStatementEnd(); return results }
-      skipWhitespaceAndComments()
-
-      let typeAnnotation: string | undefined
-      let initializerText: string | undefined
-      let isAsConst = false
-
-      // Type annotation
-      if (pos < len && source.charCodeAt(pos) === CH_COLON) {
-        pos++ // skip :
-        skipWhitespaceAndComments()
-        const typeStart = pos
-        // Read type until = or ; or , at depth 0, or ASI
-        let depth = 0
-        while (pos < len) {
-          if (skipNonCode()) {
-            if (depth === 0 && commentEndsStatement()) break
-            continue
-          }
-          const tc = source.charCodeAt(pos)
-          if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
-            depth++
-          else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
-            depth--
-          else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
-            break
-          else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
-            break
-          if (depth === 0 && (checkASITopLevel() || checkASIAfterType()))
-            break
-          pos++
+      const typeStart = pos
+      // Read type until = or ; or , at depth 0, or ASI
+      let depth = 0
+      while (pos < len) {
+        if (skipNonCode()) {
+          if (depth === 0 && commentEndsStatement()) break
+          continue
         }
-        typeAnnotation = sliceTrimmed(typeStart, pos)
+        const tc = source.charCodeAt(pos)
+        if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
+          depth++
+        else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
+          depth--
+        else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
+          break
+        else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
+          break
+        if (depth === 0 && (checkASITopLevel() || checkASIAfterType()))
+          break
+        pos++
       }
+      typeAnnotation = sliceTrimmed(typeStart, pos)
+    }
 
-      // Initializer
-      if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-        // Concrete annotations need no initializer work. Broad annotations retain
-        // the initializer only so the processor can emit useful @defaultValue docs.
-        if (isolatedDeclarations && typeAnnotation && (!keepComments || !isBroadAnnotation(typeAnnotation))) {
-          skipAnnotatedVariableInitializer()
-        }
-        else {
+    // Initializer
+    if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
+      // Concrete annotations need no initializer work. Broad annotations retain
+      // the initializer only so the processor can emit useful @defaultValue docs.
+      if (isolatedDeclarations && typeAnnotation && (!keepComments || !isBroadAnnotation(typeAnnotation))) {
+        skipAnnotatedVariableInitializer()
+      }
+      else {
         pos++ // skip =
         skipWhitespaceAndComments()
         const initStart = pos
@@ -2230,7 +2229,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         let angleDepth = 0
         let jsxDepth = 0
         let trackAngles = true
-        for (;;) {
+        for (;; ) {
           pos = initStart
           depth = 0
           angleDepth = 0
@@ -2287,100 +2286,100 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           if (assertedType)
             typeAnnotation = assertedType
         }
-        } // end else (non-isolatedDeclarations path)
-      }
-
-      // Skip comma or semicolon
-      if (pos < len) {
-        const sc = source.charCodeAt(pos)
-        if (sc === CH_COMMA) { pos++; continue }
-        if (sc === CH_SEMI) { pos++ }
-      }
-
-      const comments = extractLeadingComments(declStart)
-      const dtsText = `${isExported ? 'export ' : ''}declare ${kind} ${name}: ${typeAnnotation || 'unknown'};`
-
-      results.push({
-        kind: 'variable',
-        name,
-        text: dtsText,
-        isExported,
-        typeAnnotation,
-        value: initializerText,
-        modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
-        leadingComments: comments,
-        start: declStart,
-        end: pos,
-      })
-
-      break // For now, only handle first declaration in statement
-    } while (pos < len)
-
-    return results
-  }
-
-  /** Return the JSX nesting delta for a tag beginning at index, or null. */
-  function jsxTagDeltaAt(index: number): number | null {
-    if (source.charCodeAt(index) !== CH_LANGLE || index + 1 >= len) return null
-    const next = source.charCodeAt(index + 1)
-    if (next === CH_RANGLE) return 1 // fragment open: <>
-    if (next === CH_SLASH) return -1 // element or fragment close
-    if (!isIdentStart(next)) return null
-
-    let nameEnd = index + 2
-    while (nameEnd < len) {
-      const code = source.charCodeAt(nameEnd)
-      if (!isIdentChar(code) && code !== CH_DOT && code !== 58 /* : */ && code !== 45 /* - */) break
-      nameEnd++
+      } // end else (non-isolatedDeclarations path)
     }
-    const tagName = source.slice(index + 1, nameEnd)
-    const delimiter = source.charCodeAt(nameEnd)
-    if (delimiter > 32 && delimiter !== CH_RANGLE && delimiter !== CH_SLASH) return null
 
-    let braceDepth = 0
-    let quote = 0
-    let tagEnd = nameEnd
-    for (; tagEnd < len; tagEnd++) {
-      const code = source.charCodeAt(tagEnd)
-      if (quote !== 0) {
-        if (code === CH_BACKSLASH) tagEnd++
-        else if (code === quote) quote = 0
-        continue
-      }
-      if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) quote = code
-      else if (code === CH_LBRACE) braceDepth++
-      else if (code === CH_RBRACE && braceDepth > 0) braceDepth--
-      else if (code === CH_RANGLE && braceDepth === 0) break
+    // Skip comma or semicolon
+    if (pos < len) {
+      const sc = source.charCodeAt(pos)
+      if (sc === CH_COMMA) { pos++; continue }
+      if (sc === CH_SEMI) { pos++ }
     }
-    if (tagEnd >= len) return null
 
-    let beforeEnd = tagEnd - 1
-    while (beforeEnd > index && source.charCodeAt(beforeEnd) <= 32) beforeEnd--
-    if (source.charCodeAt(beforeEnd) === CH_SLASH) return 0
-    return source.indexOf(`</${tagName}`, tagEnd + 1) === -1 ? null : 1
+    const comments = extractLeadingComments(declStart)
+    const dtsText = `${isExported ? 'export ' : ''}declare ${kind} ${name}: ${typeAnnotation || 'unknown'};`
+
+    results.push({
+      kind: 'variable',
+      name,
+      text: dtsText,
+      isExported,
+      typeAnnotation,
+      value: initializerText,
+      modifiers: isAsConst ? [kind, 'const assertion'] : [kind],
+      leadingComments: comments,
+      start: declStart,
+      end: pos,
+    })
+
+    break // For now, only handle first declaration in statement
+  } while (pos < len)
+
+  return results
+}
+
+/** Return the JSX nesting delta for a tag beginning at index, or null. */
+function jsxTagDeltaAt(index: number): number | null {
+  if (source.charCodeAt(index) !== CH_LANGLE || index + 1 >= len) return null
+  const next = source.charCodeAt(index + 1)
+  if (next === CH_RANGLE) return 1 // fragment open: <>
+  if (next === CH_SLASH) return -1 // element or fragment close
+  if (!isIdentStart(next)) return null
+
+  let nameEnd = index + 2
+  while (nameEnd < len) {
+    const code = source.charCodeAt(nameEnd)
+    if (!isIdentChar(code) && code !== CH_DOT && code !== 58 /* : */ && code !== 45 /* - */) break
+    nameEnd++
   }
+  const tagName = source.slice(index + 1, nameEnd)
+  const delimiter = source.charCodeAt(nameEnd)
+  if (delimiter > 32 && delimiter !== CH_RANGLE && delimiter !== CH_SLASH) return null
 
-  /**
+  let braceDepth = 0
+  let quote = 0
+  let tagEnd = nameEnd
+  for (; tagEnd < len; tagEnd++) {
+    const code = source.charCodeAt(tagEnd)
+    if (quote !== 0) {
+      if (code === CH_BACKSLASH) tagEnd++
+      else if (code === quote) quote = 0
+      continue
+    }
+    if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) quote = code
+    else if (code === CH_LBRACE) braceDepth++
+    else if (code === CH_RBRACE && braceDepth > 0) braceDepth--
+    else if (code === CH_RANGLE && braceDepth === 0) break
+  }
+  if (tagEnd >= len) return null
+
+  let beforeEnd = tagEnd - 1
+  while (beforeEnd > index && source.charCodeAt(beforeEnd) <= 32) beforeEnd--
+  if (source.charCodeAt(beforeEnd) === CH_SLASH) return 0
+  return source.indexOf(`</${tagName}`, tagEnd + 1) === -1 ? null : 1
+}
+
+/**
    * Extract interface declaration.
    * pos should be at 'interface' keyword.
    */
-  function extractInterface(declStart: number, isExported: boolean): Declaration {
-    pos += 9 // skip 'interface'
-    skipWhitespaceAndComments()
+function extractInterface(declStart: number, isExported: boolean): Declaration {
+  pos += 9 // skip 'interface'
+  skipWhitespaceAndComments()
 
-    const name = readIdent()
-    skipWhitespaceAndComments()
+  const name = readIdent()
+  skipWhitespaceAndComments()
 
-    const generics = extractGenerics()
-    skipWhitespaceAndComments()
+  const generics = extractGenerics()
+  skipWhitespaceAndComments()
 
-    // Extends clause
-    let extendsClause = ''
-    if (matchWord('extends')) {
-      pos += 7
-      skipWhitespaceAndComments()
-      const extStart = pos
-      // Read extends types until {
+  // Extends clause
+  let extendsClause = ''
+  if (matchWord('extends')) {
+    pos += 7
+    skipWhitespaceAndComments()
+    const extStart = pos
+    // Read extends types until {
       let depth = 0
       while (pos < len) {
         if (skipNonCode())
@@ -2604,279 +2603,279 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       return '{}'
 
     pos++ // skip {
-    const members: string[] = []
+      const members: string[] = []
 
-    while (pos < len) {
-      skipWhitespaceAndComments()
-      if (pos >= len)
-        break
-      if (source.charCodeAt(pos) === CH_RBRACE) { pos++; break }
-
-      // Skip semicolons
-      if (source.charCodeAt(pos) === CH_SEMI) { pos++; continue }
-
-      // Skip static blocks
-      if (matchWord('static') && peekAfterWord('static') === CH_LBRACE) {
-        pos += 6
+      while (pos < len) {
         skipWhitespaceAndComments()
-        findMatchingClose(CH_LBRACE, CH_RBRACE)
-        continue
-      }
+        if (pos >= len)
+          break
+        if (source.charCodeAt(pos) === CH_RBRACE) { pos++; break }
 
-      // Collect modifiers
-      let isPrivate = false
-      let isProtected = false
-      let isStatic = false
-      let isAbstract = false
-      let isReadonly = false
-      let isOverride = false
-      let isAccessor = false
-      let isAsync = false
+        // Skip semicolons
+        if (source.charCodeAt(pos) === CH_SEMI) { pos++; continue }
 
-      const modLoop = true
-      while (modLoop) {
-        skipWhitespaceAndComments()
-        // Contextual words followed by a method/property continuation are
-        // names, not modifiers (for example, `async(value: number)`).
-        const start = pos
-        const word = readIdent()
-        pos = start
-        if (word) {
-          const next = peekAfterWord(word)
-          if (next === CH_LPAREN || next === CH_LANGLE || next === CH_QUESTION
-            || next === 33 /* ! */ || next === CH_COLON || next === CH_EQUAL
-            || next === CH_SEMI || next === CH_RBRACE) break
-        }
-        if (matchWord('private')) { isPrivate = true; pos += 7; continue }
-        if (matchWord('protected')) { isProtected = true; pos += 9; continue }
-        if (matchWord('public')) { pos += 6; continue }
-        if (matchWord('static')) { isStatic = true; pos += 6; continue }
-        if (matchWord('abstract')) { isAbstract = true; pos += 8; continue }
-        if (matchWord('readonly')) { isReadonly = true; pos += 8; continue }
-        if (matchWord('override')) { isOverride = true; pos += 8; continue }
-        if (matchWord('accessor')) { isAccessor = true; pos += 8; continue }
-        if (matchWord('async')) { isAsync = true; pos += 5; continue }
-        if (matchWord('declare')) { pos += 7; continue }
-        break
-      }
-
-      skipWhitespaceAndComments()
-      if (pos >= len || source.charCodeAt(pos) === CH_RBRACE)
-        break
-
-      // Skip private identifier members (#field)
-      if (source.charCodeAt(pos) === CH_HASH) {
-        isPrivate = true
-      }
-
-      // Visibility controls emission, not where a member ends. Consume private
-      // headers, bodies and field initializers through the same parser as public
-      // members so a following same-line declaration is not swallowed.
-      const output = isPrivate ? [] : members
-
-      // Build modifier prefix
-      let modPrefix = '  '
-      if (isProtected)
-        modPrefix += 'protected '
-      if (isStatic)
-        modPrefix += 'static '
-      if (isAbstract)
-        modPrefix += 'abstract '
-      if (isReadonly)
-        modPrefix += 'readonly '
-
-      // Detect member type
-      if (matchWord('constructor')) {
-        pos += 11
-        skipWhitespaceAndComments()
-        const rawParams = extractParamList()
-        skipWhitespaceAndComments()
-
-        // Extract parameter properties (non-private params with modifiers like public/protected/readonly)
-        extractParamProperties(rawParams, output)
-
-        // Skip constructor body
-        if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+        // Skip static blocks
+        if (matchWord('static') && peekAfterWord('static') === CH_LBRACE) {
+          pos += 6
+          skipWhitespaceAndComments()
           findMatchingClose(CH_LBRACE, CH_RBRACE)
-        }
-        else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
-          pos++
+          continue
         }
 
-        const dtsParams = buildDtsParams(rawParams)
-        output.push(`  constructor${dtsParams};`)
-      }
-      else if (matchWord('get')) {
-        pos += 3
-        skipWhitespaceAndComments()
-        // An accessor has a member name, including quoted/computed/private names.
-        if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
-          const memberName = readMemberName()
-          // Filter private hash accessors (e.g., get #foo())
-          if (memberName.startsWith('#')) {
-            skipWhitespaceAndComments()
-            if (pos < len && source.charCodeAt(pos) === CH_LPAREN)
-              extractParamList()
-            skipWhitespaceAndComments()
-            extractReturnType()
-            skipWhitespaceAndComments()
-            if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
-              findMatchingClose(CH_LBRACE, CH_RBRACE)
-            else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-              pos++
-            continue
-          }
+        // Collect modifiers
+        let isPrivate = false
+        let isProtected = false
+        let isStatic = false
+        let isAbstract = false
+        let isReadonly = false
+        let isOverride = false
+        let isAccessor = false
+        let isAsync = false
+
+        const modLoop = true
+        while (modLoop) {
           skipWhitespaceAndComments()
-          extractParamList() // empty params for getter
-          skipWhitespaceAndComments()
-          const retType = extractReturnType() || 'unknown'
-          skipWhitespaceAndComments()
-          // Skip body
-          if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
-            findMatchingClose(CH_LBRACE, CH_RBRACE)
+          // Contextual words followed by a method/property continuation are
+          // names, not modifiers (for example, `async(value: number)`).
+          const start = pos
+          const word = readIdent()
+          pos = start
+          if (word) {
+            const next = peekAfterWord(word)
+            if (next === CH_LPAREN || next === CH_LANGLE || next === CH_QUESTION
+              || next === 33 /* ! */ || next === CH_COLON || next === CH_EQUAL
+              || next === CH_SEMI || next === CH_RBRACE) break
           }
-          else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
-            pos++
-          }
-          output.push(`${modPrefix}get ${memberName}(): ${retType};`)
+          if (matchWord('private')) { isPrivate = true; pos += 7; continue }
+          if (matchWord('protected')) { isProtected = true; pos += 9; continue }
+          if (matchWord('public')) { pos += 6; continue }
+          if (matchWord('static')) { isStatic = true; pos += 6; continue }
+          if (matchWord('abstract')) { isAbstract = true; pos += 8; continue }
+          if (matchWord('readonly')) { isReadonly = true; pos += 8; continue }
+          if (matchWord('override')) { isOverride = true; pos += 8; continue }
+          if (matchWord('accessor')) { isAccessor = true; pos += 8; continue }
+          if (matchWord('async')) { isAsync = true; pos += 5; continue }
+          if (matchWord('declare')) { pos += 7; continue }
+          break
         }
-        else {
-          // 'get' is used as a method name
-          handleMethodOrProperty('get', modPrefix, isStatic, isReadonly, isAsync, output)
-        }
-      }
-      else if (matchWord('set')) {
-        pos += 3
+
         skipWhitespaceAndComments()
-        if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
-          const memberName = readMemberName()
-          // Filter private hash accessors (e.g., set #foo(value))
-          if (memberName.startsWith('#')) {
-            skipWhitespaceAndComments()
-            if (pos < len && source.charCodeAt(pos) === CH_LPAREN)
-              extractParamList()
-            skipWhitespaceAndComments()
-            if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
-              findMatchingClose(CH_LBRACE, CH_RBRACE)
-            else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-              pos++
-            continue
-          }
+        if (pos >= len || source.charCodeAt(pos) === CH_RBRACE)
+          break
+
+        // Skip private identifier members (#field)
+        if (source.charCodeAt(pos) === CH_HASH) {
+          isPrivate = true
+        }
+
+        // Visibility controls emission, not where a member ends. Consume private
+        // headers, bodies and field initializers through the same parser as public
+        // members so a following same-line declaration is not swallowed.
+        const output = isPrivate ? [] : members
+
+        // Build modifier prefix
+        let modPrefix = '  '
+        if (isProtected)
+          modPrefix += 'protected '
+        if (isStatic)
+          modPrefix += 'static '
+        if (isAbstract)
+          modPrefix += 'abstract '
+        if (isReadonly)
+          modPrefix += 'readonly '
+
+        // Detect member type
+        if (matchWord('constructor')) {
+          pos += 11
           skipWhitespaceAndComments()
           const rawParams = extractParamList()
           skipWhitespaceAndComments()
-          // Skip body
+
+          // Extract parameter properties (non-private params with modifiers like public/protected/readonly)
+          extractParamProperties(rawParams, output)
+
+          // Skip constructor body
           if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
             findMatchingClose(CH_LBRACE, CH_RBRACE)
           }
           else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
             pos++
           }
+
           const dtsParams = buildDtsParams(rawParams)
-          output.push(`${modPrefix}set ${memberName}${dtsParams};`)
+          output.push(`  constructor${dtsParams};`)
+        }
+        else if (matchWord('get')) {
+          pos += 3
+          skipWhitespaceAndComments()
+          // An accessor has a member name, including quoted/computed/private names.
+          if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
+            const memberName = readMemberName()
+            // Filter private hash accessors (e.g., get #foo())
+            if (memberName.startsWith('#')) {
+              skipWhitespaceAndComments()
+              if (pos < len && source.charCodeAt(pos) === CH_LPAREN)
+                extractParamList()
+              skipWhitespaceAndComments()
+              extractReturnType()
+              skipWhitespaceAndComments()
+              if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
+                findMatchingClose(CH_LBRACE, CH_RBRACE)
+              else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+                pos++
+              continue
+            }
+            skipWhitespaceAndComments()
+            extractParamList() // empty params for getter
+            skipWhitespaceAndComments()
+            const retType = extractReturnType() || 'unknown'
+            skipWhitespaceAndComments()
+            // Skip body
+            if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+              findMatchingClose(CH_LBRACE, CH_RBRACE)
+            }
+            else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
+              pos++
+            }
+            output.push(`${modPrefix}get ${memberName}(): ${retType};`)
+          }
+          else {
+            // 'get' is used as a method name
+            handleMethodOrProperty('get', modPrefix, isStatic, isReadonly, isAsync, output)
+          }
+        }
+        else if (matchWord('set')) {
+          pos += 3
+          skipWhitespaceAndComments()
+          if (pos < len && isMemberNameStart(source.charCodeAt(pos))) {
+            const memberName = readMemberName()
+            // Filter private hash accessors (e.g., set #foo(value))
+            if (memberName.startsWith('#')) {
+              skipWhitespaceAndComments()
+              if (pos < len && source.charCodeAt(pos) === CH_LPAREN)
+                extractParamList()
+              skipWhitespaceAndComments()
+              if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
+                findMatchingClose(CH_LBRACE, CH_RBRACE)
+              else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+                pos++
+              continue
+            }
+            skipWhitespaceAndComments()
+            const rawParams = extractParamList()
+            skipWhitespaceAndComments()
+            // Skip body
+            if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+              findMatchingClose(CH_LBRACE, CH_RBRACE)
+            }
+            else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
+              pos++
+            }
+            const dtsParams = buildDtsParams(rawParams)
+            output.push(`${modPrefix}set ${memberName}${dtsParams};`)
+          }
+          else {
+            handleMethodOrProperty('set', modPrefix, isStatic, isReadonly, isAsync, output)
+          }
         }
         else {
-          handleMethodOrProperty('set', modPrefix, isStatic, isReadonly, isAsync, output)
+          // Regular method or property
+          const isGenerator = source.charCodeAt(pos) === CH_STAR
+          if (isGenerator) { pos++; skipWhitespaceAndComments() }
+
+          const memberName = readMemberName()
+          if (!memberName) { skipClassMember(); continue }
+
+          handleMethodOrPropertyAfterName(memberName, modPrefix, isStatic, isReadonly, isGenerator, isAbstract, isAsync, output)
         }
       }
-      else {
-        // Regular method or property
-        const isGenerator = source.charCodeAt(pos) === CH_STAR
-        if (isGenerator) { pos++; skipWhitespaceAndComments() }
 
-        const memberName = readMemberName()
-        if (!memberName) { skipClassMember(); continue }
-
-        handleMethodOrPropertyAfterName(memberName, modPrefix, isStatic, isReadonly, isGenerator, isAbstract, isAsync, output)
-      }
+      return `{\n${members.join('\n')}\n}`
     }
 
-    return `{\n${members.join('\n')}\n}`
-  }
-
-  function isMemberNameStart(ch: number): boolean {
-    return isIdentStart(ch) || ch === CH_LBRACKET || ch === CH_HASH
-      || ch === CH_SQUOTE || ch === CH_DQUOTE
-  }
-
-  /** Read an identifier, computed property, quoted name or private identifier. */
-  function readMemberName(): string {
-    if (pos >= len)
-      return ''
-    const ch = source.charCodeAt(pos)
-    if (ch === CH_LBRACKET) {
-      const start = pos
-      findMatchingClose(CH_LBRACKET, CH_RBRACKET)
-      return source.slice(start, pos)
+    function isMemberNameStart(ch: number): boolean {
+      return isIdentStart(ch) || ch === CH_LBRACKET || ch === CH_HASH
+        || ch === CH_SQUOTE || ch === CH_DQUOTE
     }
-    if (ch === CH_HASH) {
-      pos++
-      return `#${readIdent()}`
-    }
-    if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
-      const start = pos
-      skipString(ch)
-      return source.slice(start, pos)
-    }
-    return readIdent()
-  }
 
-  /** Peek after a word using the same whitespace/comment rules as its header. */
-  function peekAfterWord(word: string): number {
-    const start = pos
-    pos += word.length
-    skipWhitespaceAndComments()
-    const next = pos < len ? source.charCodeAt(pos) : 0
-    pos = start
-    return next
-  }
-
-  /** Skip a class member (to next member boundary) */
-  function skipClassMember(): void {
-    let depth = 0
-    while (pos < len) {
-      if (skipNonCode())
-        continue
+    /** Read an identifier, computed property, quoted name or private identifier. */
+    function readMemberName(): string {
+      if (pos >= len)
+        return ''
       const ch = source.charCodeAt(pos)
-      if (ch === CH_LBRACE || ch === CH_LPAREN) {
-        depth++
+      if (ch === CH_LBRACKET) {
+        const start = pos
+        findMatchingClose(CH_LBRACKET, CH_RBRACKET)
+        return source.slice(start, pos)
       }
-      else if (ch === CH_RBRACE || ch === CH_RPAREN) {
-        if (depth === 0)
-          return // hit end of class body
-        depth--
+      if (ch === CH_HASH) {
+        pos++
+        return `#${readIdent()}`
       }
-      else if (ch === CH_SEMI && depth === 0) { pos++; return }
-      if (depth === 0 && checkASIMember())
-        return
-      pos++
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+        const start = pos
+        skipString(ch)
+        return source.slice(start, pos)
+      }
+      return readIdent()
     }
-  }
 
-  /** Handle a method or property after we know it starts with a name-like word */
-  function handleMethodOrProperty(nameWord: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isAsync: boolean, members: string[]): void {
-    handleMethodOrPropertyAfterName(nameWord, modPrefix, isStatic, isReadonly, false, false, isAsync, members)
-  }
-
-  /** Handle method or property after reading the member name */
-  // eslint-disable-next-line pickier/no-unused-vars -- `isAbstract` is positional; the callers pass it and `isAsync` follows it
-  function handleMethodOrPropertyAfterName(memberName: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isGenerator: boolean, isAbstract: boolean, isAsync: boolean, members: string[]): void {
-    skipWhitespaceAndComments()
-    if (pos >= len)
-      return
-
-    const ch = source.charCodeAt(pos)
-
-    // Optional marker ?
-    let isOptional = false
-    if (ch === CH_QUESTION) {
-      isOptional = true
-      pos++
+    /** Peek after a word using the same whitespace/comment rules as its header. */
+    function peekAfterWord(word: string): number {
+      const start = pos
+      pos += word.length
       skipWhitespaceAndComments()
+      const next = pos < len ? source.charCodeAt(pos) : 0
+      pos = start
+      return next
     }
 
-    // Exclamation mark (definite assignment)
-    if (pos < len && source.charCodeAt(pos) === 33) { // !
+    /** Skip a class member (to next member boundary) */
+    function skipClassMember(): void {
+      let depth = 0
+      while (pos < len) {
+        if (skipNonCode())
+          continue
+        const ch = source.charCodeAt(pos)
+        if (ch === CH_LBRACE || ch === CH_LPAREN) {
+          depth++
+        }
+        else if (ch === CH_RBRACE || ch === CH_RPAREN) {
+          if (depth === 0)
+            return // hit end of class body
+          depth--
+        }
+        else if (ch === CH_SEMI && depth === 0) { pos++; return }
+        if (depth === 0 && checkASIMember())
+          return
+        pos++
+      }
+    }
+
+    /** Handle a method or property after we know it starts with a name-like word */
+    function handleMethodOrProperty(nameWord: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isAsync: boolean, members: string[]): void {
+      handleMethodOrPropertyAfterName(nameWord, modPrefix, isStatic, isReadonly, false, false, isAsync, members)
+    }
+
+    /** Handle method or property after reading the member name */
+    // eslint-disable-next-line pickier/no-unused-vars -- `isAbstract` is positional; the callers pass it and `isAsync` follows it
+    function handleMethodOrPropertyAfterName(memberName: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isGenerator: boolean, isAbstract: boolean, isAsync: boolean, members: string[]): void {
+      skipWhitespaceAndComments()
+      if (pos >= len)
+        return
+
+      const ch = source.charCodeAt(pos)
+
+      // Optional marker ?
+      let isOptional = false
+      if (ch === CH_QUESTION) {
+        isOptional = true
+        pos++
+        skipWhitespaceAndComments()
+      }
+
+      // Exclamation mark (definite assignment)
+      if (pos < len && source.charCodeAt(pos) === 33) { // !
       pos++
       skipWhitespaceAndComments()
     }
@@ -2983,30 +2982,30 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           }
         }
         else {
-        pos++ // skip =
-        skipWhitespaceAndComments()
-        const initStart = pos
-        let depth = 0
-        while (pos < len) {
-          if (skipNonCode())
-            continue
-          const ic = source.charCodeAt(pos)
-          if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET) {
-            depth++
-          }
-          else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET) {
-            if (depth === 0 && ic === CH_RBRACE)
+          pos++ // skip =
+          skipWhitespaceAndComments()
+          const initStart = pos
+          let depth = 0
+          while (pos < len) {
+            if (skipNonCode())
+              continue
+            const ic = source.charCodeAt(pos)
+            if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET) {
+              depth++
+            }
+            else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET) {
+              if (depth === 0 && ic === CH_RBRACE)
+                break
+              depth--
+            }
+            else if (depth === 0 && ic === CH_SEMI) {
               break
-            depth--
+            }
+            if (depth === 0 && checkASIMember())
+              break
+            pos++
           }
-          else if (depth === 0 && ic === CH_SEMI) {
-            break
-          }
-          if (depth === 0 && checkASIMember())
-            break
-          pos++
-        }
-        initText = sliceTrimmed(initStart, pos)
+          initText = sliceTrimmed(initStart, pos)
         } // end else (non-isolatedDeclarations path)
       }
 
@@ -3166,258 +3165,209 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       return '{}'
     pos++ // skip {
 
-    const lines: string[] = []
+      const lines: string[] = []
 
-    while (pos < len) {
-      skipWhitespaceAndComments()
-      if (pos >= len)
-        break
-      if (source.charCodeAt(pos) === CH_RBRACE) { pos++; break }
-      if (source.charCodeAt(pos) === CH_SEMI) { pos++; continue }
-
-      // Check for export keyword
-      let hasExport = false
-      if (matchWord('export')) {
-        hasExport = true
-        pos += 6
+      while (pos < len) {
         skipWhitespaceAndComments()
-      }
+        if (pos >= len)
+          break
+        if (source.charCodeAt(pos) === CH_RBRACE) { pos++; break }
+        if (source.charCodeAt(pos) === CH_SEMI) { pos++; continue }
 
-      // Check for declare keyword
-      if (matchWord('declare')) {
-        pos += 7
-        skipWhitespaceAndComments()
-      }
-
-      const prefix = hasExport ? 'export ' : ''
-
-      if (matchWord('function') || (matchWord('async') && peekAfterKeyword('async', 'function'))) {
-        // Function: extract signature, skip body
-        let isAsync = false
-        if (matchWord('async')) {
-          isAsync = true
-          pos += 5
+        // Check for export keyword
+        let hasExport = false
+        if (matchWord('export')) {
+          hasExport = true
+          pos += 6
           skipWhitespaceAndComments()
         }
-        pos += 8 // function
-        skipWhitespaceAndComments()
-        const isGen = pos < len && source.charCodeAt(pos) === CH_STAR
-        if (isGen) { pos++; skipWhitespaceAndComments() }
-        const fname = readIdent()
-        skipWhitespaceAndComments()
-        const generics = extractGenerics()
-        skipWhitespaceAndComments()
-        const rawParams = extractParamList()
-        skipWhitespaceAndComments()
-        let retType = extractReturnType()
-        if (!retType)
-          retType = isAsync ? 'Promise<void>' : 'void'
-        skipWhitespaceAndComments()
-        if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
-          findMatchingClose(CH_LBRACE, CH_RBRACE)
-        else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-          pos++
-        const dtsParams = buildDtsParams(rawParams)
-        lines.push(`${indent}${prefix}function ${fname}${generics}${dtsParams}: ${retType};`)
-      }
-      else if (matchWord('const') || matchWord('let') || matchWord('var')) {
-        const kw = matchWord('const') ? 'const' : matchWord('let') ? 'let' : 'var'
-        pos += kw.length
-        skipWhitespaceAndComments()
-        const vname = readIdent()
-        if (!vname) { skipToStatementEnd(true); continue }
-        skipWhitespaceAndComments()
 
-        let vtype = ''
-        if (pos < len && source.charCodeAt(pos) === CH_COLON) {
-          pos++
-          skipWhitespaceAndComments()
-          const ts = pos
-          let depth = 0
-          while (pos < len) {
-            if (skipNonCode())
-              continue
-            const tc = source.charCodeAt(pos)
-            if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
-              depth++
-            else if (tc === CH_RBRACE && depth === 0)
-              break // closes the namespace: `{ export const x = 1 }`
-            else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
-              depth--
-            else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
-              break
-            else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
-              break
-            if (depth === 0 && checkASITopLevel())
-              break
-            pos++
-          }
-          vtype = sliceTrimmed(ts, pos)
-        }
-
-        let initText = ''
-        if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-          pos++
-          skipWhitespaceAndComments()
-          const is2 = pos
-          let depth = 0
-          while (pos < len) {
-            if (skipNonCode())
-              continue
-            const ic = source.charCodeAt(pos)
-            if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET || ic === CH_LANGLE)
-              depth++
-            else if (ic === CH_RBRACE && depth === 0)
-              break // closes the namespace: `{ export const x = 1 }`
-            else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET || (ic === CH_RANGLE && !isArrowGT()))
-              depth--
-            else if (depth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
-              break
-            if (depth === 0 && checkASITopLevel())
-              break
-            pos++
-          }
-          initText = sliceTrimmed(is2, pos)
-        }
-        if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-          pos++
-
-        if (!vtype && initText) {
-          const asType = extractAssertion(initText)
-          if (asType) {
-            vtype = asType
-          }
-          else if (kw === 'const') {
-            vtype = inferLiteralType(initText)
-          }
-          else {
-            vtype = inferTypeFromDefault(initText)
-          }
-        }
-        if (!vtype)
-          vtype = 'unknown'
-        lines.push(`${indent}${prefix}${kw} ${vname}: ${vtype};`)
-      }
-      else if (matchWord('interface')) {
-        pos += 9
-        skipWhitespaceAndComments()
-        const iname = readIdent()
-        skipWhitespaceAndComments()
-        const generics = extractGenerics()
-        skipWhitespaceAndComments()
-        // Extends clause. Consume the keyword and scan the heritage types with
-        // angle-depth tracking — the same shape as the top-level
-        // extractInterface — so `Container<{ x: number }>` doesn't end the
-        // clause at the '{' inside its type arguments. The previous scan
-        // sliced the raw `extends …` text and re-emitted it without a
-        // separating space, producing `Nameextends Base`.
-        let ext = ''
-        if (matchWord('extends')) {
+        // Check for declare keyword
+        if (matchWord('declare')) {
           pos += 7
           skipWhitespaceAndComments()
-          const extStart = pos
-          let depth = 0
-          while (pos < len) {
-            if (skipNonCode())
-              continue
-            const ch = source.charCodeAt(pos)
-            if (ch === CH_LANGLE)
-              depth++
-            else if (ch === CH_RANGLE && !isArrowGT())
-              depth--
-            else if (ch === CH_LBRACE && depth === 0)
-              break
-            pos++
-          }
-          ext = sliceTrimmed(extStart, pos)
         }
-        const body = cleanBraceBlock(extractBraceBlock())
-        lines.push(`${indent}${prefix}interface ${iname}${generics}${ext ? ` extends ${ext}` : ''} ${body}`)
-      }
-      else if (matchWord('type')) {
-        pos += 4
-        skipWhitespaceAndComments()
-        const tname = readIdent()
-        skipWhitespaceAndComments()
-        const generics = extractGenerics()
-        skipWhitespaceAndComments()
-        if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
-          pos++
-          skipWhitespaceAndComments()
-          const ts = pos
-          let depth = 0
-          while (pos < len) {
-            if (skipNonCode())
-              continue
-            const tc = source.charCodeAt(pos)
-            if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
-              depth++
-            else if (tc === CH_RBRACE && depth === 0)
-              break // closes the namespace: `{ export const x = 1 }`
-            else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
-              depth--
-            else if (depth === 0 && tc === CH_SEMI)
-              break
-            if (depth === 0 && checkASITopLevel())
-              break
-            pos++
+
+        const prefix = hasExport ? 'export ' : ''
+
+        if (matchWord('function') || (matchWord('async') && peekAfterKeyword('async', 'function'))) {
+          // Function: extract signature, skip body
+          let isAsync = false
+          if (matchWord('async')) {
+            isAsync = true
+            pos += 5
+            skipWhitespaceAndComments()
           }
-          const typeBody = sliceTrimmed(ts, pos)
+          pos += 8 // function
+          skipWhitespaceAndComments()
+          const isGen = pos < len && source.charCodeAt(pos) === CH_STAR
+          if (isGen) { pos++; skipWhitespaceAndComments() }
+          const fname = readIdent()
+          skipWhitespaceAndComments()
+          const generics = extractGenerics()
+          skipWhitespaceAndComments()
+          const rawParams = extractParamList()
+          skipWhitespaceAndComments()
+          let retType = extractReturnType()
+          if (!retType)
+            retType = isAsync ? 'Promise<void>' : 'void'
+          skipWhitespaceAndComments()
+          if (pos < len && source.charCodeAt(pos) === CH_LBRACE)
+            findMatchingClose(CH_LBRACE, CH_RBRACE)
+          else if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+            pos++
+          const dtsParams = buildDtsParams(rawParams)
+          lines.push(`${indent}${prefix}function ${fname}${generics}${dtsParams}: ${retType};`)
+        }
+        else if (matchWord('const') || matchWord('let') || matchWord('var')) {
+          const kw = matchWord('const') ? 'const' : matchWord('let') ? 'let' : 'var'
+          pos += kw.length
+          skipWhitespaceAndComments()
+          const vname = readIdent()
+          if (!vname) { skipToStatementEnd(true); continue }
+          skipWhitespaceAndComments()
+
+          let vtype = ''
+          if (pos < len && source.charCodeAt(pos) === CH_COLON) {
+            pos++
+            skipWhitespaceAndComments()
+            const ts = pos
+            let depth = 0
+            while (pos < len) {
+              if (skipNonCode())
+                continue
+              const tc = source.charCodeAt(pos)
+              if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
+                depth++
+              else if (tc === CH_RBRACE && depth === 0)
+                break // closes the namespace: `{ export const x = 1 }`
+              else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
+                depth--
+              else if (depth === 0 && (tc === CH_SEMI || tc === CH_COMMA))
+                break
+              else if (depth === 0 && tc === CH_EQUAL && !isArrowEq())
+                break
+              if (depth === 0 && checkASITopLevel())
+                break
+              pos++
+            }
+            vtype = sliceTrimmed(ts, pos)
+          }
+
+          let initText = ''
+          if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
+            pos++
+            skipWhitespaceAndComments()
+            const is2 = pos
+            let depth = 0
+            while (pos < len) {
+              if (skipNonCode())
+                continue
+              const ic = source.charCodeAt(pos)
+              if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET || ic === CH_LANGLE)
+                depth++
+              else if (ic === CH_RBRACE && depth === 0)
+                break // closes the namespace: `{ export const x = 1 }`
+              else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET || (ic === CH_RANGLE && !isArrowGT()))
+                depth--
+              else if (depth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
+                break
+              if (depth === 0 && checkASITopLevel())
+                break
+              pos++
+            }
+            initText = sliceTrimmed(is2, pos)
+          }
           if (pos < len && source.charCodeAt(pos) === CH_SEMI)
             pos++
-          lines.push(`${indent}${prefix}type ${tname}${generics} = ${typeBody}`)
+
+          if (!vtype && initText) {
+            const asType = extractAssertion(initText)
+            if (asType) {
+              vtype = asType
+            }
+            else if (kw === 'const') {
+              vtype = inferLiteralType(initText)
+            }
+            else {
+              vtype = inferTypeFromDefault(initText)
+            }
+          }
+          if (!vtype)
+            vtype = 'unknown'
+          lines.push(`${indent}${prefix}${kw} ${vname}: ${vtype};`)
         }
-      }
-      else if (matchWord('class')) {
-        pos += 5
-        skipWhitespaceAndComments()
-        const cname = readIdent()
-        skipWhitespaceAndComments()
-        const generics = extractGenerics()
-        skipWhitespaceAndComments()
-        const hStart = pos
-        // Angle-depth-aware scan so heritage types like `Container<{ x: number }>`
-        // don't end the clause at the '{' inside their type arguments.
-        let hDepth = 0
-        while (pos < len) {
-          if (skipNonCode())
-            continue
-          const hch = source.charCodeAt(pos)
-          if (hch === CH_LANGLE)
-            hDepth++
-          else if (hch === CH_RANGLE && !isArrowGT())
-            hDepth--
-          else if (hch === CH_LBRACE && hDepth === 0)
-            break
-          pos++
+        else if (matchWord('interface')) {
+          pos += 9
+          skipWhitespaceAndComments()
+          const iname = readIdent()
+          skipWhitespaceAndComments()
+          const generics = extractGenerics()
+          skipWhitespaceAndComments()
+          // Extends clause. Consume the keyword and scan the heritage types with
+          // angle-depth tracking — the same shape as the top-level
+          // extractInterface — so `Container<{ x: number }>` doesn't end the
+          // clause at the '{' inside its type arguments. The previous scan
+          // sliced the raw `extends …` text and re-emitted it without a
+          // separating space, producing `Nameextends Base`.
+          let ext = ''
+          if (matchWord('extends')) {
+            pos += 7
+            skipWhitespaceAndComments()
+            const extStart = pos
+            let depth = 0
+            while (pos < len) {
+              if (skipNonCode())
+                continue
+              const ch = source.charCodeAt(pos)
+              if (ch === CH_LANGLE)
+                depth++
+              else if (ch === CH_RANGLE && !isArrowGT())
+                depth--
+              else if (ch === CH_LBRACE && depth === 0)
+                break
+              pos++
+            }
+            ext = sliceTrimmed(extStart, pos)
+          }
+          const body = cleanBraceBlock(extractBraceBlock())
+          lines.push(`${indent}${prefix}interface ${iname}${generics}${ext ? ` extends ${ext}` : ''} ${body}`)
         }
-        const heritage = sliceTrimmed(hStart, pos)
-        const hText = heritage ? ` ${heritage}` : ''
-        const body = buildClassBodyDts()
-        lines.push(`${indent}${prefix}class ${cname}${generics}${hText} ${body}`)
-      }
-      else if (matchWord('enum')) {
-        pos += 4
-        skipWhitespaceAndComments()
-        const ename = readIdent()
-        skipWhitespaceAndComments()
-        const body = extractBraceBlock()
-        lines.push(`${indent}${prefix}enum ${ename} ${body}`)
-      }
-      else if (matchWord('namespace') || matchWord('module')) {
-        const kw = matchWord('namespace') ? 'namespace' : 'module'
-        pos += kw.length
-        skipWhitespaceAndComments()
-        const nname = readIdent()
-        skipWhitespaceAndComments()
-        const body = buildNamespaceBodyDts(indent)
-        lines.push(`${indent}${prefix}${kw} ${nname} ${body}`)
-      }
-      else if (matchWord('abstract')) {
-        // abstract class
-        pos += 8
-        skipWhitespaceAndComments()
-        if (matchWord('class')) {
+        else if (matchWord('type')) {
+          pos += 4
+          skipWhitespaceAndComments()
+          const tname = readIdent()
+          skipWhitespaceAndComments()
+          const generics = extractGenerics()
+          skipWhitespaceAndComments()
+          if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
+            pos++
+            skipWhitespaceAndComments()
+            const ts = pos
+            let depth = 0
+            while (pos < len) {
+              if (skipNonCode())
+                continue
+              const tc = source.charCodeAt(pos)
+              if (tc === CH_LPAREN || tc === CH_LBRACE || tc === CH_LBRACKET || tc === CH_LANGLE)
+                depth++
+              else if (tc === CH_RBRACE && depth === 0)
+                break // closes the namespace: `{ export const x = 1 }`
+              else if (tc === CH_RPAREN || tc === CH_RBRACE || tc === CH_RBRACKET || (tc === CH_RANGLE && !isArrowGT()))
+                depth--
+              else if (depth === 0 && tc === CH_SEMI)
+                break
+              if (depth === 0 && checkASITopLevel())
+                break
+              pos++
+            }
+            const typeBody = sliceTrimmed(ts, pos)
+            if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+              pos++
+            lines.push(`${indent}${prefix}type ${tname}${generics} = ${typeBody}`)
+          }
+        }
+        else if (matchWord('class')) {
           pos += 5
           skipWhitespaceAndComments()
           const cname = readIdent()
@@ -3443,223 +3393,410 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           const heritage = sliceTrimmed(hStart, pos)
           const hText = heritage ? ` ${heritage}` : ''
           const body = buildClassBodyDts()
-          lines.push(`${indent}${prefix}abstract class ${cname}${generics}${hText} ${body}`)
+          lines.push(`${indent}${prefix}class ${cname}${generics}${hText} ${body}`)
+        }
+        else if (matchWord('enum')) {
+          pos += 4
+          skipWhitespaceAndComments()
+          const ename = readIdent()
+          skipWhitespaceAndComments()
+          const body = extractBraceBlock()
+          lines.push(`${indent}${prefix}enum ${ename} ${body}`)
+        }
+        else if (matchWord('namespace') || matchWord('module')) {
+          const kw = matchWord('namespace') ? 'namespace' : 'module'
+          pos += kw.length
+          skipWhitespaceAndComments()
+          const nname = readIdent()
+          skipWhitespaceAndComments()
+          const body = buildNamespaceBodyDts(indent)
+          lines.push(`${indent}${prefix}${kw} ${nname} ${body}`)
+        }
+        else if (matchWord('abstract')) {
+          // abstract class
+          pos += 8
+          skipWhitespaceAndComments()
+          if (matchWord('class')) {
+            pos += 5
+            skipWhitespaceAndComments()
+            const cname = readIdent()
+            skipWhitespaceAndComments()
+            const generics = extractGenerics()
+            skipWhitespaceAndComments()
+            const hStart = pos
+            // Angle-depth-aware scan so heritage types like `Container<{ x: number }>`
+            // don't end the clause at the '{' inside their type arguments.
+            let hDepth = 0
+            while (pos < len) {
+              if (skipNonCode())
+                continue
+              const hch = source.charCodeAt(pos)
+              if (hch === CH_LANGLE)
+                hDepth++
+              else if (hch === CH_RANGLE && !isArrowGT())
+                hDepth--
+              else if (hch === CH_LBRACE && hDepth === 0)
+                break
+              pos++
+            }
+            const heritage = sliceTrimmed(hStart, pos)
+            const hText = heritage ? ` ${heritage}` : ''
+            const body = buildClassBodyDts()
+            lines.push(`${indent}${prefix}abstract class ${cname}${generics}${hText} ${body}`)
+          }
+          else {
+            skipToStatementEnd(true)
+          }
+        }
+        else if (hasExport && matchWord('default')) {
+          // export default <identifier/expression>;
+          pos += 7
+          skipWhitespaceAndComments()
+          const defStart = pos
+          skipToStatementEnd(true)
+          let defText = sliceTrimmed(defStart, pos)
+          if (defText.charCodeAt(defText.length - 1) === CH_SEMI) defText = defText.slice(0, -1)
+          if (defText) {
+            lines.push(`${indent}export default ${defText};`)
+          }
+        }
+        else if (!hasExport && (source.charCodeAt(pos) === CH_SQUOTE || source.charCodeAt(pos) === CH_DQUOTE || source.charCodeAt(pos) === CH_BACKTICK)) {
+          // Skip string expression statements like 'use strict'
+          skipToStatementEnd(true)
         }
         else {
+          // Unknown declaration or expression, skip
           skipToStatementEnd(true)
         }
       }
-      else if (hasExport && matchWord('default')) {
-        // export default <identifier/expression>;
-        pos += 7
-        skipWhitespaceAndComments()
-        const defStart = pos
-        skipToStatementEnd(true)
-        let defText = sliceTrimmed(defStart, pos)
-        if (defText.charCodeAt(defText.length - 1) === CH_SEMI) defText = defText.slice(0, -1)
-        if (defText) {
-          lines.push(`${indent}export default ${defText};`)
-        }
-      }
-      else if (!hasExport && (source.charCodeAt(pos) === CH_SQUOTE || source.charCodeAt(pos) === CH_DQUOTE || source.charCodeAt(pos) === CH_BACKTICK)) {
-        // Skip string expression statements like 'use strict'
-        skipToStatementEnd(true)
-      }
-      else {
-        // Unknown declaration or expression, skip
-        skipToStatementEnd(true)
-      }
+
+      if (lines.length === 0)
+        return '{}'
+      return `{\n${lines.join('\n')}\n}`
     }
 
-    if (lines.length === 0)
-      return '{}'
-    return `{\n${lines.join('\n')}\n}`
-  }
-
-  /** Peek ahead to check if word2 follows word1 */
-  function peekAfterKeyword(word1: string, word2: string): boolean {
-    let p = pos + word1.length
-    while (p < len && isWhitespace(source.charCodeAt(p))) p++
-    for (let i = 0; i < word2.length; i++) {
-      if (p + i >= len || source.charCodeAt(p + i) !== word2.charCodeAt(i))
-        return false
+    /** Peek ahead to check if word2 follows word1 */
+    function peekAfterKeyword(word1: string, word2: string): boolean {
+      let p = pos + word1.length
+      while (p < len && isWhitespace(source.charCodeAt(p))) p++
+      for (let i = 0; i < word2.length; i++) {
+        if (p + i >= len || source.charCodeAt(p + i) !== word2.charCodeAt(i))
+          return false
+      }
+      return p + word2.length >= len || !isIdentChar(source.charCodeAt(p + word2.length))
     }
-    return p + word2.length >= len || !isIdentChar(source.charCodeAt(p + word2.length))
-  }
 
-  /**
+    /**
    * Extract module/namespace declaration.
    * pos should be at 'module' or 'namespace' keyword.
    */
-  function extractModule(declStart: number, isExported: boolean, keyword: string): Declaration {
-    pos += keyword.length // skip module/namespace
-    skipWhitespaceAndComments()
+    function extractModule(declStart: number, isExported: boolean, keyword: string): Declaration {
+      pos += keyword.length // skip module/namespace
+      skipWhitespaceAndComments()
 
-    // Read name (could be quoted for ambient modules)
-    let name = ''
-    const ch = source.charCodeAt(pos)
-    if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
-      const quoteStart = pos
-      skipString(ch)
-      name = source.slice(quoteStart, pos)
-    }
-    else {
-      name = readIdent()
-      // Handle dotted names (A.B.C)
-      while (pos < len && source.charCodeAt(pos) === CH_DOT) {
-        pos++
-        name += `.${readIdent()}`
+      // Read name (could be quoted for ambient modules)
+      let name = ''
+      const ch = source.charCodeAt(pos)
+      if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+        const quoteStart = pos
+        skipString(ch)
+        name = source.slice(quoteStart, pos)
+      }
+      else {
+        name = readIdent()
+        // Handle dotted names (A.B.C)
+        while (pos < len && source.charCodeAt(pos) === CH_DOT) {
+          pos++
+          name += `.${readIdent()}`
+        }
+      }
+
+      skipWhitespaceAndComments()
+
+      // Body - process inner declarations for DTS
+      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
+
+      // Build DTS text
+      const text = `${isExported ? 'export ' : ''}declare ${keyword} ${name} ${body}`
+      const comments = extractLeadingComments(declStart)
+      const isAmbient = name.startsWith('\'') || name.startsWith('"')
+
+      return {
+        kind: 'module',
+        name,
+        text,
+        isExported,
+        source: isAmbient ? name.slice(1, -1) : undefined,
+        leadingComments: comments,
+        start: declStart,
+        end: pos,
       }
     }
 
-    skipWhitespaceAndComments()
+    /** Convert a default-export expression into an ambient binding plus export. */
+    function extractDefaultExpression(stmtStart: number, expressionStart: number): void {
+      skipToStatementEnd()
+      let expression = sliceTrimmed(expressionStart, pos)
+      if (expression.charCodeAt(expression.length - 1) === CH_SEMI) expression = expression.slice(0, -1).trimEnd()
+      if (!expression) return
 
-    // Body - process inner declarations for DTS
-    const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
+      let isIdentifier = isIdentStart(expression.charCodeAt(0))
+      for (let i = 1; isIdentifier && i < expression.length; i++) {
+        isIdentifier = isIdentChar(expression.charCodeAt(i))
+      }
 
-    // Build DTS text
-    const text = `${isExported ? 'export ' : ''}declare ${keyword} ${name} ${body}`
-    const comments = extractLeadingComments(declStart)
-    const isAmbient = name.startsWith('\'') || name.startsWith('"')
+      const comments = extractLeadingComments(stmtStart)
+      if (isIdentifier) {
+        declarations.push({
+          kind: 'export',
+          name: 'default',
+          text: `export default ${expression};`,
+          isExported: true,
+          isTypeOnly: false,
+          leadingComments: comments,
+          start: stmtStart,
+          end: pos,
+        })
+        return
+      }
 
-    return {
-      kind: 'module',
-      name,
-      text,
-      isExported,
-      source: isAmbient ? name.slice(1, -1) : undefined,
-      leadingComments: comments,
-      start: declStart,
-      end: pos,
-    }
-  }
-
-  /** Convert a default-export expression into an ambient binding plus export. */
-  function extractDefaultExpression(stmtStart: number, expressionStart: number): void {
-    skipToStatementEnd()
-    let expression = sliceTrimmed(expressionStart, pos)
-    if (expression.charCodeAt(expression.length - 1) === CH_SEMI) expression = expression.slice(0, -1).trimEnd()
-    if (!expression) return
-
-    let isIdentifier = isIdentStart(expression.charCodeAt(0))
-    for (let i = 1; isIdentifier && i < expression.length; i++) {
-      isIdentifier = isIdentChar(expression.charCodeAt(i))
-    }
-
-    const comments = extractLeadingComments(stmtStart)
-    if (isIdentifier) {
+      let helperName = '__dtsx_default_export__'
+      let suffix = 1
+      while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
+      const assertedType = extractAssertion(expression)
+      const inferredType = assertedType || inferNarrowType(expression, false)
+      const type = inferredType === 'unknown' && isEntityNameText(expression)
+        ? `typeof ${expression}`
+        : inferredType
+      declarations.push({
+        kind: 'variable',
+        name: helperName,
+        text: `declare const ${helperName}: ${type};`,
+        isExported: false,
+        typeAnnotation: type,
+        modifiers: ['const'],
+        start: stmtStart,
+        end: pos,
+      })
       declarations.push({
         kind: 'export',
         name: 'default',
-        text: `export default ${expression};`,
+        text: `export default ${helperName};`,
         isExported: true,
         isTypeOnly: false,
         leadingComments: comments,
         start: stmtStart,
         end: pos,
       })
-      return
     }
 
-    let helperName = '__dtsx_default_export__'
-    let suffix = 1
-    while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
-    const assertedType = extractAssertion(expression)
-    const inferredType = assertedType || inferNarrowType(expression, false)
-    const type = inferredType === 'unknown' && isEntityNameText(expression)
-      ? `typeof ${expression}`
-      : inferredType
-    declarations.push({
-      kind: 'variable',
-      name: helperName,
-      text: `declare const ${helperName}: ${type};`,
-      isExported: false,
-      typeAnnotation: type,
-      modifiers: ['const'],
-      start: stmtStart,
-      end: pos,
-    })
-    declarations.push({
-      kind: 'export',
-      name: 'default',
-      text: `export default ${helperName};`,
-      isExported: true,
-      isTypeOnly: false,
-      leadingComments: comments,
-      start: stmtStart,
-      end: pos,
-    })
-  }
+    // --- Main scan loop (first-char dispatch for speed) ---
 
-  // --- Main scan loop (first-char dispatch for speed) ---
-
-  while (pos < len) {
-    skipWhitespaceAndComments()
-    if (pos >= len)
-      break
-
-    const stmtStart = pos
-    const ch0 = source.charCodeAt(pos)
-
-    // Fast dispatch on first character of keyword
-    if (ch0 === 105 /* i */ && matchWord('import')) {
-      declarations.push(extractImport(stmtStart))
-    }
-    else if (ch0 === 101 /* e */ && matchWord('export')) {
-      pos += 6 // skip 'export'
+    while (pos < len) {
       skipWhitespaceAndComments()
-      const ech = source.charCodeAt(pos)
+      if (pos >= len)
+        break
 
-      if (ech === 100 /* d */ && matchWord('default')) {
-        pos += 7
+      const stmtStart = pos
+      const ch0 = source.charCodeAt(pos)
+
+      // Fast dispatch on first character of keyword
+      if (ch0 === 105 /* i */ && matchWord('import')) {
+        declarations.push(extractImport(stmtStart))
+      }
+      else if (ch0 === 101 /* e */ && matchWord('export')) {
+        pos += 6 // skip 'export'
         skipWhitespaceAndComments()
-        const defaultExpressionStart = pos
-        const dch = source.charCodeAt(pos)
+        const ech = source.charCodeAt(pos)
 
-        if (dch === 102 /* f */ && matchWord('function')) {
-          const decl = extractFunction(stmtStart, true, false, true)
+        if (ech === 100 /* d */ && matchWord('default')) {
+          pos += 7
+          skipWhitespaceAndComments()
+          const defaultExpressionStart = pos
+          const dch = source.charCodeAt(pos)
+
+          if (dch === 102 /* f */ && matchWord('function')) {
+            const decl = extractFunction(stmtStart, true, false, true)
+            if (decl)
+              declarations.push(decl)
+          }
+          else if (dch === 97 /* a */ && matchWord('async') && peekAfterWord('async') !== CH_SEMI) {
+            pos += 5
+            skipWhitespaceAndComments()
+            if (matchWord('function')) {
+              const decl = extractFunction(stmtStart, true, true, true)
+              if (decl)
+                declarations.push(decl)
+            }
+            else {
+              // export default async expression
+              extractDefaultExpression(stmtStart, defaultExpressionStart)
+            }
+          }
+          else if (dch === 99 /* c */ && matchWord('class')) {
+            const decl = extractClass(stmtStart, true, false, true)
+            declarations.push(decl)
+          }
+          else if (dch === 97 /* a */ && matchWord('abstract')) {
+            pos += 8
+            skipWhitespaceAndComments()
+            if (matchWord('class')) {
+              const decl = extractClass(stmtStart, true, true, true)
+              declarations.push(decl)
+            }
+          }
+          else {
+            // export default expression
+            extractDefaultExpression(stmtStart, defaultExpressionStart)
+          }
+        }
+        else if (ech === 116 /* t */ && matchWord('type')) {
+          // Could be `export type Name = ...` or `export type { ... }`
+          const savedPos = pos
+          pos += 4
+          skipWhitespaceAndComments()
+
+          if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+            // export type { ... } from '...'
+            skipExportBraces()
+            const text = sliceTrimmed(stmtStart, pos)
+            const comments = extractLeadingComments(stmtStart)
+            declarations.push({
+              kind: 'export',
+              name: '',
+              text,
+              isExported: true,
+              isTypeOnly: true,
+              source: extractFromSpecifier(text),
+              leadingComments: comments,
+              start: stmtStart,
+              end: pos,
+            })
+          }
+          else if (pos < len && source.charCodeAt(pos) === CH_STAR) {
+            // export type * from '...'
+            skipExportStar()
+            const text = sliceTrimmed(stmtStart, pos)
+            declarations.push({
+              kind: 'export',
+              name: '',
+              text,
+              isExported: true,
+              isTypeOnly: true,
+              source: extractFromSpecifier(text),
+              start: stmtStart,
+              end: pos,
+            })
+          }
+          else {
+            // export type Name = ...
+            pos = savedPos
+            const decl = extractTypeAlias(stmtStart, true)
+            declarations.push(decl)
+          }
+        }
+        else if (ech === 105 /* i */ && matchWord('interface')) {
+          const decl = extractInterface(stmtStart, true)
+          declarations.push(decl)
+        }
+        else if (ech === 102 /* f */ && matchWord('function')) {
+          const decl = extractFunction(stmtStart, true, false, false)
           if (decl)
             declarations.push(decl)
         }
-        else if (dch === 97 /* a */ && matchWord('async') && peekAfterWord('async') !== CH_SEMI) {
+        else if (ech === 97 /* a */ && matchWord('async')) {
           pos += 5
           skipWhitespaceAndComments()
           if (matchWord('function')) {
-            const decl = extractFunction(stmtStart, true, true, true)
+            const decl = extractFunction(stmtStart, true, true, false)
             if (decl)
               declarations.push(decl)
           }
           else {
-            // export default async expression
-            extractDefaultExpression(stmtStart, defaultExpressionStart)
+            skipToStatementEnd()
           }
         }
-        else if (dch === 99 /* c */ && matchWord('class')) {
-          const decl = extractClass(stmtStart, true, false, true)
-          declarations.push(decl)
+        else if (ech === 99 /* c */) {
+          if (matchWord('class')) {
+            const decl = extractClass(stmtStart, true, false)
+            declarations.push(decl)
+          }
+          else if (matchWord('const')) {
+            // Could be 'export const enum' or 'export const ...'
+            const savedPos = pos
+            pos += 5
+            skipWhitespaceAndComments()
+            if (matchWord('enum')) {
+              pos = savedPos + 5
+              skipWhitespaceAndComments()
+              const decl = extractEnum(stmtStart, true, true)
+              declarations.push(decl)
+            }
+            else {
+              pos = savedPos
+              const decls = extractVariable(stmtStart, 'const', true)
+              for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+            }
+          }
+          else {
+            skipToStatementEnd()
+          }
         }
-        else if (dch === 97 /* a */ && matchWord('abstract')) {
+        else if (ech === 97 /* a */ && matchWord('abstract')) {
           pos += 8
           skipWhitespaceAndComments()
           if (matchWord('class')) {
-            const decl = extractClass(stmtStart, true, true, true)
+            const decl = extractClass(stmtStart, true, true)
             declarations.push(decl)
           }
         }
-        else {
-          // export default expression
-          extractDefaultExpression(stmtStart, defaultExpressionStart)
+        else if (ech === 108 /* l */ && matchWord('let')) {
+          const decls = extractVariable(stmtStart, 'let', true)
+          for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
         }
-      }
-      else if (ech === 116 /* t */ && matchWord('type')) {
-        // Could be `export type Name = ...` or `export type { ... }`
-        const savedPos = pos
-        pos += 4
-        skipWhitespaceAndComments()
-
-        if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
-          // export type { ... } from '...'
+        else if (ech === 118 /* v */ && matchWord('var')) {
+          const decls = extractVariable(stmtStart, 'var', true)
+          for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+        }
+        else if (ech === 101 /* e */ && matchWord('enum')) {
+          const decl = extractEnum(stmtStart, true, false)
+          declarations.push(decl)
+        }
+        else if (ech === 100 /* d */ && matchWord('declare')) {
+          pos += 7
+          skipWhitespaceAndComments()
+          // export declare ...
+          handleDeclare(stmtStart, true)
+        }
+        else if (ech === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
+          const decl = extractModule(stmtStart, true, 'namespace')
+          declarations.push(decl)
+        }
+        else if (ech === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
+          const decl = extractModule(stmtStart, true, 'module')
+          declarations.push(decl)
+        }
+        else if (ech === CH_LBRACE) {
+          // export { ... } or export { ... } from '...'
           skipExportBraces()
+          const text = sliceTrimmed(stmtStart, pos)
+          const isTypeOnly = text.includes('export type')
+          const comments = extractLeadingComments(stmtStart)
+          declarations.push({
+            kind: 'export',
+            name: '',
+            text,
+            isExported: true,
+            isTypeOnly,
+            source: extractFromSpecifier(text),
+            leadingComments: comments,
+            start: stmtStart,
+            end: pos,
+          })
+        }
+        else if (ech === CH_STAR) {
+          // export * from '...'  (also covers `export * as ns from '...'`)
+          skipExportStar()
           const text = sliceTrimmed(stmtStart, pos)
           const comments = extractLeadingComments(stmtStart)
           declarations.push({
@@ -3667,621 +3804,483 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             name: '',
             text,
             isExported: true,
-            isTypeOnly: true,
+            isTypeOnly: false,
             source: extractFromSpecifier(text),
             leadingComments: comments,
             start: stmtStart,
             end: pos,
           })
         }
-        else if (pos < len && source.charCodeAt(pos) === CH_STAR) {
-          // export type * from '...'
-          skipExportStar()
-          const text = sliceTrimmed(stmtStart, pos)
-          declarations.push({
-            kind: 'export',
-            name: '',
-            text,
-            isExported: true,
-            isTypeOnly: true,
-            source: extractFromSpecifier(text),
-            start: stmtStart,
-            end: pos,
-          })
-        }
         else {
-          // export type Name = ...
-          pos = savedPos
-          const decl = extractTypeAlias(stmtStart, true)
-          declarations.push(decl)
+          // Unknown export, skip
+          skipToStatementEnd()
+          const text = sliceTrimmed(stmtStart, pos)
+          if (text) {
+            declarations.push({
+              kind: 'export',
+              name: '',
+              text,
+              isExported: true,
+              start: stmtStart,
+              end: pos,
+            })
+          }
         }
       }
-      else if (ech === 105 /* i */ && matchWord('interface')) {
-        const decl = extractInterface(stmtStart, true)
+      else if (ch0 === 100 /* d */ && matchWord('declare')) {
+        pos += 7
+        skipWhitespaceAndComments()
+        handleDeclare(stmtStart, false)
+      }
+      else if (ch0 === 105 /* i */ && matchWord('interface')) {
+        // Non-exported interface
+        const decl = extractInterface(stmtStart, false)
+        nonExportedTypes.set(decl.name, decl)
+      }
+      else if (ch0 === 116 /* t */ && matchWord('type')) {
+        // Non-exported type alias
+        const decl = extractTypeAlias(stmtStart, false)
+        nonExportedTypes.set(decl.name, decl)
         declarations.push(decl)
       }
-      else if (ech === 102 /* f */ && matchWord('function')) {
-        const decl = extractFunction(stmtStart, true, false, false)
-        if (decl)
-          declarations.push(decl)
+      else if (ch0 === 102 /* f */ && matchWord('function')) {
+        // Non-exported function — extract so it can be pulled in if referenced
+        // by an exported declaration via `typeof X` etc. (resolveReferencedTypes
+        // emits it without `export`); otherwise it's dropped from the output.
+        const decl = extractFunction(stmtStart, false, false, false)
+        if (decl) retainPrivateFunction(decl)
+        else skipToStatementEnd()
       }
-      else if (ech === 97 /* a */ && matchWord('async')) {
-        pos += 5
-        skipWhitespaceAndComments()
-        if (matchWord('function')) {
-          const decl = extractFunction(stmtStart, true, true, false)
-          if (decl)
+      else if (ch0 === 97 /* a */) {
+        if (matchWord('async')) {
+          // Non-exported async function — same treatment as plain function
+          const savedAsyncPos = pos
+          pos += 5 // 'async'
+          skipWhitespaceAndComments()
+          if (matchWord('function')) {
+            const decl = extractFunction(stmtStart, false, true, false)
+            if (decl) retainPrivateFunction(decl)
+            else { pos = savedAsyncPos; skipToStatementEnd() }
+          }
+          else {
+            pos = savedAsyncPos
+            skipToStatementEnd()
+          }
+        }
+        else if (matchWord('abstract')) {
+          pos += 8
+          skipWhitespaceAndComments()
+          if (matchWord('class')) {
+            const decl = extractClass(stmtStart, false, false)
+            nonExportedTypes.set(decl.name, decl)
             declarations.push(decl)
+          }
+          else {
+            skipToStatementEnd()
+          }
         }
         else {
+          pos++
           skipToStatementEnd()
         }
       }
-      else if (ech === 99 /* c */) {
+      else if (ch0 === 99 /* c */) {
         if (matchWord('class')) {
-          const decl = extractClass(stmtStart, true, false)
+          const decl = extractClass(stmtStart, false, false)
+          nonExportedTypes.set(decl.name, decl)
           declarations.push(decl)
         }
         else if (matchWord('const')) {
-          // Could be 'export const enum' or 'export const ...'
+          // Check for 'const enum' before treating as variable
           const savedPos = pos
           pos += 5
           skipWhitespaceAndComments()
           if (matchWord('enum')) {
             pos = savedPos + 5
             skipWhitespaceAndComments()
-            const decl = extractEnum(stmtStart, true, true)
+            const decl = extractEnum(stmtStart, false, true)
+            nonExportedTypes.set(decl.name, decl)
             declarations.push(decl)
           }
           else {
+            // Non-exported const — extract so it can be pulled in if referenced
+            // by an exported declaration via `typeof X` etc.
             pos = savedPos
-            const decls = extractVariable(stmtStart, 'const', true)
-            for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+            const decls = extractVariable(stmtStart, 'const', false)
+            for (let _di = 0; _di < decls.length; _di++) {
+              nonExportedTypes.set(decls[_di].name, decls[_di])
+            }
           }
         }
         else {
+          pos++
           skipToStatementEnd()
         }
       }
-      else if (ech === 97 /* a */ && matchWord('abstract')) {
-        pos += 8
-        skipWhitespaceAndComments()
-        if (matchWord('class')) {
-          const decl = extractClass(stmtStart, true, true)
-          declarations.push(decl)
+      else if (ch0 === 101 /* e */ && matchWord('enum')) {
+        // Non-exported enum
+        const decl = extractEnum(stmtStart, false, false)
+        nonExportedTypes.set(decl.name, decl)
+        declarations.push(decl)
+      }
+      else if ((ch0 === 108 /* l */ && matchWord('let')) || (ch0 === 118 /* v */ && matchWord('var'))) {
+        // Non-exported let/var: kept back like a non-exported const, and pulled
+        // in only when an exported declaration refers to it (`typeof counter`,
+        // or an object property naming it). Skipping them left such a
+        // reference pointing at a name the declaration file never declared.
+        const kw = matchWord('let') ? 'let' : 'var'
+        const decls = extractVariable(stmtStart, kw, false)
+        for (let _di = 0; _di < decls.length; _di++) {
+          nonExportedTypes.set(decls[_di].name, decls[_di])
         }
       }
-      else if (ech === 108 /* l */ && matchWord('let')) {
-        const decls = extractVariable(stmtStart, 'let', true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
-      }
-      else if (ech === 118 /* v */ && matchWord('var')) {
-        const decls = extractVariable(stmtStart, 'var', true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
-      }
-      else if (ech === 101 /* e */ && matchWord('enum')) {
-        const decl = extractEnum(stmtStart, true, false)
+      else if (ch0 === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
+        const decl = extractModule(stmtStart, false, 'module')
         declarations.push(decl)
       }
-      else if (ech === 100 /* d */ && matchWord('declare')) {
-        pos += 7
-        skipWhitespaceAndComments()
-        // export declare ...
-        handleDeclare(stmtStart, true)
-      }
-      else if (ech === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
-        const decl = extractModule(stmtStart, true, 'namespace')
+      else if (ch0 === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
+        const decl = extractModule(stmtStart, false, 'namespace')
         declarations.push(decl)
-      }
-      else if (ech === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
-        const decl = extractModule(stmtStart, true, 'module')
-        declarations.push(decl)
-      }
-      else if (ech === CH_LBRACE) {
-        // export { ... } or export { ... } from '...'
-        skipExportBraces()
-        const text = sliceTrimmed(stmtStart, pos)
-        const isTypeOnly = text.includes('export type')
-        const comments = extractLeadingComments(stmtStart)
-        declarations.push({
-          kind: 'export',
-          name: '',
-          text,
-          isExported: true,
-          isTypeOnly,
-          source: extractFromSpecifier(text),
-          leadingComments: comments,
-          start: stmtStart,
-          end: pos,
-        })
-      }
-      else if (ech === CH_STAR) {
-        // export * from '...'  (also covers `export * as ns from '...'`)
-        skipExportStar()
-        const text = sliceTrimmed(stmtStart, pos)
-        const comments = extractLeadingComments(stmtStart)
-        declarations.push({
-          kind: 'export',
-          name: '',
-          text,
-          isExported: true,
-          isTypeOnly: false,
-          source: extractFromSpecifier(text),
-          leadingComments: comments,
-          start: stmtStart,
-          end: pos,
-        })
       }
       else {
-        // Unknown export, skip
-        skipToStatementEnd()
-        const text = sliceTrimmed(stmtStart, pos)
-        if (text) {
-          declarations.push({
-            kind: 'export',
-            name: '',
-            text,
-            isExported: true,
-            start: stmtStart,
-            end: pos,
-          })
+        // Skip unknown top-level content (string expressions like 'use strict', decorators, etc.)
+        const ch = source.charCodeAt(pos)
+        if (ch === CH_SEMI) {
+          pos++
+        }
+        else if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
+          skipString(ch)
+          if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+            pos++
+        }
+        else if (ch === CH_BACKTICK) {
+          skipTemplateLiteral()
+          if (pos < len && source.charCodeAt(pos) === CH_SEMI)
+            pos++
+        }
+        else if (ch === CH_AT) {
+          // Decorator — skip @identifier(args) then continue to next statement
+          pos++
+          readIdent()
+          skipWhitespaceAndComments()
+          if (pos < len && source.charCodeAt(pos) === CH_DOT) {
+            pos++
+            readIdent()
+            skipWhitespaceAndComments()
+          }
+          if (pos < len && source.charCodeAt(pos) === CH_LPAREN) {
+            findMatchingClose(CH_LPAREN, CH_RPAREN)
+          }
+        }
+        else {
+          pos++
+          skipToStatementEnd()
         }
       }
     }
-    else if (ch0 === 100 /* d */ && matchWord('declare')) {
-      pos += 7
-      skipWhitespaceAndComments()
-      handleDeclare(stmtStart, false)
+
+    // Discard overload implementations before computing the emitted dependency graph.
+    if (functionBodies.size > 0) {
+      removeOverloadImplementations(declarations)
+      for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
     }
-    else if (ch0 === 105 /* i */ && matchWord('interface')) {
-      // Non-exported interface
-      const decl = extractInterface(stmtStart, false)
-      nonExportedTypes.set(decl.name, decl)
+
+    // Resolve referenced non-exported types from the surviving public signatures.
+    if (nonExportedTypes.size > 0) {
+      resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups)
     }
-    else if (ch0 === 116 /* t */ && matchWord('type')) {
-      // Non-exported type alias
-      const decl = extractTypeAlias(stmtStart, false)
-      nonExportedTypes.set(decl.name, decl)
-      declarations.push(decl)
+
+    return declarations
+
+    // Remove the last body-bearing declaration when a function has overload signatures.
+    function removeOverloadImplementations(group: Declaration[]): void {
+      const funcNameCounts = new Map<string, number>()
+      for (const decl of group) {
+        if (decl.kind === 'function') {
+          funcNameCounts.set(decl.name, (funcNameCounts.get(decl.name) || 0) + 1)
+        }
+      }
+      // Only remove implementation signatures for overloaded functions (count > 1)
+      const overloadedNames = new Set<string>()
+      for (const [name, count] of funcNameCounts) {
+        if (count > 1)
+          overloadedNames.add(name)
+      }
+      if (overloadedNames.size > 0) {
+        // Find the last body-bearing declaration index for each overloaded name
+        const toRemove = new Set<number>()
+        for (const name of overloadedNames) {
+          // Walk backwards to find the last declaration with a body for this name
+          for (let i = group.length - 1; i >= 0; i--) {
+            if (group[i].kind === 'function' && group[i].name === name && functionBodies.has(group[i])) {
+              toRemove.add(i)
+              break
+            }
+          }
+        }
+        if (toRemove.size > 0) {
+          // Remove in reverse order to preserve indices
+          const sortedIndices = [...toRemove].sort((a, b) => b - a)
+          for (const idx of sortedIndices) {
+            group.splice(idx, 1)
+          }
+        }
+      }
     }
-    else if (ch0 === 102 /* f */ && matchWord('function')) {
-      // Non-exported function — extract so it can be pulled in if referenced
-      // by an exported declaration via `typeof X` etc. (resolveReferencedTypes
-      // emits it without `export`); otherwise it's dropped from the output.
-      const decl = extractFunction(stmtStart, false, false, false)
-      if (decl) retainPrivateFunction(decl)
-      else skipToStatementEnd()
-    }
-    else if (ch0 === 97 /* a */) {
-      if (matchWord('async')) {
-        // Non-exported async function — same treatment as plain function
-        const savedAsyncPos = pos
-        pos += 5 // 'async'
+
+    // --- Helper: handle `declare ...` after `declare` keyword ---
+    function handleDeclare(stmtStart: number, isExported: boolean): void {
+      if (matchWord('function')) {
+        const decl = extractFunction(stmtStart, isExported, false, false)
+        if (decl)
+          declarations.push(decl)
+      }
+      else if (matchWord('async')) {
+        pos += 5
         skipWhitespaceAndComments()
         if (matchWord('function')) {
-          const decl = extractFunction(stmtStart, false, true, false)
-          if (decl) retainPrivateFunction(decl)
-          else { pos = savedAsyncPos; skipToStatementEnd() }
+          const decl = extractFunction(stmtStart, isExported, true, false)
+          if (decl)
+            declarations.push(decl)
         }
-        else {
-          pos = savedAsyncPos
-          skipToStatementEnd()
-        }
+      }
+      else if (matchWord('class')) {
+        const decl = extractClass(stmtStart, isExported, false)
+        declarations.push(decl)
       }
       else if (matchWord('abstract')) {
         pos += 8
         skipWhitespaceAndComments()
         if (matchWord('class')) {
-          const decl = extractClass(stmtStart, false, false)
-          nonExportedTypes.set(decl.name, decl)
+          const decl = extractClass(stmtStart, isExported, true)
           declarations.push(decl)
         }
-        else {
-          skipToStatementEnd()
-        }
       }
-      else {
-        pos++
-        skipToStatementEnd()
+      else if (matchWord('interface')) {
+        const decl = extractInterface(stmtStart, isExported)
+        declarations.push(decl)
       }
-    }
-    else if (ch0 === 99 /* c */) {
-      if (matchWord('class')) {
-        const decl = extractClass(stmtStart, false, false)
-        nonExportedTypes.set(decl.name, decl)
+      else if (matchWord('type')) {
+        const decl = extractTypeAlias(stmtStart, isExported)
+        declarations.push(decl)
+      }
+      else if (matchWord('enum')) {
+        const decl = extractEnum(stmtStart, isExported, false)
         declarations.push(decl)
       }
       else if (matchWord('const')) {
-        // Check for 'const enum' before treating as variable
         const savedPos = pos
         pos += 5
         skipWhitespaceAndComments()
         if (matchWord('enum')) {
           pos = savedPos + 5
           skipWhitespaceAndComments()
-          const decl = extractEnum(stmtStart, false, true)
-          nonExportedTypes.set(decl.name, decl)
+          const decl = extractEnum(stmtStart, isExported, true)
           declarations.push(decl)
         }
-        else {
-          // Non-exported const — extract so it can be pulled in if referenced
-          // by an exported declaration via `typeof X` etc.
+        else if (isExported) {
           pos = savedPos
-          const decls = extractVariable(stmtStart, 'const', false)
-          for (let _di = 0; _di < decls.length; _di++) {
-            nonExportedTypes.set(decls[_di].name, decls[_di])
-          }
+          const decls = extractVariable(stmtStart, 'const', true)
+          for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+        }
+        else {
+          skipToStatementEnd()
         }
       }
-      else {
-        pos++
-        skipToStatementEnd()
+      else if (matchWord('let') || matchWord('var')) {
+        if (isExported) {
+          const kind = matchWord('let') ? 'let' : 'var'
+          const decls = extractVariable(stmtStart, kind, true)
+          for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+        }
+        else {
+          skipToStatementEnd()
+        }
       }
-    }
-    else if (ch0 === 101 /* e */ && matchWord('enum')) {
-      // Non-exported enum
-      const decl = extractEnum(stmtStart, false, false)
-      nonExportedTypes.set(decl.name, decl)
-      declarations.push(decl)
-    }
-    else if ((ch0 === 108 /* l */ && matchWord('let')) || (ch0 === 118 /* v */ && matchWord('var'))) {
-      // Non-exported let/var: kept back like a non-exported const, and pulled
-      // in only when an exported declaration refers to it (`typeof counter`,
-      // or an object property naming it). Skipping them left such a
-      // reference pointing at a name the declaration file never declared.
-      const kw = matchWord('let') ? 'let' : 'var'
-      const decls = extractVariable(stmtStart, kw, false)
-      for (let _di = 0; _di < decls.length; _di++) {
-        nonExportedTypes.set(decls[_di].name, decls[_di])
+      else if (matchWord('module')) {
+        const decl = extractModule(stmtStart, isExported, 'module')
+        declarations.push(decl)
       }
-    }
-    else if (ch0 === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
-      const decl = extractModule(stmtStart, false, 'module')
-      declarations.push(decl)
-    }
-    else if (ch0 === 110 /* n */ && matchWord('namespace') && isModuleLikeDeclaration(9)) {
-      const decl = extractModule(stmtStart, false, 'namespace')
-      declarations.push(decl)
-    }
-    else {
-      // Skip unknown top-level content (string expressions like 'use strict', decorators, etc.)
-      const ch = source.charCodeAt(pos)
-      if (ch === CH_SEMI) {
-        pos++
+      else if (matchWord('namespace')) {
+        const decl = extractModule(stmtStart, isExported, 'namespace')
+        declarations.push(decl)
       }
-      else if (ch === CH_SQUOTE || ch === CH_DQUOTE) {
-        skipString(ch)
-        if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-          pos++
-      }
-      else if (ch === CH_BACKTICK) {
-        skipTemplateLiteral()
-        if (pos < len && source.charCodeAt(pos) === CH_SEMI)
-          pos++
-      }
-      else if (ch === CH_AT) {
-        // Decorator — skip @identifier(args) then continue to next statement
-        pos++
-        readIdent()
+      else if (matchWord('global')) {
+        // declare global { ... }
+        pos += 6
         skipWhitespaceAndComments()
-        if (pos < len && source.charCodeAt(pos) === CH_DOT) {
-          pos++
-          readIdent()
-          skipWhitespaceAndComments()
-        }
-        if (pos < len && source.charCodeAt(pos) === CH_LPAREN) {
-          findMatchingClose(CH_LPAREN, CH_RPAREN)
-        }
+        const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
+        const text = `declare global ${body}`
+        const comments = extractLeadingComments(stmtStart)
+        declarations.push({
+          kind: 'module',
+          name: 'global',
+          text,
+          isExported: false,
+          leadingComments: comments,
+          start: stmtStart,
+          end: pos,
+        })
       }
       else {
-        pos++
         skipToStatementEnd()
       }
     }
   }
 
-  // Discard overload implementations before computing the emitted dependency graph.
-  if (functionBodies.size > 0) {
-    removeOverloadImplementations(declarations)
-    for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
+  /** Check if name appears as a whole word in text (fast includes + boundary check) */
+  function isWordInText(name: string, text: string): boolean {
+    let searchFrom = 0
+    const nameLen = name.length
+    while (searchFrom < text.length) {
+      const idx = text.indexOf(name, searchFrom)
+      if (idx === -1) return false
+      // Check word boundaries
+      const before = idx > 0 ? text.charCodeAt(idx - 1) : 32
+      const after = idx + nameLen < text.length ? text.charCodeAt(idx + nameLen) : 32
+      const beforeOk = !((before >= 65 && before <= 90) || (before >= 97 && before <= 122) || (before >= 48 && before <= 57) || before === 95 || before === 36)
+      const afterOk = !((after >= 65 && after <= 90) || (after >= 97 && after <= 122) || (after >= 48 && after <= 57) || after === 95 || after === 36)
+      if (beforeOk && afterOk) return true
+      searchFrom = idx + 1
+    }
+    return false
   }
 
-  // Resolve referenced non-exported types from the surviving public signatures.
-  if (nonExportedTypes.size > 0) {
-    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups)
-  }
-
-  return declarations
-
-  // Remove the last body-bearing declaration when a function has overload signatures.
-  function removeOverloadImplementations(group: Declaration[]): void {
-    const funcNameCounts = new Map<string, number>()
-    for (const decl of group) {
-      if (decl.kind === 'function') {
-        funcNameCounts.set(decl.name, (funcNameCounts.get(decl.name) || 0) + 1)
-      }
-    }
-    // Only remove implementation signatures for overloaded functions (count > 1)
-    const overloadedNames = new Set<string>()
-    for (const [name, count] of funcNameCounts) {
-      if (count > 1)
-        overloadedNames.add(name)
-    }
-    if (overloadedNames.size > 0) {
-      // Find the last body-bearing declaration index for each overloaded name
-      const toRemove = new Set<number>()
-      for (const name of overloadedNames) {
-        // Walk backwards to find the last declaration with a body for this name
-        for (let i = group.length - 1; i >= 0; i--) {
-          if (group[i].kind === 'function' && group[i].name === name && functionBodies.has(group[i])) {
-            toRemove.add(i)
+  /** Extract all identifier words from text into an existing Set. O(n) single pass. */
+  function addWordsToSet(text: string, words: Set<string>): void {
+    let i = 0
+    const len = text.length
+    while (i < len) {
+      const c = text.charCodeAt(i)
+      if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36 || c > 127) {
+        const start = i
+        i++
+        while (i < len) {
+          const ch = text.charCodeAt(i)
+          if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) || ch === 95 || ch === 36 || ch > 127) {
+            i++
+          }
+          else {
             break
           }
         }
-      }
-      if (toRemove.size > 0) {
-        // Remove in reverse order to preserve indices
-        const sortedIndices = [...toRemove].sort((a, b) => b - a)
-        for (const idx of sortedIndices) {
-          group.splice(idx, 1)
-        }
-      }
-    }
-  }
-
-  // --- Helper: handle `declare ...` after `declare` keyword ---
-  function handleDeclare(stmtStart: number, isExported: boolean): void {
-    if (matchWord('function')) {
-      const decl = extractFunction(stmtStart, isExported, false, false)
-      if (decl)
-        declarations.push(decl)
-    }
-    else if (matchWord('async')) {
-      pos += 5
-      skipWhitespaceAndComments()
-      if (matchWord('function')) {
-        const decl = extractFunction(stmtStart, isExported, true, false)
-        if (decl)
-          declarations.push(decl)
-      }
-    }
-    else if (matchWord('class')) {
-      const decl = extractClass(stmtStart, isExported, false)
-      declarations.push(decl)
-    }
-    else if (matchWord('abstract')) {
-      pos += 8
-      skipWhitespaceAndComments()
-      if (matchWord('class')) {
-        const decl = extractClass(stmtStart, isExported, true)
-        declarations.push(decl)
-      }
-    }
-    else if (matchWord('interface')) {
-      const decl = extractInterface(stmtStart, isExported)
-      declarations.push(decl)
-    }
-    else if (matchWord('type')) {
-      const decl = extractTypeAlias(stmtStart, isExported)
-      declarations.push(decl)
-    }
-    else if (matchWord('enum')) {
-      const decl = extractEnum(stmtStart, isExported, false)
-      declarations.push(decl)
-    }
-    else if (matchWord('const')) {
-      const savedPos = pos
-      pos += 5
-      skipWhitespaceAndComments()
-      if (matchWord('enum')) {
-        pos = savedPos + 5
-        skipWhitespaceAndComments()
-        const decl = extractEnum(stmtStart, isExported, true)
-        declarations.push(decl)
-      }
-      else if (isExported) {
-        pos = savedPos
-        const decls = extractVariable(stmtStart, 'const', true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
+        words.add(text.substring(start, i))
       }
       else {
-        skipToStatementEnd()
+        i++
       }
-    }
-    else if (matchWord('let') || matchWord('var')) {
-      if (isExported) {
-        const kind = matchWord('let') ? 'let' : 'var'
-        const decls = extractVariable(stmtStart, kind, true)
-        for (let _di = 0; _di < decls.length; _di++) declarations.push(decls[_di])
-      }
-      else {
-        skipToStatementEnd()
-      }
-    }
-    else if (matchWord('module')) {
-      const decl = extractModule(stmtStart, isExported, 'module')
-      declarations.push(decl)
-    }
-    else if (matchWord('namespace')) {
-      const decl = extractModule(stmtStart, isExported, 'namespace')
-      declarations.push(decl)
-    }
-    else if (matchWord('global')) {
-      // declare global { ... }
-      pos += 6
-      skipWhitespaceAndComments()
-      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
-      const text = `declare global ${body}`
-      const comments = extractLeadingComments(stmtStart)
-      declarations.push({
-        kind: 'module',
-        name: 'global',
-        text,
-        isExported: false,
-        leadingComments: comments,
-        start: stmtStart,
-        end: pos,
-      })
-    }
-    else {
-      skipToStatementEnd()
     }
   }
-}
 
-/** Check if name appears as a whole word in text (fast includes + boundary check) */
-function isWordInText(name: string, text: string): boolean {
-  let searchFrom = 0
-  const nameLen = name.length
-  while (searchFrom < text.length) {
-    const idx = text.indexOf(name, searchFrom)
-    if (idx === -1) return false
-    // Check word boundaries
-    const before = idx > 0 ? text.charCodeAt(idx - 1) : 32
-    const after = idx + nameLen < text.length ? text.charCodeAt(idx + nameLen) : 32
-    const beforeOk = !((before >= 65 && before <= 90) || (before >= 97 && before <= 122) || (before >= 48 && before <= 57) || before === 95 || before === 36)
-    const afterOk = !((after >= 65 && after <= 90) || (after >= 97 && after <= 122) || (after >= 48 && after <= 57) || after === 95 || after === 36)
-    if (beforeOk && afterOk) return true
-    searchFrom = idx + 1
-  }
-  return false
-}
-
-/** Extract all identifier words from text into an existing Set. O(n) single pass. */
-function addWordsToSet(text: string, words: Set<string>): void {
-  let i = 0
-  const len = text.length
-  while (i < len) {
-    const c = text.charCodeAt(i)
-    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36 || c > 127) {
-      const start = i
-      i++
-      while (i < len) {
-        const ch = text.charCodeAt(i)
-        if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) || ch === 95 || ch === 36 || ch > 127) {
-          i++
+  /** Collect value references from an initializer without treating object keys as dependencies. */
+  function addInitializerReferences(text: string, references: Set<string>): void {
+    let i = 0
+    while (i < text.length) {
+      const char = text.charCodeAt(i)
+      if (char === CH_SQUOTE || char === CH_DQUOTE || char === CH_BACKTICK) {
+        const quote = char
+        i++
+        while (i < text.length) {
+          if (text.charCodeAt(i) === CH_BACKSLASH) i += 2
+          else if (text.charCodeAt(i++) === quote) break
         }
-        else {
-          break
-        }
-      }
-      words.add(text.substring(start, i))
-    }
-    else {
-      i++
-    }
-  }
-}
-
-/** Collect value references from an initializer without treating object keys as dependencies. */
-function addInitializerReferences(text: string, references: Set<string>): void {
-  let i = 0
-  while (i < text.length) {
-    const char = text.charCodeAt(i)
-    if (char === CH_SQUOTE || char === CH_DQUOTE || char === CH_BACKTICK) {
-      const quote = char
-      i++
-      while (i < text.length) {
-        if (text.charCodeAt(i) === CH_BACKSLASH) i += 2
-        else if (text.charCodeAt(i++) === quote) break
-      }
-      continue
-    }
-    if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_SLASH) {
-      i += 2
-      while (i < text.length && text.charCodeAt(i) !== CH_LF && text.charCodeAt(i) !== CH_CR) i++
-      continue
-    }
-    if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_STAR) {
-      const close = text.indexOf('*/', i + 2)
-      i = close === -1 ? text.length : close + 2
-      continue
-    }
-    if (!isIdentStart(char)) {
-      i++
-      continue
-    }
-
-    const start = i++
-    while (i < text.length && isIdentChar(text.charCodeAt(i))) i++
-    let before = start - 1
-    let after = i
-    while (before >= 0 && isWhitespace(text.charCodeAt(before))) before--
-    while (after < text.length && isWhitespace(text.charCodeAt(after))) after++
-    const previous = before >= 0 ? text.charCodeAt(before) : 0
-    const next = after < text.length ? text.charCodeAt(after) : 0
-
-    // Exclude object property/method names and dotted member suffixes.
-    const isSpreadReference = start >= 3 && text.slice(start - 3, start) === '...'
-    if (next === CH_COLON || (previous === CH_DOT && !isSpreadReference)) continue
-    if (next === CH_LPAREN && (previous === CH_LBRACE || previous === CH_COMMA)) continue
-    references.add(text.slice(start, i))
-  }
-}
-
-/** Resolve non-exported types that are referenced by exported declarations */
-function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>): void {
-  // Iteratively resolve referenced non-exported types (transitive closure)
-  const resolved = new Set<string>()
-  const declNames = new Set<string>()
-  for (const d of declarations) declNames.add(d.name)
-
-  // Build a word set from all declaration texts — O(1) lookups per type name
-  const wordSet = new Set<string>()
-  const textParts: string[] = []
-  for (let i = 0; i < declarations.length; i++) {
-    const declaration = declarations[i]
-    if (declaration.kind !== 'import') {
-      textParts.push(declaration.text)
-      addWordsToSet(declaration.text, wordSet)
-      if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, wordSet)
-    }
-  }
-
-  for (;;) {
-    // Collect referenced non-exported types not yet resolved — O(1) per type
-    const toInsert: Declaration[] = []
-    for (const [name, decl] of nonExportedTypes) {
-      if (resolved.has(name))
         continue
-      if (wordSet.has(name)) {
-        if (!declNames.has(name)) {
-          const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
-          if (group) {
-            for (const member of group) toInsert.push(member)
-          }
-          else toInsert.push(decl)
-          declNames.add(name)
-        }
-        resolved.add(name)
       }
+      if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_SLASH) {
+        i += 2
+        while (i < text.length && text.charCodeAt(i) !== CH_LF && text.charCodeAt(i) !== CH_CR) i++
+        continue
+      }
+      if (char === CH_SLASH && text.charCodeAt(i + 1) === CH_STAR) {
+        const close = text.indexOf('*/', i + 2)
+        i = close === -1 ? text.length : close + 2
+        continue
+      }
+      if (!isIdentStart(char)) {
+        i++
+        continue
+      }
+
+      const start = i++
+      while (i < text.length && isIdentChar(text.charCodeAt(i))) i++
+      let before = start - 1
+      let after = i
+      while (before >= 0 && isWhitespace(text.charCodeAt(before))) before--
+      while (after < text.length && isWhitespace(text.charCodeAt(after))) after++
+      const previous = before >= 0 ? text.charCodeAt(before) : 0
+      const next = after < text.length ? text.charCodeAt(after) : 0
+
+      // Exclude object property/method names and dotted member suffixes.
+      const isSpreadReference = start >= 3 && text.slice(start - 3, start) === '...'
+      if (next === CH_COLON || (previous === CH_DOT && !isSpreadReference)) continue
+      if (next === CH_LPAREN && (previous === CH_LBRACE || previous === CH_COMMA)) continue
+      references.add(text.slice(start, i))
     }
+  }
 
-    if (toInsert.length === 0)
-      break
+  /** Resolve non-exported types that are referenced by exported declarations */
+  function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>): void {
+    // Iteratively resolve referenced non-exported types (transitive closure)
+    const resolved = new Set<string>()
+    const declNames = new Set<string>()
+    for (const d of declarations) declNames.add(d.name)
 
-    // Merge at correct source positions in a single O(n+k) pass (avoids O(k*n) splice)
-    toInsert.sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
-    const merged: Declaration[] = []
-    let ti = 0
+    // Build a word set from all declaration texts — O(1) lookups per type name
+    const wordSet = new Set<string>()
+    const textParts: string[] = []
     for (let i = 0; i < declarations.length; i++) {
-      const candidateStart = declarations[i].start ?? Infinity
-      while (ti < toInsert.length && (toInsert[ti].start ?? Infinity) <= candidateStart) {
-        merged.push(toInsert[ti++])
+      const declaration = declarations[i]
+      if (declaration.kind !== 'import') {
+        textParts.push(declaration.text)
+        addWordsToSet(declaration.text, wordSet)
+        if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, wordSet)
       }
-      merged.push(declarations[i])
     }
-    while (ti < toInsert.length) merged.push(toInsert[ti++])
-    declarations.length = 0
-    for (let i = 0; i < merged.length; i++) declarations.push(merged[i])
 
-    // Incrementally add new words from inserted declarations
-    for (const decl of toInsert) {
-      if (decl.kind !== 'import') {
-        textParts.push(decl.text)
-        addWordsToSet(decl.text, wordSet)
-        if (typeof decl.value === 'string') addInitializerReferences(decl.value, wordSet)
+    for (;; ) {
+      // Collect referenced non-exported types not yet resolved — O(1) per type
+      const toInsert: Declaration[] = []
+      for (const [name, decl] of nonExportedTypes) {
+        if (resolved.has(name))
+          continue
+        if (wordSet.has(name)) {
+          if (!declNames.has(name)) {
+            const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
+            if (group) {
+              for (const member of group) toInsert.push(member)
+            }
+            else toInsert.push(decl)
+            declNames.add(name)
+          }
+          resolved.add(name)
+        }
+      }
+
+      if (toInsert.length === 0)
+        break
+
+      // Merge at correct source positions in a single O(n+k) pass (avoids O(k*n) splice)
+      toInsert.sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
+      const merged: Declaration[] = []
+      let ti = 0
+      for (let i = 0; i < declarations.length; i++) {
+        const candidateStart = declarations[i].start ?? Infinity
+        while (ti < toInsert.length && (toInsert[ti].start ?? Infinity) <= candidateStart) {
+          merged.push(toInsert[ti++])
+        }
+        merged.push(declarations[i])
+      }
+      while (ti < toInsert.length) merged.push(toInsert[ti++])
+      declarations.length = 0
+      for (let i = 0; i < merged.length; i++) declarations.push(merged[i])
+
+      // Incrementally add new words from inserted declarations
+      for (const decl of toInsert) {
+        if (decl.kind !== 'import') {
+          textParts.push(decl.text)
+          addWordsToSet(decl.text, wordSet)
+          if (typeof decl.value === 'string') addInitializerReferences(decl.value, wordSet)
+        }
       }
     }
   }
-}

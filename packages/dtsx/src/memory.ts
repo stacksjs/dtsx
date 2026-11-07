@@ -2,7 +2,6 @@
  * Memory optimization utilities for large codebase processing
  * Provides streaming, chunking, and memory management strategies
  */
-
 import type { Declaration, DtsGenerationConfig } from './types'
 import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { createInterface } from 'node:readline'

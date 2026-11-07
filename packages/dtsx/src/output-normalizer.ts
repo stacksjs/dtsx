@@ -2,7 +2,6 @@
  * Output normalizer for consistent, high-quality declaration file output
  * Handles newlines, whitespace, declaration ordering, import grouping, and comment preservation
  */
-
 import type { DeclarationKind } from './types'
 
 /**
@@ -37,14 +36,14 @@ export interface ImportGrouping {
 }
 
 export type ImportGroupType =
-  | 'builtin' // node:* modules
-  | 'external' // npm packages
-  | 'scoped' // @org/* packages
-  | 'internal' // @/* or ~/* aliases
-  | 'parent' // ../* imports
-  | 'sibling' // ./* imports
-  | 'index' // . or ./index
-  | 'type' // import type
+| 'builtin' // node:* modules
+| 'external' // npm packages
+| 'scoped' // @org/* packages
+| 'internal' // @/* or ~/* aliases
+| 'parent' // ../* imports
+| 'sibling' // ./* imports
+| 'index' // . or ./index
+| 'type' // import type
 
 /**
  * Output normalizer configuration

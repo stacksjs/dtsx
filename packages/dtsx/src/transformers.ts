@@ -321,30 +321,30 @@ export function createTransformerPlugin(options: {
 
     onBeforeFile: options.beforeParse
       ? async (ctx: TransformContext) => {
-        return options.beforeParse!(ctx.content, {
-          filePath: ctx.filePath,
-          phase: 'before',
-        })
-      }
+      return options.beforeParse!(ctx.content, {
+        filePath: ctx.filePath,
+        phase: 'before',
+      })
+    }
       : undefined,
 
     onDeclarations: options.transform
       ? async (ctx: DeclarationContext) => {
-        return mapDeclarations(ctx.declarations, options.transform!, {
-          filePath: ctx.filePath,
-          sourceCode: ctx.sourceCode,
-          ...helpers,
-        })
-      }
+      return mapDeclarations(ctx.declarations, options.transform!, {
+        filePath: ctx.filePath,
+        sourceCode: ctx.sourceCode,
+        ...helpers,
+      })
+    }
       : undefined,
 
     onAfterFile: options.afterGenerate
       ? async (ctx: TransformContext) => {
-        return options.afterGenerate!(ctx.content, {
-          filePath: ctx.filePath,
-          phase: 'after',
-        })
-      }
+      return options.afterGenerate!(ctx.content, {
+        filePath: ctx.filePath,
+        phase: 'after',
+      })
+    }
       : undefined,
   })
 }
@@ -439,9 +439,9 @@ export function createRemoveTransformer(
   const shouldRemove = typeof pattern === 'function'
     ? pattern
     : (decl: Declaration) => {
-        const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern
-        return regex.test(decl.name)
-      }
+    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern
+    return regex.test(decl.name)
+  }
 
   return (decl) => {
     if (shouldRemove(decl)) {

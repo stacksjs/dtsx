@@ -1,7 +1,7 @@
-import { expect } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expect } from 'bun:test'
 import { dts } from '../../../bun-plugin/src'
 import { processSource } from '../../../zig-dtsx/src'
 import { generate } from '../../src'
@@ -154,4 +154,3 @@ new Archive().hidden()
   }
   finally { await rm(directory, { recursive: true, force: true }) }
 }
-

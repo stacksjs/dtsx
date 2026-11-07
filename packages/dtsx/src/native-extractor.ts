@@ -1,8 +1,8 @@
-import type { Declaration } from './types'
 import type { AsyncParseConfig, CachedSourceFile } from './source-cache'
+import type { Declaration } from './types'
 import { normalizeConcurrency } from './concurrency'
-import { batchParseSourceFiles, clearSourceFileCache as clearSourceCache, getPendingParseCount, getSourceFile, getSourceFileAsync, getSourceFileCacheSize, shouldUseAsyncParsing } from './source-cache'
 import { clearDeclarationCache, extractDeclarations as scanDeclarations } from './extractor/extract'
+import { batchParseSourceFiles, clearSourceFileCache as clearSourceCache, getPendingParseCount, getSourceFile, getSourceFileAsync, getSourceFileCacheSize, shouldUseAsyncParsing } from './source-cache'
 
 export type { AsyncParseConfig, CachedSourceFile }
 export { batchParseSourceFiles, getPendingParseCount, getSourceFile, getSourceFileAsync, getSourceFileCacheSize, shouldUseAsyncParsing }

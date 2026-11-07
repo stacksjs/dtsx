@@ -2,7 +2,6 @@
  * Vite plugin for dtsx
  * Generates TypeScript declaration files during Vite builds
  */
-
 import type { DtsGenerationConfig, GenerationStats } from '../types'
 import { generate } from '../generator'
 

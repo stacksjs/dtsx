@@ -2,7 +2,6 @@
  * Branded types for enhanced type safety
  * These types provide compile-time guarantees for distinct string types
  */
-
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 /**

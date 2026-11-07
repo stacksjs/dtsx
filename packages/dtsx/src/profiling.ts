@@ -6,7 +6,6 @@
  * - CPU time and sampling
  * - I/O operations
  */
-
 import type { ProfilingConfig } from './types'
 
 /**

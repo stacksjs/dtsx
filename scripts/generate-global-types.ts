@@ -13,10 +13,9 @@
  * installed TypeScript that still ships its lib files. The Go port
  * (TypeScript 7) does not, so pass a 5.x install if the lookup fails.
  */
-
+import process from 'node:process'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import process from 'node:process'
 
 /** Ambients that are real but live outside the TypeScript lib files. */
 const NON_LIB_GLOBALS = [

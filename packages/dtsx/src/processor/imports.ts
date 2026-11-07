@@ -1,7 +1,6 @@
 /**
  * Import statement parsing and processing utilities
  */
-
 import { getImportItemsFromCache, setImportItemsCache } from './cache'
 
 /**

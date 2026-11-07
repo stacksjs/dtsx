@@ -1,11 +1,11 @@
 import type { ModuleResolver } from './module-graph'
-import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import type { TypeMapper } from './type-mappings'
-import { Glob } from 'bun'
+import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext } from './types'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, realpath, rm } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { basename, dirname, extname, isAbsolute, parse, relative, resolve } from 'node:path'
+import { Glob } from 'bun'
 import { linkBundle } from './bundle-linker'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -16,9 +16,9 @@ import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
 import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
+import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
-import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { applyTypeMappings, createTypeMapper } from './type-mappings'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, sourceMapCommentPrefix, validateDtsContent, writeToFile } from './utils'
 
@@ -185,7 +185,6 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
     // Ensure .dtsx-cache is in .gitignore
     if (!config.dryRun) ensureGitignore(config.cwd)
   }
-
 
   // Prune cache of deleted files
   if (buildCache && !config.dryRun) {
@@ -712,11 +711,11 @@ async function cleanDeclarationOutputs(config: DtsGenerationConfig): Promise<voi
 
       if (
         entry.name.endsWith('.d.ts')
-        || entry.name.endsWith('.d.mts')
-        || entry.name.endsWith('.d.cts')
-        || entry.name.endsWith('.d.ts.map')
-        || entry.name.endsWith('.d.mts.map')
-        || entry.name.endsWith('.d.cts.map')
+          || entry.name.endsWith('.d.mts')
+          || entry.name.endsWith('.d.cts')
+          || entry.name.endsWith('.d.ts.map')
+          || entry.name.endsWith('.d.mts.map')
+          || entry.name.endsWith('.d.cts.map')
       ) {
         await rm(path, { force: true })
       }
@@ -767,10 +766,10 @@ const GLOB_META_RE = /[*?[\]{}!]/
 function assertEntrypointsResolve(config: DtsGenerationConfig, entryFiles: string[]): void {
   const rootPath = resolve(config.cwd, config.root)
   const context = `  root:        ${rootPath}\n`
-    + `  entrypoints: ${config.entrypoints.map(p => JSON.stringify(p)).join(', ') || '(none)'}\n`
-    + (config.exclude?.length ? `  exclude:     ${config.exclude.map(p => JSON.stringify(p)).join(', ')}\n` : '')
-    + `Entrypoints are resolved relative to --root. Pass several by repeating `
-    + `--entrypoints or separating them with commas.`
+  + `  entrypoints: ${config.entrypoints.map(p => JSON.stringify(p)).join(', ') || '(none)'}\n`
+  + (config.exclude?.length ? `  exclude:     ${config.exclude.map(p => JSON.stringify(p)).join(', ')}\n` : '')
+  + `Entrypoints are resolved relative to --root. Pass several by repeating `
+  + `--entrypoints or separating them with commas.`
 
   if (entryFiles.length === 0) {
     // An entrypoint outside the root is dropped on purpose and warned about
@@ -778,22 +777,22 @@ function assertEntrypointsResolve(config: DtsGenerationConfig, entryFiles: strin
     // happened — re-reporting it as a hard failure would be wrong.
     const droppedOutsideRoot = config.entrypoints.filter(pattern =>
       isAbsolute(pattern) && existsSync(pattern) && !isWithinRoot(pattern, rootPath),
-    )
-    if (droppedOutsideRoot.length === config.entrypoints.length) return
+  )
+  if (droppedOutsideRoot.length === config.entrypoints.length) return
 
-    throw new Error(`No source files matched. Nothing was generated.\n${context}`)
-  }
+  throw new Error(`No source files matched. Nothing was generated.\n${context}`)
+}
 
-  const missing = config.entrypoints.filter((pattern) => {
-    if (GLOB_META_RE.test(pattern)) return false
-    return !existsSync(isAbsolute(pattern) ? pattern : resolve(rootPath, pattern))
-  })
+const missing = config.entrypoints.filter((pattern) => {
+  if (GLOB_META_RE.test(pattern)) return false
+  return !existsSync(isAbsolute(pattern) ? pattern : resolve(rootPath, pattern))
+})
 
-  if (missing.length > 0) {
-    throw new Error(
-      `Entrypoint${missing.length > 1 ? 's' : ''} not found: ${missing.map(p => JSON.stringify(p)).join(', ')}\n${context}`,
-    )
-  }
+if (missing.length > 0) {
+  throw new Error(
+    `Entrypoint${missing.length > 1 ? 's' : ''} not found: ${missing.map(p => JSON.stringify(p)).join(', ')}\n${context}`,
+  )
+}
 }
 
 /**
@@ -1201,53 +1200,53 @@ export async function watch(options?: Partial<DtsGenerationConfig>): Promise<voi
     // Keep process alive
     setInterval(() => {}, 1000);
   `], {
-    stdout: 'pipe',
-    stderr: 'inherit',
-  })
+  stdout: 'pipe',
+  stderr: 'inherit',
+})
 
-  // Process watcher output - handle both Bun (ReadableStream) and Node (Readable) streams
-  if (isBun) {
-    // Bun uses ReadableStream with getReader()
-    const reader = (watcher.stdout as ReadableStream<Uint8Array>).getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
+// Process watcher output - handle both Bun (ReadableStream) and Node (Readable) streams
+if (isBun) {
+  // Bun uses ReadableStream with getReader()
+  const reader = (watcher.stdout as ReadableStream<Uint8Array>).getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done)
-        break
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done)
+      break
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
 
-      for (const line of lines) {
-        if (line.startsWith('CHANGED:')) {
-          const filename = line.slice(8)
-          queueChange(filename)
-        }
+    for (const line of lines) {
+      if (line.startsWith('CHANGED:')) {
+        const filename = line.slice(8)
+        queueChange(filename)
       }
     }
   }
-  else {
-    // Node.js uses Readable stream with 'data' events
-    const stdout = watcher.stdout as NodeJS.ReadableStream
-    let buffer = ''
+}
+else {
+  // Node.js uses Readable stream with 'data' events
+  const stdout = watcher.stdout as NodeJS.ReadableStream
+  let buffer = ''
 
-    stdout.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+  stdout.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString()
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
 
-      for (const line of lines) {
-        if (line.startsWith('CHANGED:')) {
-          const filename = line.slice(8)
-          queueChange(filename)
-        }
+    for (const line of lines) {
+      if (line.startsWith('CHANGED:')) {
+        const filename = line.slice(8)
+        queueChange(filename)
       }
-    })
+    }
+  })
 
-    // Keep the async function running until process exits
-    await watcher.exited
-  }
+  // Keep the async function running until process exits
+  await watcher.exited
+}
 }

@@ -777,11 +777,11 @@ export function generateJSON(docs: Documentation, config: Partial<DocsConfig> = 
     })),
     categories: config.groupByCategory
       ? Object.fromEntries(
-          Array.from(docs.categories.entries()).map(([cat, entries]) => [
-            cat,
-            entries.map(e => e.name),
-          ]),
-        )
+      Array.from(docs.categories.entries()).map(([cat, entries]) => [
+        cat,
+        entries.map(e => e.name),
+      ]),
+    )
       : undefined,
   }
 
@@ -809,36 +809,36 @@ export function generateTypeDocJSON(docs: Documentation): string {
       },
       comment: entry.jsdoc.description
         ? {
-            summary: [{ kind: 'text', text: entry.jsdoc.description }],
-            blockTags: entry.jsdoc.deprecated
-              ? [{ tag: '@deprecated', content: [{ kind: 'text', text: entry.jsdoc.deprecated }] }]
-              : undefined,
-          }
+        summary: [{ kind: 'text', text: entry.jsdoc.description }],
+        blockTags: entry.jsdoc.deprecated
+          ? [{ tag: '@deprecated', content: [{ kind: 'text', text: entry.jsdoc.deprecated }] }]
+          : undefined,
+      }
         : undefined,
       sources: entry.sourceFile
         ? [{ fileName: entry.sourceFile, line: entry.sourceLine || 1, character: 0 }]
         : undefined,
       signatures: entry.kind === 'function'
         ? [{
-            id: idx + 1000,
-            name: entry.name,
-            kind: 4096, // Call signature
-            kindString: 'Call signature',
-            parameters: entry.jsdoc.params.map((p, pidx) => ({
-              id: idx + 2000 + pidx,
-              name: p.name,
-              kind: 32768, // Parameter
-              kindString: 'Parameter',
-              flags: { isOptional: p.optional },
-              type: p.type ? { type: 'intrinsic', name: p.type } : undefined,
-              comment: p.description
-                ? { summary: [{ kind: 'text', text: p.description }] }
-                : undefined,
-            })),
-            type: entry.jsdoc.returns?.type
-              ? { type: 'intrinsic', name: entry.jsdoc.returns.type }
-              : undefined,
-          }]
+        id: idx + 1000,
+        name: entry.name,
+        kind: 4096, // Call signature
+        kindString: 'Call signature',
+        parameters: entry.jsdoc.params.map((p, pidx) => ({
+          id: idx + 2000 + pidx,
+          name: p.name,
+          kind: 32768, // Parameter
+          kindString: 'Parameter',
+          flags: { isOptional: p.optional },
+          type: p.type ? { type: 'intrinsic', name: p.type } : undefined,
+          comment: p.description
+            ? { summary: [{ kind: 'text', text: p.description }] }
+            : undefined,
+        })),
+        type: entry.jsdoc.returns?.type
+          ? { type: 'intrinsic', name: entry.jsdoc.returns.type }
+          : undefined,
+      }]
         : undefined,
       children: entry.members?.map((m, midx) => ({
         id: idx + 3000 + midx,

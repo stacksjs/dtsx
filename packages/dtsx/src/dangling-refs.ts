@@ -43,7 +43,6 @@
  *
  * The result is that it under-reports rather than over-reports.
  */
-
 import { GLOBAL_TYPE_NAMES } from './global-types'
 
 export interface DanglingReference {

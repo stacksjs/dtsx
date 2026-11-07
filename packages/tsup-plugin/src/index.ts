@@ -2,12 +2,11 @@
  * tsup plugin for dtsx - TypeScript declaration file generation
  * Integrates with tsup's build pipeline for seamless .d.ts generation
  */
-
-import type { Options as TsupOptions } from 'tsup'
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { Options as TsupOptions } from 'tsup'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { generate } from '@stacksjs/dtsx'
-import { resolve, relative, join, dirname } from 'node:path'
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 
 /**
  * Plugin configuration options
@@ -207,14 +206,14 @@ export function dtsxPlugin(options: DtsxTsupOptions = {}): any {
 
       console.log(`[${PLUGIN_NAME}] Generated ${state.generatedFiles.size} declaration file(s)`)
     }
-catch (error) {
+    catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
       state.errors.push(err)
 
       if (onError) {
         await onError(err)
       }
-else {
+      else {
         console.error(`[${PLUGIN_NAME}] Error generating declarations:`, err.message)
       }
     }
@@ -268,7 +267,7 @@ function filterFiles(
       if (typeof pattern === 'string') {
         if (file.includes(pattern)) return false
       }
-else if (pattern.test(file)) {
+      else if (pattern.test(file)) {
         return false
       }
     }
@@ -279,7 +278,7 @@ else if (pattern.test(file)) {
         if (typeof pattern === 'string') {
           if (file.includes(pattern)) return true
         }
-else if (pattern.test(file)) {
+        else if (pattern.test(file)) {
           return true
         }
       }

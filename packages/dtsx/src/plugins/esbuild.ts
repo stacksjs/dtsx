@@ -2,7 +2,6 @@
  * esbuild plugin for dtsx
  * Generates TypeScript declaration files during esbuild builds
  */
-
 import type { DtsGenerationConfig, GenerationStats } from '../types'
 import { generate } from '../generator'
 

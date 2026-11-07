@@ -1,9 +1,10 @@
 /**
  * TypeScript wrapper for the Zig DTS emitter using Bun FFI.
  */
-import { dlopen, FFIType, type Pointer, ptr, suffix, toArrayBuffer } from 'bun:ffi'
+import type { Pointer } from 'bun:ffi'
 import { arch, platform } from 'node:os'
 import { join } from 'node:path'
+import { dlopen, FFIType, ptr, suffix, toArrayBuffer } from 'bun:ffi'
 
 const LIB_NAME = `libzig-dtsx.${suffix}`
 // On Windows, Zig produces `zig-dtsx.dll` (no `lib` prefix); other platforms keep `libzig-dtsx.{so,dylib}`.

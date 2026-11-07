@@ -2,7 +2,6 @@
  * Tree shaking module for removing unused types from declaration files
  * Analyzes type dependencies and removes unreferenced internal types
  */
-
 import type { Declaration, DeclarationKind } from './types'
 
 /**
@@ -543,10 +542,10 @@ export function analyzeDependencies(
   declarationName: string,
   declarations: Declaration[],
 ): {
-    directDependencies: string[]
-    transitiveDependencies: string[]
-    dependents: string[]
-  } {
+  directDependencies: string[]
+  transitiveDependencies: string[]
+  dependents: string[]
+} {
   const graph = buildDeclarationDependencyGraph(declarations)
 
   // Direct dependencies

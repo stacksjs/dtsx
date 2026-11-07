@@ -16,7 +16,6 @@
  * and the caller should skip rather than fail: a type-check that cannot run is
  * not a type-check that failed.
  */
-
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 

@@ -3,7 +3,6 @@
  * Only uses the string-based scanner for maximum startup speed.
  * Used by process-source.ts and the CLI fast path.
  */
-
 import type { Declaration } from '../types'
 import { isStxFile, transformStxToTs } from '../stx'
 import { isVueFile, transformVueSfcToTs } from '../vue'

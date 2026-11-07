@@ -73,19 +73,19 @@ export class BuildCache {
       prettier: config.prettier,
       typeMappings: config.typeMappings
         ? {
-            includeDefaults: config.typeMappings.includeDefaults,
-            presets: config.typeMappings.presets,
-            cacheKey: config.typeMappings.cacheKey,
-            rules: config.typeMappings.rules.map(rule => ({
-              pattern: typeof rule.pattern === 'string'
-                ? { kind: 'string', value: rule.pattern }
-                : { kind: 'regex', source: rule.pattern.source, flags: rule.pattern.flags },
-              replacement: rule.replacement,
-              global: rule.global,
-              priority: rule.priority,
-              hasCondition: Boolean(rule.condition),
-            })),
-          }
+        includeDefaults: config.typeMappings.includeDefaults,
+        presets: config.typeMappings.presets,
+        cacheKey: config.typeMappings.cacheKey,
+        rules: config.typeMappings.rules.map(rule => ({
+          pattern: typeof rule.pattern === 'string'
+            ? { kind: 'string', value: rule.pattern }
+            : { kind: 'regex', source: rule.pattern.source, flags: rule.pattern.flags },
+          replacement: rule.replacement,
+          global: rule.global,
+          priority: rule.priority,
+          hasCondition: Boolean(rule.condition),
+        })),
+      }
         : undefined,
       lineEnding: config.lineEnding,
       normalizeOutput: config.normalizeOutput,
@@ -203,9 +203,9 @@ export class BuildCache {
 
     if (
       typeof entry.dtsContent !== 'string'
-      || typeof entry.dtsHash !== 'string'
-      || entry.configHash !== this.configHash
-      || this.hashString(entry.dtsContent) !== entry.dtsHash
+        || typeof entry.dtsHash !== 'string'
+        || entry.configHash !== this.configHash
+        || this.hashString(entry.dtsContent) !== entry.dtsHash
     ) {
       return null
     }

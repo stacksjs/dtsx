@@ -12,9 +12,8 @@
  *
  * Run: bun benchmark/index.ts
  */
-
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, cpus, platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'

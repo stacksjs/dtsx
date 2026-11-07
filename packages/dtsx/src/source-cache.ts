@@ -1,5 +1,5 @@
-import { hashContent } from './extractor/hash'
 import { normalizeConcurrency } from './concurrency'
+import { hashContent } from './extractor/hash'
 
 export interface CachedSourceFile {
   fileName: string

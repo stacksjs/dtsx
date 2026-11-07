@@ -4,7 +4,6 @@
  * Detects and reports circular type dependencies in TypeScript source files.
  * This is important for avoiding infinite loops during type resolution.
  */
-
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { extractDeclarations } from './extractor'
@@ -288,9 +287,9 @@ function isTypeCycle(chain: string[], graph: Map<string, DependencyNode>): boole
     file.endsWith('.d.ts')
     || graph.get(file)?.exports.has('type')
     || [...(graph.get(file)?.imports.keys() || [])].some(s =>
-      s.startsWith('type ') || s === 'type',
-    ),
-  )
+    s.startsWith('type ') || s === 'type',
+),
+)
 }
 
 /**
@@ -379,21 +378,21 @@ export function formatCircularAnalysis(result: CircularAnalysisResult, rootDir?:
     // Format the chain with relative paths if rootDir provided
     const formattedChain = cycle.chain.map(p =>
       rootDir ? relative(rootDir, p) : p,
-    )
+  )
 
-    lines.push(`   ${formattedChain.join(' → ')}`)
+  lines.push(`   ${formattedChain.join(' → ')}`)
 
-    if (cycle.symbols.length > 0) {
-      lines.push(`   Symbols: ${cycle.symbols.join(', ')}`)
-    }
-
-    lines.push(`   ${cycle.reason}`)
-    lines.push('')
+  if (cycle.symbols.length > 0) {
+    lines.push(`   Symbols: ${cycle.symbols.join(', ')}`)
   }
 
-  lines.push(`Analyzed ${result.filesAnalyzed.length} files in ${result.durationMs}ms`)
+  lines.push(`   ${cycle.reason}`)
+  lines.push('')
+}
 
-  return lines.join('\n')
+lines.push(`Analyzed ${result.filesAnalyzed.length} files in ${result.durationMs}ms`)
+
+return lines.join('\n')
 }
 
 /**

@@ -1,12 +1,12 @@
 import type { DtsGenerationConfig } from './types'
-import { readFile, readdir } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
+import { readdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { write } from './compat'
 import { config } from './config'
-import { readEffectiveTsconfig } from './tsconfig'
 import { findDanglingTypeReferences } from './dangling-refs'
 import { validateTypeScriptSyntax } from './syntax-validator'
+import { readEffectiveTsconfig } from './tsconfig'
 
 /**
  * Build the source-map directive without embedding the complete marker in

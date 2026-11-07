@@ -12,9 +12,9 @@
  *
  * Usage: bun run test/benchmark.ts [--quick] [--cli-only]
  */
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
 
 const fixturesDir = resolve(import.meta.dir, '../../dtsx/test/fixtures')
 const zigBinary = resolve(import.meta.dir, '..', 'zig-out', 'bin', 'zig-dtsx')

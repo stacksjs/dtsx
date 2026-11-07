@@ -1,5 +1,5 @@
-import { build } from 'esbuild'
 import { generate } from '@stacksjs/dtsx'
+import { build } from 'esbuild'
 
 console.log('Building...')
 

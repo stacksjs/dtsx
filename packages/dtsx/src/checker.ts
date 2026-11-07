@@ -351,19 +351,19 @@ export async function typeCheck(
   if (config.warningsAsErrors) {
     diagnostics = diagnostics.map(d =>
       d.severity === 'warning' ? { ...d, severity: 'error' as const } : d,
-    )
-    errorCount += warningCount
-  }
+  )
+  errorCount += warningCount
+}
 
-  return {
-    success: errorCount === 0,
-    diagnostics,
-    errorCount,
-    warningCount: config.warningsAsErrors ? 0 : warningCount,
-    infoCount,
-    filesChecked: filesToCheck,
-    durationMs: Date.now() - startTime,
-  }
+return {
+  success: errorCount === 0,
+  diagnostics,
+  errorCount,
+  warningCount: config.warningsAsErrors ? 0 : warningCount,
+  infoCount,
+  filesChecked: filesToCheck,
+  durationMs: Date.now() - startTime,
+}
 }
 
 /**
@@ -398,10 +398,10 @@ export async function checkIsolatedDeclarations(
   const baseOptions: ts.CompilerOptions = tsconfigPath
     ? loadCompilerOptions(tsconfigPath)
     : {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
-      }
+    target: ts.ScriptTarget.ESNext,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+  }
 
   const compilerOptions: ts.CompilerOptions = {
     ...baseOptions,
@@ -479,10 +479,10 @@ export function getTypeAtPosition(
     const compilerOptions: ts.CompilerOptions = tsconfigPath
       ? loadCompilerOptions(tsconfigPath)
       : {
-          target: ts.ScriptTarget.ESNext,
-          module: ts.ModuleKind.ESNext,
-          moduleResolution: ts.ModuleResolutionKind.Bundler,
-        }
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    }
 
     const program = createProgram([filePath], compilerOptions)
     const sourceFile = program.getSourceFile(filePath)
@@ -539,10 +539,10 @@ export function getQuickInfo(
     const compilerOptions: ts.CompilerOptions = tsconfigPath
       ? loadCompilerOptions(tsconfigPath)
       : {
-          target: ts.ScriptTarget.ESNext,
-          module: ts.ModuleKind.ESNext,
-          moduleResolution: ts.ModuleResolutionKind.Bundler,
-        }
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    }
 
     const program = createProgram([filePath], compilerOptions)
     const sourceFile = program.getSourceFile(filePath)
@@ -656,13 +656,13 @@ export async function validateGeneratedDeclarations(
   _dtsFiles: string[],
   _tsconfigPath?: string,
 ): Promise<{
-    valid: boolean
-    mismatches: Array<{
-      sourceName: string
-      sourceType: string
-      dtsType: string
-    }>
-  }> {
+  valid: boolean
+  mismatches: Array<{
+    sourceName: string
+    sourceType: string
+    dtsType: string
+  }>
+}> {
   const sourceFiles = _sourceFiles
   const dtsFiles = _dtsFiles
   const tsconfigPath = _tsconfigPath
@@ -676,10 +676,10 @@ export async function validateGeneratedDeclarations(
   const compilerOptions: ts.CompilerOptions = tsconfigPath
     ? loadCompilerOptions(tsconfigPath)
     : {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
-      }
+    target: ts.ScriptTarget.ESNext,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+  }
 
   const sourceProgram = createProgram(sourceFiles, compilerOptions)
   const dtsProgram = createProgram(dtsFiles, { ...compilerOptions, declaration: false })
@@ -752,9 +752,9 @@ function areTypesCompatible(sourceType: string, dtsType: string): boolean {
   // Normalize types for comparison
   const normalizeType = (t: string) =>
     t
-      .replace(/\s+/g, ' ')
-      .replace(/\s*([<>,{}()[\]:;])\s*/g, '$1')
-      .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>,{}()[\]:;])\s*/g, '$1')
+    .trim()
 
   const normalizedSource = normalizeType(sourceType)
   const normalizedDts = normalizeType(dtsType)
@@ -769,7 +769,7 @@ function areTypesCompatible(sourceType: string, dtsType: string): boolean {
   // Allow Promise<T> to match PromiseLike<T>
   if (
     normalizedSource.startsWith('Promise<')
-    && normalizedDts.startsWith('PromiseLike<')
+      && normalizedDts.startsWith('PromiseLike<')
   ) {
     return true
   }

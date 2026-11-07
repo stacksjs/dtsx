@@ -362,17 +362,17 @@ function buildDeclarationText(decl: Declaration): string {
       if (decl.members) {
         const enumMembers = decl.members.map(m =>
           m.value !== undefined ? `${m.name} = ${m.value}` : m.name,
-        )
-        parts.push(`  ${enumMembers.join(',\n  ')}`)
-      }
-      parts.push('}')
-      break
-
-    default:
-      return decl.text || ''
+      )
+      parts.push(`  ${enumMembers.join(',\n  ')}`)
   }
+  parts.push('}')
+  break
 
-  return parts.join(' ')
+  default:
+  return decl.text || ''
+}
+
+return parts.join(' ')
 }
 
 /**
@@ -557,65 +557,65 @@ export async function bundleDtsFiles(
   // Add imports
   const sortedImports = Array.from(allImports.values()).sort((a, b) =>
     a.source.localeCompare(b.source),
-  )
+)
 
-  for (const info of sortedImports) {
-    if (info.specifiers.size > 0) {
-      const specs = Array.from(info.specifiers.values())
-      const specStrings = specs.map((s) => {
-        const typePrefix = s.isType ? 'type ' : ''
-        return s.alias ? `${typePrefix}${s.name} as ${s.alias}` : `${typePrefix}${s.name}`
-      })
-      const typePrefix = info.isTypeOnly ? 'type ' : ''
-      output.push(`import ${typePrefix}{ ${specStrings.join(', ')} } from '${info.source}';`)
-    }
+for (const info of sortedImports) {
+  if (info.specifiers.size > 0) {
+    const specs = Array.from(info.specifiers.values())
+    const specStrings = specs.map((s) => {
+      const typePrefix = s.isType ? 'type ' : ''
+      return s.alias ? `${typePrefix}${s.name} as ${s.alias}` : `${typePrefix}${s.name}`
+    })
+    const typePrefix = info.isTypeOnly ? 'type ' : ''
+    output.push(`import ${typePrefix}{ ${specStrings.join(', ')} } from '${info.source}';`)
+  }
+}
+
+if (sortedImports.length > 0) {
+  output.push('')
+}
+
+// Add declarations
+if (config.ambient && config.moduleName) {
+  output.push(`declare module '${config.moduleName}' {`)
+  for (const decl of allDeclarations) {
+    // Indent and remove 'declare' keyword inside module
+    const indented = decl.split('\n').map(line => `  ${line.replace(/^(\s*)(export\s+)?declare\s+/, '$1$2')}`).join('\n')
+    output.push(indented)
+  }
+  output.push('}')
+}
+else {
+  if (config.sortDeclarations) {
+    allDeclarations.sort((a, b) => {
+      const aName = extractDeclarationKey(a)
+      const bName = extractDeclarationKey(b)
+      return aName.localeCompare(bName)
+    })
   }
 
-  if (sortedImports.length > 0) {
-    output.push('')
+  for (const decl of allDeclarations) {
+    output.push(decl)
   }
+}
 
-  // Add declarations
-  if (config.ambient && config.moduleName) {
-    output.push(`declare module '${config.moduleName}' {`)
-    for (const decl of allDeclarations) {
-      // Indent and remove 'declare' keyword inside module
-      const indented = decl.split('\n').map(line => `  ${line.replace(/^(\s*)(export\s+)?declare\s+/, '$1$2')}`).join('\n')
-      output.push(indented)
-    }
-    output.push('}')
-  }
-  else {
-    if (config.sortDeclarations) {
-      allDeclarations.sort((a, b) => {
-        const aName = extractDeclarationKey(a)
-        const bName = extractDeclarationKey(b)
-        return aName.localeCompare(bName)
-      })
-    }
+// Add footer
+if (config.footer) {
+  output.push('')
+  output.push(config.footer)
+}
 
-    for (const decl of allDeclarations) {
-      output.push(decl)
-    }
-  }
+const content = output.join('\n')
 
-  // Add footer
-  if (config.footer) {
-    output.push('')
-    output.push(config.footer)
-  }
-
-  const content = output.join('\n')
-
-  return {
-    content,
-    files: processedFiles,
-    declarationCount,
-    importCount,
-    exportCount,
-    size: Buffer.byteLength(content, 'utf-8'),
-    warnings,
-  }
+return {
+  content,
+  files: processedFiles,
+  declarationCount,
+  importCount,
+  exportCount,
+  size: Buffer.byteLength(content, 'utf-8'),
+  warnings,
+}
 }
 
 /**

@@ -1,7 +1,7 @@
-import { expect } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expect } from 'bun:test'
 import { dts } from '../../../bun-plugin/src'
 import { processSource, ZIG_AVAILABLE } from '../../../zig-dtsx/src'
 import { generate } from '../../src'

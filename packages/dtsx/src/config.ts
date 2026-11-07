@@ -1,7 +1,7 @@
 import type { DtsGenerationConfig } from './types'
+import process from 'node:process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { loadConfig } from 'bunfig'
 import { logger } from './logger'

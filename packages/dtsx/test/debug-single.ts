@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
 import type { DtsGenerationOption } from '../src/types'
+import process from 'node:process'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import process from 'node:process'
 import { generate } from '../src/generator'
 
 async function debugSingle() {

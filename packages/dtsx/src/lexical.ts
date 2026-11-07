@@ -53,7 +53,7 @@ export function isIdentChar(ch: number): boolean {
  */
 function previousCodeIndex(source: string, from: number): number {
   let p = from
-  for (;;) {
+  for (;; ) {
     while (p >= 0 && (source.charCodeAt(p) === CH_SPACE || source.charCodeAt(p) === CH_TAB
       || source.charCodeAt(p) === CH_LF || source.charCodeAt(p) === CH_CR)) p--
     if (p < 0)

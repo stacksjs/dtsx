@@ -87,7 +87,7 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
         let nextBatch = 0
         const batchRunId = Date.now()
         const runNext = async () => {
-          for (;;) {
+          for (;; ) {
             const batchIndex = nextBatch++
             if (batchIndex >= batchCount)
               return
@@ -570,80 +570,80 @@ cli
     minify?: boolean
     removeComments?: boolean
   }) => {
-    try {
-      const { optimizeFile } = await import('../src/optimizer')
-      const { Glob } = await import('bun')
-      const { resolve, join, relative, dirname, basename: _basename } = await import('node:path')
-      const { mkdirSync, copyFileSync, existsSync } = await import('node:fs')
+  try {
+    const { optimizeFile } = await import('../src/optimizer')
+    const { Glob } = await import('bun')
+    const { resolve, join, relative, dirname, basename: _basename } = await import('node:path')
+    const { mkdirSync, copyFileSync, existsSync } = await import('node:fs')
 
-      const cwd = process.cwd()
-      const patterns = options.files || ['**/*.d.ts']
+    const cwd = process.cwd()
+    const patterns = options.files || ['**/*.d.ts']
 
-      // Find all .d.ts files
-      const files: string[] = []
-      for (const pattern of patterns) {
-        const glob = new Glob(pattern)
-        for await (const file of glob.scan({
-          cwd,
-          absolute: true,
-          onlyFiles: true,
-        })) {
-          if (file.endsWith('.d.ts') && !file.includes('node_modules')) {
-            files.push(file)
-          }
+    // Find all .d.ts files
+    const files: string[] = []
+    for (const pattern of patterns) {
+      const glob = new Glob(pattern)
+      for await (const file of glob.scan({
+        cwd,
+        absolute: true,
+        onlyFiles: true,
+      })) {
+        if (file.endsWith('.d.ts') && !file.includes('node_modules')) {
+          files.push(file)
         }
       }
-
-      if (files.length === 0) {
-        console.error('No .d.ts files found')
-        process.exit(1)
-      }
-
-      console.log(`Optimizing ${files.length} declaration files...`)
-
-      let totalSavings = 0
-      let totalOriginal = 0
-
-      for (const file of files) {
-        // If outdir specified, copy file there first
-        let targetFile = file
-        if (options.outdir) {
-          const relPath = relative(cwd, file)
-          targetFile = join(resolve(options.outdir), relPath)
-          const targetDir = dirname(targetFile)
-          if (!existsSync(targetDir)) {
-            mkdirSync(targetDir, { recursive: true })
-          }
-          copyFileSync(file, targetFile)
-        }
-
-        const result = await optimizeFile(targetFile, {
-          removeUnusedImports: options.removeUnusedImports ?? true,
-          deduplicateDeclarations: options.deduplicate ?? true,
-          mergeInterfaces: options.mergeInterfaces ?? true,
-          inlineSimpleTypes: options.inlineTypes ?? false,
-          removeEmptyInterfaces: options.removeEmpty ?? true,
-          sortDeclarations: options.sort ?? false,
-          sortImports: options.sortImports ?? true,
-          minify: options.minify ?? false,
-          removeComments: options.removeComments ?? false,
-        })
-
-        totalOriginal += result.originalSize
-        totalSavings += result.savings
-
-        const relPath = relative(cwd, targetFile)
-        console.log(`  ${relPath}: ${result.originalSize}B -> ${result.optimizedSize}B (-${result.savingsPercent}%)`)
-      }
-
-      const totalPercent = totalOriginal > 0 ? Math.round((totalSavings / totalOriginal) * 100) : 0
-      console.log(`\nTotal: ${totalOriginal}B -> ${totalOriginal - totalSavings}B (-${totalPercent}%)`)
     }
-    catch (error) {
-      console.error('Error optimizing files:', error)
+
+    if (files.length === 0) {
+      console.error('No .d.ts files found')
       process.exit(1)
     }
-  })
+
+    console.log(`Optimizing ${files.length} declaration files...`)
+
+    let totalSavings = 0
+    let totalOriginal = 0
+
+    for (const file of files) {
+      // If outdir specified, copy file there first
+      let targetFile = file
+      if (options.outdir) {
+        const relPath = relative(cwd, file)
+        targetFile = join(resolve(options.outdir), relPath)
+        const targetDir = dirname(targetFile)
+        if (!existsSync(targetDir)) {
+          mkdirSync(targetDir, { recursive: true })
+        }
+        copyFileSync(file, targetFile)
+      }
+
+      const result = await optimizeFile(targetFile, {
+        removeUnusedImports: options.removeUnusedImports ?? true,
+        deduplicateDeclarations: options.deduplicate ?? true,
+        mergeInterfaces: options.mergeInterfaces ?? true,
+        inlineSimpleTypes: options.inlineTypes ?? false,
+        removeEmptyInterfaces: options.removeEmpty ?? true,
+        sortDeclarations: options.sort ?? false,
+        sortImports: options.sortImports ?? true,
+        minify: options.minify ?? false,
+        removeComments: options.removeComments ?? false,
+      })
+
+      totalOriginal += result.originalSize
+      totalSavings += result.savings
+
+      const relPath = relative(cwd, targetFile)
+      console.log(`  ${relPath}: ${result.originalSize}B -> ${result.optimizedSize}B (-${result.savingsPercent}%)`)
+    }
+
+    const totalPercent = totalOriginal > 0 ? Math.round((totalSavings / totalOriginal) * 100) : 0
+    console.log(`\nTotal: ${totalOriginal}B -> ${totalOriginal - totalSavings}B (-${totalPercent}%)`)
+  }
+  catch (error) {
+    console.error('Error optimizing files:', error)
+    process.exit(1)
+  }
+})
 
 cli
   .command('docs', 'Generate API documentation from source files')
@@ -668,50 +668,50 @@ cli
     groupByCategory?: boolean
     sourceUrl?: string
   }) => {
-    try {
-      const { generateDocs } = await import('../src/docs')
-      const { Glob } = await import('bun')
-      const { resolve } = await import('node:path')
+  try {
+    const { generateDocs } = await import('../src/docs')
+    const { Glob } = await import('bun')
+    const { resolve } = await import('node:path')
 
-      const rootPath = resolve(options.root || './src')
+    const rootPath = resolve(options.root || './src')
 
-      // Find all TypeScript files
-      const glob = new Glob('**/*.ts')
-      const files: string[] = []
+    // Find all TypeScript files
+    const glob = new Glob('**/*.ts')
+    const files: string[] = []
 
-      for await (const file of glob.scan({
-        cwd: rootPath,
-        absolute: true,
-        onlyFiles: true,
-      })) {
-        if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
-          files.push(file)
-        }
+    for await (const file of glob.scan({
+      cwd: rootPath,
+      absolute: true,
+      onlyFiles: true,
+    })) {
+      if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
+        files.push(file)
       }
-
-      if (files.length === 0) {
-        console.error('No TypeScript files found')
-        process.exit(1)
-      }
-
-      console.log(`Found ${files.length} source files`)
-
-      await generateDocs(files, {
-        format: (options.format as 'markdown' | 'html') || 'markdown',
-        outdir: resolve(options.outdir || './docs'),
-        title: options.title || 'API Documentation',
-        includePrivate: options.includePrivate ?? false,
-        includeInternal: options.includeInternal ?? false,
-        groupByCategory: options.groupByCategory ?? false,
-        includeSourceLinks: !!options.sourceUrl,
-        sourceBaseUrl: options.sourceUrl,
-      })
     }
-    catch (error) {
-      console.error('Error generating documentation:', error)
+
+    if (files.length === 0) {
+      console.error('No TypeScript files found')
       process.exit(1)
     }
-  })
+
+    console.log(`Found ${files.length} source files`)
+
+    await generateDocs(files, {
+      format: (options.format as 'markdown' | 'html') || 'markdown',
+      outdir: resolve(options.outdir || './docs'),
+      title: options.title || 'API Documentation',
+      includePrivate: options.includePrivate ?? false,
+      includeInternal: options.includeInternal ?? false,
+      groupByCategory: options.groupByCategory ?? false,
+      includeSourceLinks: !!options.sourceUrl,
+      sourceBaseUrl: options.sourceUrl,
+    })
+  }
+  catch (error) {
+    console.error('Error generating documentation:', error)
+    process.exit(1)
+  }
+})
 
 cli
   .command('workspace', 'Generate declarations for all projects in a monorepo/workspace')
@@ -794,129 +794,129 @@ cli
     isolatedDeclarations?: boolean
     format?: string
   }) => {
-    try {
-      const { typeCheck, checkIsolatedDeclarations, formatTypeCheckResults } = await import('../src/checker')
-      const { Glob } = await import('bun')
-      const { resolve, relative } = await import('node:path')
+  try {
+    const { typeCheck, checkIsolatedDeclarations, formatTypeCheckResults } = await import('../src/checker')
+    const { Glob } = await import('bun')
+    const { resolve, relative } = await import('node:path')
 
-      const cwd = process.cwd()
-      const patterns = options.files || ['**/*.ts']
+    const cwd = process.cwd()
+    const patterns = options.files || ['**/*.ts']
 
-      // Find all files matching patterns
-      const files: string[] = []
-      for (const pattern of patterns) {
-        const glob = new Glob(pattern)
-        for await (const file of glob.scan({
-          cwd,
-          absolute: true,
-          onlyFiles: true,
-        })) {
-          if (!file.includes('node_modules')) {
-            if (options.declarationsOnly) {
-              if (file.endsWith('.d.ts')) {
-                files.push(file)
-              }
-            }
-            else {
+    // Find all files matching patterns
+    const files: string[] = []
+    for (const pattern of patterns) {
+      const glob = new Glob(pattern)
+      for await (const file of glob.scan({
+        cwd,
+        absolute: true,
+        onlyFiles: true,
+      })) {
+        if (!file.includes('node_modules')) {
+          if (options.declarationsOnly) {
+            if (file.endsWith('.d.ts')) {
               files.push(file)
             }
           }
+          else {
+            files.push(file)
+          }
         }
       }
+    }
 
-      if (files.length === 0) {
-        console.error('No files found to check')
-        process.exit(1)
-      }
+    if (files.length === 0) {
+      console.error('No files found to check')
+      process.exit(1)
+    }
 
-      // Handle isolated declarations mode
-      if (options.isolatedDeclarations) {
-        console.log(`Checking ${files.length} files for isolated declarations best practices...`)
+    // Handle isolated declarations mode
+    if (options.isolatedDeclarations) {
+      console.log(`Checking ${files.length} files for isolated declarations best practices...`)
 
-        const results = await checkIsolatedDeclarations(
-          files,
-          options.tsconfig ? resolve(options.tsconfig) : undefined,
-        )
+      const results = await checkIsolatedDeclarations(
+        files,
+        options.tsconfig ? resolve(options.tsconfig) : undefined,
+      )
 
-        let totalIssues = 0
-        const output: { file: string, compatible: boolean, issues: any[] }[] = []
+      let totalIssues = 0
+      const output: { file: string, compatible: boolean, issues: any[] }[] = []
 
-        for (const [file, result] of results) {
-          const relPath = relative(cwd, file)
+      for (const [file, result] of results) {
+        const relPath = relative(cwd, file)
 
-          if (!result.compatible) {
-            totalIssues += result.issues.length
+        if (!result.compatible) {
+          totalIssues += result.issues.length
 
-            if (options.format === 'json') {
-              output.push({
-                file: relPath,
-                compatible: false,
-                issues: result.issues,
-              })
-            }
-            else {
-              console.log(`\n✗ ${relPath}`)
-              for (const issue of result.issues) {
-                console.log(`  ${issue.line}:${issue.column} - ${issue.message}`)
-                if (issue.missingAnnotation) {
-                  console.log(`    Missing: ${issue.missingAnnotation} type annotation`)
-                }
+          if (options.format === 'json') {
+            output.push({
+              file: relPath,
+              compatible: false,
+              issues: result.issues,
+            })
+          }
+          else {
+            console.log(`\n✗ ${relPath}`)
+            for (const issue of result.issues) {
+              console.log(`  ${issue.line}:${issue.column} - ${issue.message}`)
+              if (issue.missingAnnotation) {
+                console.log(`    Missing: ${issue.missingAnnotation} type annotation`)
               }
             }
           }
-          else if (options.format === 'json') {
-            output.push({
-              file: relPath,
-              compatible: true,
-              issues: [],
-            })
-          }
         }
-
-        if (options.format === 'json') {
-          console.log(JSON.stringify(output, null, 2))
+        else if (options.format === 'json') {
+          output.push({
+            file: relPath,
+            compatible: true,
+            issues: [],
+          })
         }
-        else {
-          if (totalIssues > 0) {
-            console.log(`\n${files.length} files checked, ${totalIssues} recommendations found`)
-            console.log('Tip: Adding explicit type annotations improves .d.ts accuracy')
-          }
-          else {
-            console.log(`\n${files.length} files checked, all follow isolated declarations best practices`)
-          }
-        }
-
-        process.exit(totalIssues > 0 ? 1 : 0)
       }
-
-      // Regular type checking
-      console.log(`Type checking ${files.length} files...`)
-
-      const result = await typeCheck(files, {
-        tsconfigPath: options.tsconfig ? resolve(options.tsconfig) : undefined,
-        strict: options.strict ?? false,
-        declarationsOnly: options.declarationsOnly ?? false,
-        skipLibCheck: options.skipLibCheck ?? true,
-        warningsAsErrors: options.warningsAsErrors ?? false,
-        maxErrors: options.maxErrors || undefined,
-      })
 
       if (options.format === 'json') {
-        console.log(JSON.stringify(result, null, 2))
+        console.log(JSON.stringify(output, null, 2))
       }
       else {
-        console.log(formatTypeCheckResults(result))
+        if (totalIssues > 0) {
+          console.log(`\n${files.length} files checked, ${totalIssues} recommendations found`)
+          console.log('Tip: Adding explicit type annotations improves .d.ts accuracy')
+        }
+        else {
+          console.log(`\n${files.length} files checked, all follow isolated declarations best practices`)
+        }
       }
 
-      process.exit(result.success ? 0 : 1)
+      process.exit(totalIssues > 0 ? 1 : 0)
     }
-    catch (error) {
-      // A message is more useful than a code frame when the cause is a missing
-      // or incompatible peer rather than a bug in the file being checked.
-      console.error(error instanceof Error ? `Error during type checking: ${error.message}` : `Error during type checking: ${String(error)}`)
-      process.exit(1)
+
+    // Regular type checking
+    console.log(`Type checking ${files.length} files...`)
+
+    const result = await typeCheck(files, {
+      tsconfigPath: options.tsconfig ? resolve(options.tsconfig) : undefined,
+      strict: options.strict ?? false,
+      declarationsOnly: options.declarationsOnly ?? false,
+      skipLibCheck: options.skipLibCheck ?? true,
+      warningsAsErrors: options.warningsAsErrors ?? false,
+      maxErrors: options.maxErrors || undefined,
+    })
+
+    if (options.format === 'json') {
+      console.log(JSON.stringify(result, null, 2))
     }
-  })
+    else {
+      console.log(formatTypeCheckResults(result))
+    }
+
+    process.exit(result.success ? 0 : 1)
+  }
+  catch (error) {
+    // A message is more useful than a code frame when the cause is a missing
+    // or incompatible peer rather than a bug in the file being checked.
+    console.error(error instanceof Error ? `Error during type checking: ${error.message}` : `Error during type checking: ${String(error)}`)
+    process.exit(1)
+  }
+})
 
 cli
   .command('convert', 'Convert TypeScript types to different schema formats')
@@ -942,94 +942,94 @@ cli
     useInfer?: boolean
     jsonSchemaDraft?: string
   }) => {
-    try {
-      const formats = await import('../src/formats')
-      const { extractDeclarations } = await import('../src/extractor')
-      const { Glob } = await import('bun')
-      const { resolve, relative, join, dirname, basename } = await import('node:path')
-      const { mkdirSync, existsSync, readFileSync, writeFileSync } = await import('node:fs')
+  try {
+    const formats = await import('../src/formats')
+    const { extractDeclarations } = await import('../src/extractor')
+    const { Glob } = await import('bun')
+    const { resolve, relative, join, dirname, basename } = await import('node:path')
+    const { mkdirSync, existsSync, readFileSync, writeFileSync } = await import('node:fs')
 
-      const cwd = process.cwd()
-      const patterns = options.files || ['**/*.ts']
-      const format = (options.format || 'json-schema') as formats.OutputFormat
-      const outdir = resolve(options.outdir || './schemas')
+    const cwd = process.cwd()
+    const patterns = options.files || ['**/*.ts']
+    const format = (options.format || 'json-schema') as formats.OutputFormat
+    const outdir = resolve(options.outdir || './schemas')
 
-      // Find all TypeScript files
-      const files: string[] = []
-      for (const pattern of patterns) {
-        const glob = new Glob(pattern)
-        for await (const file of glob.scan({
-          cwd,
-          absolute: true,
-          onlyFiles: true,
-        })) {
-          if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
-            files.push(file)
-          }
+    // Find all TypeScript files
+    const files: string[] = []
+    for (const pattern of patterns) {
+      const glob = new Glob(pattern)
+      for await (const file of glob.scan({
+        cwd,
+        absolute: true,
+        onlyFiles: true,
+      })) {
+        if (!file.endsWith('.d.ts') && !file.includes('node_modules')) {
+          files.push(file)
         }
       }
-
-      if (files.length === 0) {
-        console.error('No TypeScript files found')
-        process.exit(1)
-      }
-
-      console.log(`Converting ${files.length} files to ${format} format...`)
-
-      // Ensure output directory exists
-      if (!existsSync(outdir)) {
-        mkdirSync(outdir, { recursive: true })
-      }
-
-      let totalDeclarations = 0
-      let filesConverted = 0
-
-      for (const file of files) {
-        const sourceCode = readFileSync(file, 'utf-8')
-        const declarations = extractDeclarations(sourceCode, file)
-
-        // Filter to only interfaces and types
-        const typeDeclarations = declarations.filter(
-          d => d.kind === 'interface' || d.kind === 'type',
-        )
-
-        if (typeDeclarations.length === 0)
-          continue
-
-        const output = formats.convertToFormat(typeDeclarations, {
-          format,
-          includeDescriptions: options.includeDescriptions ?? true,
-          allOptional: options.allOptional ?? false,
-          useInfer: options.useInfer ?? true,
-          jsonSchemaDraft: (options.jsonSchemaDraft as '2020-12' | '2019-09' | 'draft-07') || '2020-12',
-        })
-
-        // Determine output filename
-        const relPath = relative(cwd, file)
-        const baseName = basename(file, '.ts')
-        const ext = formats.getFormatExtension(format)
-        const outputFile = join(outdir, dirname(relPath), `${baseName}${ext}`)
-
-        // Ensure output subdirectory exists
-        const outputDir = dirname(outputFile)
-        if (!existsSync(outputDir)) {
-          mkdirSync(outputDir, { recursive: true })
-        }
-
-        writeFileSync(outputFile, output)
-        totalDeclarations += typeDeclarations.length
-        filesConverted++
-
-        console.log(`  ${relative(cwd, outputFile)} (${typeDeclarations.length} types)`)
-      }
-
-      console.log(`\nConverted ${totalDeclarations} declarations from ${filesConverted} files`)
     }
-    catch (error) {
-      console.error('Error converting files:', error)
+
+    if (files.length === 0) {
+      console.error('No TypeScript files found')
       process.exit(1)
     }
-  })
+
+    console.log(`Converting ${files.length} files to ${format} format...`)
+
+    // Ensure output directory exists
+    if (!existsSync(outdir)) {
+      mkdirSync(outdir, { recursive: true })
+    }
+
+    let totalDeclarations = 0
+    let filesConverted = 0
+
+    for (const file of files) {
+      const sourceCode = readFileSync(file, 'utf-8')
+      const declarations = extractDeclarations(sourceCode, file)
+
+      // Filter to only interfaces and types
+      const typeDeclarations = declarations.filter(
+        d => d.kind === 'interface' || d.kind === 'type',
+      )
+
+      if (typeDeclarations.length === 0)
+        continue
+
+      const output = formats.convertToFormat(typeDeclarations, {
+        format,
+        includeDescriptions: options.includeDescriptions ?? true,
+        allOptional: options.allOptional ?? false,
+        useInfer: options.useInfer ?? true,
+        jsonSchemaDraft: (options.jsonSchemaDraft as '2020-12' | '2019-09' | 'draft-07') || '2020-12',
+      })
+
+      // Determine output filename
+      const relPath = relative(cwd, file)
+      const baseName = basename(file, '.ts')
+      const ext = formats.getFormatExtension(format)
+      const outputFile = join(outdir, dirname(relPath), `${baseName}${ext}`)
+
+      // Ensure output subdirectory exists
+      const outputDir = dirname(outputFile)
+      if (!existsSync(outputDir)) {
+        mkdirSync(outputDir, { recursive: true })
+      }
+
+      writeFileSync(outputFile, output)
+      totalDeclarations += typeDeclarations.length
+      filesConverted++
+
+      console.log(`  ${relative(cwd, outputFile)} (${typeDeclarations.length} types)`)
+    }
+
+    console.log(`\nConverted ${totalDeclarations} declarations from ${filesConverted} files`)
+  }
+  catch (error) {
+    console.error('Error converting files:', error)
+    process.exit(1)
+  }
+})
 
 cli
   .command('circular', 'Detect circular dependencies in TypeScript files')
@@ -1062,92 +1062,92 @@ cli
     format?: string
     summary?: boolean
   }) => {
-    try {
-      const {
-        analyzeCircularDependencies,
-        formatCircularAnalysis,
-        getGraphSummary,
-        exportGraphAsDot,
-        exportGraphAsJson,
-      } = await import('../src/circular')
-      const { Glob } = await import('bun')
-      const { resolve, relative } = await import('node:path')
+  try {
+    const {
+      analyzeCircularDependencies,
+      formatCircularAnalysis,
+      getGraphSummary,
+      exportGraphAsDot,
+      exportGraphAsJson,
+    } = await import('../src/circular')
+    const { Glob } = await import('bun')
+    const { resolve, relative } = await import('node:path')
 
-      const _cwd = process.cwd()
-      const rootDir = resolve(options.root || '.')
-      const patterns = options.files || ['**/*.ts']
+    const _cwd = process.cwd()
+    const rootDir = resolve(options.root || '.')
+    const patterns = options.files || ['**/*.ts']
 
-      // Find all files matching patterns
-      const files: string[] = []
-      for (const pattern of patterns) {
-        const glob = new Glob(pattern)
-        for await (const file of glob.scan({
-          cwd: rootDir,
-          absolute: true,
-          onlyFiles: true,
-        })) {
-          if (!file.endsWith('.d.ts')) {
-            if (!options.includeNodeModules && file.includes('node_modules')) {
-              continue
-            }
-            files.push(file)
+    // Find all files matching patterns
+    const files: string[] = []
+    for (const pattern of patterns) {
+      const glob = new Glob(pattern)
+      for await (const file of glob.scan({
+        cwd: rootDir,
+        absolute: true,
+        onlyFiles: true,
+      })) {
+        if (!file.endsWith('.d.ts')) {
+          if (!options.includeNodeModules && file.includes('node_modules')) {
+            continue
           }
+          files.push(file)
         }
       }
-
-      if (files.length === 0) {
-        console.error('No TypeScript files found')
-        process.exit(1)
-      }
-
-      console.log(`Analyzing ${files.length} files for circular dependencies...`)
-
-      const result = await analyzeCircularDependencies(files, {
-        rootDir,
-        ignore: options.ignore?.filter(Boolean),
-        typesOnly: options.typesOnly ?? false,
-        maxDepth: options.maxDepth ?? 100,
-        includeNodeModules: options.includeNodeModules ?? false,
-      })
-
-      // Handle different output formats
-      if (options.format === 'json') {
-        console.log(exportGraphAsJson(result.graph, rootDir))
-      }
-      else if (options.format === 'dot') {
-        console.log(exportGraphAsDot(result.graph, rootDir))
-      }
-      else {
-        // Text format
-        console.log(formatCircularAnalysis(result, rootDir))
-
-        // Show summary if requested
-        if (options.summary) {
-          const summary = getGraphSummary(result.graph)
-          console.log('\n--- Dependency Graph Summary ---')
-          console.log(`Total files: ${summary.totalFiles}`)
-          console.log(`Total dependencies: ${summary.totalDependencies}`)
-          console.log(`Average dependencies per file: ${summary.avgDependencies.toFixed(2)}`)
-          if (summary.maxDependencies.count > 0) {
-            console.log(`Most dependencies: ${relative(rootDir, summary.maxDependencies.file)} (${summary.maxDependencies.count})`)
-          }
-          if (summary.mostDepended.count > 0) {
-            console.log(`Most depended on: ${relative(rootDir, summary.mostDepended.file)} (${summary.mostDepended.count} dependents)`)
-          }
-          if (summary.isolatedFiles.length > 0) {
-            console.log(`Isolated files (no dependencies): ${summary.isolatedFiles.length}`)
-          }
-        }
-      }
-
-      // Exit with error code if cycles found
-      process.exit(result.hasCircular ? 1 : 0)
     }
-    catch (error) {
-      console.error('Error analyzing dependencies:', error)
+
+    if (files.length === 0) {
+      console.error('No TypeScript files found')
       process.exit(1)
     }
-  })
+
+    console.log(`Analyzing ${files.length} files for circular dependencies...`)
+
+    const result = await analyzeCircularDependencies(files, {
+      rootDir,
+      ignore: options.ignore?.filter(Boolean),
+      typesOnly: options.typesOnly ?? false,
+      maxDepth: options.maxDepth ?? 100,
+      includeNodeModules: options.includeNodeModules ?? false,
+    })
+
+    // Handle different output formats
+    if (options.format === 'json') {
+      console.log(exportGraphAsJson(result.graph, rootDir))
+    }
+    else if (options.format === 'dot') {
+      console.log(exportGraphAsDot(result.graph, rootDir))
+    }
+    else {
+      // Text format
+      console.log(formatCircularAnalysis(result, rootDir))
+
+      // Show summary if requested
+      if (options.summary) {
+        const summary = getGraphSummary(result.graph)
+        console.log('\n--- Dependency Graph Summary ---')
+        console.log(`Total files: ${summary.totalFiles}`)
+        console.log(`Total dependencies: ${summary.totalDependencies}`)
+        console.log(`Average dependencies per file: ${summary.avgDependencies.toFixed(2)}`)
+        if (summary.maxDependencies.count > 0) {
+          console.log(`Most dependencies: ${relative(rootDir, summary.maxDependencies.file)} (${summary.maxDependencies.count})`)
+        }
+        if (summary.mostDepended.count > 0) {
+          console.log(`Most depended on: ${relative(rootDir, summary.mostDepended.file)} (${summary.mostDepended.count} dependents)`)
+        }
+        if (summary.isolatedFiles.length > 0) {
+          console.log(`Isolated files (no dependencies): ${summary.isolatedFiles.length}`)
+        }
+      }
+    }
+
+    // Exit with error code if cycles found
+    process.exit(result.hasCircular ? 1 : 0)
+  }
+  catch (error) {
+    console.error('Error analyzing dependencies:', error)
+    process.exit(1)
+  }
+})
 
 cli.command('version', 'Show the version of dtsx').action(() => {
   console.log(version)

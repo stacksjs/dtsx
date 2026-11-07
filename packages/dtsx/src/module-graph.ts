@@ -11,13 +11,12 @@
  * with comment + string stripping. Faster than running the full extractor
  * and good enough for the path/specifier extraction it needs to do.
  */
-
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { readTextFile } from './compat'
-import { logger } from './logger'
 import { isRegexStart, skipRegexLiteral } from './lexical'
+import { logger } from './logger'
 import { readEffectiveTsconfig } from './tsconfig'
 
 /**
@@ -220,7 +219,7 @@ export async function createModuleResolver(options: ModuleResolutionOptions): Pr
     if (owner && (isPublicSelfSpecifier(owner, specifier)
       || hasPublicMapping(owner.imports ?? {}, specifier)
       || (name && [owner.dependencies, owner.devDependencies, owner.peerDependencies, owner.optionalDependencies].some(dependencies => Object.hasOwn(dependencies ?? {}, name)))))
-      return { resolved: null, isRelative: false }
+    return { resolved: null, isRelative: false }
 
     // Exact mapping wins, otherwise TypeScript chooses the longest matching
     // prefix. Array targets are attempted in their declared order.
@@ -246,7 +245,7 @@ export async function createModuleResolver(options: ModuleResolutionOptions): Pr
       const withinOutputRoot = options.outputStructure === 'flat' || (existsSync(configuredRoot) && containsPath(realpathSync(configuredRoot), actual))
       if (!owner || !containsPath(owner.directory, actual) || !withinOutputRoot
         || packageAt(actual)?.directory !== owner.directory || /\.d\.(?:ts|mts|cts)$/.test(actual))
-        throw new Error(`Local alias ${JSON.stringify(specifier)} from ${fromFile} resolves outside its emitted package source: ${actual}`)
+      throw new Error(`Local alias ${JSON.stringify(specifier)} from ${fromFile} resolves outside its emitted package source: ${actual}`)
       logger.debug(`Resolved local declaration alias ${specifier} from ${fromFile} to ${actual}`)
       // Keep the caller's lexical root identity for output mapping (macOS
       // /var and /private/var can name the same package). Real paths above

@@ -2,7 +2,6 @@
  * Diff module for comparing declaration files
  * Shows changes between existing and newly generated .d.ts files
  */
-
 import { file } from './compat'
 
 /**

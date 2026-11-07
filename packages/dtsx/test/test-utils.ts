@@ -1,7 +1,6 @@
 /**
  * Shared test utilities for dtsx test suite
  */
-
 import type { ProcessingContext } from '../src/types'
 import { extractDeclarations } from '../src/extractor'
 import { processDeclarations } from '../src/processor'

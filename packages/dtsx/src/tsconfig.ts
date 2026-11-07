@@ -110,7 +110,7 @@ export async function readEffectiveTsconfig(path: string, readOptions: { allowCi
     for (const [pattern, targets] of Object.entries(options.paths)) {
       if (pattern.split('*').length > 2 || !Array.isArray(targets) || targets.length === 0
         || targets.some(target => typeof target !== 'string' || target.split('*').length > 2))
-        throw new Error(`Invalid path mapping ${JSON.stringify(pattern)} in ${configPath}`)
+      throw new Error(`Invalid path mapping ${JSON.stringify(pattern)} in ${configPath}`)
     }
     result.paths = options.paths
     result.pathsBasePath = dirname(configPath)

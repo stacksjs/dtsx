@@ -66,4 +66,3 @@ export function normalizeJsonConfig(_jsonText: string): string {
 
   return result
 }
-

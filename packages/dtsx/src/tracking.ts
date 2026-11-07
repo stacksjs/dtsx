@@ -7,7 +7,6 @@
  * - Import sources and usage
  * - Declaration usage across files
  */
-
 import type { Declaration, TrackingConfig } from './types'
 
 /**
