@@ -64,7 +64,7 @@
     "@stacksjs/bumpx": "^0.2.32",
     "@stacksjs/bunpress": "^0.2.31",
     "@stacksjs/clapp": "^0.2.16",
-    "pickier": "^0.1.86",
+    "pickier": "^0.1.88",
     "@stacksjs/gitlint": "^0.1.8",
     "@stacksjs/logsmith": "^0.2.14",
     "@types/bun": "^1.4.4",
