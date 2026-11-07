@@ -25,6 +25,8 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn fclose(stream: *FILE) c_int;
     pub extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
     pub extern "c" fn fwrite(ptr: [*]const u8, size: usize, nmemb: usize, stream: *FILE) usize;
+    pub extern "c" fn ferror(stream: *FILE) c_int;
+    pub extern "c" fn fflush(stream: *FILE) c_int;
     pub extern "c" fn fseek(stream: *FILE, offset: c_long, whence: c_int) c_int;
     pub extern "c" fn ftell(stream: *FILE) c_long;
     pub const SEEK_END: c_int = 2;
@@ -58,6 +60,8 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn fclose(stream: *FILE) c_int;
     pub extern "c" fn fread(ptr: [*]u8, size: usize, nmemb: usize, stream: *FILE) usize;
     pub extern "c" fn fwrite(ptr: [*]const u8, size: usize, nmemb: usize, stream: *FILE) usize;
+    pub extern "c" fn ferror(stream: *FILE) c_int;
+    pub extern "c" fn fflush(stream: *FILE) c_int;
     pub extern "c" fn fseek(stream: *FILE, offset: c_long, whence: c_int) c_int;
     pub extern "c" fn ftell(stream: *FILE) c_long;
     pub const SEEK_SET: c_int = 0;
@@ -127,8 +131,19 @@ inline fn getStdioPtr(val: anytype) *c.FILE {
     }
 }
 
-fn writeAll(data: []const u8) void {
-    _ = c.fwrite(data.ptr, 1, data.len, getStdout());
+fn writeStream(stream: *c.FILE, data: []const u8) !void {
+    var offset: usize = 0;
+    while (offset < data.len) {
+        const written = c.fwrite(data[offset..].ptr, 1, data.len - offset, stream);
+        if (written == 0) return error.OutputWriteFailure;
+        offset += written;
+    }
+    if (c.ferror(stream) != 0) return error.OutputWriteFailure;
+}
+
+fn writeAll(data: []const u8) !void {
+    try writeStream(getStdout(), data);
+    if (c.fflush(getStdout()) != 0) return error.OutputWriteFailure;
 }
 
 fn writeErr(data: []const u8) void {
@@ -139,26 +154,38 @@ fn readFile(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
     const path_z = try alloc.dupeSentinel(u8, path, 0);
     defer alloc.free(path_z);
 
-    const fp = c.fopen(path_z.ptr, "rb") orelse return error.FileNotFound;
-    defer _ = c.fclose(fp);
+    const fp = c.fopen(path_z.ptr, "rb") orelse return error.InputReadFailure;
+    var closed = false;
+    defer if (!closed) {
+        _ = c.fclose(fp);
+    };
 
-    _ = c.fseek(fp, 0, c.SEEK_END);
+    if (c.fseek(fp, 0, c.SEEK_END) != 0) return error.InputReadFailure;
     const tell_result = c.ftell(fp);
-    if (tell_result < 0) return error.FileNotFound;
+    if (tell_result < 0) return error.InputReadFailure;
     const size: usize = @intCast(tell_result);
-    _ = c.fseek(fp, 0, c.SEEK_SET);
+    if (c.fseek(fp, 0, c.SEEK_SET) != 0) return error.InputReadFailure;
 
     const buf = try alloc.alloc(u8, size);
+    errdefer alloc.free(buf);
     const read = c.fread(buf.ptr, 1, size, fp);
-    return buf[0..read];
+    if (read != size or c.ferror(fp) != 0) return error.InputReadFailure;
+    const close_result = c.fclose(fp);
+    closed = true;
+    if (close_result != 0) return error.InputReadFailure;
+    return buf;
 }
 
 fn readStdin(alloc: std.mem.Allocator) ![]const u8 {
     var buf = std.array_list.Managed(u8).init(alloc);
+    errdefer buf.deinit();
     var read_buf: [4096]u8 = undefined;
     while (true) {
         const n = c.fread(&read_buf, 1, read_buf.len, getStdin());
-        if (n == 0) break;
+        if (n == 0) {
+            if (c.ferror(getStdin()) != 0) return error.InputReadFailure;
+            break;
+        }
         try buf.appendSlice(read_buf[0..n]);
     }
     return try buf.toOwnedSlice();
@@ -168,11 +195,18 @@ fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void
     const path_z = try alloc.dupeSentinel(u8, path, 0);
     defer alloc.free(path_z);
 
-    const fp = c.fopen(path_z.ptr, "wb") orelse return error.FileNotFound;
-    defer _ = c.fclose(fp);
+    const fp = c.fopen(path_z.ptr, "wb") orelse return error.OutputWriteFailure;
+    var closed = false;
+    defer if (!closed) {
+        _ = c.fclose(fp);
+    };
 
-    _ = c.fwrite(data.ptr, 1, data.len, fp);
-    _ = c.fwrite("\n", 1, 1, fp);
+    try writeStream(fp, data);
+    try writeStream(fp, "\n");
+    if (c.fflush(fp) != 0) return error.OutputWriteFailure;
+    const close_result = c.fclose(fp);
+    closed = true;
+    if (close_result != 0) return error.OutputWriteFailure;
 }
 
 /// Collect .ts filenames from a directory (excluding .d.ts files).
@@ -212,10 +246,15 @@ fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8) ![][]const u8 
         const dir_z = try alloc.dupeSentinel(u8, dir_path, 0);
         defer alloc.free(dir_z);
 
-        const dir = std.c.opendir(dir_z.ptr) orelse return files.toOwnedSlice();
+        const dir = std.c.opendir(dir_z.ptr) orelse return error.DirNotFound;
         defer _ = std.c.closedir(dir);
 
-        while (std.c.readdir(dir)) |entry| {
+        while (true) {
+            std.c._errno().* = 0;
+            const entry = std.c.readdir(dir) orelse {
+                if (std.c._errno().* != 0) return error.DirectoryReadFailure;
+                break;
+            };
             const name_ptr: [*:0]const u8 = @ptrCast(&entry.*.name);
             const name = std.mem.span(name_ptr);
             if (std.mem.endsWith(u8, name, ".ts") and !std.mem.endsWith(u8, name, ".d.ts")) {
@@ -239,108 +278,99 @@ const WorkerCtx = struct {
     input_dir_fd: c_int,
     output_dir_fd: c_int,
     tasks: []const FileTask,
+    failures: []?anyerror,
 };
 
-/// Worker: read + process + write each file using thread-local arena.
-/// Uses POSIX openat for directory-relative I/O (no path resolution overhead).
-/// Arena is reset every N files to batch allocations and reduce overhead.
+/// One checked file operation. Emission completes before the destination opens.
+/// This retains legacy direct publication; it is not a project transaction.
+fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !void {
+    const default_import_order = [_][]const u8{"bun"};
+    const source = if (builtin.os.tag == .windows)
+        try readFile(alloc, std.mem.span(task.input_name_z))
+    else read_source: {
+        const fd = c.openat(ctx.input_dir_fd, task.input_name_z, c.O_RDONLY);
+        if (fd < 0) return error.InputReadFailure;
+        var closed = false;
+        defer if (!closed) {
+            _ = c.close(fd);
+        };
+        const end_off = c.lseek(fd, 0, c.SEEK_END);
+        if (end_off < 0 or c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputReadFailure;
+        const size: usize = @intCast(end_off);
+        const buf = try alloc.alloc(u8, size);
+        var total: usize = 0;
+        while (total < size) {
+            const count = c.read(fd, @ptrCast(buf.ptr + total), size - total);
+            if (count <= 0) return error.InputReadFailure;
+            total += @as(usize, @intCast(count));
+        }
+        const close_result = c.close(fd);
+        closed = true;
+        if (close_result != 0) return error.InputReadFailure;
+        break :read_source buf;
+    };
+
+    var scanner = Scanner.init(alloc, source, task.keep_comments, false);
+    _ = try scanner.scan();
+    const output = try emitter.processDeclarations(
+        alloc,
+        alloc,
+        scanner.declarations.items,
+        source,
+        task.keep_comments,
+        &default_import_order,
+    );
+
+    if (builtin.os.tag == .windows) {
+        try writeFile(alloc, std.mem.span(task.output_name_z), output);
+    } else {
+        // Preserve the existing NUL-allocation contract and trailing newline.
+        @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
+        const fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
+        if (fd < 0) return error.OutputWriteFailure;
+        var closed = false;
+        defer if (!closed) {
+            _ = c.close(fd);
+        };
+        var offset: usize = 0;
+        while (offset < output.len + 1) {
+            const count = c.write(fd, @ptrCast(output.ptr + offset), output.len + 1 - offset);
+            if (count <= 0) return error.OutputWriteFailure;
+            offset += @as(usize, @intCast(count));
+        }
+        const close_result = c.close(fd);
+        closed = true;
+        if (close_result != 0) return error.OutputWriteFailure;
+    }
+}
+
+/// Worker errors have one owned slot per task, inspected only after join.
+/// Keep the existing native thread pool and bounded arena reuse.
 fn workerFn(ctx: WorkerCtx) void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const default_import_order = [_][]const u8{"bun"};
     var files_since_reset: usize = 0;
-
-    for (ctx.tasks) |task| {
-        const alloc = arena.allocator();
-
-        if (builtin.os.tag == .windows) {
-            const fp = c.fopen(task.input_name_z, "rb") orelse continue;
-            _ = c.fseek(fp, 0, c.SEEK_END);
-            const tell_result = c.ftell(fp);
-            if (tell_result < 0) {
-                _ = c.fclose(fp);
-                continue;
-            }
-            const size: usize = @intCast(tell_result);
-            _ = c.fseek(fp, 0, c.SEEK_SET);
-            const buf = alloc.alloc(u8, size) catch {
-                _ = c.fclose(fp);
-                continue;
-            };
-            const nread = c.fread(buf.ptr, 1, size, fp);
-            _ = c.fclose(fp);
-
-            var scanner = Scanner.init(alloc, buf[0..nread], task.keep_comments, false);
-            _ = scanner.scan() catch continue;
-            const output = emitter.processDeclarations(
-                alloc,
-                alloc,
-                scanner.declarations.items,
-                buf[0..nread],
-                task.keep_comments,
-                &default_import_order,
-            ) catch continue;
-
-            const out_fp = c.fopen(task.output_name_z, "wb") orelse continue;
-            _ = c.fwrite(output.ptr, 1, output.len, out_fp);
-            _ = c.fwrite("\n", 1, 1, out_fp);
-            _ = c.fclose(out_fp);
-        } else {
-            // POSIX: openat + fstat + read (fewer syscalls than lseek+lseek+read)
-            const fd = c.openat(ctx.input_dir_fd, task.input_name_z, c.O_RDONLY);
-            if (fd < 0) continue;
-
-            // Use lseek to get file size (avoids opaque cimport struct_stat)
-            const end_off = c.lseek(fd, 0, 2); // SEEK_END
-            if (end_off < 0) {
-                _ = c.close(fd);
-                continue;
-            }
-            _ = c.lseek(fd, 0, 0); // SEEK_SET
-            const size: usize = @intCast(end_off);
-
-            const buf = alloc.alloc(u8, size) catch {
-                _ = c.close(fd);
-                continue;
-            };
-            var total: usize = 0;
-            while (total < size) {
-                const n = c.read(fd, @ptrCast(buf.ptr + total), size - total);
-                if (n <= 0) break;
-                total += @as(usize, @intCast(n));
-            }
-            _ = c.close(fd);
-            const source = buf[0..total];
-
-            var scanner = Scanner.init(alloc, source, task.keep_comments, false);
-            _ = scanner.scan() catch continue;
-            const output = emitter.processDeclarations(
-                alloc,
-                alloc,
-                scanner.declarations.items,
-                source,
-                task.keep_comments,
-                &default_import_order,
-            ) catch continue;
-
-            // Single-syscall write: overwrite the null terminator with '\n'.
-            // The emitter appends '\0' after content, so output.ptr[output.len] == 0.
-            // Since output is arena-allocated, the byte is writable.
-            @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
-
-            const out_fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
-            if (out_fd >= 0) {
-                _ = c.write(out_fd, @ptrCast(output.ptr), output.len + 1);
-                _ = c.close(out_fd);
-            }
-        }
-
+    for (ctx.tasks, ctx.failures) |task, *failure| {
+        processFileTask(arena.allocator(), ctx, task) catch |err| {
+            failure.* = err;
+        };
         files_since_reset += 1;
-        // Batch arena reset: every 4 files to amortize reset overhead.
-        // Typical file processing uses ~50-200KB; 4 files fits comfortably.
         if (files_since_reset >= 4) {
             _ = arena.reset(.retain_capacity);
             files_since_reset = 0;
+        }
+    }
+}
+
+fn checkTaskFailures(tasks: []const FileTask, failures: []const ?anyerror) !void {
+    for (tasks, failures) |task, failure| {
+        if (failure) |err| {
+            writeErr("error: ");
+            writeErr(std.mem.span(task.input_name_z));
+            writeErr(": ");
+            writeErr(@errorName(err));
+            writeErr("\n");
+            return err;
         }
     }
 }
@@ -386,6 +416,8 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
 
     // Build file tasks
     const tasks = try sa.alloc(FileTask, filenames.len);
+    const failures = try sa.alloc(?anyerror, filenames.len);
+    @memset(failures, null);
     if (builtin.os.tag == .windows) {
         for (filenames, 0..) |filename, idx| {
             const in_str = try std.fmt.allocPrint(sa, "{s}\\{s}", .{ project_dir, filename });
@@ -419,8 +451,8 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     const max_threads = @min(cpu_count, @max(filenames.len / 8, 1));
 
     if (max_threads <= 1) {
-        workerFn(.{ .input_dir_fd = input_dir_fd, .output_dir_fd = output_dir_fd, .tasks = tasks });
-        return;
+        workerFn(.{ .input_dir_fd = input_dir_fd, .output_dir_fd = output_dir_fd, .tasks = tasks, .failures = failures });
+        return checkTaskFailures(tasks, failures);
     }
 
     const files_per_thread = filenames.len / max_threads;
@@ -437,6 +469,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
             .input_dir_fd = input_dir_fd,
             .output_dir_fd = output_dir_fd,
             .tasks = tasks[offset .. offset + count],
+            .failures = failures[offset .. offset + count],
         };
         offset += count;
 
@@ -452,6 +485,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
             threads[t].join();
         }
     }
+    try checkTaskFailures(tasks, failures);
 }
 
 // Support both Zig 0.15.x (argsAlloc) and 0.16+ (Init.Minimal)
@@ -471,7 +505,10 @@ fn mainInit(init: std.process.Init.Minimal) !void {
     while (iter.next()) |arg| {
         try args_buf.append(arg);
     }
-    try run(alloc, args_buf.items);
+    run(alloc, args_buf.items) catch |err| {
+        if (err == error.UnsupportedValueFlow) writeErr("error: DTSX_UNSUPPORTED_VALUE_FLOW\n");
+        return err;
+    };
 }
 
 fn mainLegacy() !void {
@@ -483,7 +520,10 @@ fn mainLegacy() !void {
     for (raw_args) |arg| {
         try args_buf.append(arg);
     }
-    try run(alloc, args_buf.items);
+    run(alloc, args_buf.items) catch |err| {
+        if (err == error.UnsupportedValueFlow) writeErr("error: DTSX_UNSUPPORTED_VALUE_FLOW\n");
+        return err;
+    };
 }
 
 fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
@@ -519,7 +559,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (show_help) {
-        writeAll(
+        try writeAll(
             \\zig-dtsx - Generate TypeScript declaration files
             \\
             \\Usage: zig-dtsx [options] [input-file]
@@ -576,7 +616,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     if (output_file) |path| {
         try writeFile(alloc, path, dts_output);
     } else {
-        writeAll(dts_output);
-        writeAll("\n");
+        try writeAll(dts_output);
+        try writeAll("\n");
     }
 }

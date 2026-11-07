@@ -16,6 +16,36 @@ fn emptyResult() ProcessResult {
     return .{ .ptr = empty.ptr, .len = 0 };
 }
 
+fn emissionStatus(err: anyerror) u32 {
+    return switch (err) {
+        error.InvalidContext => 1,
+        error.UnsupportedContextVersion => 2,
+        error.UnresolvedModuleSpecifier => 3,
+        error.UnsupportedValueFlow => 5,
+        else => 4,
+    };
+}
+
+/// Error-aware source emission. Status zero includes a valid empty declaration
+/// result. Every returned pointer follows the existing free_result contract.
+export fn process_source_checked_v1(
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    isolated_declarations: bool,
+    out_len: *u64,
+    out_status: *u32,
+) [*]const u8 {
+    out_len.* = 0;
+    out_status.* = 0;
+    const result = processSourceInternal(input, len, keep_comments, isolated_declarations) catch |err| {
+        out_status.* = emissionStatus(err);
+        return emptyResult().ptr;
+    };
+    out_len.* = @intCast(result.len);
+    return result.ptr;
+}
+
 /// Process TypeScript source → .d.ts output.
 /// Returns a pointer to the result string (null-terminated).
 /// Caller must call free_result() when done.
@@ -121,7 +151,8 @@ fn processSourceInternalWithContext(
 
 /// Additive context ABI v1. All legacy signatures and allocation rules remain
 /// unchanged. Status: 0 success, 1 invalid context, 2 unsupported version,
-/// 3 unresolved module, 4 emission failure. Failure still returns a freeable,
+/// 3 unresolved module, 4 emission failure, 5 unsupported source value flow.
+/// Failure still returns a freeable,
 /// empty, NUL-terminated allocation and initializes both output fields.
 export fn process_source_with_context_v1(
     input: [*]const u8,
@@ -136,12 +167,7 @@ export fn process_source_with_context_v1(
     out_len.* = 0;
     out_status.* = 0;
     const result = processSourceInternalWithContext(input, len, keep_comments, isolated_declarations, context[0..context_len]) catch |err| {
-        out_status.* = switch (err) {
-            error.InvalidContext => 1,
-            error.UnsupportedContextVersion => 2,
-            error.UnresolvedModuleSpecifier => 3,
-            else => 4,
-        };
+        out_status.* = emissionStatus(err);
         return emptyResult().ptr;
     };
     out_len.* = @intCast(result.len);
@@ -201,11 +227,14 @@ const BatchTask = struct {
     keep_comments: bool,
     out_ptr: *usize, // where to write result pointer
     out_len: *u64, // where to write result length
+    out_status: ?*u32 = null,
 };
 
 fn batchWorker(tasks: []const BatchTask) void {
     for (tasks) |task| {
-        const result = processSourceInternal(task.input, task.input_len, task.keep_comments, false) catch {
+        if (task.out_status) |status| status.* = 0;
+        const result = processSourceInternal(task.input, task.input_len, task.keep_comments, false) catch |err| {
+            if (task.out_status) |status| status.* = emissionStatus(err);
             const empty = emptyResult();
             task.out_ptr.* = @intFromPtr(empty.ptr);
             task.out_len.* = 0;
@@ -233,11 +262,41 @@ export fn process_batch(
     out_lens: [*]u64,
     thread_count: u32,
 ) void {
+    processBatchInternal(inputs, input_lens, count, keep_comments, out_ptrs, out_lens, thread_count, null);
+}
+
+/// Checked batch emission retains native parallelism and reports each result's
+/// status separately. A failure cannot masquerade as a valid empty result.
+export fn process_batch_checked_v1(
+    inputs: [*]const [*]const u8,
+    input_lens: [*]const u64,
+    count: u32,
+    keep_comments: bool,
+    out_ptrs: [*]usize,
+    out_lens: [*]u64,
+    thread_count: u32,
+    out_statuses: [*]u32,
+) void {
+    processBatchInternal(inputs, input_lens, count, keep_comments, out_ptrs, out_lens, thread_count, out_statuses);
+}
+
+fn processBatchInternal(
+    inputs: [*]const [*]const u8,
+    input_lens: [*]const u64,
+    count: u32,
+    keep_comments: bool,
+    out_ptrs: [*]usize,
+    out_lens: [*]u64,
+    thread_count: u32,
+    out_statuses: ?[*]u32,
+) void {
     const n: usize = @intCast(count);
     if (n == 0) return;
 
     @memset(out_ptrs[0..n], 0);
     @memset(out_lens[0..n], 0);
+    // Unstarted tasks remain explicit failures if task allocation fails.
+    if (out_statuses) |statuses| @memset(statuses[0..n], 4);
 
     // Build task list
     const tasks = std.heap.c_allocator.alloc(BatchTask, n) catch return;
@@ -250,6 +309,7 @@ export fn process_batch(
             .keep_comments = keep_comments,
             .out_ptr = &out_ptrs[i],
             .out_len = &out_lens[i],
+            .out_status = if (out_statuses) |statuses| &statuses[i] else null,
         };
     }
 
@@ -336,6 +396,72 @@ test "context ABI failure initializes status and returns a freeable empty result
     try std.testing.expectEqual(@as(u32, 1), status);
     try std.testing.expectEqual(@as(u64, 0), length);
     try std.testing.expectEqual(@as(u8, 0), result[0]);
+}
+
+test "checked source ABI distinguishes unsupported flow from valid empty output" {
+    const unsupported = "let value: number | undefined = 7; if (Math.random() > 0.5) { value = undefined; } export const alias = value;";
+    for ([_][]const u8{ unsupported, "", "export const healthy: number = 1;" }, 0..) |source, index| {
+        var length: u64 = 999;
+        var status: u32 = 999;
+        const result = process_source_checked_v1(source.ptr, source.len, true, false, &length, &status);
+        defer free_result(result, @intCast(length));
+        try std.testing.expectEqual(@as(u32, if (index == 0) 5 else 0), status);
+        if (index < 2) {
+            try std.testing.expectEqual(@as(u64, 0), length);
+            try std.testing.expectEqual(@as(u8, 0), result[0]);
+        } else {
+            try std.testing.expectEqualStrings("export declare const healthy: number;", result[0..@intCast(length)]);
+        }
+    }
+}
+
+test "checked parallel batch ABI initializes every status and retains successful siblings" {
+    const sources = [_][]const u8{
+        "export const healthy: number = 1;",
+        "let value: number | undefined = 7; if (Math.random() > 0.5) { value = undefined; } export const alias = value;",
+        "",
+    };
+    const inputs = [_][*]const u8{ sources[0].ptr, sources[1].ptr, sources[2].ptr };
+    const lengths = [_]u64{ sources[0].len, sources[1].len, sources[2].len };
+    for ([_]u32{ 1, 2, 4 }) |threads| {
+        var pointers: [3]usize = undefined;
+        var output_lengths: [3]u64 = undefined;
+        var statuses: [3]u32 = undefined;
+        process_batch_checked_v1(&inputs, &lengths, 3, true, &pointers, &output_lengths, threads, &statuses);
+        defer free_batch_results(&pointers, &output_lengths, 3);
+        try std.testing.expectEqualSlices(u32, &.{ 0, 5, 0 }, &statuses);
+        const healthy: [*]const u8 = @ptrFromInt(pointers[0]);
+        try std.testing.expectEqualStrings("export declare const healthy: number;", healthy[0..@intCast(output_lengths[0])]);
+        try std.testing.expectEqualSlices(u64, &.{ 0, 0 }, output_lengths[1..]);
+        try std.testing.expect(pointers[1] != 0 and pointers[2] != 0);
+    }
+}
+
+test "legacy source and batch ABI exports keep their allocation and result contracts" {
+    const source = "export const healthy: number = 1;";
+    const expected = "export declare const healthy: number;";
+    const plain = process_source(source.ptr, source.len, true);
+    defer free_result(plain, @intCast(result_length(plain)));
+    try std.testing.expectEqualStrings(expected, plain[0..@intCast(result_length(plain))]);
+    var length: u64 = 999;
+    const counted = process_source_with_len(source.ptr, source.len, true, &length);
+    defer free_result(counted, @intCast(length));
+    try std.testing.expectEqualStrings(expected, counted[0..@intCast(length)]);
+    const options = process_source_with_options(source.ptr, source.len, true, false);
+    defer free_result(options, @intCast(result_length(options)));
+    try std.testing.expectEqualStrings(expected, options[0..@intCast(result_length(options))]);
+    var options_length: u64 = 999;
+    const counted_options = process_source_with_options_len(source.ptr, source.len, true, false, &options_length);
+    defer free_result(counted_options, @intCast(options_length));
+    try std.testing.expectEqualStrings(expected, counted_options[0..@intCast(options_length)]);
+    const inputs = [_][*]const u8{source.ptr};
+    const lengths = [_]u64{source.len};
+    var pointers: [1]usize = undefined;
+    var output_lengths: [1]u64 = undefined;
+    process_batch(&inputs, &lengths, 1, true, &pointers, &output_lengths, 1);
+    defer free_batch_results(&pointers, &output_lengths, 1);
+    const batched: [*]const u8 = @ptrFromInt(pointers[0]);
+    try std.testing.expectEqualStrings(expected, batched[0..@intCast(output_lengths[0])]);
 }
 
 test "processSourceInternal preserves nested JSX declarations end to end" {

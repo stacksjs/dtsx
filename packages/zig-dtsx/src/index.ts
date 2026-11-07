@@ -109,6 +109,27 @@ if (selectedLibPath) {
   catch { /* The legacy source-only ABI is independently available. */ }
 }
 
+const checkedABI = {
+  process_source_checked_v1: {
+    args: [FFIType.ptr, FFIType.u64, FFIType.bool, FFIType.bool, FFIType.ptr, FFIType.ptr],
+    returns: FFIType.ptr,
+  },
+} as const
+const checkedBatchABI = {
+  process_batch_checked_v1: {
+    args: [FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.bool, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr],
+    returns: FFIType.void,
+  },
+} as const
+let checkedLib: ReturnType<typeof dlopen<typeof checkedABI>> | null = null
+let checkedBatchLib: ReturnType<typeof dlopen<typeof checkedBatchABI>> | null = null
+if (selectedLibPath) {
+  try { checkedLib = dlopen(selectedLibPath, checkedABI) }
+  catch { /* Older selected libraries retain their legacy unchecked contract. */ }
+  try { checkedBatchLib = dlopen(selectedLibPath, checkedBatchABI) }
+  catch { /* Source-level checked emission remains independently available. */ }
+}
+
 const symbols = lib?.symbols as any
 const {
   process_source,
@@ -150,6 +171,20 @@ function readResult(resultPtr: ReturnType<typeof process_source>, knownLen?: num
  */
 export const ZIG_AVAILABLE: boolean = !!lib
 export const ZIG_CONTEXT_AVAILABLE: boolean = !!contextLib
+/** Whether the selected library distinguishes emission failures from valid empty output. */
+export const ZIG_CHECKED_AVAILABLE: boolean = !!checkedLib
+export const ZIG_CHECKED_BATCH_AVAILABLE: boolean = !!checkedBatchLib
+
+function emissionError(status: number, contextual: boolean = false): Error {
+  if (status === 5) return Object.assign(new Error('Cannot infer alias: unsupported source value flow'), { code: 'DTSX_UNSUPPORTED_VALUE_FLOW' })
+  const messages: Record<number, string> = {
+    1: 'Invalid native emission context',
+    2: 'Unsupported native emission context version',
+    3: 'Unresolved module specifier in native emission context',
+    4: contextual ? 'Native contextual declaration emission failed' : 'Native declaration emission failed',
+  }
+  return new Error(messages[status] ?? `Native declaration emission failed with status ${status}`)
+}
 
 /** Resolved graph information supplied by the owning project planner. */
 export interface SourceEmissionContext {
@@ -187,13 +222,7 @@ export function processSourceWithContext(sourceCode: string, context: SourceEmis
   )
   if (status[0] !== 0) {
     if (result) free_result(result, Number(length[0]))
-    const messages: Record<number, string> = {
-      1: 'Invalid native emission context',
-      2: 'Unsupported native emission context version',
-      3: 'Unresolved module specifier in native emission context',
-      4: 'Native contextual declaration emission failed',
-    }
-    throw new Error(messages[status[0]] ?? `Native contextual emission failed with status ${status[0]}`)
+    throw emissionError(status[0], true)
   }
   return readResult(result, Number(length[0]))
 }
@@ -214,6 +243,17 @@ export function processSource(sourceCode: string, keepComments: boolean = true, 
     inputBuf = new Uint8Array(maxBytes)
   }
   const { written } = encoder.encodeInto(sourceCode, inputBuf)
+
+  if (checkedLib) {
+    const length = new BigUint64Array(1)
+    const status = new Uint32Array(1)
+    const result = checkedLib.symbols.process_source_checked_v1(ptr(inputBuf), written, keepComments, isolatedDeclarations, ptr(length), ptr(status))
+    if (status[0] !== 0) {
+      if (result) free_result(result, Number(length[0]))
+      throw emissionError(status[0])
+    }
+    return readResult(result, Number(length[0]))
+  }
 
   if (isolatedDeclarations) {
     if (process_source_with_options_len) {
@@ -251,6 +291,9 @@ export function processBatch(sources: string[], keepComments: boolean = true, th
   }
   const count = sources.length
   if (count === 0) return []
+  if (checkedLib && !checkedBatchLib) {
+    throw new Error('Checked native batch emission is unavailable in the selected zig-dtsx library; build a library with checked batch ABI v1')
+  }
 
   // Encode all sources into separate buffers and collect pointers
   const encodedBuffers: Uint8Array[] = new Array(count)
@@ -280,36 +323,34 @@ export function processBatch(sources: string[], keepComments: boolean = true, th
   // Allocate output arrays
   const outPtrsArray = new BigUint64Array(count)
   const outLensArray = new BigUint64Array(count)
+  const outStatuses = new Uint32Array(count)
 
   // Call batch API
-  _process_batch(
-    ptr(inputPtrsArray),
-    ptr(inputLensArray),
-    count,
-    keepComments,
-    ptr(outPtrsArray),
-    ptr(outLensArray),
-    threadCount,
-  )
-
-  // Read results
-  const results: string[] = new Array(count)
-  for (let i = 0; i < count; i++) {
-    const resultPtr = Number(outPtrsArray[i])
-    const resultLen = Number(outLensArray[i])
-    if (resultLen === 0) {
-      results[i] = ''
-    }
-    else {
-      const buf = toArrayBuffer(resultPtr as Pointer, 0, resultLen)
-      results[i] = decoder.decode(buf)
-    }
+  if (checkedBatchLib) {
+    checkedBatchLib.symbols.process_batch_checked_v1(
+      ptr(inputPtrsArray), ptr(inputLensArray), count, keepComments,
+      ptr(outPtrsArray), ptr(outLensArray), threadCount, ptr(outStatuses),
+    )
+  }
+  else {
+    _process_batch(ptr(inputPtrsArray), ptr(inputLensArray), count, keepComments, ptr(outPtrsArray), ptr(outLensArray), threadCount)
   }
 
-  // Free all results at once
-  _free_batch_results(ptr(outPtrsArray), ptr(outLensArray), count)
-
-  return results
+  // Read results
+  try {
+    const results: string[] = new Array(count)
+    for (let i = 0; i < count; i++) {
+      if (outStatuses[i] !== 0) throw emissionError(outStatuses[i])
+      const resultPtr = Number(outPtrsArray[i])
+      const resultLen = Number(outLensArray[i])
+      if (resultLen === 0) results[i] = ''
+      else results[i] = decoder.decode(toArrayBuffer(resultPtr as Pointer, 0, resultLen))
+    }
+    return results
+  }
+  finally {
+    _free_batch_results(ptr(outPtrsArray), ptr(outLensArray), count)
+  }
 }
 
 export default { processSource, processBatch, processSourceWithContext } as { processSource: typeof processSource, processBatch: typeof processBatch, processSourceWithContext: typeof processSourceWithContext }
