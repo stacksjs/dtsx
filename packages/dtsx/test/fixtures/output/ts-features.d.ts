@@ -97,6 +97,7 @@ export declare class SymbolClass {
 export declare class PrivateFieldsClass {
   name: string;
   #private;
+  static #private_static;
   constructor(name: string, data: number);
   get data(): number;
   processData(): number;
