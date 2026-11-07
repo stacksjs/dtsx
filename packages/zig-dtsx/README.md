@@ -16,6 +16,19 @@ the matching shared library from the package's `prebuilt` directory.
 The standalone CLI archives on [GitHub Releases](https://github.com/stacksjs/dtsx/releases)
 are a separate delivery surface and do not require importing the Bun FFI binding.
 
+Linux FFI shared libraries target GNU libc 2.17 explicitly, because they are
+loaded into Bun's glibc process. The standalone Linux CLI uses musl. Using the
+default Linux target for both can produce a shared library that requests
+`libc.so`, which is a linker script on glibc hosts and fails with an invalid ELF
+header. Release qualification loads the packaged binding in isolation and
+strictly checks its emitted declarations before publication.
+
+For v0.11.31, the additional `zig-dtsx-lib-linux-x64-gnu.tar.gz` and
+`zig-dtsx-lib-linux-arm64-gnu.tar.gz` release assets correct the shared-library
+target. They use the unchanged tagged emitter, original Zig compiler and
+ReleaseFast settings. `linux-gnu-manifest.json` records the source, targets,
+compiler, workflow and SHA-256 hashes. The original assets remain unchanged.
+
 ## Usage
 
 ### As a Library

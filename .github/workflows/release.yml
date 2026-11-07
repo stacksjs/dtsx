@@ -10,12 +10,17 @@ on:
         description: Existing v-prefixed tag to release
         required: true
         type: string
+      linux_libraries_only:
+        description: Append corrected GNU libc libraries to v0.11.31 without republishing packages
+        type: boolean
+        default: false
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   release:
+    if: ${{ !inputs.linux_libraries_only }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,6 +76,7 @@ jobs:
             local exe_ext="$3"  # CLI extension (empty for unix, .exe for windows)
             local lib_dir="$4"  # subdirectory of zig-out/ containing the shared library (lib or bin)
             local lib_file="$5" # exact shared library filename inside lib_dir
+            local lib_target="${6:-$target}"
 
             # Clean to avoid mixing artifacts between targets
             rm -rf zig-out
@@ -78,7 +84,7 @@ jobs:
             zig build cli -Doptimize=fast -Dtarget="$target"
             zip -j "../dtsx/bin/zig-dtsx-${plat}.zip" "zig-out/bin/zig-dtsx${exe_ext}"
 
-            zig build lib -Doptimize=fast -Dtarget="$target"
+            zig build lib -Doptimize=fast -Dtarget="$lib_target"
             # Windows DLLs land in zig-out/bin/, unix shared libs in zig-out/lib/.
             # tar.gz for the GH release (standalone download); copy into prebuilt/
             # for the Pantry tarball so Bun FFI consumers get the lib without a postinstall.
@@ -87,12 +93,16 @@ jobs:
             cp "zig-out/${lib_dir}/${lib_file}" "prebuilt/${plat}/"
           }
 
-          build_target x86_64-linux    linux-x64     ""     lib libzig-dtsx.so
-          build_target aarch64-linux   linux-arm64   ""     lib libzig-dtsx.so
+          # Standalone CLIs use musl; Bun FFI libraries load into a glibc process.
+          build_target x86_64-linux-musl  linux-x64   ""     lib libzig-dtsx.so x86_64-linux-gnu.2.17
+          build_target aarch64-linux-musl linux-arm64 ""     lib libzig-dtsx.so aarch64-linux-gnu.2.17
           build_target x86_64-macos    darwin-x64    ""     lib libzig-dtsx.dylib
           build_target aarch64-macos   darwin-arm64  ""     lib libzig-dtsx.dylib
           build_target x86_64-windows  windows-x64   '.exe' bin zig-dtsx.dll
           build_target x86_64-freebsd  freebsd-x64   ""     lib libzig-dtsx.so
+
+      - name: Qualify packaged Linux FFI library before publication
+        run: bun scripts/verify-native-library.ts
 
       # Ship every package to the Pantry registry (registry.pantry.dev). This is
       # zig-dtsx's home — Home consumes the native binary via `pantry install`.
@@ -163,3 +173,104 @@ jobs:
           gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | grep -Fx 'checksums.txt'
           release_body="$(gh release view "${RELEASE_TAG}" --json body --jq '.body')"
           test -n "${release_body}"
+
+  linux-libraries:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_libraries_only }}
+    name: Repair GNU library (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+            target: x86_64-linux-gnu.2.17
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-linux-gnu.2.17
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Check out the unchanged release source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          path: native-source
+      - name: Validate repair scope
+        env:
+          REPAIR_TAG: ${{ inputs.tag }}
+        run: test "$REPAIR_TAG" = v0.11.31
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Install the original release compiler
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: 0.17.0-dev.1282+c0f9b51d8
+      - name: Build the released emitter with GNU libc linkage
+        working-directory: native-source/packages/zig-dtsx
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(zig version)" = '0.17.0-dev.1282+c0f9b51d8'
+          zig build lib -Doptimize=ReleaseFast -Dtarget="$NATIVE_TARGET" -j2
+          readelf -d zig-out/lib/libzig-dtsx.so
+          readelf -d zig-out/lib/libzig-dtsx.so | grep -F 'Shared library: [libc.so.6]'
+          mkdir -p "prebuilt/linux-$NATIVE_ARCH"
+          cp zig-out/lib/libzig-dtsx.so "prebuilt/linux-$NATIVE_ARCH/"
+      - name: Install the benchmark consumer compiler outside timing
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-consumer"
+          printf '{"private":true}\n' > "$RUNNER_TEMP/native-consumer/package.json"
+          bun add --cwd "$RUNNER_TEMP/native-consumer" --exact typescript@6.0.3
+      - name: Qualify the actual packaged binding and library
+        run: bun scripts/verify-native-library.ts native-source/packages/zig-dtsx "$RUNNER_TEMP/native-consumer/node_modules/typescript/bin/tsc"
+      - name: Package an additional immutable release asset
+        env:
+          NATIVE_ARCH: ${{ matrix.arch }}
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p artifacts
+          source_commit="$(git -C native-source rev-parse HEAD)"
+          source_epoch="$(git -C native-source show -s --format=%ct HEAD)"
+          export NATIVE_SOURCE_COMMIT="$source_commit"
+          tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner -C native-source/packages/zig-dtsx/zig-out/lib -cf - libzig-dtsx.so | gzip -n > "artifacts/zig-dtsx-lib-linux-$NATIVE_ARCH-gnu.tar.gz"
+          bun -e 'const {createHash}=await import("node:crypto"); const hash=async p=>createHash("sha256").update(await Bun.file(p).bytes()).digest("hex"); const arch=process.env.NATIVE_ARCH; const asset=`zig-dtsx-lib-linux-${arch}-gnu.tar.gz`; await Bun.write(`artifacts/metadata-${arch}.json`,JSON.stringify({asset,sourceCommit:process.env.NATIVE_SOURCE_COMMIT,target:process.env.NATIVE_TARGET,zigVersion:"0.17.0-dev.1282+c0f9b51d8",optimize:"ReleaseFast",archiveSha256:await hash(`artifacts/${asset}`),librarySha256:await hash("native-source/packages/zig-dtsx/zig-out/lib/libzig-dtsx.so"),bindingSha256:await hash("native-source/packages/zig-dtsx/src/index.ts")},null,2)+"\n")'
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: native-linux-gnu-${{ matrix.arch }}
+          path: artifacts
+          if-no-files-found: error
+
+  publish-linux-libraries:
+    needs: linux-libraries
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_libraries_only }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-linux-gnu-*
+          merge-multiple: true
+          path: artifacts
+      - name: Record source, compiler, checksums and qualification provenance
+        working-directory: artifacts
+        env:
+          REPAIR_TAG: ${{ inputs.tag }}
+        run: |
+          sha256sum zig-dtsx-lib-linux-*-gnu.tar.gz > checksums-linux-gnu.txt
+          bun -e 'const libraries=await Promise.all(["x64","arm64"].map(arch=>Bun.file(`metadata-${arch}.json`).json())); if(libraries.some(lib=>lib.sourceCommit!==libraries[0].sourceCommit))throw new Error("Mixed release sources"); await Bun.write("linux-gnu-manifest.json",JSON.stringify({schemaVersion:1,tag:process.env.REPAIR_TAG,commit:libraries[0].sourceCommit,workflowCommit:process.env.GITHUB_SHA,workflowRun:process.env.GITHUB_RUN_ID,libraries},null,2)+"\n")'
+      - name: Append verified libraries without replacing existing release assets
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPAIR_TAG: ${{ inputs.tag }}
+        run: |
+          gh release view "$REPAIR_TAG" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$REPAIR_TAG" --repo "$GITHUB_REPOSITORY" zig-dtsx-lib-linux-*-gnu.tar.gz checksums-linux-gnu.txt linux-gnu-manifest.json
