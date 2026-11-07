@@ -139,7 +139,7 @@ jobs:
         run: zig build
 
       - name: Unit Test
-        run: bun test
+        run: bun run test
 
       - name: Run Zig Unit Tests
         working-directory: packages/zig-dtsx
