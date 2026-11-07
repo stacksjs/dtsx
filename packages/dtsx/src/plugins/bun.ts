@@ -56,6 +56,7 @@ interface BunBuild {
     entrypoints: string[]
     outdir?: string
     root?: string
+    target?: 'bun' | 'browser' | 'node'
   }
 }
 
@@ -127,6 +128,7 @@ export function dts(options: BunPluginOptions = {}): BunPlugin {
         root,
         entrypoints: entrypoints.length > 0 ? entrypoints : ['index.ts'],
         outdir: generateOptions.outdir || build.config.outdir || './dist',
+        moduleSpecifierMode: generateOptions.moduleSpecifierMode ?? (build.config.target === 'node' ? 'node' : 'preserve'),
       })
     },
   }

@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "build:zig": "zig build -Doptimize=ReleaseFast",
+    "build:zig": "zig build -Doptimize=fast",
     "build:zig-debug": "zig build",
     "build": "bun run build:zig",
     "test": "bun test",

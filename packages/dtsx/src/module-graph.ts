@@ -7,23 +7,22 @@
  *     (the silent breakage in stacksjs/dtsx#3090).
  *  3. Drive `bundle: true` so it can inline reachable declarations.
  *
- * The scanner here is intentionally lightweight — a dedicated regex pass
- * with comment + string stripping. Faster than running the full extractor
- * and good enough for the path/specifier extraction it needs to do.
+ * Graph discovery and rewriting share grammatical module literals, including
+ * template substitutions and decoded quoted values, without running an emitter.
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { readTextFile } from './compat'
-import { isRegexStart, skipRegexLiteral } from './lexical'
 import { logger } from './logger'
+import { quoteModuleSpecifier, scanModuleReferences } from './module-references'
 import { readEffectiveTsconfig } from './tsconfig'
 
 /**
  * A single relative re-export or import reference parsed out of source.
  */
 export interface ReExportRef {
-  /** Specifier as written in source, e.g. './router' or '../utils' */
+  /** Decoded module value, e.g. './router' or '../utils'. */
   specifier: string
   /** Statement shape */
   kind: 'export-star' | 'export-star-as' | 'export-named' | 'import'
@@ -180,7 +179,17 @@ function containsPath(directory: string, file: string): boolean {
 export async function createModuleResolver(options: ModuleResolutionOptions): Promise<ModuleResolver> {
   const config = await readEffectiveTsconfig(resolve(options.cwd, options.tsconfigPath || 'tsconfig.json'))
   const mappings = Object.entries(config?.paths ?? {})
-  if (mappings.length === 0) return resolveRelativeSpecifier
+  if (mappings.length === 0) {
+    const resolveModule: ModuleResolver = (specifier, fromFile) => resolveRelativeSpecifier(specifier, fromFile)
+    // Final declaration output depends on resolved targets even without aliases.
+    // In particular, an unchanged importer may resolve to a different file kind.
+    resolveModule.cacheKey = files => JSON.stringify(files.map(file => ({
+      file,
+      references: scanReExportSpecifiers(readFileSync(file, 'utf8'), { includeImports: true })
+        .map(reference => ({ specifier: reference.specifier, resolution: resolveModule(reference.specifier, file) })),
+    })))
+    return resolveModule
+  }
   const base = config?.baseUrl ?? config?.pathsBasePath ?? options.cwd
   const configuredRoot = resolve(options.cwd, options.root)
   const packages = new Map<string, PackageBoundary | undefined>()
@@ -275,149 +284,30 @@ export async function createModuleResolver(options: ModuleResolutionOptions): Pr
 }
 
 /**
- * Drop comments while leaving string literals intact.
- *
- * String contents are preserved so that real `from '…'` clauses still
- * match the regex. The regex itself is anchored to statement starts
- * (`^`, newline, `;`, `{`, `}`), which keeps it from matching `export`
- * appearing inside string bodies in normal code.
- */
-// eslint-disable-next-line pickier/no-unused-vars -- false positive: `input` is read on the next lines
-function stripComments(input: string, strings: Array<{ start: number, end: number }> = []): string {
-  const len = input.length
-  let out = ''
-  let i = 0
-
-  while (i < len) {
-    const c = input.charCodeAt(i)
-
-    // String / template literal
-    if (c === 0x22 /* " */ || c === 0x27 /* ' */ || c === 0x60 /* ` */) {
-      const quote = c
-      const start = i
-      out += input[i++]
-      while (i < len) {
-        const cc = input.charCodeAt(i)
-        const ch = input[i++]
-        out += quote === 0x60 && cc !== quote
-          ? (cc === 0x0A || cc === 0x0D ? ch : ' ')
-          : ch
-        if (cc === 0x5C /* \\ */ && i < len) {
-          const escaped = input[i++]
-          out += quote === 0x60 ? (escaped === '\n' || escaped === '\r' ? escaped : ' ') : escaped
-          continue
-        }
-        if (cc === quote) break
-      }
-      strings.push({ start, end: i })
-      continue
-    }
-
-    if (c === 0x2F /* / */ && i + 1 < len) {
-      const c2 = input.charCodeAt(i + 1)
-      if (c2 === 0x2F /* / */) {
-        out += '  '
-        i += 2
-        while (i < len && input.charCodeAt(i) !== 0x0A) { out += ' '; i++ }
-        continue
-      }
-      if (c2 === 0x2A /* * */) {
-        out += '  '
-        i += 2
-        while (i < len && !(input.charCodeAt(i) === 0x2A && input.charCodeAt(i + 1) === 0x2F)) {
-          out += input[i] === '\n' || input[i] === '\r' ? input[i] : ' '
-          i++
-        }
-        if (i < len) { out += '  '; i += 2 }
-        continue
-      }
-      if (isRegexStart(input, i)) {
-        const end = skipRegexLiteral(input, i)
-        out += input.slice(i, end).replace(/[^\r\n]/g, ' ')
-        i = end
-        continue
-      }
-    }
-
-    out += input[i++]
-  }
-
-  return out
-}
-
-// Anchor `export`/`import` to statement starts (start-of-input, newline,
-// semicolon, or block braces). This keeps us from matching the substring
-// `export * from './fake'` inside a string literal like
-// `const s = "export * from './fake'"`.
-const RE_EXPORT_FROM = /(?:^|[\n;{}])\s*export\s+(type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+(['"])([^'"]+)\2/g
-const IMPORT_TYPE = /\bimport\s*\(\s*(['"])([^'"]+)\1/g
-const IMPORT_FROM = /(?:^|[\n;{}])\s*import\s+(type\s+)?(?:[^'";]+?\s+from\s+)?(['"])([^'"]+)\2/g
-
-/**
- * Quickly scan source for relative re-export references.
- *
- * By default only re-exports are returned, since plain `import`s do not
- * propagate types to consumers unless they are also re-exported. Pass
- * `includeImports: true` for the bundle pathway, where any reachable
- * file's declarations may need to be inlined.
+ * Scan grammatical module references. Re-exports are returned first, followed
+ * by static imports and import types, preserving each group's source order.
  */
 export function scanReExportSpecifiers(
   source: string,
   options: { includeImports?: boolean } = {},
 ): ReExportRef[] {
-  const refs: ReExportRef[] = []
-  const strings: Array<{ start: number, end: number }> = []
-  const code = stripComments(source, strings)
-  const inString = (offset: number): boolean => strings.some(range => offset > range.start && offset < range.end)
-
-  RE_EXPORT_FROM.lastIndex = 0
-  let m: RegExpExecArray | null
-  // eslint-disable-next-line no-cond-assign
-  while ((m = RE_EXPORT_FROM.exec(code)) !== null) {
-    if (inString(m.index)) continue
-    const isTypeOnly = !!m[1]
-    const specifier = m[3]
-    const head = m[0]
-    let kind: ReExportRef['kind']
-    if (head.includes('* as '))
-      kind = 'export-star-as'
-    else if (head.includes('*'))
-      kind = 'export-star'
-    else
-      kind = 'export-named'
-    refs.push({ specifier, kind, isTypeOnly })
-  }
-
-  if (options.includeImports) {
-    IMPORT_FROM.lastIndex = 0
-    while ((m = IMPORT_FROM.exec(code)) !== null) {
-      if (inString(m.index)) continue
-      refs.push({ specifier: m[3], kind: 'import', isTypeOnly: !!m[1] })
-    }
-  }
-
-  if (options.includeImports) {
-    IMPORT_TYPE.lastIndex = 0
-    while ((m = IMPORT_TYPE.exec(code)) !== null) {
-      if (!inString(m.index)) refs.push({ specifier: m[2], kind: 'import', isTypeOnly: false })
-    }
-  }
-  return refs
+  const references = scanModuleReferences(source)
+  const categories = options.includeImports ? ['export', 'static-import', 'import-type'] : ['export']
+  return categories.flatMap(category => references
+    .filter(reference => reference.category === category)
+    .map(({ specifier, kind, isTypeOnly }) => ({ specifier, kind, isTypeOnly })))
 }
 
-/** Rewrite real module specifiers without changing comments or string values. */
+/** Rewrite only module literals, preserving raw spelling when their value is unchanged. */
 export function rewriteModuleSpecifiers(source: string, rewrite: (specifier: string) => string): string {
-  const strings: Array<{ start: number, end: number }> = []
-  const code = stripComments(source, strings)
-  const pattern = /\b(?:from\s*|import\s*(?:\(\s*)?)(['"])([^'"]+)\1/g
   const changes: Array<{ start: number, end: number, value: string }> = []
-  let match: RegExpExecArray | null
-  // eslint-disable-next-line no-cond-assign
-  while ((match = pattern.exec(code)) !== null) {
-    if (strings.some(range => match!.index > range.start && match!.index < range.end)) continue
-    const start = match.index + match[0].lastIndexOf(`${match[1]}${match[2]}${match[1]}`) + 1
-    const value = rewrite(match[2])
-    if (value !== match[2]) changes.push({ start, end: start + match[2].length, value })
+  for (const reference of scanModuleReferences(source)) {
+    const value = rewrite(reference.specifier)
+    if (value !== reference.specifier) changes.push({
+      start: reference.start,
+      end: reference.end,
+      value: quoteModuleSpecifier(value, source[reference.start]),
+    })
   }
   let result = source
   for (const change of changes.reverse()) result = result.slice(0, change.start) + change.value + result.slice(change.end)

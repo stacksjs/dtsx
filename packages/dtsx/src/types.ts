@@ -17,6 +17,16 @@ export interface DtsGenerationConfig {
    */
   outputStructure?: 'mirror' | 'flat'
   /**
+   * Declaration module specifiers: retain existing spelling, or use explicit
+   * Node runtime extensions derived from each resolved target's output kind.
+   * Written runtime extensions are retained in either mode.
+   * In node mode, processFile maps local authored declaration targets without
+   * claiming to deliver them; generate refuses importers when those targets
+   * are not delivered by the package build. Preserve mode keeps legacy behavior.
+   * @default 'preserve'
+   */
+  moduleSpecifierMode?: 'preserve' | 'node'
+  /**
    * Import order priority patterns. Imports matching earlier patterns appear first.
    * Use 'bun', 'node:', or any string to match against the import source.
    * @default ['bun']
@@ -127,6 +137,11 @@ export interface DtsGenerationConfig {
    * @default false
    */
   incremental?: boolean
+  /**
+   * Directory for the incremental declaration cache, relative to cwd.
+   * @default '.dtsx-cache'
+   */
+  cacheDir?: string
   /**
    * Clear the incremental build cache before generating
    * @default false

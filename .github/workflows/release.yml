@@ -62,10 +62,10 @@ jobs:
             # Clean to avoid mixing artifacts between targets
             rm -rf zig-out
 
-            zig build cli -Doptimize=ReleaseFast -Dtarget="$target"
+            zig build cli -Doptimize=fast -Dtarget="$target"
             zip -j "../dtsx/bin/zig-dtsx-${plat}.zip" "zig-out/bin/zig-dtsx${exe_ext}"
 
-            zig build lib -Doptimize=ReleaseFast -Dtarget="$target"
+            zig build lib -Doptimize=fast -Dtarget="$target"
             # Windows DLLs land in zig-out/bin/, unix shared libs in zig-out/lib/.
             # tar.gz for the GH release (standalone download); copy into prebuilt/
             # for the Pantry tarball so Bun FFI consumers get the lib without a postinstall.

@@ -31,7 +31,9 @@ if (ZIG_AVAILABLE) {
 
 ### Building from Source
 
-Requires [Zig](https://ziglang.org/) to be installed.
+Requires [Zig 0.17.1](https://ziglang.org/) and Bun 1.4.4. From the repository root,
+run `pantry install` and activate the project environment with `eval "$(pantry env)"`.
+Both versions are pinned in `deps.yaml`.
 
 ```bash
 # Build optimized release binary

@@ -161,7 +161,7 @@ jobs:
       - name: Build and stage the native host library
         working-directory: packages/zig-dtsx
         run: |
-          zig build -Doptimize=ReleaseFast
+          zig build -Doptimize=fast
           mkdir -p prebuilt/linux-x64
           cp zig-out/lib/libzig-dtsx.so prebuilt/linux-x64/
 

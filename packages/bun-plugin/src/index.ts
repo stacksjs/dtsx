@@ -1,9 +1,8 @@
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { BunPlugin } from 'bun'
 import process from 'node:process'
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
+import { clearBuildCache } from '@stacksjs/dtsx/cache'
 import { generate } from '@stacksjs/dtsx/generator'
 
 /**
@@ -77,24 +76,6 @@ export type BuildEventData =
 export type BuildEventListener = (_event: BuildEvent) => void | Promise<void>
 
 /**
- * Incremental cache entry
- */
-interface CacheEntry {
-  hash: string
-  outputFile: string
-  timestamp: number
-}
-
-/**
- * Incremental cache manifest
- */
-interface CacheManifest {
-  version: string
-  configHash: string
-  entries: Record<string, CacheEntry>
-}
-
-/**
  * Configuration interface extending DtsGenerationOption with build-specific properties
  */
 export interface PluginConfig extends DtsGenerationOption {
@@ -103,6 +84,7 @@ export interface PluginConfig extends DtsGenerationOption {
       root?: string
       outdir?: string
       entrypoints?: string[]
+      target?: 'bun' | 'browser' | 'node'
     }
   }
 
@@ -185,98 +167,6 @@ class BuildEventEmitter {
 }
 
 /**
- * Incremental cache manager
- */
-class IncrementalCache {
-  private manifest: CacheManifest
-  private cacheDir: string
-  private manifestPath: string
-
-  constructor(cacheDir: string, configHash: string) {
-    this.cacheDir = cacheDir
-    this.manifestPath = join(cacheDir, 'manifest.json')
-    this.manifest = this.loadManifest(configHash)
-  }
-
-  private loadManifest(configHash: string): CacheManifest {
-    try {
-      if (existsSync(this.manifestPath)) {
-        const data = JSON.parse(readFileSync(this.manifestPath, 'utf-8'))
-        // Invalidate cache if config changed
-        if (data.configHash === configHash && data.version === '1.0') {
-          return data
-        }
-      }
-    }
-    catch {
-      // Ignore cache read errors
-    }
-
-    return {
-      version: '1.0',
-      configHash,
-      entries: {},
-    }
-  }
-
-  save(): void {
-    try {
-      const { mkdirSync } = require('node:fs')
-      mkdirSync(this.cacheDir, { recursive: true })
-      writeFileSync(this.manifestPath, JSON.stringify(this.manifest, null, 2))
-    }
-    catch {
-      // Ignore cache write errors
-    }
-  }
-
-  getEntry(filePath: string): CacheEntry | undefined {
-    return this.manifest.entries[filePath]
-  }
-
-  setEntry(filePath: string, entry: CacheEntry): void {
-    this.manifest.entries[filePath] = entry
-  }
-
-  isValid(filePath: string, currentHash: string): boolean {
-    const entry = this.getEntry(filePath)
-    return entry?.hash === currentHash
-  }
-
-  clear(): void {
-    this.manifest.entries = {}
-    this.save()
-  }
-}
-
-/**
- * Compute hash of file content
- */
-function computeFileHash(filePath: string): string {
-  try {
-    const content = readFileSync(filePath, 'utf-8')
-    return createHash('md5').update(content).digest('hex')
-  }
-  catch {
-    return ''
-  }
-}
-
-/**
- * Compute hash of config for cache invalidation
- */
-function computeConfigHash(config: DtsGenerationOption): string {
-  const relevantConfig = {
-    root: config.root,
-    outdir: config.outdir,
-    entrypoints: config.entrypoints,
-    clean: config.clean,
-    tsconfigPath: config.tsconfigPath,
-  }
-  return createHash('md5').update(JSON.stringify(relevantConfig)).digest('hex')
-}
-
-/**
  * Outdirs whose stale declarations were already cleaned by a dts build in
  * this process. Tracked at module level because Bun plugins are stateless
  * across builds.
@@ -318,12 +208,9 @@ export function dts(options: PluginConfig = {}): BunPlugin {
 
     async setup(build) {
       const startTime = Date.now()
-      let cache: IncrementalCache | null = null
-      const fromCache = 0
 
       try {
-        const config = normalizeConfig(dtsOptions, build)
-        const configHash = computeConfigHash(config)
+        const config = normalizeConfig({ ...dtsOptions, incremental, cacheDir }, build)
 
         // Sequential Bun.build calls in one process frequently share an
         // outdir (one build per entrypoint). Cleaning on every call would
@@ -338,11 +225,6 @@ export function dts(options: PluginConfig = {}): BunPlugin {
           else {
             cleanedOutdirs.add(outdirPath)
           }
-        }
-
-        // Initialize incremental cache
-        if (incremental) {
-          cache = new IncrementalCache(resolve(cacheDir), configHash)
         }
 
         // Emit start event
@@ -385,10 +267,7 @@ export function dts(options: PluginConfig = {}): BunPlugin {
         const stats = await generateWithTimeout()
         const duration = Date.now() - startTime
 
-        // Save cache
-        if (cache) {
-          cache.save()
-        }
+        const fromCache = Math.max(0, stats.filesProcessed - stats.filesGenerated - stats.filesFailed)
 
         // Emit complete event
         await emitter.emit('complete', {
@@ -547,6 +426,7 @@ function normalizeConfig(options: PluginConfig, build: PluginConfig['build']): D
     outdir,
     clean: options.clean ?? true,
     tsconfigPath: options.tsconfigPath,
+    moduleSpecifierMode: options.moduleSpecifierMode ?? ((build?.config.target ?? options.build?.config.target) === 'node' ? 'node' : 'preserve'),
   }
 }
 
@@ -592,8 +472,7 @@ export function dtsCheck(options: Omit<PluginConfig, 'outdir'>): BunPlugin {
  * Clear the incremental cache
  */
 export function clearCache(cacheDir = '.dtsx-cache'): void {
-  const cache = new IncrementalCache(resolve(cacheDir), '')
-  cache.clear()
+  clearBuildCache(resolve(cacheDir))
 }
 
 export type { DtsGenerationOption, GenerationStats }

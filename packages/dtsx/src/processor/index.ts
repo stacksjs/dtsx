@@ -5,7 +5,7 @@ import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
 import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
 import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
-import { extractAllImportedItems, parseImportStatement } from './imports'
+import { extractAllImportedItems, getImportSourceLiteral, parseImportStatement } from './imports'
 
 function assertNever(value: never, message?: string): never {
   throw new Error(message || `Unexpected value: ${value}`)
@@ -272,10 +272,17 @@ export function processDeclarations(
       if (!parsed)
         continue
 
-      const { defaultName, namedItems, source, isTypeOnly, isNamespace } = parsed
+      const { defaultName, namedItems, isTypeOnly, isNamespace } = parsed
 
       // Filter to only used items (manual loop avoids closure allocation)
       const usedDefault = defaultName ? usedImportItems.has(defaultName) : false
+      if (parsed.isImportEquals) {
+        if (usedDefault) {
+          const original = imp.text.trim()
+          processedImports.push(original.endsWith(';') ? original : `${original};`)
+        }
+        continue
+      }
       let usedNamedStr = ''
       let usedNamedCount = 0
       for (let ni = 0; ni < namedItems.length; ni++) {
@@ -305,7 +312,9 @@ export function processDeclarations(
         else if (usedNamedCount > 0) {
           importStatement += `{ ${usedNamedStr} }`
         }
-        importStatement += ` from '${source}';`
+        const sourceLiteral = getImportSourceLiteral(imp.text)
+        if (!sourceLiteral) throw new Error('Cannot locate a grammatical module literal in the import declaration')
+        importStatement += ` from ${sourceLiteral};`
         processedImports.push(importStatement)
       }
     }

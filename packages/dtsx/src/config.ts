@@ -15,6 +15,7 @@ export const defaultConfig: DtsGenerationConfig = {
   clean: true,
   tsconfigPath: './tsconfig.json',
   outputStructure: 'mirror',
+  moduleSpecifierMode: 'preserve',
   verbose: false,
   importOrder: ['bun'],
   declarationMap: false,

@@ -6,6 +6,7 @@ const types = @import("types.zig");
 const type_inf = @import("type_inference.zig");
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
+const module_specifiers = @import("module_specifiers.zig");
 
 /// Check if a character is an identifier character (for word boundary checks)
 inline fn isIdentChar(c: u8) bool {
@@ -148,6 +149,7 @@ const ParsedImportResult = struct {
     source: []const u8,
     is_type_only: bool,
     is_namespace: bool,
+    is_import_equals: bool,
     namespace_name: ?[]const u8,
 };
 
@@ -160,6 +162,7 @@ fn getParsedImport(decl: Declaration) ?ParsedImportResult {
         .source = pi.source,
         .is_type_only = pi.is_type_only,
         .is_namespace = pi.is_namespace,
+        .is_import_equals = pi.is_import_equals,
         .namespace_name = pi.namespace_name,
     };
 }
@@ -680,7 +683,34 @@ pub fn processDeclarations(
     keep_comments: bool,
     import_order: []const []const u8,
 ) ![]const u8 {
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, null);
+}
+
+/// Context-aware native emission. The legacy entrypoint retains its original
+/// six arguments and byte-preserving module spelling.
+pub fn processDeclarationsWithContext(
+    alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
+    declarations: []const Declaration,
+    source_code: []const u8,
+    keep_comments: bool,
+    import_order: []const []const u8,
+    context: *const module_specifiers.Context,
+) ![]const u8 {
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, context);
+}
+
+fn processDeclarationsInternal(
+    alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
+    declarations: []const Declaration,
+    source_code: []const u8,
+    keep_comments: bool,
+    import_order: []const []const u8,
+    context: ?*const module_specifiers.Context,
+) ![]const u8 {
     var result = std.array_list.Managed(u8).init(result_alloc);
+    errdefer result.deinit();
     // DTS output is typically 30-60% of source size (bodies stripped, types added).
     // Bias toward 60% + 256 byte slack to avoid the final 1-2 reallocs on average files.
     try result.ensureTotalCapacity((source_code.len * 6) / 10 + 256);
@@ -936,6 +966,16 @@ pub fn processDeclarations(
 
             const used_default = if (parsed.default_name) |dn| used_import_items.contains(dn) else false;
             const used_namespace = if (parsed.namespace_name) |name| used_import_items.contains(name) else false;
+            if (parsed.is_import_equals) {
+                if (used_default) {
+                    const original = ch.sliceTrimmed(imp.text, 0, imp.text.len);
+                    import_buf.clearRetainingCapacity();
+                    try import_buf.appendSlice(original);
+                    if (!ch.endsWith(original, ";")) try import_buf.append(';');
+                    try processed_imports.append(try import_buf.toOwnedSlice());
+                }
+                continue;
+            }
             used_named.clearRetainingCapacity();
 
             for (parsed.named_items) |item| {
@@ -985,9 +1025,9 @@ pub fn processDeclarations(
                     try import_buf.appendSlice(" }");
                 }
 
-                try import_buf.appendSlice(" from '");
-                try import_buf.appendSlice(parsed.source);
-                try import_buf.appendSlice("';");
+                try import_buf.appendSlice(" from ");
+                try module_specifiers.appendImportSourceLiteral(alloc, imp.text, &import_buf);
+                try import_buf.append(';');
 
                 try processed_imports.append(try import_buf.toOwnedSlice());
             }
@@ -1203,6 +1243,13 @@ pub fn processDeclarations(
     for (default_exports.items) |stmt| {
         if (result.items.len > 0) try result.append('\n');
         try result.appendSlice(stmt);
+    }
+
+    if (context) |resolved| {
+        const contextual_output = try module_specifiers.rewrite(alloc, result.items, resolved);
+        defer alloc.free(contextual_output);
+        result.clearRetainingCapacity();
+        try result.appendSlice(contextual_output);
     }
 
     // Append null terminator so FFI callers get a C string without extra copy.

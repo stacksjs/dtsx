@@ -64,6 +64,9 @@ pub fn build(b: *std.Build) void {
         "src/scanner.zig",
         "src/emitter.zig",
         "src/type_inference.zig",
+        "src/module_specifiers.zig",
+        "src/lib.zig",
+        "src/zig_dtsx.zig",
     };
 
     const test_step = b.step("test", "Run unit tests");
@@ -73,6 +76,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(test_file),
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
             }),
         });
         const run_unit_test = b.addRunArtifact(unit_test);

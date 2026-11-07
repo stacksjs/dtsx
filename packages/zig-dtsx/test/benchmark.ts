@@ -316,7 +316,7 @@ function printProjectResults(results: ProjectResult[]): void {
 async function main() {
   if (!existsSync(zigBinary)) {
     console.error(`Zig binary not found at: ${zigBinary}`)
-    console.error('Run "zig build -Doptimize=ReleaseFast" first.')
+    console.error('Run "zig build -Doptimize=fast" first.')
     process.exit(1)
   }
 
