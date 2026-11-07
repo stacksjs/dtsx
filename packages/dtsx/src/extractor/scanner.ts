@@ -8,6 +8,7 @@ import { projectBindingPattern } from '../binding-patterns'
 import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
+import { attachFunctionProperties } from '../function-properties'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
@@ -4071,6 +4072,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       for (const group of nonExportedFunctionGroups.values()) removeOverloadImplementations(group)
     }
 
+    attachFunctionProperties(source, declarations, nonExportedTypes, nonExportedFunctionGroups)
     attachEnumBodies(declarations, nonExportedTypes)
     attachComputedKeyConstants(declarations, nonExportedTypes)
     if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)

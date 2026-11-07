@@ -1001,6 +1001,7 @@ pub const Scanner = struct {
             while (groups.next()) |group| removeOverloadImplementations(group);
         }
 
+        try @import("function_properties.zig").attach(self.allocator, self.source, self.declarations.items, &self.non_exported_types, &self.non_exported_function_groups);
         try @import("enum_declarations.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         try @import("computed_keys.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         if (!self.isolated_declarations) try value_inference.inferDeclarationValueAliases(self.allocator, self.source, self.declarations.items, &self.non_exported_types);
