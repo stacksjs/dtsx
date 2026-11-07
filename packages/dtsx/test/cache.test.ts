@@ -109,7 +109,7 @@ describe('BuildCache', () => {
 
       const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      expect(manifest.version).toBe(20)
+      expect(manifest.version).toBe(21)
       expect(Object.keys(manifest.entries)).toHaveLength(1)
       // Construct a previous-format fixture with every other field intact.
       // This does not claim that an historical SDK produced the fixture.
@@ -311,6 +311,21 @@ describe('BuildCache', () => {
       expect(current.getCachedIfValid(file, tempDir)).toBeNull()
     })
 
+    it('rejects a populated version 20 cache that erased an enclosing return shape', () => {
+      const config = makeConfig()
+      const source = 'export function create() { const local = 1; return { local } }'
+      const file = writeSourceFile('local-query-shape.ts', source)
+      const producer = new BuildCache(config)
+      producer.update(file, source, 'export declare function create(): unknown;', tempDir)
+      producer.save()
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, version: 20 }))
+      const current = new BuildCache(config)
+      expect(current.load()).toBe(false)
+      expect(current.getCachedIfValid(file, tempDir)).toBeNull()
+    })
+
     it('returns false when manifest entries have an invalid shape', () => {
       const config = makeConfig()
       const cache = new BuildCache(config)
@@ -349,7 +364,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(20)
+      expect(parsed.version).toBe(21)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')
