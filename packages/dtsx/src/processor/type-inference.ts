@@ -515,7 +515,7 @@ export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false,
  * This is intentionally used only by the semantic generation path. Isolated
  * declarations remain annotation-first and never scan implementation bodies.
  */
-export function inferFunctionBodyReturnType(body: string, isAsync: boolean = false, parameters: string = ''): string {
+export function inferFunctionBodyReturnType(body: string, isAsync: boolean = false, parameters: string = '', classExpression?: (value: string) => string | undefined): string {
   const parameterTypes = collectParameterTypes(parameters)
   const returnTypes: string[] = []
   let hasBareReturn = false
@@ -619,7 +619,7 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
       // No comments in a return type: a returned literal's properties are not
       // defaults, and an inferred type is embedded in other JSDoc
       // (\`@defaultValue\`), where a nested \`*/\` ends the comment early.
-      const inferred = withoutComments(inferBodyExpressionType(expression, parameterTypes))
+      const inferred = withoutComments(inferBodyExpressionType(expression, parameterTypes, classExpression))
       if (!returnTypes.includes(inferred)) returnTypes.push(inferred)
       continue
     }
@@ -662,12 +662,14 @@ function collectParameterTypes(parameters: string): Map<string, string> {
   return types
 }
 
-function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>): string {
+function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>, classExpression?: (value: string) => string | undefined): string {
   let value = expression.trim()
   while (hasBalancedOuterParentheses(value)) value = value.slice(1, -1).trim()
+  const classType = classExpression?.(value)
+  if (classType) return classType
   if (isJsxExpression(value)) return 'JSX.Element'
   if (value.startsWith('await ')) {
-    const awaited = inferBodyExpressionType(value.slice(6), parameterTypes)
+    const awaited = inferBodyExpressionType(value.slice(6), parameterTypes, classExpression)
     return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
   }
   if (parameterTypes.has(value)) return parameterTypes.get(value)!
@@ -680,8 +682,8 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
 
   const conditional = splitTopLevelConditional(value)
   if (conditional) {
-    const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes)
-    const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes)
+    const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes, classExpression)
+    const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes, classExpression)
     return whenTrue === whenFalse ? whenTrue : joinReturnTypes([whenTrue, whenFalse])
   }
 
@@ -693,8 +695,8 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     if (char === 41 || char === 93 || char === 125) depth++
     else if (char === 40 || char === 91 || char === 123) depth--
     else if (depth === 0 && (char === 43 || char === 45 || char === 42 || char === 47 || char === 37)) {
-      const left = inferBodyExpressionType(value.slice(0, i), parameterTypes)
-      const right = inferBodyExpressionType(value.slice(i + 1), parameterTypes)
+      const left = inferBodyExpressionType(value.slice(0, i), parameterTypes, classExpression)
+      const right = inferBodyExpressionType(value.slice(i + 1), parameterTypes, classExpression)
       if (char === 43 && (left === 'string' || right === 'string')) return 'string'
       if (left === 'number' && right === 'number') return 'number'
       break

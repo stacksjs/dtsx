@@ -1201,9 +1201,15 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
         const body_start = s.pos;
         _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
         if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-            const inferred = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0) catch return_type;
+            const inferred = type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], raw_params, 0, s) catch |err| blk: {
+                s.pending_error = err;
+                break :blk return_type;
+            };
             return_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
-                std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) catch inferred
+                std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) catch |err| blk: {
+                    s.pending_error = err;
+                    break :blk inferred;
+                }
             else
                 inferred;
         }
@@ -1453,6 +1459,9 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
         }
 
         const comments = if (results.items.len == 0) extractLeadingComments(s, decl_start) else null;
+        if (type_annotation.len == 0 and initializer_text.len > 0) {
+            if (try @import("class_expressions.zig").resolve(s, initializer_text)) |class_type| type_annotation = class_type;
+        }
         const final_type = if (type_annotation.len > 0) type_annotation else "unknown";
 
         // Build DTS text — direct alloc (no ArrayList overhead).
@@ -1783,7 +1792,10 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
         name.len + generics.len + extends_sep.len + extends_clause.len +
         implements_sep.len + implements_text.len + 1 + class_body.len;
     const text = blk: {
-        const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
+        const buf = s.allocator.alloc(u8, total) catch |err| {
+            s.pending_error = err;
+            break :blk @as([]const u8, "");
+        };
         var tp: usize = 0;
         @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
         tp += export_prefix.len;
@@ -2044,7 +2056,7 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
                 const body_start = s.pos;
                 _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
                 if (!s.isolated_declarations and ret_type_raw.len == 0) {
-                    ret_type = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], "()", 0) catch |err| {
+                    ret_type = type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], "()", 0, s) catch |err| {
                         s.pending_error = err;
                         return "{}";
                     };
@@ -2211,7 +2223,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
             if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-                const inferred = try type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], raw_params, 0);
+                const inferred = try type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], raw_params, 0, s);
                 ret_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
                     try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred})
                 else

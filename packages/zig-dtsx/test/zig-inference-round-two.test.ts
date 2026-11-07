@@ -78,7 +78,10 @@ describeIf('Zig inference parity round two', () => {
   })
 
   test('uses named class expression constructor types', () => {
-    expect(dts('export const Store = class InternalStore { value = 1 }')).toContain('Store: typeof InternalStore')
+    const output = dts('export const Store = class InternalStore { value = 1 }')
+    expect(output).toContain('Store: typeof __dtsx_class_0.InternalStore')
+    expect(output).toContain('declare namespace __dtsx_class_0')
+    expect(output).toContain('value: number')
   })
 
   test('preserves readonly tuple spreads', () => {

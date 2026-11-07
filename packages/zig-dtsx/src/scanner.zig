@@ -107,6 +107,7 @@ pub const Scanner = struct {
     /// Lazy-initialized: only allocated on first insertion to avoid overhead for
     /// files that have no non-exported types or overloaded functions.
     non_exported_types: std.StringHashMap(Declaration),
+    class_helper_counter: usize = 0,
     non_exported_function_groups: std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)) = .empty,
     func_body_indices: std.AutoHashMap(usize, void),
     non_exported_types_inited: bool,

@@ -7,6 +7,7 @@ const computed_keys = @import("computed_keys.zig");
 const comment_utils = @import("comments.zig");
 const parameter_order = @import("parameters.zig");
 
+const ClassScope = @import("scanner.zig").Scanner;
 const MAX_INFERENCE_DEPTH = 20;
 
 /// Error type for type inference operations
@@ -1230,6 +1231,10 @@ fn wordAt(content: []const u8, index: usize, word: []const u8) bool {
 }
 
 pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize) InferError![]const u8 {
+    return inferFunctionBodyReturnTypeScoped(alloc, body, parameters, depth, null);
+}
+
+pub fn inferFunctionBodyReturnTypeScoped(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope) InferError![]const u8 {
     const content = if (body.len >= 2 and body[0] == '{' and body[body.len - 1] == '}') body[1 .. body.len - 1] else body;
     var return_types = std.array_list.Managed([]const u8).init(alloc);
     var i: usize = 0;
@@ -1302,7 +1307,7 @@ pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, p
             }
         }
         const expression = trim(content[expression_start..i]);
-        const inferred = try inferBodyExpressionType(alloc, expression, parameters, depth + 1);
+        const inferred = try inferBodyExpressionTypeScoped(alloc, expression, parameters, depth + 1, class_scope);
         if (!containsType(return_types.items, inferred)) try return_types.append(inferred);
     }
 
@@ -1318,9 +1323,16 @@ pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, p
 }
 
 fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize) InferError![]const u8 {
+    return inferBodyExpressionTypeScoped(alloc, expression, parameters, depth, null);
+}
+
+fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope) InferError![]const u8 {
     var value = trim(expression);
     while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
         value = trim(value[1 .. value.len - 1]);
+    }
+    if (class_scope) |scope| {
+        if (try @import("class_expressions.zig").resolve(scope, value)) |class_type| return class_type;
     }
     if (isJsxExpression(value)) return "JSX.Element";
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
@@ -1332,8 +1344,8 @@ fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, par
         i -= 1;
         const c = value[i];
         if (c == ')' or c == ']' or c == '}') expression_depth += 1 else if (c == '(' or c == '[' or c == '{') expression_depth -= 1 else if (expression_depth == 0 and (c == '+' or c == '-' or c == '*' or c == '/' or c == '%')) {
-            const left = try inferBodyExpressionType(alloc, value[0..i], parameters, depth + 1);
-            const right = try inferBodyExpressionType(alloc, value[i + 1 ..], parameters, depth + 1);
+            const left = try inferBodyExpressionTypeScoped(alloc, value[0..i], parameters, depth + 1, class_scope);
+            const right = try inferBodyExpressionTypeScoped(alloc, value[i + 1 ..], parameters, depth + 1, class_scope);
             if (c == '+' and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
             if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
             break;

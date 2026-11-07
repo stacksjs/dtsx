@@ -134,6 +134,29 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const nonExportedFunctionGroups = new Map<string, Declaration[]>()
   const functionBodies = new Set<Declaration>()
   let pos = 0
+  let classHelperCounter = 0
+
+  function scopedClassExpression(expression: string): string | undefined {
+    const value = expression.trim()
+    if (!value.startsWith('class')) return undefined
+    const tokens = tokenizeDeclarationSyntax(value)
+    if (tokens[0]?.kind !== 'word' || value.slice(tokens[0].start, tokens[0].end) !== 'class') return undefined
+    let helper: string
+    do { helper = `__dtsx_class_${classHelperCounter++}` } while (source.includes(helper))
+    const token = tokens[1]
+    const spelling = token ? value.slice(token.start, token.end) : ''
+    const named = token?.kind === 'word' && !['extends', 'implements'].includes(spelling)
+    const name = named ? spelling : `${helper}_value`
+    const declarationSource = named ? `export ${value}` : `export class ${name} ${value.slice(5)}`
+    const members = scanSemanticDeclarations(declarationSource, _filename, keepComments)
+    const classDeclaration = members.find(item => item.kind === 'class')
+    if (!classDeclaration) throw new Error('Cannot extract the class expression declaration')
+    const tail = tokenizeDeclarationSyntax(declarationSource.slice(classDeclaration.end ?? declarationSource.length))
+    if (tail.some(token => declarationSource.slice((classDeclaration.end ?? 0) + token.start, (classDeclaration.end ?? 0) + token.end) !== ';')) return undefined
+    const text = members.map(item => item.text.replace(/^export\s+/, '').replace(/^declare\s+/, '')).join('\n')
+    nonExportedTypes.set(helper, { kind: 'module', name: helper, text: `declare namespace ${helper} {\n${text}\n}`, moduleForm: 'namespace', isExported: false, start: pos, end: pos })
+    return `typeof ${helper}.${name}`
+  }
 
   function retainPrivateFunction(declaration: Declaration): void {
     const group = nonExportedFunctionGroups.get(declaration.name)
@@ -2093,7 +2116,7 @@ function extractFunction(declStart: number, isExported: boolean, isAsync: boolea
     // so `function make() { return { ... } }` published as returning nothing
     // and every type derived from it (`ReturnType<typeof make>`) was empty.
     if (!hasExplicitReturnType && !isGenerator) {
-      returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
+      returnType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams, scopedClassExpression)
     }
   }
   else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
@@ -2294,7 +2317,7 @@ function extractVariable(declStart: number, kind: string, isExported: boolean): 
         else if (!typeAnnotation) {
           // A const assertion can be followed by a satisfies constraint.
           // Handle that operator before extracting the assertion's type.
-          const assertedType = extractSatisfiesType(initializerText) ?? extractAssertion(initializerText)
+          const assertedType = extractSatisfiesType(initializerText) ?? extractAssertion(initializerText) ?? scopedClassExpression(initializerText)
           if (assertedType)
             typeAnnotation = assertedType
         }
@@ -2763,7 +2786,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
               const bodyStart = pos + 1
               findMatchingClose(CH_LBRACE, CH_RBRACE)
               if (!retType && !isolatedDeclarations)
-                retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), false, '()')
+                retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), false, '()', scopedClassExpression)
             }
             else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
               pos++
@@ -2940,7 +2963,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
         // As for functions: an unannotated method returns what its body does,
         // in isolated mode too, rather than being declared `void` unread.
         if (!hasExplicitReturnType && !isGenerator) {
-          retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams)
+          retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams, scopedClassExpression)
         }
       }
       else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
@@ -3600,7 +3623,7 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       let suffix = 1
       while (source.includes(helperName)) helperName = `__dtsx_default_export_${suffix++}__`
       const assertedType = extractAssertion(expression)
-      const inferredType = assertedType || inferNarrowType(expression, false)
+      const inferredType = assertedType || scopedClassExpression(expression) || inferNarrowType(expression, false)
       const type = inferredType === 'unknown' && isEntityNameText(expression)
         ? `typeof ${expression}`
         : inferredType
