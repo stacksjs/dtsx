@@ -650,6 +650,59 @@ pub const Scanner = struct {
         return self.pos;
     }
 
+    /// Skip one runtime statement without consuming a declaration after its block.
+    pub fn skipRuntimeStatement(self: *Scanner) bool {
+        if (self.pos < self.len and self.source[self.pos] == ch.CH_LBRACE) {
+            _ = self.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
+            return true;
+        }
+        const is_if = self.matchWord("if");
+        const is_do = self.matchWord("do");
+        const is_try = self.matchWord("try");
+        const is_for = self.matchWord("for");
+        if (!is_if and !is_do and !is_try and !is_for and !self.matchWord("while") and !self.matchWord("switch") and !self.matchWord("with")) return false;
+        _ = self.readIdent();
+        self.skipWhitespaceAndComments();
+        if (is_for and self.matchWord("await")) {
+            self.pos += 5;
+            self.skipWhitespaceAndComments();
+        }
+        if (!is_do and !is_try and self.pos < self.len and self.source[self.pos] == ch.CH_LPAREN)
+            _ = self.findMatchingClose(ch.CH_LPAREN, ch.CH_RPAREN);
+        self.skipRuntimeBody();
+        self.skipWhitespaceAndComments();
+        if (is_if and self.matchWord("else")) {
+            self.pos += 4;
+            self.skipRuntimeBody();
+        } else if (is_do and self.matchWord("while")) {
+            self.pos += 5;
+            self.skipWhitespaceAndComments();
+            if (self.pos < self.len and self.source[self.pos] == ch.CH_LPAREN)
+                _ = self.findMatchingClose(ch.CH_LPAREN, ch.CH_RPAREN);
+            self.skipWhitespaceAndComments();
+            if (self.pos < self.len and self.source[self.pos] == ch.CH_SEMI) self.pos += 1;
+        } else if (is_try) {
+            if (self.matchWord("catch")) {
+                self.pos += 5;
+                self.skipWhitespaceAndComments();
+                if (self.pos < self.len and self.source[self.pos] == ch.CH_LPAREN)
+                    _ = self.findMatchingClose(ch.CH_LPAREN, ch.CH_RPAREN);
+                self.skipRuntimeBody();
+                self.skipWhitespaceAndComments();
+            }
+            if (self.matchWord("finally")) {
+                self.pos += 7;
+                self.skipRuntimeBody();
+            }
+        }
+        return true;
+    }
+
+    fn skipRuntimeBody(self: *Scanner) void {
+        self.skipWhitespaceAndComments();
+        if (!self.skipRuntimeStatement()) self.skipToStatementEnd();
+    }
+
     /// Skip to statement end (semicolon at depth 0, matching brace, or ASI).
     /// Uses SIMD to skip 16 non-structural bytes at a time.
     pub fn skipToStatementEnd(self: *Scanner) void {

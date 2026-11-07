@@ -13,6 +13,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
     while (s.pos < s.len) {
         s.skipWhitespaceAndComments();
         if (s.pos >= s.len) break;
+        if (s.skipRuntimeStatement()) continue;
 
         const stmt_start = s.pos;
         const ch0 = s.source[s.pos];

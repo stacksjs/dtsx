@@ -3590,12 +3590,63 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
       })
     }
 
+    /** Skip one runtime statement while preserving its structured continuations. */
+    function skipRuntimeStatement(): boolean {
+      if (source.charCodeAt(pos) === CH_LBRACE) {
+        findMatchingClose(CH_LBRACE, CH_RBRACE)
+        return true
+      }
+      const isIf = matchWord('if')
+      const isDo = matchWord('do')
+      const isTry = matchWord('try')
+      const isFor = matchWord('for')
+      if (!isIf && !isDo && !isTry && !isFor && !matchWord('while') && !matchWord('switch') && !matchWord('with'))
+        return false
+
+      readIdent()
+      skipWhitespaceAndComments()
+      if (isFor && matchWord('await')) { pos += 5; skipWhitespaceAndComments() }
+      if (!isDo && !isTry && source.charCodeAt(pos) === CH_LPAREN)
+        findMatchingClose(CH_LPAREN, CH_RPAREN)
+      skipRuntimeBody()
+      skipWhitespaceAndComments()
+      if (isIf && matchWord('else')) {
+        pos += 4
+        skipRuntimeBody()
+      }
+      else if (isDo && matchWord('while')) {
+        pos += 5
+        skipWhitespaceAndComments()
+        if (source.charCodeAt(pos) === CH_LPAREN) findMatchingClose(CH_LPAREN, CH_RPAREN)
+        skipWhitespaceAndComments()
+        if (source.charCodeAt(pos) === CH_SEMI) pos++
+      }
+      else if (isTry) {
+        if (matchWord('catch')) {
+          pos += 5
+          skipWhitespaceAndComments()
+          if (source.charCodeAt(pos) === CH_LPAREN) findMatchingClose(CH_LPAREN, CH_RPAREN)
+          skipRuntimeBody()
+          skipWhitespaceAndComments()
+        }
+        if (matchWord('finally')) { pos += 7; skipRuntimeBody() }
+      }
+      return true
+    }
+
+    function skipRuntimeBody(): void {
+      skipWhitespaceAndComments()
+      if (!skipRuntimeStatement()) skipToStatementEnd()
+    }
+
     // --- Main scan loop (first-char dispatch for speed) ---
 
     while (pos < len) {
       skipWhitespaceAndComments()
       if (pos >= len)
         break
+
+      if (skipRuntimeStatement()) continue
 
       const stmtStart = pos
       const ch0 = source.charCodeAt(pos)
