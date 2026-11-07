@@ -539,8 +539,7 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
       }
     }
     if (char === 61 && body.charCodeAt(i + 1) === 62) {
-      let blockStart = i + 2
-      while (blockStart < body.length && body.charCodeAt(blockStart) <= 32) blockStart++
+      const blockStart = skipCallableTrivia(body, i + 2)
       if (body.charCodeAt(blockStart) === 123) {
         i = skipBalancedCodeBlock(body, blockStart)
         continue
@@ -755,15 +754,64 @@ function isWordBoundary(value: string, start: number, length: number): boolean {
     && !isWordChar(value.charCodeAt(start + length))
 }
 
+function skipCallableTrivia(value: string, start: number): number {
+  let index = start
+  while (index < value.length) {
+    if (value.charCodeAt(index) <= 32) { index++; continue }
+    if (value.startsWith('//', index)) {
+      while (index < value.length && value.charCodeAt(index) !== 10 && value.charCodeAt(index) !== 13) index++
+      continue
+    }
+    if (value.startsWith('/*', index)) {
+      const close = value.indexOf('*/', index + 2)
+      index = close < 0 ? value.length : close + 2
+      continue
+    }
+    break
+  }
+  return index
+}
+
 function findNextCodeBlock(value: string, start: number): number {
+  let parens = 0
+  let brackets = 0
+  let angles = 0
+  let annotation = false
+  let expectsType = false
   for (let i = start; i < value.length; i++) {
+    i = skipCallableTrivia(value, i)
+    if (i >= value.length) break
     const char = value.charCodeAt(i)
     if (char === 34 || char === 39 || char === 96) {
       i = skipQuotedValue(value, i, char) - 1
+      expectsType = false
       continue
     }
-    if (char === 123) return i
-    if (char === 59) return -1
+    if (isWordChar(char) || char >= 128) {
+      const wordStart = i
+      while (i + 1 < value.length && (isWordChar(value.charCodeAt(i + 1)) || value.charCodeAt(i + 1) >= 128)) i++
+      expectsType = annotation && ['keyof', 'typeof', 'readonly', 'unique', 'new', 'abstract', 'infer', 'extends'].includes(value.slice(wordStart, i + 1))
+      continue
+    }
+    if (char === 61 && value.charCodeAt(i + 1) === 62) { i++; expectsType = annotation; continue }
+    if (char === 40) parens++
+    else if (char === 41) { parens--; expectsType = false }
+    else if (char === 91) brackets++
+    else if (char === 93) { brackets--; expectsType = false }
+    else if (char === 60 && parens === 0 && brackets === 0) angles++
+    else if (char === 62 && angles > 0 && parens === 0 && brackets === 0) { angles--; expectsType = false }
+    else if (char === 123) {
+      if (parens || brackets || angles || annotation && expectsType) {
+        i = skipBalancedCodeBlock(value, i) - 1
+        expectsType = false
+      }
+      else return i
+    }
+    else if (parens === 0 && brackets === 0 && angles === 0) {
+      if (char === 58) { annotation = true; expectsType = true }
+      else if (annotation && [124, 38, 63].includes(char)) expectsType = true
+      else if (char === 59) return -1
+    }
   }
   return -1
 }

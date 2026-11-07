@@ -1923,7 +1923,10 @@ fn buildClassBodyDts(s: *Scanner) []const u8 {
                 const body_start = s.pos;
                 _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
                 if (!s.isolated_declarations and ret_type_raw.len == 0) {
-                    ret_type = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], "()", 0) catch ret_type;
+                    ret_type = type_inf.inferFunctionBodyReturnType(s.allocator, s.source[body_start..s.pos], "()", 0) catch |err| {
+                        s.pending_error = err;
+                        return "{}";
+                    };
                 }
             } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
                 s.pos += 1;
@@ -2025,7 +2028,7 @@ fn isAccessorFollowed(s: *const Scanner) bool {
     // Both "get" and "set" are 3 chars — the caller already verified one matched.
     // Inspect the byte at +3 directly instead of calling matchWord again.
     const next_after = s.peekAfterWord("get"); // length is what matters; "get".len == "set".len
-    return next_after != 0 and (ch.isIdentStart(next_after) or next_after == ch.CH_LBRACKET or next_after == ch.CH_HASH);
+    return next_after != 0 and (ch.isIdentStart(next_after) or next_after == ch.CH_LBRACKET or next_after == ch.CH_HASH or next_after == ch.CH_SQUOTE or next_after == ch.CH_DQUOTE);
 }
 
 fn skipAccessorBody(s: *Scanner) void {

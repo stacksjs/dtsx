@@ -326,7 +326,12 @@ fn inferBodyCallType(alloc: std.mem.Allocator, value: []const u8, parameters: []
 
     const dot = std.mem.indexOfScalar(u8, callee, '.');
     const root = if (dot) |index| callee[0..index] else callee;
-    const root_type = findParameterType(parameters, root) orelse return "unknown";
+    const root_type = findParameterType(parameters, root) orelse {
+        // Known Promise operations already have a value-aware inference path.
+        // A parameter named Promise keeps its own declared callable type.
+        if (std.mem.eql(u8, root, "Promise")) return null;
+        return "unknown";
+    };
     if (dot == null) return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{root_type});
 
     var callable_type = std.array_list.Managed(u8).init(alloc);
@@ -1146,6 +1151,84 @@ fn splitArrowSignature(value: []const u8) ArrowSignature {
     };
 }
 
+fn skipReturnTrivia(content: []const u8, start: usize) usize {
+    var index = start;
+    while (index < content.len) {
+        if (ch.isWhitespace(content[index])) {
+            index += 1;
+            continue;
+        }
+        if (content[index] == '/') {
+            if (skipParamNonCode(content, index)) |end| {
+                index = end + 1;
+                continue;
+            }
+        }
+        break;
+    }
+    return index;
+}
+
+fn nextReturnScopeBlock(content: []const u8, start: usize) ?usize {
+    var index = start;
+    var parens: isize = 0;
+    var brackets: isize = 0;
+    var angles: isize = 0;
+    var annotation = false;
+    var expects_type = false;
+    while (index < content.len) : (index += 1) {
+        index = skipReturnTrivia(content, index);
+        if (index >= content.len) break;
+        const byte = content[index];
+        if (skipParamNonCode(content, index)) |end| {
+            index = end;
+            expects_type = false;
+            continue;
+        }
+        if (ch.isIdentChar(byte)) {
+            const word_start = index;
+            while (index + 1 < content.len and ch.isIdentChar(content[index + 1])) index += 1;
+            const word = content[word_start .. index + 1];
+            expects_type = false;
+            for ([_][]const u8{ "keyof", "typeof", "readonly", "unique", "new", "abstract", "infer", "extends" }) |operator| {
+                if (annotation and std.mem.eql(u8, word, operator)) expects_type = true;
+            }
+            continue;
+        }
+        if (byte == '=' and index + 1 < content.len and content[index + 1] == '>') {
+            index += 1;
+            expects_type = annotation;
+            continue;
+        }
+        if (byte == '(') parens += 1 else if (byte == ')') {
+            parens -= 1;
+            expects_type = false;
+        } else if (byte == '[') brackets += 1 else if (byte == ']') {
+            brackets -= 1;
+            expects_type = false;
+        } else if (byte == '<' and parens == 0 and brackets == 0) angles += 1 else if (byte == '>' and angles > 0 and parens == 0 and brackets == 0) {
+            angles -= 1;
+            expects_type = false;
+        } else if (byte == '{') {
+            if (parens != 0 or brackets != 0 or angles != 0 or annotation and expects_type) {
+                index = findMatchingBracket(content, index, '{', '}') orelse return null;
+                expects_type = false;
+            } else return index;
+        } else if (parens == 0 and brackets == 0 and angles == 0) {
+            if (byte == ':') {
+                annotation = true;
+                expects_type = true;
+            } else if (annotation and (byte == '|' or byte == '&' or byte == '?')) expects_type = true else if (byte == ';') return null;
+        }
+    }
+    return null;
+}
+
+fn wordAt(content: []const u8, index: usize, word: []const u8) bool {
+    return ch.startsWith(content[index..], word) and (index == 0 or !ch.isIdentChar(content[index - 1])) and
+        (index + word.len == content.len or !ch.isIdentChar(content[index + word.len]));
+}
+
 pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize) InferError![]const u8 {
     const content = if (body.len >= 2 and body[0] == '{' and body[body.len - 1] == '}') body[1 .. body.len - 1] else body;
     var return_types = std.array_list.Managed([]const u8).init(alloc);
@@ -1169,6 +1252,25 @@ pub fn inferFunctionBodyReturnType(alloc: std.mem.Allocator, body: []const u8, p
         if (content[i] == '/' and i + 1 < content.len and content[i + 1] == '*') {
             i = if (ch.indexOf(content, "*/", i + 2)) |end| end + 2 else content.len;
             continue;
+        }
+        // Nested implementations have their own return signature. Their
+        // balanced blocks do not contribute to the enclosing callable.
+        if (wordAt(content, i, "function") or wordAt(content, i, "class")) {
+            if (nextReturnScopeBlock(content, i)) |open| {
+                if (findMatchingBracket(content, open, '{', '}')) |close| {
+                    i = close + 1;
+                    continue;
+                }
+            }
+        }
+        if (ch.startsWith(content[i..], "=>")) {
+            const open = skipReturnTrivia(content, i + 2);
+            if (open < content.len and content[open] == '{') {
+                if (findMatchingBracket(content, open, '{', '}')) |close| {
+                    i = close + 1;
+                    continue;
+                }
+            }
         }
         if (!ch.startsWith(content[i..], "return") or (i > 0 and ch.isIdentChar(content[i - 1])) or (i + 6 < content.len and ch.isIdentChar(content[i + 6]))) {
             i += 1;
@@ -2920,4 +3022,15 @@ test "stripAsyncKeyword preserves identifiers that contain async substring" {
     const out = try stripAsyncKeyword(alloc, src);
     defer if (out.ptr != src.ptr) alloc.free(out);
     try std.testing.expectEqualStrings(src, out);
+}
+
+test "callable returns exclude nested implementation signatures and infer built-in promises" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(allocator, "{ function hidden() { return 'text' }; return 7 }", "()", 0));
+    try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(allocator, "{ const callback = () => { return 'text' }; return 7 }", "()", 0));
+    try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(allocator, "{ class Hidden { method() { return 'text' } }; return 7 }", "()", 0));
+    try std.testing.expectEqualStrings("Promise<number>", try inferFunctionBodyReturnType(allocator, "{ return Promise.resolve(7) }", "()", 0));
+    try std.testing.expectEqualStrings("ReturnType<{ resolve: (value: number) => string }[\"resolve\"]>", try inferFunctionBodyReturnType(allocator, "{ return Promise.resolve(7) }", "(Promise: { resolve: (value: number) => string })", 0));
 }

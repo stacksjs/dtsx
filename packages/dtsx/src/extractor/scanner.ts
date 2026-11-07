@@ -2760,16 +2760,18 @@ function extractInterface(declStart: number, isExported: boolean): Declaration {
             skipWhitespaceAndComments()
             extractParamList() // empty params for getter
             skipWhitespaceAndComments()
-            const retType = extractReturnType() || 'unknown'
+            let retType = extractReturnType()
             skipWhitespaceAndComments()
-            // Skip body
             if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
+              const bodyStart = pos + 1
               findMatchingClose(CH_LBRACE, CH_RBRACE)
+              if (!retType && !isolatedDeclarations)
+                retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), false, '()')
             }
             else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
               pos++
             }
-            output.push(`${modPrefix}get ${memberName}(): ${retType};`)
+            output.push(`${modPrefix}get ${memberName}(): ${retType || 'unknown'};`)
           }
           else {
             // 'get' is used as a method name

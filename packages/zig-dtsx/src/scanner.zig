@@ -939,6 +939,11 @@ pub const Scanner = struct {
             _ = self.findMatchingClose(ch.CH_LBRACKET, ch.CH_RBRACKET);
             return self.source[start..self.pos];
         }
+        if (c == ch.CH_SQUOTE or c == ch.CH_DQUOTE) {
+            const start = self.pos;
+            self.skipString(c);
+            return self.source[start..self.pos];
+        }
         if (c == ch.CH_HASH) {
             // Zero-copy: keep the leading `#` as part of the source slice instead
             // of allocating a new buffer to prepend it.
