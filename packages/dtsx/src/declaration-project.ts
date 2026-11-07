@@ -322,6 +322,8 @@ export function createDeclarationReferenceResolver(
     }
     if (resolved.isAlias && delivered && !delivered.has(resolved.resolved))
       throw new Error(`Local alias ${JSON.stringify(specifier)} from ${filePath} targets a declaration excluded from this package build: ${resolved.resolved}`)
+    if (delivered && !delivered.has(resolved.resolved) && isExcluded(resolved.resolved, config.exclude ?? [], resolve(config.cwd, config.root)))
+      throw new Error(`Local reference ${JSON.stringify(specifier)} from ${filePath} targets a source excluded from this package build: ${resolved.resolved}`)
 
     const suffix = resolved.isAlias ? resolved.suffix ?? '' : specifier.match(/[?#].*$/)?.[0] ?? ''
     const pathSpecifier = suffix ? specifier.slice(0, -suffix.length) : specifier

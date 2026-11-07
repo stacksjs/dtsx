@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate declarations emitted before scoped private references, original
-// module boundaries and source-position alias inference.
-const CACHE_VERSION = 6
+// Invalidate declarations accepted before excluded-source delivery checks.
+// Cache hits must satisfy the same source-selection policy as cold generation.
+const CACHE_VERSION = 7
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 
@@ -83,6 +83,8 @@ export class BuildCache {
       importOrder: config.importOrder,
       outputStructure: config.outputStructure,
       moduleSpecifierMode: config.moduleSpecifierMode ?? 'preserve',
+      root: resolve(config.cwd, config.root),
+      exclude: config.exclude ?? [],
       isolatedDeclarations: config.isolatedDeclarations,
       declarationMap: config.declarationMap,
       indentStyle: config.indentStyle,
