@@ -55,7 +55,7 @@
         "@stacksjs/dtsx": "workspace:*",
       },
       "peerDependencies": {
-        "esbuild": ">=0.27.4",
+        "esbuild": ">=0.28.2",
       },
     },
     "packages/tsup-plugin": {
