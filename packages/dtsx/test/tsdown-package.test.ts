@@ -136,7 +136,7 @@ test('tsdown fails the build when a requested declaration entry is excluded', as
   const directory = await mkdtemp(join(tmpdir(), 'dtsx-tsdown-excluded-'))
   try {
     await writeFile(join(directory, 'index.ts'), 'export const value = 2')
-    await expect(build({ cwd: directory, config: false, entry: ['index.ts'], plugins: [dts({ exclude: ['**/index.ts'] })], logLevel: 'silent', report: false })).rejects.toThrow()
+    await expect(build({ cwd: directory, config: false, entry: ['index.ts'], plugins: [dts({ exclude: ['**/index.ts'] })], logLevel: 'silent', report: false })).rejects.toThrow('No source files matched. Nothing was generated.')
   }
   finally {
     await rm(directory, { recursive: true, force: true })
