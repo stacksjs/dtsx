@@ -292,7 +292,7 @@ export function scanReExportSpecifiers(
   options: { includeImports?: boolean } = {},
 ): ReExportRef[] {
   const references = scanModuleReferences(source)
-  const categories = options.includeImports ? ['export', 'static-import', 'import-type'] : ['export']
+  const categories = options.includeImports ? ['export', 'static-import', 'import-type', 'augmentation'] : ['export']
   return categories.flatMap(category => references
     .filter(reference => reference.category === category)
     .map(({ specifier, kind, isTypeOnly }) => ({ specifier, kind, isTypeOnly })))
@@ -336,6 +336,8 @@ export interface ReachabilityResult {
   reExports: Map<string, ReExportRef[]>
   /** Re-exports whose specifier could not be resolved on disk */
   unresolved: UnresolvedReExport[]
+  /** Source snapshots already read while discovering this graph. */
+  sources: ReadonlyMap<string, string>
 }
 
 /**
@@ -353,6 +355,7 @@ export async function collectReachableViaReExports(
   const reachable = new Set<string>()
   const reExports = new Map<string, ReExportRef[]>()
   const unresolved: UnresolvedReExport[] = []
+  const sources = new Map<string, string>()
 
   const queue: string[] = []
   for (const entrypoint of entrypoints) {
@@ -373,6 +376,7 @@ export async function collectReachableViaReExports(
       continue
     }
 
+    sources.set(file, source)
     const refs = scanReExportSpecifiers(source, options)
     reExports.set(file, refs)
 
@@ -391,5 +395,5 @@ export async function collectReachableViaReExports(
     }
   }
 
-  return { reachable, reExports, unresolved }
+  return { reachable, reExports, unresolved, sources }
 }

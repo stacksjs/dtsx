@@ -12,7 +12,7 @@ export interface ModuleReference {
   specifier: string
   kind: 'export-star' | 'export-star-as' | 'export-named' | 'import'
   isTypeOnly: boolean
-  category: 'export' | 'static-import' | 'import-type'
+  category: 'export' | 'static-import' | 'import-type' | 'augmentation'
   /** Absolute UTF-16 offsets including the original quote characters. */
   start: number
   end: number
@@ -173,6 +173,20 @@ export function scanModuleReferences(source: string): ModuleReference[] {
   const text = (index: number): string => index >= 0 && index < tokens.length ? source.slice(tokens[index].start, tokens[index].end) : ''
   const quoted = (index: number): boolean => tokens[index]?.kind === 'quoted'
   const word = (index: number): boolean => tokens[index]?.kind === 'word'
+  const augmentations: number[] = []
+  let externalModule = false
+  let depth = 0
+  if (source.includes('declare') && source.includes('module')) {
+    for (let index = 0; index < tokens.length; index++) {
+      const current = text(index)
+      if (depth === 0 && word(index) && text(index - 1) !== '.' && text(index - 1) !== '#') {
+        if (current === 'export' || current === 'import' && text(index + 1) !== '(' && text(index + 1) !== '.') externalModule = true
+        if (current === 'declare' && text(index + 1) === 'module' && quoted(index + 2) && text(index + 3) === '{') augmentations.push(index + 2)
+      }
+      if (current === '{' || current === '(' || current === '[') depth++
+      else if (current === '}' || current === ')' || current === ']') depth--
+    }
+  }
 
   function bindingEnd(start: number, exporting = false): number {
     if (text(start) === '*') {
@@ -228,6 +242,10 @@ export function scanModuleReferences(source: string): ModuleReference[] {
       else next = bindingEnd(next)
       if (next >= 0 && text(next) === 'from') add(next + 1, 'import', typeOnly, 'static-import')
     }
+  }
+  if (externalModule && augmentations.length) {
+    for (const index of augmentations) add(index, 'import', true, 'augmentation')
+    references.sort((left, right) => left.start - right.start)
   }
   return references
 }

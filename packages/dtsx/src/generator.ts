@@ -4,6 +4,7 @@ import type { DtsError, DtsGenerationConfig, GenerationStats, ProcessingContext 
 import { mkdir } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { basename, dirname, relative, resolve } from 'node:path'
+import { planAugmentationImports } from './augmentation-graph'
 import { linkBundle } from './bundle-linker'
 import { BuildCache, ensureGitignore } from './cache'
 import { file, isBun, readTextFile, spawnProcess } from './compat'
@@ -252,7 +253,7 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
 
       // Use pre-read source if available, otherwise read from disk
       sourceCode = preReadSource ?? await readTextFile(file)
-      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager, typeMapper)
+      const { content: dtsContent, declarationCount, importCount, exportCount } = await processFileWithStatsFromSource(file, sourceCode, config, pluginManager, typeMapper, project.augmentationImports.get(file))
       if (config.bundle) generatedDts.set(file, dtsContent)
 
       let finalDtsContent = dtsContent
@@ -606,7 +607,10 @@ export async function processFile(
   // its options object after editing the tsconfig or package metadata.
   moduleResolvers.delete(config)
   emittedSources.delete(config)
-  const result = await processFileWithStats(filePath, config)
+  const resolver = await getModuleResolver(config)
+  const reachability = await collectReachableViaReExports([filePath], { includeImports: true, resolveSpecifier: resolver })
+  const augmentationImports = await planAugmentationImports([...reachability.sources.keys()], resolver, config.isolatedDeclarations ?? false, reachability.sources)
+  const result = await processFileWithStats(filePath, config, undefined, augmentationImports.get(resolve(filePath)))
   return result.content
 }
 
@@ -623,11 +627,12 @@ async function processFileWithStats(
   filePath: string,
   config: DtsGenerationConfig,
   pluginManager?: PluginManager,
+  augmentationImports?: ReadonlySet<string>,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Read the source file
   const sourceCode = await readTextFile(filePath)
   const typeMapper = config.typeMappings ? createTypeMapper(config.typeMappings) : undefined
-  return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager, typeMapper)
+  return processFileWithStatsFromSource(filePath, sourceCode, config, pluginManager, typeMapper, augmentationImports)
 }
 
 /**
@@ -639,6 +644,7 @@ async function processFileWithStatsFromSource(
   config: DtsGenerationConfig,
   pluginManager?: PluginManager,
   typeMapper?: TypeMapper,
+  augmentationImports?: ReadonlySet<string>,
 ): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
   // Run onBeforeFile hooks (may modify source)
   let processedSource = sourceCode
@@ -668,6 +674,7 @@ async function processFileWithStatsFromSource(
     filePath,
     sourceCode: processedSource,
     declarations,
+    augmentationImports,
   }
 
   // Process declarations to generate DTS

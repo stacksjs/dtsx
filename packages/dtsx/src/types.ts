@@ -527,4 +527,6 @@ export interface ProcessingContext {
   imports?: Map<string, Set<string>>
   exports?: Set<string>
   usedTypes?: Set<string>
+  /** Original module imports required to activate project module augmentations. */
+  augmentationImports?: ReadonlySet<string>
 }

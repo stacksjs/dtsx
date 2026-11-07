@@ -7,6 +7,7 @@ import type { DtsGenerationConfig } from './types'
 import { existsSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { planAugmentationImports } from './augmentation-graph'
 import { logger } from './logger'
 import { collectReachableViaReExports, createModuleResolver } from './module-graph'
 
@@ -16,6 +17,7 @@ export interface DeclarationProjectPlan {
   readonly outputBySource: ReadonlyMap<string, string>
   readonly resolver: ModuleResolver
   readonly reachability: ReachabilityResult | null
+  readonly augmentationImports: ReadonlyMap<string, ReadonlySet<string>>
   /** Read the resolution fingerprint only when the caller needs a cache key. */
   getResolutionFingerprint: () => string | undefined
 }
@@ -76,6 +78,21 @@ export async function planDeclarationProject(
   }
 
   const outputBySource = createOutputMap(files, config)
+  const augmentationReachability = reExportReachability ?? await collectReachableViaReExports(files, { includeImports: true, resolveSpecifier })
+  const augmentationImports = await planAugmentationImports(
+    [...augmentationReachability.sources.keys()],
+    resolveSpecifier, config.isolatedDeclarations ?? false, augmentationReachability.sources,
+  )
+  const delivered = new Set(files)
+  for (const [owner, imports] of augmentationImports) {
+    if (!delivered.has(owner)) continue
+    for (const specifier of imports) {
+      const target = resolveSpecifier(specifier, owner).resolved
+      if (target && !delivered.has(target)) throw new Error(`Module augmentation import ${JSON.stringify(specifier)} from ${owner} requires a source not emitted by this package build: ${target}`)
+    }
+  }
+  const augmentationFingerprint = [...augmentationImports].map(([file, imports]) => [file, [...imports].sort()] as const)
+    .sort(([left], [right]) => left.localeCompare(right))
 
   return Object.freeze({
     entryFiles: Object.freeze(entryFiles),
@@ -83,7 +100,8 @@ export async function planDeclarationProject(
     outputBySource,
     resolver: resolveSpecifier,
     reachability: reExportReachability,
-    getResolutionFingerprint: () => resolveSpecifier.cacheKey?.(files),
+    augmentationImports,
+    getResolutionFingerprint: () => JSON.stringify({ resolution: resolveSpecifier.cacheKey?.(files), augmentations: augmentationFingerprint }),
   })
 }
 

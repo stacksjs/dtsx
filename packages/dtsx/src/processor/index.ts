@@ -6,52 +6,11 @@ import { isExternalModuleSource, isPrivateImportableDeclaration } from '../decla
 import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
 import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
-import { extractAllImportedItems, getImportSourceLiteral, parseImportStatement } from './imports'
+import { analyzeDeclarationImportUsage } from './import-usage'
+import { getImportSourceLiteral, parseImportStatement } from './imports'
 
 function assertNever(value: never, message?: string): never {
   throw new Error(message || `Unexpected value: ${value}`)
-}
-
-function isIdentChar(ch: number): boolean {
-  return (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57)
-    || ch === 95 || ch === 36 || ch > 127
-}
-
-/** Check if name appears as a whole word in text (fast indexOf + boundary check). */
-function isWordInText(name: string, text: string): boolean {
-  let searchFrom = 0
-  const nameLen = name.length
-  while (searchFrom < text.length) {
-    const idx = text.indexOf(name, searchFrom)
-    if (idx === -1) return false
-    const before = idx > 0 ? text.charCodeAt(idx - 1) : 32
-    const after = idx + nameLen < text.length ? text.charCodeAt(idx + nameLen) : 32
-    const beforeOk = !isIdentChar(before)
-    const afterOk = !isIdentChar(after)
-    if (beforeOk && afterOk) return true
-    searchFrom = idx + 1
-  }
-  return false
-}
-
-/** Extract all identifier words from text into a Set. O(n) single pass. */
-function extractWordSet(text: string): Set<string> {
-  const words = new Set<string>()
-  let i = 0
-  const len = text.length
-  while (i < len) {
-    const ch = text.charCodeAt(i)
-    if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch === 95 || ch === 36 || ch > 127) {
-      const start = i
-      i++
-      while (i < len && isIdentChar(text.charCodeAt(i))) i++
-      words.add(text.substring(start, i))
-    }
-    else {
-      i++
-    }
-  }
-  return words
 }
 
 // Re-export all public APIs
@@ -80,8 +39,6 @@ export {
   isGenericType,
   parseArrayElements,
 } from './type-inference'
-
-const EXPORT_ITEMS_PATTERN = /export\s+(?:type\s+)?\{\s*([^}]+)\s*\}/
 
 // Module-level cache for import priority patterns
 let _cachedImportOrder: string[] | null = null
@@ -147,7 +104,6 @@ export function processDeclarations(
   }
 
   // Parse all exports to understand what's being exported
-  const exportedItems = new Set<string>()
   const typeExportStatements: string[] = []
   const valueExportStatements: string[] = []
   const defaultExport: string[] = []
@@ -170,23 +126,6 @@ export function processDeclarations(
         exportText += ';'
       }
 
-      // Extract exported items for tracking (using cached pattern)
-      const match = exportText.match(EXPORT_ITEMS_PATTERN)
-      if (match) {
-        // Single-pass parsing: avoid split().map() allocation
-        const rawItems = match[1]
-        let itemStart = 0
-        for (let i = 0; i <= rawItems.length; i++) {
-          if (i === rawItems.length || rawItems.charCodeAt(i) === 44) {
-            let s = itemStart, e = i
-            while (s < e && rawItems.charCodeAt(s) <= 32) s++
-            while (e > s && rawItems.charCodeAt(e - 1) <= 32) e--
-            if (s < e) exportedItems.add(rawItems.slice(s, e))
-            itemStart = i + 1
-          }
-        }
-      }
-
       const fullExportText = comments + exportText
       if (!seenExports.has(fullExportText)) {
         seenExports.add(fullExportText)
@@ -201,63 +140,9 @@ export function processDeclarations(
     }
   }
 
-  // Build a map of all imported items to their import declarations (single pass)
-  // This eliminates the O(n²) iteration over imports for each declaration
-  const allImportedItemsMap = new Map<string, Declaration>()
-  if (imports.length > 0) {
-    for (const imp of imports) {
-      const items = extractAllImportedItems(imp.text)
-      for (const item of items) {
-        allImportedItemsMap.set(item, imp)
-      }
-    }
-  }
-
-  // Create filtered imports based on actually used items
   const processedImports: string[] = []
   if (imports.length > 0) {
-    // Filter imports to only include those that are used in exports or declarations
-    const usedImportItems = new Set<string>()
-
-    // Build combined text for import usage detection
-    const textParts: string[] = []
-    for (const func of functions) textParts.push(func.text)
-    for (const variable of variables) {
-      // Non-exported declarations can still be part of the public graph when
-      // referenced by `export default name`. The declaration processor emits
-      // them, so their type references must participate in import retention.
-      textParts.push(variable.text)
-      if (variable.typeAnnotation) textParts.push(variable.typeAnnotation)
-      else if (variable.isExported && variable.value) textParts.push(processVariableDeclaration(variable, false))
-    }
-    // Every interface below is emitted, including local interfaces retained
-    // for exported value annotations and other local declarations. Its imports
-    // must resolve even when it is not directly referenced by an export.
-    for (const iface of interfaces) textParts.push(iface.text)
-    for (const type of types) textParts.push(type.text)
-    for (const cls of classes) textParts.push(cls.text)
-    for (const enumDecl of enums) textParts.push(enumDecl.text)
-    for (const mod of modules) textParts.push(mod.text)
-    for (const exp of exports) textParts.push(exp.text)
-    const combinedText = textParts.join('\n')
-
-    // Import detection: extract all words from combined text once (O(n)),
-    // then O(1) lookup per import item.
-    if (combinedText && allImportedItemsMap.size > 0) {
-      const combinedWords = extractWordSet(combinedText)
-      for (const item of allImportedItemsMap.keys()) {
-        if (combinedWords.has(item)) {
-          usedImportItems.add(item)
-        }
-      }
-    }
-
-    // Check which imports are needed for re-exports (direct matches)
-    for (const item of exportedItems) {
-      if (allImportedItemsMap.has(item)) {
-        usedImportItems.add(item)
-      }
-    }
+    const { usedItems: usedImportItems } = analyzeDeclarationImportUsage(declarations)
 
     for (const imp of imports) {
       // Preserve side-effect imports unconditionally (they may have type effects like reflect-metadata)
@@ -281,6 +166,11 @@ export function processDeclarations(
         if (usedDefault) {
           const original = imp.text.trim()
           processedImports.push(original.endsWith(';') ? original : `${original};`)
+        }
+        else if (context.augmentationImports?.has(parsed.source)) {
+          const literal = getImportSourceLiteral(imp.text)
+          if (!literal) throw new Error('Cannot locate an augmentation import module literal')
+          processedImports.push(`import ${literal};`)
         }
         continue
       }
@@ -317,6 +207,11 @@ export function processDeclarations(
         if (!sourceLiteral) throw new Error('Cannot locate a grammatical module literal in the import declaration')
         importStatement += ` from ${sourceLiteral};`
         processedImports.push(importStatement)
+      }
+      else if (context.augmentationImports?.has(parsed.source)) {
+        const literal = getImportSourceLiteral(imp.text)
+        if (!literal) throw new Error('Cannot locate an augmentation import module literal')
+        processedImports.push(`import ${literal};`)
       }
     }
 
