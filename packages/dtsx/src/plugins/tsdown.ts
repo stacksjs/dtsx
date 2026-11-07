@@ -57,6 +57,9 @@ export function dts(options: TsdownDtsOptions = {}): TsdownDeclarationPlugin {
         // Rolldown writes these assets with the JavaScript, after its own clean.
         for (const chunk of Object.values(bundle)) {
           if (chunk.type !== 'chunk' || !chunk.isEntry || !chunk.facadeModuleId) continue
+          // A facade can retain a symlink or Windows short directory name.
+          // Give the generator the same physical identity as cwd and root.
+          const entrypoint = await realpath(chunk.facadeModuleId)
           const extension = chunk.fileName.endsWith('.cjs') ? '.d.cts'
             : chunk.fileName.endsWith('.mjs') ? '.d.mts' : '.d.ts'
           const filename = chunk.fileName.replace(/\.(?:c|m)?js$/, extension)
@@ -65,7 +68,7 @@ export function dts(options: TsdownDtsOptions = {}): TsdownDeclarationPlugin {
             ...options,
             cwd,
             root,
-            entrypoints: [chunk.facadeModuleId],
+            entrypoints: [entrypoint],
             outdir: directory,
             bundle: true,
             bundleOutput: filename,

@@ -1,5 +1,5 @@
 import type { TsdownPlugin } from 'tsdown'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
@@ -97,6 +97,35 @@ test('tsdown rebuilds with a reused plugin and preserves multiple entry aliases'
     await writeFile(join(directory, 'src/a.ts'), "export const first = 'changed'")
     await build(config)
     expect(await readFile(join(directory, 'dist/renamed.d.mts'), 'utf8')).toContain("first: 'changed'")
+  }
+  finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('tsdown preserves declarations when entry IDs use a different directory alias from the root', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dtsx-tsdown-entry-alias-'))
+  try {
+    const project = join(directory, 'project')
+    const alias = join(directory, 'alias')
+    await mkdir(join(project, 'src'), { recursive: true })
+    await writeFile(join(project, 'src/index.ts'), source)
+    await writeFile(join(project, 'src/hidden.ts'), 'export interface Hidden { value: number }')
+    await symlink(project, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    await build({
+      cwd: await realpath(project),
+      config: false,
+      entry: { index: join(alias, 'src/index.ts') },
+      inputOptions: { resolve: { symlinks: false } },
+      plugins: [dts()],
+      logLevel: 'silent',
+      report: false,
+    })
+    const declaration = await readFile(join(project, 'dist/index.d.mts'), 'utf8')
+    expect(declaration).toContain('value(): number')
+    expect(declaration).toContain('interface Hidden')
+    const runtime = Bun.spawnSync([process.execPath, '-e', "const { Calculate, create } = await import('./dist/index.mjs'); if (new Calculate().value() !== 2 || create().value !== 2) process.exit(1)"], { cwd: project })
+    expect(runtime.exitCode, runtime.stderr.toString()).toBe(0)
   }
   finally {
     await rm(directory, { recursive: true, force: true })
