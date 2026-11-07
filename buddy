@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+cd -- "$(dirname -- "$0")"
+BUDDY_NATIVE_ENTRY=$(bun --print 'Bun.resolveSync("@stacksjs/buddy/cli", process.cwd())')
+exec bun "$BUDDY_NATIVE_ENTRY" "$@"

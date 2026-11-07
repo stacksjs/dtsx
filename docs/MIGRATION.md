@@ -467,7 +467,7 @@ If dtsx is slower than expected:
 
 1. Enable incremental builds
 2. Use entry points only mode
-3. Check the [Performance Guide](./PERFORMANCE.md)
+3. Check the [Performance Guide](./advanced/performance.md)
 
 ## Getting Help
 

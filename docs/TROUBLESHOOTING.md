@@ -361,7 +361,7 @@ export default defineConfig({
 dtsx generate --parallel --concurrency 4
 ```
 
-See [PERFORMANCE.md](./PERFORMANCE.md) for detailed optimization tips.
+See [PERFORMANCE.md](./advanced/performance.md) for detailed optimization tips.
 
 ### High Memory Usage
 

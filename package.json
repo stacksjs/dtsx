@@ -60,7 +60,8 @@
     "typecheck": "bun x tsc --noEmit",
     "dev:docs": "bun --bun bunpress dev docs",
     "build:docs": "bun --bun bunpress build docs",
-    "preview:docs": "bun --bun bunpress preview docs"
+    "preview:docs": "bun --bun bunpress preview docs",
+    "deploy:docs": "./buddy deploy --prod --yes"
   },
   "devDependencies": {
     "@stacksjs/bumpx": "^0.2.32",
@@ -77,7 +78,9 @@
     "oxc-transform": "^0.157.0",
     "oxc-parser": "^0.157.0",
     "tsdown": "^0.23.7",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@stacksjs/buddy": "0.75.513",
+    "@stacksjs/ts-cloud": "0.16.109"
   },
   "workspaces": [
     "packages/*"
