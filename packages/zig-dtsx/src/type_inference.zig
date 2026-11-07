@@ -2089,7 +2089,7 @@ pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
         var val_type = if (prop.is_method)
             prop.value
         else if (std.mem.eql(u8, prop.key, prop.value) and isIdentifierName(prop.value))
-            try std.fmt.allocPrint(alloc, "typeof {s}", .{prop.value})
+            (if (!is_const and key_constants != null) key_constants.?.mutable_binding_types.get(prop.value) else null) orelse try std.fmt.allocPrint(alloc, "typeof {s}", .{prop.value})
         else
             try inferNarrowTypeWithKeyConstants(alloc, prop.value, is_const, false, depth + 1, key_constants);
 

@@ -306,7 +306,18 @@ if (trimmed.endsWith('as const')) {
     const elements = parseArrayElements(content)
     const elementTypes: string[] = []
     for (let i = 0; i < elements.length; i++) {
-      elementTypes.push(inferNarrowType(elements[i].trim(), true, false, _depth + 1, keyConstants))
+      const element = elements[i].trim()
+      if (element.startsWith('...')) {
+        const operand = element.slice(3).trim()
+        // A tuple spread preserves order, literal identity and variadic length.
+        // It is not one unknown element or a union of its members.
+        if (isEntityName(operand)) elementTypes.push(`...typeof ${operand}`)
+        else {
+          const type = inferNarrowType(operand, true, false, _depth + 1, keyConstants)
+          elementTypes.push(type.startsWith('readonly [') || type.endsWith('[]') ? `...${type}` : '...unknown[]')
+        }
+      }
+      else elementTypes.push(inferNarrowType(element, true, false, _depth + 1, keyConstants))
     }
     return `readonly [${elementTypes.join(', ')}]`
   }
@@ -1327,10 +1338,10 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     let valueType: string
     const trimVal = val.trim()
 
-    // Object shorthand keeps the type tied to the binding in scope. This is
-    // both more accurate than `unknown` and avoids needing a symbol table here.
+    // Mutable properties widen fresh literals; const assertions and explicitly
+    // annotated literal bindings retain their identity.
     if (trimVal === propertyKey && isIdentifierName(trimVal)) {
-      valueType = `typeof ${trimVal}`
+      valueType = (isConst ? undefined : keyConstants?.mutableBindingTypes?.get(trimVal)) ?? `typeof ${trimVal}`
     }
     // Method definitions (method shorthand syntax) — convert directly to function type
     // to avoid double-processing through inferNarrowType which loses return type info
@@ -1361,7 +1372,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       // shorthand above does. Literals such as `undefined` are typed before
       // this is reached; anything else left unknown is a reference.
       if (valueType === 'unknown' && isEntityName(trimVal))
-        valueType = `typeof ${trimVal}`
+        valueType = (isConst ? undefined : keyConstants?.mutableBindingTypes?.get(trimVal)) ?? `typeof ${trimVal}`
 
       // Handle method signatures - clean up async and parameter defaults
       if (valueType.includes('=>') || valueType.includes('function') || valueType.includes('async')) {

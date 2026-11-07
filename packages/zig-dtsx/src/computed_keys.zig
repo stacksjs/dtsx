@@ -244,7 +244,7 @@ pub fn attach(allocator: Allocator, declarations: []types.Declaration, candidate
     while (values.next()) |entry| try ordered.append(entry);
     var needed = false;
     for (ordered.items) |entry| {
-        if (entry.kind == .variable_decl and std.mem.indexOfScalar(u8, entry.value, '`') != null and std.mem.indexOfScalar(u8, entry.value, '[') != null) {
+        if (entry.kind == .variable_decl and (std.mem.indexOfScalar(u8, entry.value, '{') != null or std.mem.indexOfScalar(u8, entry.value, '[') != null)) {
             needed = true;
             break;
         }
@@ -259,7 +259,7 @@ pub fn attach(allocator: Allocator, declarations: []types.Declaration, candidate
     }
     for (ordered.items) |entry| {
         if (entry.kind != .variable_decl or entry.value.len == 0) continue;
-        if (std.mem.indexOfScalar(u8, entry.value, '`') != null and std.mem.indexOfScalar(u8, entry.value, '[') != null) {
+        if (std.mem.indexOfScalar(u8, entry.value, '{') != null or std.mem.indexOfScalar(u8, entry.value, '[') != null) {
             const snapshot = try allocator.create(Constants);
             snapshot.* = try constants.clone();
             entry.computed_key_constants = snapshot;
@@ -274,7 +274,17 @@ pub fn attach(allocator: Allocator, declarations: []types.Declaration, candidate
         }
         const modifiers = entry.modifiers orelse continue;
         if (modifiers.len == 0 or !std.mem.eql(u8, modifiers[0], "const") or entry.type_annotation.len > 0 or modifiers.len > 1) continue;
-        if (try evaluate(allocator, entry.value, &constants, 0)) |value| try constants.put(entry.name, value);
+        if (try evaluate(allocator, entry.value, &constants, 0)) |value| {
+            try constants.put(entry.name, value);
+            const identifier = tokens.len == 1 and tokens[0].kind == .word;
+            if (!identifier or constants.mutable_binding_types.contains(trim(entry.value)))
+                try constants.mutable_binding_types.put(entry.name, if (value == .text) "string" else "number");
+        } else if (std.mem.eql(u8, trim(entry.value), "true") or std.mem.eql(u8, trim(entry.value), "false")) {
+            try constants.mutable_binding_types.put(entry.name, "boolean");
+        } else if (tokens.len == 1 and tokens[0].kind == .word) {
+            if (constants.mutable_binding_types.get(trim(entry.value))) |value_type|
+                try constants.mutable_binding_types.put(entry.name, value_type);
+        }
     }
 }
 
@@ -367,4 +377,29 @@ test "constant template key strings preserve NUL and UTF-16 surrogate identity" 
         try std.testing.expect(key == .name);
         try std.testing.expectEqualStrings(fixture[1], key.name);
     }
+}
+
+fn checkBindingSnapshotAllocations(backing: Allocator) !void {
+    var arena = std.heap.ArenaAllocator.init(backing);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var candidates = std.StringHashMap(types.Declaration).init(allocator);
+    const modifiers = [_][]const u8{"const"};
+    var declarations = [_]types.Declaration{
+        .{ .kind = .variable_decl, .name = "value", .value = "7", .modifiers = &modifiers, .start = 0 },
+        .{ .kind = .variable_decl, .name = "alias", .value = "value", .modifiers = &modifiers, .start = 10 },
+        .{ .kind = .variable_decl, .name = "fixed", .value = "7", .type_annotation = "7", .modifiers = &modifiers, .start = 20 },
+        .{ .kind = .variable_decl, .name = "object", .value = "{ value, alias, fixed }", .modifiers = &modifiers, .start = 30 },
+    };
+    try attach(allocator, &declarations, &candidates);
+    const snapshot = declarations[3].computed_key_constants.?;
+    try std.testing.expectEqualStrings("number", snapshot.mutable_binding_types.get("value").?);
+    try std.testing.expectEqualStrings("number", snapshot.mutable_binding_types.get("alias").?);
+    try std.testing.expect(snapshot.mutable_binding_types.get("fixed") == null);
+    try std.testing.expectEqual(@as(f64, 7), snapshot.get("value").?.number);
+}
+
+test "binding snapshots preserve freshness and propagate backing allocation failures" {
+    try checkBindingSnapshotAllocations(std.testing.allocator);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkBindingSnapshotAllocations, .{});
 }

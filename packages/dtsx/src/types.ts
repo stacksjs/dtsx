@@ -469,7 +469,7 @@ export interface Declaration {
   /** Signature inferred from a known value binding, distinct from a source annotation. */
   inferredType?: string
   /** Source-position string/number constants for computed template key inference. */
-  computedKeyConstants?: ReadonlyMap<string, string | number | { kind: 'symbol' }>
+  computedKeyConstants?: import('./computed-keys').KeyConstants
   /** Deferred semantic diagnostic, checked only when this declaration is emitted. */
   inferenceError?: 'DTSX_UNSUPPORTED_VALUE_FLOW'
   /** Module syntax form; quoted modules and global augmentations bind no local name. */

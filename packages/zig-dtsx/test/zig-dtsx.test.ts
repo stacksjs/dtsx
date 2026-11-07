@@ -1458,8 +1458,8 @@ export function merge<T extends Record<string, unknown>, U extends Record<string
       expect(dts(`export const value = () => { if (flag) return 1; return 'none' }`)).toContain('() => number | string')
     })
 
-    test('retains non-exported shorthand dependencies', () => {
-      const result = dts(`const hidden = 1; export const value = { hidden }`)
+    test('retains non-exported non-widening shorthand dependencies', () => {
+      const result = dts(`const hidden: 1 = 1; export const value = { hidden }`)
       expect(result).toContain('declare const hidden: 1')
       expect(result).toContain('hidden: typeof hidden')
     })

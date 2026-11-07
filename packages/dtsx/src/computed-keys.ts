@@ -3,7 +3,7 @@ import { decodeStringLiteral, quoteModuleSpecifier, tokenizeDeclarationSyntax } 
 
 export type KeyConstant = string | number
 export type KeyBinding = KeyConstant | { kind: 'symbol' }
-export type KeyConstants = ReadonlyMap<string, KeyBinding>
+export type KeyConstants = ReadonlyMap<string, KeyBinding> & { mutableBindingTypes?: ReadonlyMap<string, string> }
 const symbolBinding: { kind: 'symbol' } = { kind: 'symbol' }
 
 const numericPrefix = /^(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:[\d_]+(?:\.[\d_]*)?|\.[\d_]+)(?:[eE][+-]?[\d_]+)?)/
@@ -126,13 +126,20 @@ export function evaluateKeyConstant(expression: string, constants: KeyConstants,
 /** Snapshot eligible const syntax before private declaration pruning. */
 export function attachComputedKeyConstants(declarations: Declaration[], privateDeclarations: ReadonlyMap<string, Declaration>): void {
   const ordered = [...new Set([...declarations, ...privateDeclarations.values()])]
-  if (!ordered.some(declaration => declaration.kind === 'variable' && typeof declaration.value === 'string' && declaration.value.includes('`') && declaration.value.includes('['))) return
+  if (!ordered.some(declaration => declaration.kind === 'variable' && typeof declaration.value === 'string' && /[\[{]/.test(declaration.value))) return
   ordered.sort((left, right) => (left.start ?? 0) - (right.start ?? 0))
   const constants = new Map<string, KeyBinding>()
+  const mutableBindingTypes = new Map<string, string>()
   const shadowsSymbol = ordered.some(declaration => declaration.name === 'Symbol')
   for (const declaration of ordered) {
     if (declaration.kind !== 'variable' || typeof declaration.value !== 'string') continue
-    if (declaration.value.includes('`') && declaration.value.includes('[')) declaration.computedKeyConstants = new Map(constants)
+    // Keep binding freshness beside the constant snapshot, before pruning. A
+    // mutable property widens a fresh literal but preserves annotated literals.
+    if (declaration.value.includes('{') || declaration.value.includes('[')) {
+      const snapshot: Map<string, KeyBinding> & { mutableBindingTypes?: ReadonlyMap<string, string> } = new Map(constants)
+      snapshot.mutableBindingTypes = new Map(mutableBindingTypes)
+      declaration.computedKeyConstants = snapshot
+    }
     const tokens = tokenizeDeclarationSyntax(declaration.value)
     const binding = tokens.length === 1 && tokens[0].kind === 'word' ? constants.get(declaration.value.slice(tokens[0].start, tokens[0].end)) : undefined
     if (declaration.typeAnnotation === 'unique symbol' || declaration.typeAnnotation === 'symbol' || typeof binding === 'object'
@@ -145,7 +152,18 @@ export function attachComputedKeyConstants(declarations: Declaration[], privateD
     // assertion, boolean, mutable binding or runtime call produces an index.
     if (declaration.modifiers?.[0] !== 'const' || declaration.typeAnnotation || declaration.modifiers.includes('const assertion')) continue
     const value = evaluateKeyConstant(declaration.value, constants)
-    if (value !== undefined) constants.set(declaration.name, value)
+    if (value !== undefined) {
+      constants.set(declaration.name, value)
+      // An alias of a non-widening literal remains non-widening.
+      const alias = tokens.length === 1 && tokens[0].kind === 'word'
+      if (!alias || mutableBindingTypes.has(declaration.value.trim()))
+        mutableBindingTypes.set(declaration.name, typeof value)
+    }
+    else if (declaration.value.trim() === 'true' || declaration.value.trim() === 'false') mutableBindingTypes.set(declaration.name, 'boolean')
+    else if (tokens.length === 1 && tokens[0].kind === 'word') {
+      const type = mutableBindingTypes.get(declaration.value.trim())
+      if (type) mutableBindingTypes.set(declaration.name, type)
+    }
   }
 }
 

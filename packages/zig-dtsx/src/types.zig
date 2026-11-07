@@ -1,7 +1,34 @@
 const std = @import("std");
 
 pub const KeyConstant = union(enum) { text: []const u8, number: f64, symbol };
-pub const KeyConstants = std.StringHashMap(KeyConstant);
+/// Source binding snapshot shared by computed-key and property inference.
+pub const KeyConstants = struct {
+    values: std.StringHashMap(KeyConstant),
+    mutable_binding_types: std.StringHashMap([]const u8),
+
+    pub fn init(allocator: std.mem.Allocator) KeyConstants {
+        return .{ .values = .init(allocator), .mutable_binding_types = .init(allocator) };
+    }
+    pub fn deinit(self: *KeyConstants) void {
+        self.values.deinit();
+        self.mutable_binding_types.deinit();
+    }
+    pub fn clone(self: *const KeyConstants) !KeyConstants {
+        var result = KeyConstants{ .values = try self.values.clone(), .mutable_binding_types = undefined };
+        errdefer result.values.deinit();
+        result.mutable_binding_types = try self.mutable_binding_types.clone();
+        return result;
+    }
+    pub fn get(self: *const KeyConstants, name: []const u8) ?KeyConstant {
+        return self.values.get(name);
+    }
+    pub fn put(self: *KeyConstants, name: []const u8, value: KeyConstant) !void {
+        try self.values.put(name, value);
+    }
+    pub fn remove(self: *KeyConstants, name: []const u8) bool {
+        return self.values.remove(name);
+    }
+};
 
 /// Declaration kinds matching the TypeScript scanner output
 pub const DeclarationKind = enum {
