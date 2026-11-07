@@ -267,12 +267,12 @@ describe('declaration generation paths', () => {
     expect(result).not.toContain('boolean | string')
   })
 
-  it('preserves shorthand binding types in semantic object inference', () => {
+  it('widens fresh shorthand binding types in semantic object inference', () => {
     const source = `export const answer = 42; export const result = { answer };`
 
     const result = processSourceSemantic(source, 'shorthand.ts')
 
-    expect(result).toContain('answer: typeof answer')
+    expect(result).toContain('answer: number')
   })
 
   it('moves default-export expressions into typed ambient bindings', () => {

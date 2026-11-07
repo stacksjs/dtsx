@@ -11,7 +11,7 @@ import { attachEnumBodies } from '../enum-declarations'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
-import { extractSatisfiesType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
+import { extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
 import { inferDeclarationValueAliases } from '../value-inference'
 
 // Character codes for fast comparison
@@ -1819,7 +1819,7 @@ function inferTypeFromDefault(value: string): string {
     return 'unknown[]'
   if (v.startsWith('{'))
     return 'Record<string, unknown>'
-  return 'unknown'
+  return inferCallType(v) ?? 'unknown'
 }
 
 /** Infer literal type from initializer value (for const-like / static readonly) */
@@ -1840,7 +1840,7 @@ function inferLiteralType(value: string): string {
   const expressionType = inferLiteralExpressionType(v)
   if (expressionType !== null)
     return expressionType
-  return 'unknown'
+  return inferCallType(v) ?? 'unknown'
 }
 
 /**

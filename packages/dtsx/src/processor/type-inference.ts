@@ -1532,7 +1532,7 @@ function findCallParenIndex(value: string): number {
 }
 
 /** Infer calls whose callee can be referenced safely from declaration syntax. */
-function inferCallType(value: string): string | null {
+export function inferCallType(value: string): string | null {
   if (value.length < 3 || !value.endsWith(')')) return null
   const open = findCallParenIndex(value)
   if (open === -1 || findMatchingBracket(value, open, '(', ')') !== value.length - 1) return null
@@ -1561,7 +1561,11 @@ function inferCallType(value: string): string | null {
     || argumentsText.startsWith('async function')
   const hasReferenceArgument = isEntityName(argumentsText)
   const hasNestedCall = !hasInlineFunction && argumentsText.endsWith(')') && inferCallType(argumentsText) !== null
-  if (!hasTypeArguments && !isOptional && !hasInlineFunction && !hasReferenceArgument && !hasNestedCall) return null
+  const dot = entity.indexOf('.')
+  if (dot !== -1) {
+    if (entity.indexOf('.', dot + 1) !== -1) return null
+  }
+  else if (!hasTypeArguments && !isOptional && !hasInlineFunction && !hasReferenceArgument && !hasNestedCall) return null
 
   const type = `ReturnType<typeof ${callee}>`
   return isOptional ? `${type} | undefined` : type

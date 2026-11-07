@@ -161,8 +161,8 @@ describe('semantic spread and value-reference regressions', () => {
     expect(output).toContain('result: number[]')
   })
 
-  it('retains non-exported shorthand bindings', () => {
-    const output = processSourceSemantic(`const hidden = 1; export const result = { hidden }`)
+  it('retains non-exported non-widening shorthand bindings', () => {
+    const output = processSourceSemantic(`const hidden: 1 = 1; export const result = { hidden }`)
     expect(output).toContain('declare const hidden: 1')
     expect(output).toContain('hidden: typeof hidden')
   })

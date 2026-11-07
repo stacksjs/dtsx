@@ -491,12 +491,12 @@ pub fn isNumericLiteral(v: []const u8) bool {
 }
 
 /// Infer type from a default value expression (simple cases)
-pub fn inferTypeFromDefault(value: []const u8) []const u8 {
+pub fn inferTypeFromDefault(s: *Scanner, value: []const u8) []const u8 {
     const v = std.mem.trim(u8, value, " \t\r\n");
     if (v.len == 0) return "unknown";
     // Dispatch on first byte to avoid running multiple checks for cases that
     // can't possibly match. e.g. a value starting with `[` is never `true`.
-    return switch (v[0]) {
+    const simple: []const u8 = switch (v[0]) {
         't' => if (std.mem.eql(u8, v, "true")) "boolean" else "unknown",
         'f' => if (std.mem.eql(u8, v, "false")) "boolean" else "unknown",
         '[' => "unknown[]",
@@ -505,6 +505,11 @@ pub fn inferTypeFromDefault(value: []const u8) []const u8 {
         '-', '0'...'9' => if (isNumericLiteral(v)) "number" else "unknown",
         else => "unknown",
     };
+    if (!std.mem.eql(u8, simple, "unknown")) return simple;
+    return type_inf.inferCallType(s.allocator, v) catch |err| {
+        s.pending_error = err;
+        return "unknown";
+    } orelse "unknown";
 }
 
 /// Infer literal type from initializer value (for const-like / static readonly)
@@ -939,11 +944,11 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
             }
         } else {
             name = std.mem.trim(u8, p[0..equal_idx.?], " \t\r\n");
-            param_type = inferTypeFromDefault(std.mem.trim(u8, p[equal_idx.? + 1 ..], " \t\r\n"));
+            param_type = inferTypeFromDefault(s, std.mem.trim(u8, p[equal_idx.? + 1 ..], " \t\r\n"));
         }
     } else if (equal_idx) |ei| {
         name = std.mem.trim(u8, p[0..ei], " \t\r\n");
-        param_type = inferTypeFromDefault(std.mem.trim(u8, p[ei + 1 ..], " \t\r\n"));
+        param_type = inferTypeFromDefault(s, std.mem.trim(u8, p[ei + 1 ..], " \t\r\n"));
     } else {
         name = p;
         param_type = "unknown";
@@ -2303,7 +2308,8 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                     const has_const_assertion = ch.endsWith(init_text, " as const");
                     const inferred_value = if (has_const_assertion) std.mem.trim(u8, init_text[0 .. init_text.len - " as const".len], " \t\r\n") else init_text;
                     const is_const_like = has_const_assertion or (is_static and is_readonly);
-                    prop_type = if (is_const_like) inferLiteralType(inferred_value) else inferTypeFromDefault(inferred_value);
+                    prop_type = if (is_const_like) inferLiteralType(inferred_value) else inferTypeFromDefault(s, inferred_value);
+                    if (is_const_like and std.mem.eql(u8, prop_type, "unknown")) prop_type = inferTypeFromDefault(s, inferred_value);
                 }
             } else {
                 prop_type = "unknown";
@@ -2806,7 +2812,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     // one of "const" / "let" / "var".
                     vtype = inferLiteralType(init_text);
                 } else {
-                    vtype = inferTypeFromDefault(init_text);
+                    vtype = inferTypeFromDefault(s, init_text);
                 }
             }
             if (vtype.len == 0) vtype = "unknown";
@@ -3440,7 +3446,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
 fn checkPrivateClassBodyAllocations(allocator: Allocator) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    const body = "{ static #static_value: number = 7; private brand: undefined; private hidden(value: number): number { return value } get #value(): number { return 7 } set #value(value: number) { void value } protected constructor(/** secret */ private readonly token: number = 7, public value: string = 'ready') {} publicMethod(): string { return this.value } }";
+    const body = "{ static #static_value: number = 7; private brand: undefined; private hidden(value: number): number { return value } get #value(): number { return 7 } set #value(value: number) { void value } protected constructor(/** secret */ private readonly token: number = 7, public value: string = 'ready', public total = Math.abs(-1)) {} computed = Math.abs(-1); static readonly computed = Math.abs(-1); publicMethod(): string { return this.value } }";
     var s = Scanner.init(std.testing.allocator, body, true, false);
     defer s.deinit();
     s.allocator = arena.allocator();
@@ -3453,6 +3459,7 @@ fn checkPrivateClassBodyAllocations(allocator: Allocator) !void {
     try std.testing.expect(std.mem.indexOf(u8, output, "private token;") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "protected constructor(") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "publicMethod(): string;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "ReturnType<typeof Math.abs>") != null);
 }
 
 test "private class projection propagates backing allocation failures" {

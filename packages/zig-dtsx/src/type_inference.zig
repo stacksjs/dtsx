@@ -283,7 +283,7 @@ fn inferUpdateType(alloc: std.mem.Allocator, operand_value: []const u8) InferErr
     return "number";
 }
 
-fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
+pub fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
     if (value.len < 3 or value[value.len - 1] != ')') return null;
     const open = std.mem.indexOfScalar(u8, value, '(') orelse return null;
     if (findMatchingBracket(value, open, '(', ')') != value.len - 1) return null;

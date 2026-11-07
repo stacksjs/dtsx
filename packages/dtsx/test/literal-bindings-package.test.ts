@@ -8,6 +8,7 @@ import { dts } from '../../bun-plugin/src'
 import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
 import { isAvailable, runTsc } from './helpers/tsc'
+import { assertIsolatedDeclarationDiagnostic } from './helpers/isolated-oracle'
 
 interface Fixture { files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }> }
 const fixtures: Record<string, Fixture> = {
@@ -118,20 +119,5 @@ for (const [code, source] of [
   ['TS9016', 'const value = 7; export const object = { value };'],
   ['TS9018', 'const base = [1, 2] as const; export const list = [...base] as const;'],
 ]) {
-  test(`${code} is a real isolated-declaration diagnostic on strict-valid source`, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dtsx-literal-oracle-'))
-    try {
-      await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }))
-      await writeFile(join(root, 'index.ts'), source)
-      await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...compilerOptions }, files: ['index.ts'] }))
-      const authored = runTsc(root, ['--project', 'tsconfig.json'])
-      expect(authored.ok, authored.output).toBe(true)
-      await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...compilerOptions, noEmit: false, isolatedDeclarations: true, declaration: true, emitDeclarationOnly: true, noEmitOnError: true, outDir: './out' }, files: ['index.ts'] }))
-      const oracle = Bun.spawnSync([process.execPath, resolve(import.meta.dir, '../../../node_modules/typescript/lib/tsc.js'), '--project', 'tsconfig.json'], { cwd: root, timeout: 4000 })
-      const diagnostics = oracle.stdout.toString() + oracle.stderr.toString()
-      expect(oracle.exitCode, diagnostics).not.toBe(0)
-      expect(diagnostics.match(/error TS\d+/g) ?? [], diagnostics).toEqual([`error ${code}`])
-    }
-    finally { await rm(root, { recursive: true, force: true }) }
-  })
+  test(`${code} is a real isolated-declaration diagnostic on strict-valid source`, () => assertIsolatedDeclarationDiagnostic(code, source))
 }
