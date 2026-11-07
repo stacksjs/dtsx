@@ -499,7 +499,7 @@ bun run typecheck:public-sdk
 bun run test:public-sdk
 ```
 
-The SDK gate checks advertised exports, runtime dependency edges, normal/frozen installs, installed payload hashes, strict NodeNext typing, precise invalid consumers and Bun imports. It also checks the optional formatter with its provider present and absent. The command prints an evidence directory containing raw command logs and `receipt.json`; set `DTSX_SDK_EVIDENCE` to choose its parent directory. Its owned candidate registry serves the exact archives without changing their manifests. Public registry releases and native artifacts require separate verification. CI retains this evidence and blocks publication when any SDK or advertised host-provider baseline fails.
+The SDK gate checks advertised exports, runtime dependency edges, normal/frozen installs, installed payload hashes, strict NodeNext typing, precise invalid consumers and Bun imports. It also checks the optional formatter with its provider present and absent. The command prints an evidence directory containing raw command logs and `receipt.json`; set `DTSX_SDK_EVIDENCE` to choose its parent directory. Failed installations stay intact. Passed consumers release their derived `node_modules` after all checks; archives, locks, probes, logs and payload hashes remain available. Set `DTSX_SDK_KEEP_INSTALLS=1` to retain passed installations too. Its owned candidate registry serves the exact archives without changing their manifests. Public registry releases and native artifacts require separate verification. CI retains this evidence and blocks publication when any SDK or advertised host-provider baseline fails.
 
 ## Changelog
 

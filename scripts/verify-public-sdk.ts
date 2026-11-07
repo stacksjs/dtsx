@@ -1,6 +1,6 @@
 import process from 'node:process'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { builtinModules } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -71,6 +71,7 @@ const ownerToolVersions: Record<string, string> = {}
 const registryRequests: Array<Record<string, unknown>> = []
 const resolutions: Array<Record<string, unknown>> = []
 const authoredPrivateProofs: Array<Record<string, unknown>> = []
+const installations: Array<{ consumer: string, retention: string }> = []
 let registry: CandidateRegistry | undefined
 let registryStopped = false
 let sequence = 0
@@ -93,7 +94,10 @@ async function startRegistry(packages: Packed[]): Promise<CandidateRegistry> {
   }))
   const aborters = new Set<AbortController>()
   let origin = ''
-  const server = Bun.serve({ hostname: '127.0.0.1', port: 0,
+  // Public requests already have a 60-second AbortController deadline below.
+  // Bun's unrelated default idle timer must not disconnect an in-flight proxy
+  // response first and turn a real provider result into ConnectionClosed.
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, idleTimeout: 0,
   async fetch(request) {
     const url = new URL(request.url)
     const record: Record<string, unknown> = { id: registryRequests.length + 1,
@@ -184,6 +188,16 @@ async function check(name: string, operation: () => Promise<void>): Promise<bool
     console.error(`FAIL ${name}: ${detail}`)
     return false
   }
+}
+
+/** Keep failed graphs intact; release only a completed, passing graph's derived dependencies. */
+async function releasePassedInstallation(consumer: string, passed: boolean): Promise<void> {
+  if (!passed || process.env.DTSX_SDK_KEEP_INSTALLS === '1') {
+    installations.push({ consumer, retention: passed ? 'passed graph retained by request' : 'failed graph retained' })
+    return
+  }
+  const removed = await check(`${consumer}: release passed installation dependencies`, () => rm(join(evidence, consumer, 'node_modules'), { recursive: true, force: true }))
+  installations.push({ consumer, retention: removed ? 'passed dependencies removed; archives, locks, probes, logs and hashes retained' : 'dependency cleanup failed' })
 }
 
 async function run(name: string, args: string[], cwd: string, timeout = 120000): Promise<{ code: number, output: string }> {
@@ -563,11 +577,16 @@ try {
   })
   assert(packed.length === 6, 'All six normal candidate archives are required before registry installation')
   registry = await startRegistry(packed)
-  for (const item of packed) await check(`installed SDK ${item.directory}`, () => verifyConsumer(item.directory, [item], item, core, authoredTools, registry!, packed))
-  await check('installed full cohort SDK', () => verifyConsumer('cohort', packed, core, core, authoredTools, registry!, packed))
+  for (const item of packed) {
+    const passed = await check(`installed SDK ${item.directory}`, () => verifyConsumer(item.directory, [item], item, core, authoredTools, registry!, packed))
+    await releasePassedInstallation(item.directory, passed)
+  }
+  const cohortPassed = await check('installed full cohort SDK', () => verifyConsumer('cohort', packed, core, core, authoredTools, registry!, packed))
+  await releasePassedInstallation('cohort', cohortPassed)
   const prettier = core.manifest.peerDependencies?.prettier
   assert(prettier && core.manifest.peerDependenciesMeta?.prettier?.optional === true, 'The formatter provider must be an explicitly optional peer')
-  await check('installed SDK with optional formatter provider', () => verifyConsumer('optional-prettier', [core], core, core, { ...authoredTools, prettier }, registry!, packed))
+  const formatterPassed = await check('installed SDK with optional formatter provider', () => verifyConsumer('optional-prettier', [core], core, core, { ...authoredTools, prettier }, registry!, packed))
+  await releasePassedInstallation('optional-prettier', formatterPassed)
 }
 catch (error) {
   results.push({ name: 'gate setup', ok: false, detail: error instanceof Error ? error.stack : String(error) })
@@ -578,7 +597,7 @@ finally {
   await writeFile(join(evidence, 'receipt.json'), JSON.stringify({
     kind: 'prepublication strict installed candidate SDK gate', status: failed.length ? 'FAIL' : 'PASS',
     evidence, runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
-    maintainedCompilerBaseline: '7.0.2', ownerToolVersions, archives, results, commands, graphs, payloads, resolutions, authoredPrivateProofs,
+    maintainedCompilerBaseline: '7.0.2', ownerToolVersions, archives, results, commands, graphs, payloads, resolutions, authoredPrivateProofs, installations,
     candidateRegistry: { url: registry?.url, started: Boolean(registry), requests: registryRequests, stopped: registryStopped,
     qualification: 'Owned loopback test provider; no actual public registry publication or admission is claimed.' },
     limits: ['No build or declaration generation was invoked by this gate.',
