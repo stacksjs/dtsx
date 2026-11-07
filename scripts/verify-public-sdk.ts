@@ -465,7 +465,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   assert(hash(await readFile(join(consumer, 'bun.lock'))) === hash(lock), 'Frozen install changed the consumer lock')
   await verifyInstalledCandidates(consumer, packages, candidates, core, `${name}:frozen`)
   const resolvedTools: Record<string, string> = {}
-  for (const tool of ['typescript', '@types/bun', 'bun-types', ...Object.keys(dependencies).filter(key => !packages.some(item => item.manifest.name === key))]) {
+  for (const tool of new Set(['typescript', '@types/bun', 'bun-types', ...Object.keys(tools), ...Object.keys(dependencies).filter(key => !packages.some(item => item.manifest.name === key))])) {
     const manifest: Manifest = await Bun.file(join(consumer, 'node_modules', tool, 'package.json')).json()
     resolvedTools[tool] = manifest.version
   }
@@ -486,6 +486,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   }
   const positiveSource = name === 'cohort'
     ? `${await fixture('dtsx.ts')}\n${await fixture('cohort.ts')}`
+    : name === 'tsdown' ? `${await fixture('dtsx.ts')}\n${await fixture('tsdown.ts')}`
     : await fixture(`${primary.directory}.ts`)
   const entries = (name === 'cohort' ? packages : [primary]).flatMap(item =>
     publicEntries(item).map(entry => ({ ...entry, specifier: `${item.manifest.name}${entry.subpath.slice(1)}` })))
@@ -529,6 +530,16 @@ const input = 'export interface Example{value:string}'
 const formatted = await formatDts(input, { usePrettier: true, prettierOptions: { semi: true } })
 assert.equal(formatted.usedPrettier, true, JSON.stringify(formatted.warnings))
 assert.equal(formatted.content, await format(input, { parser: 'typescript', semi: true }))
+`
+  if (name === 'tsdown') runtime += `
+const { build } = await import('tsdown')
+const { dts } = await import('@stacksjs/dtsx/tsdown')
+const { writeFile, readFile } = await import('node:fs/promises')
+await writeFile('entry.ts', 'export class Calculate { #hidden = () => ({ value: 2 }); value(): number { return this.#hidden().value } }')
+await build({ config: false, entry: ['entry.ts'], outDir: 'output', plugins: [dts()], logLevel: 'silent', report: false })
+assert.match(await readFile('output/entry.d.mts', 'utf8'), /value\\(\\): number/)
+const { Calculate } = await import('./output/entry.mjs')
+assert.equal(new Calculate().value(), 2)
 `
   await writeFile(join(consumer, 'runtime.ts'), runtime)
   const runtimeResult = await run(`${name}-Bun-runtime`, [process.execPath, 'runtime.ts'], consumer, 60000)
@@ -587,6 +598,10 @@ try {
   assert(prettier && core.manifest.peerDependenciesMeta?.prettier?.optional === true, 'The formatter provider must be an explicitly optional peer')
   const formatterPassed = await check('installed SDK with optional formatter provider', () => verifyConsumer('optional-prettier', [core], core, core, { ...authoredTools, prettier }, registry!, packed))
   await releasePassedInstallation('optional-prettier', formatterPassed)
+  const tsdown = owner.devDependencies?.tsdown
+  assert(tsdown, 'The authored tsdown comparison tool range is required')
+  const tsdownPassed = await check('installed SDK with tsdown host', () => verifyConsumer('tsdown', [core], core, core, { ...authoredTools, tsdown }, registry!, packed))
+  await releasePassedInstallation('tsdown', tsdownPassed)
 }
 catch (error) {
   results.push({ name: 'gate setup', ok: false, detail: error instanceof Error ? error.stack : String(error) })

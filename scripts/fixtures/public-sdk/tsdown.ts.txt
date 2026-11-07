@@ -1,0 +1,7 @@
+import { defineConfig, type TsdownPlugin } from 'tsdown'
+import { dts, type TsdownDtsOptions } from '@stacksjs/dtsx/tsdown'
+
+const options: TsdownDtsOptions = { moduleSpecifierMode: 'node' }
+const plugin: TsdownPlugin = dts(options)
+const config = defineConfig({ entry: ['entry.ts'], plugins: [plugin] })
+void config

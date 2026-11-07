@@ -4,6 +4,25 @@ This guide covers how to integrate dtsx with various build tools and development
 
 ## Build System Integration
 
+### tsdown Integration
+
+```ts
+// tsdown.config.ts
+import { dts } from '@stacksjs/dtsx/tsdown'
+import { defineConfig } from 'tsdown'
+
+export default defineConfig({
+  entry: { index: 'src/index.ts' },
+  plugins: [dts()],
+})
+```
+
+The plugin uses DTSX to generate bundled declarations and disables tsdown's built-in declaration generator. DTSX needs no TypeScript compiler at runtime. tsdown is the build host and is installed only in projects that use it.
+
+Declarations follow the final entry chunk names, including nested aliases: `.js` gets `.d.ts`, `.mjs` gets `.d.mts`, and `.cjs` gets `.d.cts`. ESM, CommonJS, dual-format output, multiple entries and watch rebuilds are covered by real tsdown builds and installed strict package consumers. Rolldown publishes the declarations alongside the JavaScript after its output cleaning, so rebuilds update both together. Bundled declaration maps are currently unsupported and are rejected when requested.
+
+The bundled DTSX npm package has no required npm dependencies. Its API and CLI are checked in a normally installed archive with external packages unavailable; optional Prettier formatting remains opt-in.
+
 ### Vite Integration
 
 ```typescript

@@ -27,6 +27,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build core library and CLI
         run: bun run build
+      - name: Verify dependency-free installed core API and CLI
+        run: bun run test:standalone
       - name: Build every plugin library
         run: bun --filter './packages/*-plugin' build
       - name: Typecheck public SDK verifier
@@ -59,6 +61,8 @@ jobs:
           version: 0.11.180
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
+      - name: Verify tsdown ESM, CJS and installed declaration contracts
+        run: bun test packages/dtsx/test/tsdown-package.test.ts
       - name: Verify source identity, output collisions and transactional publication
         run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts packages/dtsx/test/generation-publication.test.ts packages/dtsx/test/bundle-augmentation-package.test.ts
       - name: Build the native CLI and FFI library for this platform

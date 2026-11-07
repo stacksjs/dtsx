@@ -2,6 +2,16 @@
 
 This guide covers performance optimization techniques and best practices for dtsx.
 
+## Comparing with tsdown
+
+```sh
+bun run benchmark:tsdown --output tsdown-benchmark.json
+```
+
+This comparison builds the same fresh, canonical project with DTSX and tsdown's built-in declaration generator. Projects have 2, 11 and 101 source files, including the public entry. Each sample discovers the graph, emits bundled declarations and writes output. DTSX's caches are cleared before each sample; tsdown also executes its bundling pipeline. The reported timings therefore describe complete declaration builds, rather than isolated parser throughput.
+
+Every sample must produce fresh output containing all public exports. Source validity and strict positive/negative consumer checks run outside the timed region, with `skipLibCheck: false` and an exact expected TS2322 for a wrong return assignment. Failed tools produce a failed benchmark, not an apparent fast result. JSON records tool versions, sample counts, durations and output hashes. The comparison is also included in the main benchmark command and CI's Markdown/JSON results.
+
 ## Import Optimization Strategies
 
 ### Smart Import Tracking

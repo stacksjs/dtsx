@@ -18,6 +18,7 @@
         "oxc-parser": "^0.157.0",
         "oxc-transform": "^0.157.0",
         "pickier": "^0.1.88",
+        "tsdown": "^0.23.7",
         "typescript": "^7.0.2"
       },
       "system": {
@@ -35,10 +36,8 @@
     "packages/dtsx": {
       "name": "@stacksjs/dtsx",
       "version": "0.11.31",
-      "dependencies": {
-        "@stacksjs/clapp": "^0.2.16"
-      },
       "devDependencies": {
+        "@stacksjs/clapp": "^0.2.16",
         "bunfig": "^0.15.21",
         "prettier": "^3.9.10"
       }

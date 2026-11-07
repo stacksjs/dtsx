@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { isolatedDeclarationSync } from 'oxc-transform'
+import { runTsdownComparison, tsdownComparisonMarkdown } from './tsdown'
 
 // ---------------------------------------------------------------------------
 // Parse args
@@ -663,6 +664,9 @@ md += `| Total time | ${(results.summary.totalTimeMs / 1000).toFixed(1)} s |\n`
 // Write output
 // ---------------------------------------------------------------------------
 
+const tsdownComparison = await runTsdownComparison()
+md += tsdownComparisonMarkdown(tsdownComparison)
+
 if (summaryPath) {
   appendFileSync(summaryPath, md)
   console.log('Benchmark summary written to $GITHUB_STEP_SUMMARY')
@@ -675,6 +679,7 @@ writeFileSync('benchmark-summary.md', md)
 
 const fullResults = {
   ...results,
+  bundledDeclarations: tsdownComparison,
   crossTool: crossToolResults.map(r => ({
     input: r.input,
     zigDtsxMs: r.zigDtsx?.avg ?? null,

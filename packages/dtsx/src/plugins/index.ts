@@ -15,5 +15,8 @@ export { dtsx as esbuildDts, dtsx as esbuild, dts as esbuildPlugin, type Esbuild
 // tsup
 export { dtsxPlugin as tsupDts, dtsxPlugin as tsup, dts as tsupPlugin, type TsupPluginOptions } from './tsup'
 
+// tsdown
+export { dts as tsdownDts, dts as tsdown, type TsdownDtsOptions, type TsdownDeclarationPlugin } from './tsdown'
+
 // webpack
 export { DtsxWebpackPlugin, dtsxWebpack as webpackDts, dts as webpackPlugin, type WebpackPluginOptions } from './webpack'

@@ -11,11 +11,13 @@ import * as plugins from '@stacksjs/dtsx/plugins'
 import * as vite from '@stacksjs/dtsx/vite'
 import * as esbuild from '@stacksjs/dtsx/esbuild'
 import * as tsup from '@stacksjs/dtsx/tsup'
+import * as tsdown from '@stacksjs/dtsx/tsdown'
 import * as webpack from '@stacksjs/dtsx/webpack'
 import * as nestedBun from '@stacksjs/dtsx/plugins/bun'
 import * as nestedVite from '@stacksjs/dtsx/plugins/vite'
 import * as nestedEsbuild from '@stacksjs/dtsx/plugins/esbuild'
 import * as nestedTsup from '@stacksjs/dtsx/plugins/tsup'
+import * as nestedTsdown from '@stacksjs/dtsx/plugins/tsdown'
 import * as nestedWebpack from '@stacksjs/dtsx/plugins/webpack'
 
 const path: FilePath = asFilePath('src/index.ts')
@@ -27,5 +29,5 @@ const generated: Promise<GenerationStats> = generate({ moduleSpecifierMode: 'nod
 const nativeGenerated: Promise<NativeGenerationResult> = generateNativeDeclarationProject('zig-dtsx', { moduleSpecifierMode: 'node', entrypoints: ['index.ts'] }, { timeoutMs: 4000 })
 const nativeShape: Promise<{ readonly filesGenerated: number, readonly outputFiles: readonly string[] }> = nativeGenerated
 const bunPlugin = nestedBun.dts({ moduleSpecifierMode: 'node' })
-void [sdk, generator, cache, brands, optimizer, sorter, checker, plugins, vite, esbuild, tsup, webpack,
-  nestedBun, nestedVite, nestedEsbuild, nestedTsup, nestedWebpack, directory, validated, declaration, ordered, generated, nativeShape, bunPlugin]
+void [sdk, generator, cache, brands, optimizer, sorter, checker, plugins, vite, esbuild, tsup, tsdown, webpack,
+  nestedBun, nestedVite, nestedEsbuild, nestedTsup, nestedTsdown, nestedWebpack, directory, validated, declaration, ordered, generated, nativeShape, bunPlugin]

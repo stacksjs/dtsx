@@ -339,6 +339,23 @@ module.exports = {
 }
 ```
 
+### tsdown
+
+```ts
+// tsdown.config.ts
+import { dts } from '@stacksjs/dtsx/tsdown'
+import { defineConfig } from 'tsdown'
+
+export default defineConfig({
+  entry: ['src/index.ts'],
+  plugins: [dts()],
+})
+```
+
+DTSX replaces tsdown's built-in declaration generator. It supports ESM/CJS output, named entries and watch rebuilds without requiring a TypeScript compiler at runtime. The bundled DTSX package has no required npm dependencies; tsdown is a development dependency of the consuming project. Bundled declaration maps are not supported.
+
+Run `bun run benchmark:tsdown --output tsdown-benchmark.json` from this repository for a comparison with tsdown's own declaration generator, including fresh output and strict type controls.
+
 ### tsup
 
 ```ts

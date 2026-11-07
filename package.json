@@ -42,9 +42,11 @@
   ],
   "scripts": {
     "benchmark": "bun benchmark/index.ts",
+    "benchmark:tsdown": "bun benchmark/tsdown.ts",
     "build": "bun --filter './packages/dtsx' build",
     "test": "find packages -name '*.test.ts' -print | xargs bun test",
     "test:public-sdk": "bun scripts/verify-public-sdk.ts",
+    "test:standalone": "bun scripts/verify-standalone.ts",
     "typecheck:public-sdk": "bun x tsc --project tsconfig.public-sdk.json",
     "lint": "bun x --bun pickier .",
     "lint:fix": "bun x --bun pickier . --fix",
@@ -74,6 +76,7 @@
     "mitata": "^1.0.34",
     "oxc-transform": "^0.157.0",
     "oxc-parser": "^0.157.0",
+    "tsdown": "^0.23.7",
     "typescript": "^7.0.2"
   },
   "workspaces": [

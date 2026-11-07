@@ -23,6 +23,7 @@ import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
+import { runTsdownComparison, tsdownComparisonMarkdown } from './tsdown'
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -446,3 +447,4 @@ for (const p of projects) {
 // ---------------------------------------------------------------------------
 
 await run()
+console.log(tsdownComparisonMarkdown(await runTsdownComparison()))
