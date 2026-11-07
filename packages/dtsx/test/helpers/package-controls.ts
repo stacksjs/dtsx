@@ -1,6 +1,6 @@
-import { expect } from 'bun:test'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { expect } from 'bun:test'
 import { runTsc } from './tsc'
 
 interface Controls { positive: string, negatives: Array<{ text: string, code: string }> }
