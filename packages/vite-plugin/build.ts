@@ -9,7 +9,7 @@ const result = await Bun.build({
   target: 'bun',
   external: ['@stacksjs/dtsx'],
   // minify: true,
-  plugins: [dts()],
+  plugins: [dts({ moduleSpecifierMode: 'node' })],
 })
 
 if (!result.success) {

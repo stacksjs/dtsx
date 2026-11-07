@@ -1,0 +1,2 @@
+import { __brand } from '@stacksjs/dtsx/branded-types'
+void __brand

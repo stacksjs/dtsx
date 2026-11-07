@@ -29,6 +29,20 @@ jobs:
         run: bun run build
       - name: Build every plugin library
         run: bun --filter './packages/*-plugin' build
+      - name: Typecheck public SDK verifier
+        run: bun run typecheck:public-sdk
+      - name: Verify normally packed public SDK consumers
+        id: public-sdk
+        run: bun run test:public-sdk
+        env:
+          DTSX_SDK_EVIDENCE: ${{ runner.temp }}/public-sdk
+      - name: Retain public SDK evidence
+        if: always() && steps.public-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: public-sdk-builds
+          path: ${{ runner.temp }}/public-sdk
+          if-no-files-found: error
 
   source-paths:
     name: Source path identity (${{ matrix.os }})
@@ -164,6 +178,19 @@ jobs:
           zig build -Doptimize=fast
           mkdir -p prebuilt/linux-x64
           cp zig-out/lib/libzig-dtsx.so prebuilt/linux-x64/
+
+      - name: Verify normally packed public SDK consumers
+        id: public-sdk
+        run: bun run test:public-sdk
+        env:
+          DTSX_SDK_EVIDENCE: ${{ runner.temp }}/public-sdk
+      - name: Retain public SDK evidence
+        if: always() && steps.public-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: public-sdk-commit
+          path: ${{ runner.temp }}/public-sdk
+          if-no-files-found: error
 
       - name: Publish Commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

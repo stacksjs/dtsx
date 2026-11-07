@@ -1,0 +1,3 @@
+import { asFilePath, type FilePath } from './branded-types.js'
+const path: FilePath = asFilePath('src/index.ts')
+void path

@@ -47,6 +47,19 @@ jobs:
           bun run build
           bun --filter './packages/*-plugin' build
 
+      - name: Verify normally packed public SDK consumers
+        id: public-sdk
+        run: bun run test:public-sdk
+        env:
+          DTSX_SDK_EVIDENCE: ${{ runner.temp }}/public-sdk
+      - name: Retain public SDK evidence
+        if: always() && steps.public-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: public-sdk-release
+          path: ${{ runner.temp }}/public-sdk
+          if-no-files-found: error
+
       - name: Build Zig CLI + Library Binaries
         working-directory: packages/zig-dtsx
         run: |

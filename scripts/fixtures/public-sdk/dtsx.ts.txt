@@ -1,0 +1,28 @@
+import * as sdk from '@stacksjs/dtsx'
+import { asDirectoryPath, asFilePath, BrandedPath, generate, processSource, sortImports, type DirectoryPath, type FilePath, type GenerationStats } from '@stacksjs/dtsx'
+import * as generator from '@stacksjs/dtsx/generator'
+import * as cache from '@stacksjs/dtsx/cache'
+import * as brands from '@stacksjs/dtsx/branded-types'
+import * as optimizer from '@stacksjs/dtsx/optimizer'
+import * as sorter from '@stacksjs/dtsx/import-sorter'
+import * as checker from '@stacksjs/dtsx/checker'
+import * as plugins from '@stacksjs/dtsx/plugins'
+import * as vite from '@stacksjs/dtsx/vite'
+import * as esbuild from '@stacksjs/dtsx/esbuild'
+import * as tsup from '@stacksjs/dtsx/tsup'
+import * as webpack from '@stacksjs/dtsx/webpack'
+import * as nestedBun from '@stacksjs/dtsx/plugins/bun'
+import * as nestedVite from '@stacksjs/dtsx/plugins/vite'
+import * as nestedEsbuild from '@stacksjs/dtsx/plugins/esbuild'
+import * as nestedTsup from '@stacksjs/dtsx/plugins/tsup'
+import * as nestedWebpack from '@stacksjs/dtsx/plugins/webpack'
+
+const path: FilePath = asFilePath('src/index.ts')
+const directory: DirectoryPath = BrandedPath.dirname(path)
+const validated: DirectoryPath = asDirectoryPath('src')
+const declaration: string = processSource('export const scale: number = 7')
+const ordered: string[] = sortImports([])
+const generated: Promise<GenerationStats> = generate({ moduleSpecifierMode: 'node' })
+const bunPlugin = nestedBun.dts({ moduleSpecifierMode: 'node' })
+void [sdk, generator, cache, brands, optimizer, sorter, checker, plugins, vite, esbuild, tsup, webpack,
+  nestedBun, nestedVite, nestedEsbuild, nestedTsup, nestedWebpack, directory, validated, declaration, ordered, generated, bunPlugin]

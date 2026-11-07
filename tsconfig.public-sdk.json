@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["bun"] },
+  "include": ["scripts/verify-public-sdk.ts"],
+  "exclude": ["node_modules", "scripts/fixtures"]
+}

@@ -1,0 +1,3 @@
+import type { FilePath } from '@stacksjs/dtsx'
+const invalid: FilePath = 'an unvalidated string'
+void invalid

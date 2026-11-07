@@ -1,0 +1,8 @@
+import DtsxWebpackPlugin, { dtsx, dtsxCheck, dtsxWatch, type DtsxWebpackOptions } from 'webpack-plugin-dtsx'
+import type { WebpackPluginInstance } from 'webpack'
+const options: DtsxWebpackOptions = { moduleSpecifierMode: 'node' }
+const plugin: WebpackPluginInstance = new DtsxWebpackPlugin(options)
+const factory: WebpackPluginInstance = dtsx(options)
+const checked: WebpackPluginInstance = dtsxCheck()
+const watched: WebpackPluginInstance = dtsxWatch({})
+void [plugin, factory, checked, watched]

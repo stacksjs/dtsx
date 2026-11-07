@@ -481,13 +481,29 @@ _Compiled native binaries via subprocess._
 
 ## Testing
 
+Install the pinned tools and dependencies through Pantry, then build the actual native producer before running its consumers:
+
 ```bash
-bun test
+pantry install --frozen-lockfile
+eval "$(pantry env)"
+(cd packages/zig-dtsx && zig build && zig build test)
+bun run test
 ```
+
+Before publication, build the core and every adapter, then check their normal package archives in strict installed SDK consumers:
+
+```bash
+bun run build
+bun --filter './packages/*-plugin' build
+bun run typecheck:public-sdk
+bun run test:public-sdk
+```
+
+The SDK gate checks advertised exports, runtime dependency edges, normal/frozen installs, installed payload hashes, strict NodeNext typing, precise invalid consumers and Bun imports. It also checks the optional formatter with its provider present and absent. The command prints an evidence directory containing raw command logs and `receipt.json`; set `DTSX_SDK_EVIDENCE` to choose its parent directory. Its owned candidate registry serves the exact archives without changing their manifests. Public registry releases and native artifacts require separate verification. CI retains this evidence and blocks publication when any SDK or advertised host-provider baseline fails.
 
 ## Changelog
 
-Please see our [releases](https://github.com/stacksjs/stacks/releases) page for more information on what has changed recently.
+Please see our [releases](https://github.com/stacksjs/dtsx/releases) page for more information on what has changed recently.
 
 ## Contributing
 

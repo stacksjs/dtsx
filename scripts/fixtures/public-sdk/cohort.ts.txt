@@ -1,0 +1,6 @@
+import * as standaloneBun from 'bun-plugin-dtsx'
+import * as standaloneVite from 'vite-plugin-dtsx'
+import * as standaloneEsbuild from 'esbuild-plugin-dtsx'
+import * as standaloneWebpack from 'webpack-plugin-dtsx'
+import * as standaloneTsup from 'tsup-plugin-dtsx'
+void [standaloneBun, standaloneVite, standaloneEsbuild, standaloneWebpack, standaloneTsup]

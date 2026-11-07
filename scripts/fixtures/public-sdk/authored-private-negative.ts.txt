@@ -1,0 +1,2 @@
+import { __brand } from './branded-types.js'
+void __brand

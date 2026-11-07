@@ -39,7 +39,8 @@
         "@stacksjs/clapp": "^0.2.16"
       },
       "devDependencies": {
-        "bunfig": "^0.15.21"
+        "bunfig": "^0.15.21",
+        "prettier": "^3.9.10"
       }
     },
     "packages/esbuild-plugin": {
@@ -59,8 +60,10 @@
     "packages/vite-plugin": {
       "name": "vite-plugin-dtsx",
       "version": "0.11.31",
+      "dependencies": {
+        "@stacksjs/dtsx": "workspace:*"
+      },
       "devDependencies": {
-        "@stacksjs/dtsx": "workspace:*",
         "vite": "^8.3.6"
       }
     },

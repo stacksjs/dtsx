@@ -24,6 +24,7 @@ await generate({
   root: './src',
   outdir: './dist',
   entrypoints: ['index.ts'],
+  moduleSpecifierMode: 'node',
 })
 
 console.log('Build complete')

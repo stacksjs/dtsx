@@ -1,0 +1,7 @@
+import dts, { dtsCheck, dtsBundled, type DtsPluginOptions } from 'vite-plugin-dtsx'
+import type { Plugin } from 'vite'
+const options: DtsPluginOptions = { moduleSpecifierMode: 'node' }
+const plugin: Plugin = dts(options)
+const checked: Plugin = dtsCheck(options)
+const bundled: Plugin = dtsBundled(options)
+void [plugin, checked, bundled]

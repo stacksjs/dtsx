@@ -90,7 +90,6 @@ async function checkPrettierAvailable(): Promise<boolean> {
   }
 
   try {
-    // @ts-expect-error - prettier is an optional dependency
     prettierModule = await import('prettier') as PrettierModule
     prettierAvailable = true
     return true

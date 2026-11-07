@@ -1,0 +1,3 @@
+import type { DtsGenerationOption } from 'SDK_PACKAGE'
+const invalid: DtsGenerationOption = { moduleSpecifierMode: 'unsupported' }
+void invalid

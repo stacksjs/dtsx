@@ -1,0 +1,7 @@
+import dtsx, { dtsxCheck, dtsxWatch, type DtsxEsbuildOptions } from 'esbuild-plugin-dtsx'
+import type { Plugin } from 'esbuild'
+const options: DtsxEsbuildOptions = { moduleSpecifierMode: 'node' }
+const plugin: Plugin = dtsx(options)
+const checked: Plugin = dtsxCheck()
+const watched: Plugin = dtsxWatch({})
+void [plugin, checked, watched]

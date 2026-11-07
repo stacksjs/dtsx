@@ -44,6 +44,8 @@
     "benchmark": "bun benchmark/index.ts",
     "build": "bun --filter './packages/dtsx' build",
     "test": "find packages -name '*.test.ts' -print | xargs bun test",
+    "test:public-sdk": "bun scripts/verify-public-sdk.ts",
+    "typecheck:public-sdk": "bun x tsc --project tsconfig.public-sdk.json",
     "lint": "bun x --bun pickier .",
     "lint:fix": "bun x --bun pickier . --fix",
     "format": "bun x --bun pickier . --format",
