@@ -59,203 +59,203 @@ declare class SymbolTrackerImpl implements SymbolTracker {
   reportInferenceFallback(node: Node): void;
 }
 declare const enum ReferenceHint {
-    Unspecified,
-    Identifier,
-    Property,
-    ExportAssignment,
-    Jsx,
-    AsyncFunction,
-    ExportImportEquals,
-    ExportSpecifier,
-    Decorator,
+    Unspecified = 0,
+    Identifier = 1,
+    Property = 2,
+    ExportAssignment = 3,
+    Jsx = 4,
+    AsyncFunction = 5,
+    ExportImportEquals = 6,
+    ExportSpecifier = 7,
+    Decorator = 8,
 }
 declare const enum IterationUse {
-    AllowsSyncIterablesFlag = 1 << 0,
-    AllowsAsyncIterablesFlag = 1 << 1,
-    AllowsStringInputFlag = 1 << 2,
-    ForOfFlag = 1 << 3,
-    YieldStarFlag = 1 << 4,
-    SpreadFlag = 1 << 5,
-    DestructuringFlag = 1 << 6,
-    PossiblyOutOfBounds = 1 << 7,
+    AllowsSyncIterablesFlag = 1,
+    AllowsAsyncIterablesFlag = 2,
+    AllowsStringInputFlag = 4,
+    ForOfFlag = 8,
+    YieldStarFlag = 16,
+    SpreadFlag = 32,
+    DestructuringFlag = 64,
+    PossiblyOutOfBounds = 128,
 
     // Spread, Destructuring, Array element assignment
-    Element = AllowsSyncIterablesFlag,
-    Spread = AllowsSyncIterablesFlag | SpreadFlag,
-    Destructuring = AllowsSyncIterablesFlag | DestructuringFlag,
+    Element = 1,
+    Spread = 33,
+    Destructuring = 65,
 
-    ForOf = AllowsSyncIterablesFlag | AllowsStringInputFlag | ForOfFlag,
-    ForAwaitOf = AllowsSyncIterablesFlag | AllowsAsyncIterablesFlag | AllowsStringInputFlag | ForOfFlag,
+    ForOf = 13,
+    ForAwaitOf = 15,
 
-    YieldStar = AllowsSyncIterablesFlag | YieldStarFlag,
-    AsyncYieldStar = AllowsSyncIterablesFlag | AllowsAsyncIterablesFlag | YieldStarFlag,
+    YieldStar = 17,
+    AsyncYieldStar = 19,
 
-    GeneratorReturnType = AllowsSyncIterablesFlag,
-    AsyncGeneratorReturnType = AllowsAsyncIterablesFlag,
+    GeneratorReturnType = 1,
+    AsyncGeneratorReturnType = 2,
 }
 declare const enum IterationTypeKind {
-    Yield,
-    Return,
-    Next,
+    Yield = 0,
+    Return = 1,
+    Next = 2,
 }
 declare const enum WideningKind {
-    Normal,
-    FunctionReturn,
-    GeneratorNext,
-    GeneratorYield,
+    Normal = 0,
+    FunctionReturn = 1,
+    GeneratorNext = 2,
+    GeneratorYield = 3,
 }
 /** @internal */
 export declare const enum TypeFacts {
     None = 0,
-    TypeofEQString = 1 << 0,      // typeof x === "string"
-    TypeofEQNumber = 1 << 1,      // typeof x === "number"
-    TypeofEQBigInt = 1 << 2,      // typeof x === "bigint"
-    TypeofEQBoolean = 1 << 3,     // typeof x === "boolean"
-    TypeofEQSymbol = 1 << 4,      // typeof x === "symbol"
-    TypeofEQObject = 1 << 5,      // typeof x === "object"
-    TypeofEQFunction = 1 << 6,    // typeof x === "function"
-    TypeofEQHostObject = 1 << 7,  // typeof x === "xxx"
-    TypeofNEString = 1 << 8,      // typeof x !== "string"
-    TypeofNENumber = 1 << 9,      // typeof x !== "number"
-    TypeofNEBigInt = 1 << 10,     // typeof x !== "bigint"
-    TypeofNEBoolean = 1 << 11,    // typeof x !== "boolean"
-    TypeofNESymbol = 1 << 12,     // typeof x !== "symbol"
-    TypeofNEObject = 1 << 13,     // typeof x !== "object"
-    TypeofNEFunction = 1 << 14,   // typeof x !== "function"
-    TypeofNEHostObject = 1 << 15, // typeof x !== "xxx"
-    EQUndefined = 1 << 16,        // x === undefined
-    EQNull = 1 << 17,             // x === null
-    EQUndefinedOrNull = 1 << 18,  // x === undefined / x === null
-    NEUndefined = 1 << 19,        // x !== undefined
-    NENull = 1 << 20,             // x !== null
-    NEUndefinedOrNull = 1 << 21,  // x != undefined / x != null
-    Truthy = 1 << 22,             // x
-    Falsy = 1 << 23,              // !x
-    IsUndefined = 1 << 24,        // Contains undefined or intersection with undefined
-    IsNull = 1 << 25,             // Contains null or intersection with null
-    IsUndefinedOrNull = IsUndefined | IsNull,
-    All = (1 << 27) - 1,
+    TypeofEQString = 1,      // typeof x === "string"
+    TypeofEQNumber = 2,      // typeof x === "number"
+    TypeofEQBigInt = 4,      // typeof x === "bigint"
+    TypeofEQBoolean = 8,     // typeof x === "boolean"
+    TypeofEQSymbol = 16,      // typeof x === "symbol"
+    TypeofEQObject = 32,      // typeof x === "object"
+    TypeofEQFunction = 64,    // typeof x === "function"
+    TypeofEQHostObject = 128,  // typeof x === "xxx"
+    TypeofNEString = 256,      // typeof x !== "string"
+    TypeofNENumber = 512,      // typeof x !== "number"
+    TypeofNEBigInt = 1024,     // typeof x !== "bigint"
+    TypeofNEBoolean = 2048,    // typeof x !== "boolean"
+    TypeofNESymbol = 4096,     // typeof x !== "symbol"
+    TypeofNEObject = 8192,     // typeof x !== "object"
+    TypeofNEFunction = 16384,   // typeof x !== "function"
+    TypeofNEHostObject = 32768, // typeof x !== "xxx"
+    EQUndefined = 65536,        // x === undefined
+    EQNull = 131072,             // x === null
+    EQUndefinedOrNull = 262144,  // x === undefined / x === null
+    NEUndefined = 524288,        // x !== undefined
+    NENull = 1048576,             // x !== null
+    NEUndefinedOrNull = 2097152,  // x != undefined / x != null
+    Truthy = 4194304,             // x
+    Falsy = 8388608,              // !x
+    IsUndefined = 16777216,        // Contains undefined or intersection with undefined
+    IsNull = 33554432,             // Contains null or intersection with null
+    IsUndefinedOrNull = 50331648,
+    All = 134217727,
     // The following members encode facts about particular kinds of types for use in the getTypeFacts function.
     // The presence of a particular fact means that the given test is true for some (and possibly all) values
     // of that kind of type.
-    BaseStringStrictFacts = TypeofEQString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | NEUndefined | NENull | NEUndefinedOrNull,
-    BaseStringFacts = BaseStringStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    StringStrictFacts = BaseStringStrictFacts | Truthy | Falsy,
-    StringFacts = BaseStringFacts | Truthy,
-    EmptyStringStrictFacts = BaseStringStrictFacts | Falsy,
-    EmptyStringFacts = BaseStringFacts,
-    NonEmptyStringStrictFacts = BaseStringStrictFacts | Truthy,
-    NonEmptyStringFacts = BaseStringFacts | Truthy,
-    BaseNumberStrictFacts = TypeofEQNumber | TypeofNEString | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | NEUndefined | NENull | NEUndefinedOrNull,
-    BaseNumberFacts = BaseNumberStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    NumberStrictFacts = BaseNumberStrictFacts | Truthy | Falsy,
-    NumberFacts = BaseNumberFacts | Truthy,
-    ZeroNumberStrictFacts = BaseNumberStrictFacts | Falsy,
-    ZeroNumberFacts = BaseNumberFacts,
-    NonZeroNumberStrictFacts = BaseNumberStrictFacts | Truthy,
-    NonZeroNumberFacts = BaseNumberFacts | Truthy,
-    BaseBigIntStrictFacts = TypeofEQBigInt | TypeofNEString | TypeofNENumber | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | NEUndefined | NENull | NEUndefinedOrNull,
-    BaseBigIntFacts = BaseBigIntStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    BigIntStrictFacts = BaseBigIntStrictFacts | Truthy | Falsy,
-    BigIntFacts = BaseBigIntFacts | Truthy,
-    ZeroBigIntStrictFacts = BaseBigIntStrictFacts | Falsy,
-    ZeroBigIntFacts = BaseBigIntFacts,
-    NonZeroBigIntStrictFacts = BaseBigIntStrictFacts | Truthy,
-    NonZeroBigIntFacts = BaseBigIntFacts | Truthy,
-    BaseBooleanStrictFacts = TypeofEQBoolean | TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | NEUndefined | NENull | NEUndefinedOrNull,
-    BaseBooleanFacts = BaseBooleanStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    BooleanStrictFacts = BaseBooleanStrictFacts | Truthy | Falsy,
-    BooleanFacts = BaseBooleanFacts | Truthy,
-    FalseStrictFacts = BaseBooleanStrictFacts | Falsy,
-    FalseFacts = BaseBooleanFacts,
-    TrueStrictFacts = BaseBooleanStrictFacts | Truthy,
-    TrueFacts = BaseBooleanFacts | Truthy,
-    SymbolStrictFacts = TypeofEQSymbol | TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | NEUndefined | NENull | NEUndefinedOrNull | Truthy,
-    SymbolFacts = SymbolStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    ObjectStrictFacts = TypeofEQObject | TypeofEQHostObject | TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEFunction | NEUndefined | NENull | NEUndefinedOrNull | Truthy,
-    ObjectFacts = ObjectStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    FunctionStrictFacts = TypeofEQFunction | TypeofEQHostObject | TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | NEUndefined | NENull | NEUndefinedOrNull | Truthy,
-    FunctionFacts = FunctionStrictFacts | EQUndefined | EQNull | EQUndefinedOrNull | Falsy,
-    VoidFacts = TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | EQUndefined | EQUndefinedOrNull | NENull | Falsy,
-    UndefinedFacts = TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | TypeofNEHostObject | EQUndefined | EQUndefinedOrNull | NENull | Falsy | IsUndefined,
-    NullFacts = TypeofEQObject | TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEFunction | TypeofNEHostObject | EQNull | EQUndefinedOrNull | NEUndefined | Falsy | IsNull,
-    EmptyObjectStrictFacts = All & ~(EQUndefined | EQNull | EQUndefinedOrNull | IsUndefinedOrNull),
-    EmptyObjectFacts = All & ~IsUndefinedOrNull,
-    UnknownFacts = All & ~IsUndefinedOrNull,
-    AllTypeofNE = TypeofNEString | TypeofNENumber | TypeofNEBigInt | TypeofNEBoolean | TypeofNESymbol | TypeofNEObject | TypeofNEFunction | NEUndefined,
+    BaseStringStrictFacts = 3735041,
+    BaseStringFacts = 12582401,
+    StringStrictFacts = 16317953,
+    StringFacts = 16776705,
+    EmptyStringStrictFacts = 12123649,
+    EmptyStringFacts = 12582401,
+    NonEmptyStringStrictFacts = 7929345,
+    NonEmptyStringFacts = 16776705,
+    BaseNumberStrictFacts = 3734786,
+    BaseNumberFacts = 12582146,
+    NumberStrictFacts = 16317698,
+    NumberFacts = 16776450,
+    ZeroNumberStrictFacts = 12123394,
+    ZeroNumberFacts = 12582146,
+    NonZeroNumberStrictFacts = 7929090,
+    NonZeroNumberFacts = 16776450,
+    BaseBigIntStrictFacts = 3734276,
+    BaseBigIntFacts = 12581636,
+    BigIntStrictFacts = 16317188,
+    BigIntFacts = 16775940,
+    ZeroBigIntStrictFacts = 12122884,
+    ZeroBigIntFacts = 12581636,
+    NonZeroBigIntStrictFacts = 7928580,
+    NonZeroBigIntFacts = 16775940,
+    BaseBooleanStrictFacts = 3733256,
+    BaseBooleanFacts = 12580616,
+    BooleanStrictFacts = 16316168,
+    BooleanFacts = 16774920,
+    FalseStrictFacts = 12121864,
+    FalseFacts = 12580616,
+    TrueStrictFacts = 7927560,
+    TrueFacts = 16774920,
+    SymbolStrictFacts = 7925520,
+    SymbolFacts = 16772880,
+    ObjectStrictFacts = 7888800,
+    ObjectFacts = 16736160,
+    FunctionStrictFacts = 7880640,
+    FunctionFacts = 16728000,
+    VoidFacts = 9830144,
+    UndefinedFacts = 26607360,
+    NullFacts = 42917664,
+    EmptyObjectStrictFacts = 83427327,
+    EmptyObjectFacts = 83886079,
+    UnknownFacts = 83886079,
+    AllTypeofNE = 556800,
     // Masks
-    OrFactsMask = TypeofEQFunction | TypeofNEObject,
-    AndFactsMask = All & ~OrFactsMask,
+    OrFactsMask = 8256,
+    AndFactsMask = 134209471,
 }
 declare const enum TypeSystemPropertyName {
-    Type,
-    ResolvedBaseConstructorType,
-    DeclaredType,
-    ResolvedReturnType,
-    ImmediateBaseConstraint,
-    ResolvedTypeArguments,
-    ResolvedBaseTypes,
-    WriteType,
-    ParameterInitializerContainsUndefined,
+    Type = 0,
+    ResolvedBaseConstructorType = 1,
+    DeclaredType = 2,
+    ResolvedReturnType = 3,
+    ImmediateBaseConstraint = 4,
+    ResolvedTypeArguments = 5,
+    ResolvedBaseTypes = 6,
+    WriteType = 7,
+    ParameterInitializerContainsUndefined = 8,
 }
 /** @internal */
 export declare const enum CheckMode {
     Normal = 0,                                     // Normal type checking
-    Contextual = 1 << 0,                            // Explicitly assigned contextual type, therefore not cacheable
-    Inferential = 1 << 1,                           // Inferential typing
-    SkipContextSensitive = 1 << 2,                  // Skip context sensitive function expressions
-    SkipGenericFunctions = 1 << 3,                  // Skip single signature generic functions
-    IsForSignatureHelp = 1 << 4,                    // Call resolution for purposes of signature help
-    RestBindingElement = 1 << 5,                    // Checking a type that is going to be used to determine the type of a rest binding element
+    Contextual = 1,                            // Explicitly assigned contextual type, therefore not cacheable
+    Inferential = 2,                           // Inferential typing
+    SkipContextSensitive = 4,                  // Skip context sensitive function expressions
+    SkipGenericFunctions = 8,                  // Skip single signature generic functions
+    IsForSignatureHelp = 16,                    // Call resolution for purposes of signature help
+    RestBindingElement = 32,                    // Checking a type that is going to be used to determine the type of a rest binding element
                                                     //   e.g. in `const { a, ...rest } = foo`, when checking the type of `foo` to determine the type of `rest`,
                                                     //   we need to preserve generic types instead of substituting them for constraints
-    TypeOnly = 1 << 6,                              // Called from getTypeOfExpression, diagnostics may be omitted
+    TypeOnly = 64,                              // Called from getTypeOfExpression, diagnostics may be omitted
 }
 /** @internal */
 export declare const enum SignatureCheckMode {
     None = 0,
-    BivariantCallback = 1 << 0,
-    StrictCallback = 1 << 1,
-    IgnoreReturnTypes = 1 << 2,
-    StrictArity = 1 << 3,
-    StrictTopSignature = 1 << 4,
-    Callback = BivariantCallback | StrictCallback,
+    BivariantCallback = 1,
+    StrictCallback = 2,
+    IgnoreReturnTypes = 4,
+    StrictArity = 8,
+    StrictTopSignature = 16,
+    Callback = 3,
 }
 declare const enum IntersectionState {
     None = 0,
-    Source = 1 << 0, // Source type is a constituent of an outer intersection
-    Target = 1 << 1, // Target type is a constituent of an outer intersection
+    Source = 1, // Source type is a constituent of an outer intersection
+    Target = 2, // Target type is a constituent of an outer intersection
 }
 declare const enum RecursionFlags {
     None = 0,
-    Source = 1 << 0,
-    Target = 1 << 1,
-    Both = Source | Target,
+    Source = 1,
+    Target = 2,
+    Both = 3,
 }
 declare const enum MappedTypeModifiers {
-    IncludeReadonly = 1 << 0,
-    ExcludeReadonly = 1 << 1,
-    IncludeOptional = 1 << 2,
-    ExcludeOptional = 1 << 3,
+    IncludeReadonly = 1,
+    ExcludeReadonly = 2,
+    IncludeOptional = 4,
+    ExcludeOptional = 8,
 }
 declare const enum MappedTypeNameTypeKind {
-    None,
-    Filtering,
-    Remapping,
+    None = 0,
+    Filtering = 1,
+    Remapping = 2,
 }
 declare const enum ExpandingFlags {
     None = 0,
     Source = 1,
-    Target = 1 << 1,
-    Both = Source | Target,
+    Target = 2,
+    Both = 3,
 }
 declare const enum MembersOrExportsResolutionKind {
-    resolvedExports = "resolvedExports",
-    resolvedMembers = "resolvedMembers",
+    resolvedExports = 'resolvedExports',
+    resolvedMembers = 'resolvedMembers',
 }
 declare const enum UnusedKind {
-    Local,
-    Parameter,
+    Local = 0,
+    Parameter = 1,
 }
 declare const enum DeclarationMeaning {
     GetAccessor = 1,
@@ -263,26 +263,26 @@ declare const enum DeclarationMeaning {
     PropertyAssignment = 4,
     Method = 8,
     PrivateStatic = 16,
-    GetOrSetAccessor = GetAccessor | SetAccessor,
-    PropertyAssignmentOrMethod = PropertyAssignment | Method,
+    GetOrSetAccessor = 3,
+    PropertyAssignmentOrMethod = 12,
 }
 declare const enum DeclarationSpaces {
     None = 0,
-    ExportValue = 1 << 0,
-    ExportType = 1 << 1,
-    ExportNamespace = 1 << 2,
+    ExportValue = 1,
+    ExportType = 2,
+    ExportNamespace = 4,
 }
 declare const enum MinArgumentCountFlags {
     None = 0,
-    StrongArityForUntypedJS = 1 << 0,
-    VoidIsNonOptional = 1 << 1,
+    StrongArityForUntypedJS = 1,
+    VoidIsNonOptional = 2,
 }
 declare const enum IntrinsicTypeKind {
-    Uppercase,
-    Lowercase,
-    Capitalize,
-    Uncapitalize,
-    NoInfer,
+    Uppercase = 0,
+    Lowercase = 1,
+    Capitalize = 2,
+    Uncapitalize = 3,
+    NoInfer = 4,
 }
 declare namespace JsxNames {
   export const JSX: __String;
