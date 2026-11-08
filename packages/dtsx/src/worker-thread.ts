@@ -173,7 +173,9 @@ catch (error) {
   }
 }
 
-parentPort.on('message', async (task) => {
+// Inert when imported outside a worker (for example by tooling that loads
+// every module); only a worker thread has a parent port.
+parentPort?.on('message', async (task) => {
   const result = await processTask(task);
   parentPort.postMessage(result);
 });
