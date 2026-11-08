@@ -20,12 +20,12 @@
  * - dtsx and zig-dtsx run in their default (value-inferring) mode, which does more work than
  *   isolated-declarations-only emitters.
  *
- * Run: bun benchmark/index.ts [--json benchmark/results.json] [--skip-tsdown]
+ * Run: bun benchmark/index.ts [--json benchmark/results.json] [--runs 3] [--skip-tsdown]
  */
 import type { MachineInfo } from './tools'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { loadavg, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
@@ -34,15 +34,17 @@ import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
-import { dtsxExe, machineInfo, oxcCliEnv, oxcExe, tscExe, zigDtsxExe } from './tools'
+import { machineInfo, oxcCliEnv, oxcExe, tscExe, zigDtsxExe } from './tools'
 import { runTsdownComparison, tsdownComparisonMarkdown } from './tsdown'
 
 const argv = process.argv.slice(2)
 const jsonIndex = argv.indexOf('--json')
 const jsonPath = jsonIndex >= 0 ? (argv[jsonIndex + 1] ?? join(import.meta.dir, 'results.json')) : null
 const skipTsdown = argv.includes('--skip-tsdown')
+const runsIndex = argv.indexOf('--runs')
+const runs = runsIndex >= 0 ? Math.max(1, Number(argv[runsIndex + 1]) || 1) : 1
 
-for (const [name, exe] of [['dtsx', dtsxExe], ['zig-dtsx', zigDtsxExe], ['oxc-emit', oxcExe], ['tsc', tscExe]] as const) {
+for (const [name, exe] of [['zig-dtsx', zigDtsxExe], ['oxc-emit', oxcExe], ['tsc', tscExe]] as const) {
   if (!existsSync(exe)) throw new Error(`${name} executable missing at ${exe}. Run \`bun run benchmark:prepare\` first.`)
 }
 
@@ -137,7 +139,6 @@ const outFor = (tool: string, filename: string): string => join(cliOutDir, `${to
 
 const cliTools: Record<string, (filename: string) => void> = {
   'zig-dtsx': filename => void spawnSync(zigDtsxExe, [join(cliBenchDir, filename), '-o', outFor('zig-dtsx', filename)], { stdio: 'pipe' }),
-  'dtsx': filename => void spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), outFor('dtsx', filename)], { stdio: 'pipe' }),
   'oxc': filename => void spawnSync(oxcExe, [join(cliBenchDir, filename), outFor('oxc', filename)], { stdio: 'pipe', env: oxcCliEnv }),
   'tsc': (filename) => {
     // tsc derives the output name from the input; emit into a per-tool directory.
@@ -172,39 +173,7 @@ for (const { filename, source } of inputs) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 1: In-process, no cache
-// ---------------------------------------------------------------------------
-
-for (const { name, filename, source } of inputs) {
-  summary(() => {
-    bench(`inproc:zig-dtsx:${name}`, () => zigInProcess(source))
-    bench(`inproc:dtsx:${name}`, () => dtsxNoCache(source, filename))
-    bench(`inproc:oxc-transform:${name}`, () => oxcInProcess(source, filename))
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Section 2: dtsx repeated build (content-hash cache hit)
-// ---------------------------------------------------------------------------
-
-for (const { name, filename, source } of inputs) {
-  dtsxCached(source, filename)
-  bench(`cached:dtsx:${name}`, () => dtsxCached(source, filename))
-}
-
-// ---------------------------------------------------------------------------
-// Section 3: CLI, single file
-// ---------------------------------------------------------------------------
-
-for (const { name, filename } of inputs) {
-  summary(() => {
-    for (const [tool, run] of Object.entries(cliTools))
-      bench(`cli:${tool}:${name}`, () => run(filename))
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Section 4: multi-file project
+// Multi-file projects (generated once, verified per tool)
 // ---------------------------------------------------------------------------
 
 const projectSizes = [50, 100, 500]
@@ -231,7 +200,6 @@ function projectOut(p: Project, tool: string): string {
 
 const projectTools: Record<string, (p: Project) => void> = {
   'zig-dtsx': p => void spawnSync(zigDtsxExe, ['--project', p.dir, '--outdir', projectOut(p, 'zig-dtsx')], { stdio: 'pipe' }),
-  'dtsx': p => void spawnSync(dtsxExe, ['--project', p.dir, '--outdir', projectOut(p, 'dtsx')], { stdio: 'pipe' }),
   'oxc': p => void spawnSync(oxcExe, ['--project', p.dir, '--outdir', projectOut(p, 'oxc')], { stdio: 'pipe', env: oxcCliEnv }),
   'tsc': p => void spawnSync(tscExe, [...tscFlags, '--outDir', projectOut(p, 'tsc'), ...p.files], { stdio: 'pipe' }),
 }
@@ -252,17 +220,45 @@ for (const p of projects) {
   }
 }
 
-for (const p of projects) {
-  summary(() => {
-    for (const [tool, run] of Object.entries(projectTools)) {
-      // Output directories are recreated outside timing would be ideal, but mitata
-      // has no per-iteration setup hook; every tool pays the same rm+mkdir cost.
-      bench(`project:${tool}:${p.name}`, () => {
-        resetOut(p, tool)
-        run(p)
-      })
-    }
-  })
+// mitata clears registered benchmarks after each run, so every run registers
+// the same set again.
+function registerBenchmarks(): void {
+  // In-process, no cache. `zig-dtsx` is published as "dtsx"; `dtsx` is the JS SDK.
+  for (const { name, filename, source } of inputs) {
+    summary(() => {
+      bench(`inproc:zig-dtsx:${name}`, () => zigInProcess(source))
+      bench(`inproc:dtsx:${name}`, () => dtsxNoCache(source, filename))
+      bench(`inproc:oxc-transform:${name}`, () => oxcInProcess(source, filename))
+    })
+  }
+
+  // JS SDK repeated build: content-hash cache hit (reported separately).
+  for (const { name, filename, source } of inputs) {
+    dtsxCached(source, filename)
+    bench(`cached:dtsx:${name}`, () => dtsxCached(source, filename))
+  }
+
+  // CLI, single file: every tool as an executable.
+  for (const { name, filename } of inputs) {
+    summary(() => {
+      for (const [tool, run] of Object.entries(cliTools))
+        bench(`cli:${tool}:${name}`, () => run(filename))
+    })
+  }
+
+  // CLI, multi-file project.
+  for (const p of projects) {
+    summary(() => {
+      for (const [tool, run] of Object.entries(projectTools)) {
+        // Output directories are recreated outside timing would be ideal, but mitata
+        // has no per-iteration setup hook; every tool pays the same rm+mkdir cost.
+        bench(`project:${tool}:${p.name}`, () => {
+          resetOut(p, tool)
+          run(p)
+        })
+      }
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,19 +268,54 @@ for (const p of projects) {
 const machine: MachineInfo = machineInfo()
 console.log(`\n${machine.cpu} (${machine.model}), ${machine.cores} cores, ${machine.memoryGB} GB, ${machine.os}, Bun ${machine.bun}\n`)
 
-const result = await run()
+// Each run measures every benchmark once; published numbers are the median of
+// the per-run means, which damps interference from other processes. The load
+// average around each run is recorded alongside the results.
+interface RunLoad { start: number, end: number }
+const loads: RunLoad[] = []
+const perAlias = new Map<string, Array<{ avg: number, p50: number, min: number, max: number, samples: number }>>()
+for (let index = 0; index < runs; index++) {
+  console.log(`\nRun ${index + 1}/${runs}\n`)
+  registerBenchmarks()
+  const start = loadavg()[0]
+  const result = await run()
+  loads.push({ start, end: loadavg()[0] })
+  for (const b of result.benchmarks as any[]) {
+    const stats = b.runs[0].stats
+    const list = perAlias.get(b.alias) ?? []
+    list.push({ avg: stats.avg, p50: stats.p50, min: stats.min, max: stats.max, samples: stats.samples.length })
+    perAlias.set(b.alias, list)
+  }
+}
 const tsdown = skipTsdown ? null : await runTsdownComparison()
 if (tsdown) console.log(tsdownComparisonMarkdown(tsdown))
 
+const median = (values: number[]): number => {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
 if (jsonPath) {
-  const rows = result.benchmarks.map((b: any) => {
-    const [section, tool, ...rest] = String(b.alias).split(':')
-    const stats = b.runs[0].stats
-    return { section, tool, input: rest.join(':'), avgNs: stats.avg, p50Ns: stats.p50, minNs: stats.min, maxNs: stats.max, samples: stats.samples.length }
+  const rows = [...perAlias].map(([alias, measured]) => {
+    const [section, tool, ...rest] = alias.split(':')
+    return {
+      section,
+      tool,
+      input: rest.join(':'),
+      avgNs: median(measured.map(m => m.avg)),
+      p50Ns: median(measured.map(m => m.p50)),
+      minNs: Math.min(...measured.map(m => m.min)),
+      maxNs: Math.max(...measured.map(m => m.max)),
+      samples: measured.reduce((sum, m) => sum + m.samples, 0),
+      runAvgNs: measured.map(m => m.avg),
+    }
   })
   writeFileSync(jsonPath, `${JSON.stringify({
     date: new Date().toISOString().slice(0, 10),
     machine,
+    runs,
+    loadAverage: loads,
     inputs: inputs.map(({ key, name, filename }) => ({ key, name, filename })),
     projects: projectSizes,
     rows,

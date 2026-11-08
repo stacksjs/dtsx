@@ -13,6 +13,8 @@ import { join } from 'node:path'
 interface Row { section: string, tool: string, input: string, avgNs: number, p50Ns: number, minNs: number, maxNs: number, samples: number }
 interface Results {
   date: string
+  runs?: number
+  loadAverage?: Array<{ start: number, end: number }>
   machine: MachineInfo
   inputs: Array<{ key: string, name: string, filename: string }>
   projects: number[]
@@ -62,6 +64,10 @@ const cores = m.performanceCores && m.efficiencyCores
   ? `${m.cores}-core CPU (${m.performanceCores} performance + ${m.efficiencyCores} efficiency)`
   : `${m.cores}-core CPU`
 const machineLine = `${m.cpu}${m.model ? ` (\`${m.model}\`)` : ''}, ${cores}, ${m.memoryGB} GB RAM, ${m.os} (${m.arch})`
+const loads = (results.loadAverage ?? []).flatMap(l => [l.start, l.end])
+const runLine = results.runs && results.runs > 1
+  ? `Each time is the median of ${results.runs} full runs${loads.length ? `; the 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement` : ''}.`
+  : loads.length ? `The 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement.` : ''
 const versionLine = `Bun ${m.bun} · Zig ${m.versions.zig} · oxc-transform ${m.versions['oxc-transform']} · TypeScript ${m.versions.typescript} (native \`tsc\`) · tsdown ${m.versions.tsdown}`
 
 const inputColumns = results.inputs.map(i => ({ key: i.name, label: i.name }))
@@ -110,7 +116,7 @@ function body(level: '##' | '#'): string {
   const h2 = level === '#' ? '##' : '###'
   const h3 = `${h2}#`
   return `Measured on **${machineLine}** — ${results.date}.
-${versionLine}.
+${versionLine}.${runLine ? `\n${runLine}` : ''}
 
 Reproduce with \`bun run benchmark:prepare && bun run benchmark:publish\`. Raw numbers live in [\`benchmark/results.json\`](https://github.com/stacksjs/dtsx/blob/main/benchmark/results.json).
 

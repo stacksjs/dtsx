@@ -12,7 +12,6 @@ import { dirname, join } from 'node:path'
 
 const root = join(import.meta.dir, '..')
 
-export const dtsxExe: string = join(root, 'packages', 'dtsx', 'bin', 'dtsx')
 export const zigDtsxExe: string = join(root, 'packages', 'zig-dtsx', 'zig-out', 'bin', 'zig-dtsx')
 export const oxcExe: string = join(import.meta.dir, 'oxc-emit')
 

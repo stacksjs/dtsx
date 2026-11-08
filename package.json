@@ -42,8 +42,8 @@
   ],
   "scripts": {
     "benchmark": "bun benchmark/index.ts",
-    "benchmark:prepare": "cd packages/zig-dtsx && zig build -Doptimize=ReleaseFast && cd ../dtsx && bun run compile && cd ../.. && bun build benchmark/oxc-emit.ts --compile --splitting --bytecode --minify --format=esm --outfile benchmark/oxc-emit",
-    "benchmark:publish": "bun benchmark/index.ts --json benchmark/results.json && bun benchmark/render.ts",
+    "benchmark:prepare": "cd packages/zig-dtsx && zig build -Doptimize=ReleaseFast && cd ../.. && bun build benchmark/oxc-emit.ts --compile --splitting --bytecode --minify --format=esm --outfile benchmark/oxc-emit",
+    "benchmark:publish": "bun benchmark/index.ts --json benchmark/results.json --runs 3 && bun benchmark/render.ts",
     "benchmark:tsdown": "bun benchmark/tsdown.ts",
     "build": "bun --filter './packages/dtsx' build",
     "test": "find packages -name '*.test.ts' -print | xargs bun test",
