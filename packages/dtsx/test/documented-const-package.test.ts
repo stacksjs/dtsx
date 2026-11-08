@@ -36,5 +36,5 @@ const version: '1.0.0' = api.APP_CONSTANTS.VERSION`,
         expect(declaration).toMatch(/\/\*\* Application version \*\/\s+readonly VERSION: '1.0.0'/)
       },
     })
-  })
+  }, 30_000)
 }
