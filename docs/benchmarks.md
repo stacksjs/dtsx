@@ -27,9 +27,9 @@ _One file transformed in-process: zig-dtsx through Bun FFI, oxc-transform throug
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **5.88 µs** | **11.48 µs** | **41.92 µs** | **163.38 µs** |
-| oxc-transform | 6.41 µs _(1.09x)_ | 18.29 µs _(1.59x)_ | 43.81 µs _(1.05x)_ | 219.56 µs _(1.34x)_ |
-| dtsx (Bun/TypeScript) | 27.46 µs _(4.7x)_ | 49.70 µs _(4.3x)_ | 145.68 µs _(3.5x)_ | 595.29 µs _(3.6x)_ |
+| **dtsx (native, zig-dtsx)** | **5.64 µs** | **11.74 µs** | **43.43 µs** | **153.10 µs** |
+| oxc-transform | 6.60 µs _(1.17x)_ | 18.83 µs _(1.60x)_ | 45.25 µs _(1.04x)_ | 225.76 µs _(1.47x)_ |
+| dtsx (Bun/TypeScript) | 34.29 µs _(6.1x)_ | 50.06 µs _(4.3x)_ | 152.29 µs _(3.5x)_ | 637.78 µs _(4.2x)_ |
 
 ## CLI: single file
 
@@ -37,10 +37,10 @@ _Each tool runs as an executable via subprocess, so process startup is included.
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **1.91 ms** | **1.89 ms** | **2.04 ms** | **2.30 ms** |
-| oxc | 8.31 ms _(4.4x)_ | 8.38 ms _(4.4x)_ | 8.52 ms _(4.2x)_ | 9.13 ms _(4.0x)_ |
-| dtsx (Bun binary) | 10.66 ms _(5.6x)_ | 10.93 ms _(5.8x)_ | 12.42 ms _(6.1x)_ | 15.32 ms _(6.7x)_ |
-| tsc 7 (native Go) | 27.11 ms _(14x)_ | 27.02 ms _(14x)_ | 28.00 ms _(14x)_ | 29.97 ms _(13x)_ |
+| **dtsx (native, zig-dtsx)** | **2.13 ms** | **2.11 ms** | **2.13 ms** | **2.34 ms** |
+| oxc | 8.55 ms _(4.0x)_ | 8.65 ms _(4.1x)_ | 8.42 ms _(4.0x)_ | 8.61 ms _(3.7x)_ |
+| dtsx (Bun binary) | 8.44 ms _(4.0x)_ | 8.82 ms _(4.2x)_ | 10.00 ms _(4.7x)_ | 12.84 ms _(5.5x)_ |
+| tsc 7 (native Go) | 28.10 ms _(13x)_ | 27.90 ms _(13x)_ | 27.78 ms _(13x)_ | 28.98 ms _(12x)_ |
 
 ## CLI: multi-file project
 
@@ -48,10 +48,10 @@ _A whole directory of generated modules. zig-dtsx and tsc use multiple threads; 
 
 | Tool | 50 files | 100 files | 500 files |
 |------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **8.79 ms** | **15.18 ms** | **63.07 ms** |
-| oxc | 21.33 ms _(2.4x)_ | 32.69 ms _(2.2x)_ | 137.25 ms _(2.2x)_ |
-| tsc 7 (native Go) | 53.29 ms _(6.1x)_ | 78.07 ms _(5.1x)_ | 273.54 ms _(4.3x)_ |
-| dtsx (Bun binary) | 47.66 ms _(5.4x)_ | 118.26 ms _(7.8x)_ | 295.98 ms _(4.7x)_ |
+| **dtsx (native, zig-dtsx)** | **8.90 ms** | **14.59 ms** | **61.90 ms** |
+| oxc | 20.75 ms _(2.3x)_ | 32.20 ms _(2.2x)_ | 125.04 ms _(2.0x)_ |
+| dtsx (Bun binary) | 47.84 ms _(5.4x)_ | 72.26 ms _(5.0x)_ | 241.43 ms _(3.9x)_ |
+| tsc 7 (native Go) | 53.92 ms _(6.1x)_ | 78.31 ms _(5.4x)_ | 291.59 ms _(4.7x)_ |
 
 ## Bundled declarations: dtsx vs tsdown
 
@@ -59,8 +59,8 @@ _Fresh bundled declaration builds of the same project, verified by strict positi
 
 | Tool | 2 source files | 11 source files | 101 source files |
 |------|------|------|------|
-| **dtsx (Bun/TypeScript)** | **2.23 ms** | **6.25 ms** | **43.85 ms** |
-| tsdown | 35.35 ms _(15.9x)_ | 39.88 ms _(6.4x)_ | 70.27 ms _(1.6x)_ |
+| **dtsx (Bun/TypeScript)** | **2.41 ms** | **6.18 ms** | **44.00 ms** |
+| tsdown | 35.09 ms _(14.6x)_ | 39.44 ms _(6.4x)_ | 70.01 ms _(1.6x)_ |
 
 ## Watch mode and incremental rebuilds
 
@@ -68,4 +68,4 @@ _dtsx's content-hash cache returns an unchanged file's declarations without re-s
 
 | | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |---|---|---|---|---|
-| dtsx (Bun, warm cache hit) | 94 ns | 172 ns | 375 ns | 1.39 µs |
+| dtsx (Bun, warm cache hit) | 96 ns | 260 ns | 385 ns | 1.43 µs |
