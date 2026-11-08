@@ -9,7 +9,7 @@ bun run benchmark:prepare   # build zig-dtsx, the dtsx binary and the oxc wrappe
 bun run benchmark:publish   # measure, write benchmark/results.json, regenerate README + docs tables
 ```
 
-`benchmark:prepare` builds every executable with release settings (`zig build -Doptimize=ReleaseFast`, `bun build --compile --bytecode`). The harness verifies that each tool really emits declarations before timing it, so a failing tool aborts the run instead of producing a misleadingly fast row.
+`benchmark:prepare` builds every executable with release settings (`zig build -Doptimize=ReleaseFast`, `bun build --compile --splitting --bytecode`). The harness verifies that each tool really emits declarations before timing it, so a failing tool aborts the run instead of producing a misleadingly fast row.
 
 ## Comparing with tsdown
 

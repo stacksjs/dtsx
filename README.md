@@ -425,6 +425,7 @@ export const promiseVal = Promise.resolve(42)
 dtsx produces **sound** types (correctly widened for mutable containers) while preserving original values via `@defaultValue` JSDoc — something neither tsc nor oxc does. No `as const`, no explicit annotations, no `isolatedDeclarations` flag required.
 
 <!-- benchmarks:start -->
+
 ## Benchmarks
 
 Measured on **Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64)** — 2026-11-08.
@@ -432,12 +433,12 @@ Bun 1.4.4 · Zig 0.17.1 · oxc-transform 0.157.0 · TypeScript 7.0.2 (native `ts
 
 Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw numbers live in [`benchmark/results.json`](https://github.com/stacksjs/dtsx/blob/main/benchmark/results.json).
 
-**How the comparison is kept fair**
+### How the comparison is kept fair
 
 - Every tool emits real declarations for the same inputs; the harness verifies each tool's output before timing and aborts if any tool fails, so no row can time a crash.
 - dtsx runs in its default value-inferring mode (narrow types and `@defaultValue` JSDoc), which does more work than isolated-declarations-only emitters.
 - `tsc` is TypeScript 7's native Go compiler, run directly (no Node launcher) with `--noCheck`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
-- oxc has no declaration CLI, so its CLI is a minimal Bun-compiled wrapper around `oxc-transform`, built with the same `bun build --compile --bytecode` flags as the dtsx Bun binary.
+- oxc has no declaration CLI, so its CLI is a minimal Bun-compiled wrapper around `oxc-transform`, built with the same `bun build --compile --splitting --bytecode` flags as the dtsx Bun binary.
 - "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
 - Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
 
@@ -489,6 +490,7 @@ _dtsx's content-hash cache returns an unchanged file's declarations without re-s
 | | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |---|---|---|---|---|
 | dtsx (Bun, warm cache hit) | 94 ns | 172 ns | 375 ns | 1.39 µs |
+
 <!-- benchmarks:end -->
 
 ### Binary Size

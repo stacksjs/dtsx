@@ -9,6 +9,7 @@
 - Cross-platform binary
 
 <!-- benchmarks:start -->
+
 ## Benchmarks
 
 Measured on Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64) (2026-11-08, Bun 1.4.4). See [Benchmarks](/benchmarks) for methodology, the Bun CLI, bundled builds and watch mode.
@@ -38,6 +39,7 @@ Measured on Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency)
 | oxc | 21.33 ms _(2.4x)_ | 32.69 ms _(2.2x)_ | 137.25 ms _(2.2x)_ |
 | tsc 7 (native Go) | 53.29 ms _(6.1x)_ | 78.07 ms _(5.1x)_ | 273.54 ms _(4.3x)_ |
 | dtsx (Bun binary) | 47.66 ms _(5.4x)_ | 118.26 ms _(7.8x)_ | 295.98 ms _(4.7x)_ |
+
 <!-- benchmarks:end -->
 
 ### Binary Size
