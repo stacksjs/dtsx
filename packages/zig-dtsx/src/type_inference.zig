@@ -2427,6 +2427,13 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
             (if (!is_const and key_constants != null) key_constants.?.mutable_binding_types.get(prop.value) else null) orelse try std.fmt.allocPrint(alloc, "typeof {s}", .{prop.value})
         else
             try inferNarrowTypeWithKeyConstants(alloc, prop.value, is_const, false, depth + 1, key_constants);
+        // A property naming another binding (`driver: paymentDriver`,
+        // `webhook: manage.webhook`) has that binding's type, as a shorthand
+        // property does (mirrors the TypeScript emitter).
+        if (!prop.is_method and parameters == null and std.mem.eql(u8, val_type, "unknown") and isEntityName(trim(prop.value))) {
+            const reference = trim(prop.value);
+            val_type = (if (!is_const and key_constants != null) key_constants.?.mutable_binding_types.get(reference) else null) orelse try std.fmt.allocPrint(alloc, "typeof {s}", .{reference});
+        }
 
         // Capture nested clean default (set by recursive inferObjectType/inferArrayType)
         const nested_default = _clean_default_result;
