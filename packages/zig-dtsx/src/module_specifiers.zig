@@ -179,12 +179,12 @@ fn scanTemplate(sink: anytype, content: []const u8, position: *usize) VisitError
 }
 
 /// Identifier byte classes, identical to ch.isIdentStart / ch.isIdentChar.
-const ident_start_table: [256]bool = blk: {
+pub const ident_start_table: [256]bool = blk: {
     var table: [256]bool = @splat(false);
     for (0..256) |c| table[c] = ch.isIdentStart(@intCast(c));
     break :blk table;
 };
-const ident_char_table: [256]bool = blk: {
+pub const ident_char_table: [256]bool = blk: {
     var table: [256]bool = @splat(false);
     for (0..256) |c| table[c] = ch.isIdentChar(@intCast(c));
     break :blk table;

@@ -32,6 +32,9 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const outLenBuffer = new BigUint64Array(1)
 const outLenBufferIsolated = new BigUint64Array(1)
+// Reused out-parameters for the checked entrypoint (calls are synchronous).
+const checkedLength = new BigUint64Array(1)
+const checkedStatus = new Uint32Array(1)
 
 // Pre-allocated input buffer for encodeInto(); grows only when needed.
 // Avoids per-call Uint8Array allocation from encoder.encode().
@@ -249,14 +252,13 @@ export function processSource(sourceCode: string, keepComments: boolean = true, 
   const { written } = encoder.encodeInto(sourceCode, inputBuf)
 
   if (checkedLib) {
-    const length = new BigUint64Array(1)
-    const status = new Uint32Array(1)
-    const result = checkedLib.symbols.process_source_checked_v1(ptr(inputBuf), written, keepComments, isolatedDeclarations, ptr(length), ptr(status))
-    if (status[0] !== 0) {
-      if (result) free_result(result, Number(length[0]))
-      throw emissionError(status[0])
+    const result = checkedLib.symbols.process_source_checked_v1(ptr(inputBuf), written, keepComments, isolatedDeclarations, ptr(checkedLength), ptr(checkedStatus))
+    const length = Number(checkedLength[0])
+    if (checkedStatus[0] !== 0) {
+      if (result) free_result(result, length)
+      throw emissionError(checkedStatus[0])
     }
-    return readResult(result, Number(length[0]))
+    return readResult(result, length)
   }
 
   if (isolatedDeclarations) {

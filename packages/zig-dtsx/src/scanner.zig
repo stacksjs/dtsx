@@ -1178,13 +1178,13 @@ const CandidateWords = struct {
         var mentions_value = false;
         var i: usize = 0;
         while (i < text.len) {
-            if (!ch.isIdentStart(text[i])) {
+            if (!module_syntax.ident_start_table[text[i]]) {
                 i += 1;
                 continue;
             }
             const start = i;
             i += 1;
-            while (i < text.len and ch.isIdentChar(text[i])) i += 1;
+            while (i < text.len and module_syntax.ident_char_table[text[i]]) i += 1;
             const word = text[start..i];
             if (!self.filter.mayContain(word)) continue;
             const candidate = self.names.getPtr(word) orelse continue;
