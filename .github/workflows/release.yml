@@ -113,30 +113,6 @@ jobs:
             packages/dtsx/bin/zig-dtsx-lib-*.tar.gz
           if-no-files-found: error
 
-      # Ship every package to the Pantry registry (registry.pantry.dev). This is
-      # zig-dtsx's home — Home consumes the native binary via `pantry install`.
-      - name: Publish to Pantry registry
-        # Registry versions are immutable. A retry must verify the full existing
-        # payload rather than overwrite it or fail on an already-published version.
-        run: pantry publish --verify-existing
-        env:
-          # Token path (HTTP upload) is preferred; AWS creds enable the S3 fallback.
-          PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
-          PANTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      # Publish the JavaScript packages to npm for downstream package-manager
-      # consumers. zig-dtsx remains Pantry-only: its authored TypeScript entry
-      # loads native libraries through bun:ffi. Prefer trusted OIDC publishing,
-      # with the existing npm secret available for packages without that trust.
-      # A partial release must still fail the job.
-      - name: Publish to npm
-        run: pantry publish --npm --skip zig-dtsx --access public
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create GitHub Release with Pantry
         id: pantry-release
         uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
@@ -187,6 +163,30 @@ jobs:
           gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | grep -Fx 'checksums.txt'
           release_body="$(gh release view "${RELEASE_TAG}" --json body --jq '.body')"
           test -n "${release_body}"
+
+      # Ship every package to the Pantry registry (registry.pantry.dev). This is
+      # zig-dtsx's home — Home consumes the native binary via `pantry install`.
+      - name: Publish to Pantry registry
+        # Registry versions are immutable. A retry must verify the full existing
+        # payload rather than overwrite it or fail on an already-published version.
+        run: pantry publish --verify-existing
+        env:
+          # Token path (HTTP upload) is preferred; AWS creds enable the S3 fallback.
+          PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
+          PANTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      # Publish the JavaScript packages to npm for downstream package-manager
+      # consumers. zig-dtsx remains Pantry-only: its authored TypeScript entry
+      # loads native libraries through bun:ffi. Prefer trusted OIDC publishing,
+      # with the existing npm secret available for packages without that trust.
+      # A partial release must still fail the job.
+      - name: Publish to npm
+        run: pantry publish --npm --skip zig-dtsx --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   linux-libraries:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_libraries_only }}
