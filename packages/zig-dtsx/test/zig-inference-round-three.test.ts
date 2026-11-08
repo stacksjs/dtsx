@@ -24,7 +24,7 @@ describeIf('Zig inference parity round three', () => {
   })
 
   test('infers optional parameter identity arrows', () => {
-    expect(dts('export const identity = (value?: number) => value')).toContain('identity: (value?: number) => number')
+    expect(dts('export const identity = (value?: number) => value')).toContain('identity: (value?: number) => (number) | undefined')
   })
 
   test('infers rest parameter identity arrows', () => {
