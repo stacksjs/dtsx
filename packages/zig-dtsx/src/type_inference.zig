@@ -1083,6 +1083,45 @@ fn findTopLevelComma(str: []const u8) ?usize {
 }
 
 /// Find the main arrow (=>) in a function, ignoring nested arrows
+/// Element type contributed by spreading a value of `spread_type`: `T[]` gives
+/// `T`, a tuple its members and an empty tuple nothing; a union of those
+/// combines its members (tuples only in const contexts). Null when any member
+/// is not usable.
+fn spreadElementType(alloc: std.mem.Allocator, spread_type: []const u8, is_const: bool) InferError!?[]const u8 {
+    var members = std.array_list.Managed([]const u8).init(alloc);
+    var depth: i32 = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= spread_type.len) : (i += 1) {
+        const c: u8 = if (i == spread_type.len) '|' else spread_type[i];
+        switch (c) {
+            '(', '[', '{', '<' => depth += 1,
+            ')', ']', '}', '>' => depth -= 1,
+            '|' => if (depth == 0) {
+                var member = trim(spread_type[start..i]);
+                start = i + 1;
+                if (ch.startsWith(member, "readonly ")) member = trim(member[9..]);
+                if (member.len >= 2 and member[0] == '[' and member[member.len - 1] == ']') {
+                    // Tuple members carry literal types; a mutable array would
+                    // need them widened, so only const contexts use them.
+                    if (!is_const or findMatchingBracket(member, 0, '[', ']') != member.len - 1) return null;
+                    for (try parseArrayElements(alloc, member[1 .. member.len - 1])) |element| try members.append(element);
+                } else if (ch.endsWith(member, "[]")) {
+                    const inner = trim(member[0 .. member.len - 2]);
+                    // `(A | B)[]` contributes A | B; `T[]` contributes T.
+                    const unwrapped = if (inner.len >= 2 and inner[0] == '(' and findMatchingBracket(inner, 0, '(', ')') == inner.len - 1) inner[1 .. inner.len - 1] else inner;
+                    try members.append(unwrapped);
+                } else return null;
+            },
+            else => {},
+        }
+    }
+    if (members.items.len == 0) return "never";
+    var result: []const u8 = members.items[0];
+    for (members.items[1..]) |member| result = try unionOf(alloc, result, member);
+    return result;
+}
+
 /// `left | right` with duplicate members removed; `unknown` absorbs the union.
 fn unionOf(alloc: std.mem.Allocator, left: []const u8, right: []const u8) InferError![]const u8 {
     if (std.mem.eql(u8, left, right)) return left;
@@ -2026,8 +2065,8 @@ pub fn inferArrayTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u
                 try element_types.append(try std.fmt.allocPrint(alloc, "...typeof {s}", .{spread_value}));
             } else if (is_const and ch.startsWith(spread_type, "readonly [")) {
                 try element_types.append(try std.fmt.allocPrint(alloc, "...{s}", .{spread_type}));
-            } else if (ch.endsWith(spread_type, "[]")) {
-                try element_types.append(spread_type[0 .. spread_type.len - 2]);
+            } else if (try spreadElementType(alloc, spread_type, is_const)) |element| {
+                try element_types.append(element);
             } else if (isIdentifierName(spread_value)) {
                 try element_types.append(try std.fmt.allocPrint(alloc, "(typeof {s})[number]", .{spread_value}));
             } else {
@@ -2993,25 +3032,105 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
 }
 
 /// Extract type from 'satisfies' operator
-pub fn extractSatisfiesType(value: []const u8) ?[]const u8 {
-    const needle = " satisfies ";
-    // Find last occurrence
-    var last_idx: ?usize = null;
-    var search_from: usize = 0;
-    while (ch.indexOf(value, needle, search_from)) |idx| {
-        last_idx = idx;
-        search_from = idx + 1;
-    }
-
-    if (last_idx) |si| {
-        var type_str = trim(value[si + needle.len ..]);
-        // Remove trailing semicolon
-        if (type_str.len > 0 and type_str[type_str.len - 1] == ';') {
-            type_str = trim(type_str[0 .. type_str.len - 1]);
+/// Index just past a quoted value starting at `start`; template literals skip
+/// `${...}` substitutions whole (mirrors the TypeScript emitter).
+fn skipQuotedValue(value: []const u8, start: usize, quote: u8) usize {
+    var i = start + 1;
+    while (i < value.len) {
+        const c = value[i];
+        if (c == '\\') {
+            i += 2;
+            continue;
         }
-        if (type_str.len > 0) return type_str;
+        if (quote == '`' and c == '$' and i + 1 < value.len and value[i + 1] == '{') {
+            i = skipBalancedCodeBlock(value, i + 1);
+            continue;
+        }
+        i += 1;
+        if (c == quote) break;
     }
-    return null;
+    return @min(i, value.len);
+}
+
+fn skipBalancedCodeBlock(value: []const u8, start: usize) usize {
+    var depth: i32 = 1;
+    var i = start + 1;
+    while (i < value.len and depth > 0) {
+        const c = value[i];
+        if (c == '"' or c == '\'' or c == '`') {
+            i = skipQuotedValue(value, i, c);
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '/') {
+            i += 2;
+            while (i < value.len and value[i] != '\n' and value[i] != '\r') i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '*') {
+            i = if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 2 else value.len;
+            continue;
+        }
+        if (c == '{') depth += 1 else if (c == '}') depth -= 1;
+        i += 1;
+    }
+    return i;
+}
+
+/// The type after the last top-level `satisfies`, skipping strings, template
+/// substitutions, comments and regex literals (mirrors the TypeScript emitter).
+pub fn extractSatisfiesType(value: []const u8) ?[]const u8 {
+    var satisfies_index: ?usize = null;
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        if (c == '"' or c == '\'' or c == '`') {
+            i = skipQuotedValue(value, i, c) - 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '/') {
+            while (i < value.len and value[i] != '\n') i += 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '*') {
+            i = if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 1 else value.len;
+            continue;
+        }
+        if (c == '/') {
+            var previous: isize = @as(isize, @intCast(i)) - 1;
+            while (previous >= 0 and value[@intCast(previous)] <= 32) previous -= 1;
+            if (previous < 0 or std.mem.indexOfScalar(u8, "([{:;,=!?&|+*-~>", value[@intCast(previous)]) != null) {
+                var in_class = false;
+                i += 1;
+                while (i < value.len) : (i += 1) {
+                    const r = value[i];
+                    if (r == '\\') {
+                        i += 1;
+                    } else if (r == '[') {
+                        in_class = true;
+                    } else if (r == ']') {
+                        in_class = false;
+                    } else if (r == '/' and !in_class) break;
+                }
+                continue;
+            }
+        }
+        if (c == '(' or c == '[' or c == '{') {
+            depth += 1;
+        } else if (c == ')' or c == ']' or c == '}') {
+            depth -= 1;
+        } else if (depth == 0 and ch.startsWith(value[i..], "satisfies") and
+            (i == 0 or !ch.isIdentChar(value[i - 1])) and
+            (i + 9 >= value.len or !ch.isIdentChar(value[i + 9])) and
+            (i == 0 or value[i - 1] != '.'))
+        {
+            satisfies_index = i;
+        }
+    }
+    const index = satisfies_index orelse return null;
+    var type_str = trim(value[index + 9 ..]);
+    if (type_str.len > 0 and type_str[type_str.len - 1] == ';') type_str = trim(type_str[0 .. type_str.len - 1]);
+    return if (type_str.len > 0) type_str else null;
 }
 
 /// Check if a type annotation is a generic/broad type that should be replaced with narrow inference

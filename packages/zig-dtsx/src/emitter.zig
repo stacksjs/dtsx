@@ -210,7 +210,8 @@ pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, k
             decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1)
         {}
         const ends_as_const = ve >= 8 and std.mem.eql(u8, decl.value[ve - 8 .. ve], "as const");
-        if (!ends_as_const and !ch.contains(decl.value, " satisfies ")) {
+        // An explicit annotation stays the public type even with `satisfies`.
+        if (!ends_as_const) {
             const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
             if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
                 if (comments.len == 0) return decl.text;
@@ -228,10 +229,14 @@ pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, k
     // Determine type annotation
     var type_annotation: []const u8 = decl.type_annotation;
 
-    if (decl.value.len > 0 and ch.contains(decl.value, " satisfies ")) {
-        if (type_inf.extractSatisfiesType(decl.value)) |sat_type| {
-            type_annotation = sat_type;
-        }
+    // A top-level `satisfies` supplies the type only without an annotation; a
+    // `satisfies` inside quoted data is not an operator.
+    const satisfies_type: ?[]const u8 = if (type_annotation.len == 0 and decl.value.len > 0 and ch.contains(decl.value, "satisfies"))
+        type_inf.extractSatisfiesType(decl.value)
+    else
+        null;
+    if (satisfies_type) |sat_type| {
+        type_annotation = sat_type;
     } else if (!decl.preserve_type_annotation and type_annotation.len == 0 and decl.value.len > 0 and ch.endsWith(std.mem.trim(u8, decl.value, " \t\n\r"), "as const")) {
         type_annotation = try type_inf.inferNarrowTypeWithKeyConstants(alloc, decl.value, true, false, 0, decl.computed_key_constants);
     } else if (type_annotation.len == 0 and decl.value.len > 0 and std.mem.eql(u8, kind, "const")) {

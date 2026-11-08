@@ -641,40 +641,29 @@ pub fn extractAssertion(init_text: []const u8) ?[]const u8 {
     // Cheap pre-check: if ` as ` doesn't appear anywhere, skip the entire walk.
     if (ch.indexOf(init_text, " as ", 0) == null) return null;
 
-    // Only find " as " at depth 0 (not inside nested brackets/braces/parens).
+    // The last ` as ` outside brackets, braces and parentheses, as in the
+    // TypeScript emitter. Angle brackets are not counted: the `>` of `=>`
+    // would unbalance them.
     var last_as: ?usize = null;
     var depth: isize = 0;
-    var in_str: u8 = 0;
     var i: usize = 0;
-    while (i < init_text.len) {
+    while (i < init_text.len) : (i += 1) {
         const c = init_text[i];
-        if (in_str != 0) {
-            if (c == '\\') {
-                i += 2;
-                continue;
-            }
-            if (c == in_str) in_str = 0;
-            i += 1;
-            continue;
-        }
         if (c == '\'' or c == '"' or c == '`') {
-            in_str = c;
-        } else if (c == '(' or c == '[' or c == '{' or c == '<') {
+            i = quotedValueEnd(init_text, i, c) - 1;
+        } else if (c == '(' or c == '[' or c == '{') {
             depth += 1;
-        } else if (c == ')' or c == ']' or c == '}' or c == '>') {
+        } else if (c == ')' or c == ']' or c == '}') {
             depth -= 1;
         } else if (depth == 0 and c == ' ' and i + 4 <= init_text.len and
             init_text[i + 1] == 'a' and init_text[i + 2] == 's' and init_text[i + 3] == ' ')
         {
-            // Inline 4-byte check is faster than std.mem.eql for a fixed-length
-            // needle, and gates the comparison on the leading space first.
             last_as = i;
         }
-        i += 1;
     }
     if (last_as) |idx| {
         const after = std.mem.trim(u8, init_text[idx + 4 ..], " \t\r\n");
-        if (after.len > 0 and !std.mem.eql(u8, after, "const")) return after;
+        if (after.len > 0) return after;
     }
     return null;
 }
@@ -974,7 +963,11 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
         if (c0 != 'p' and c0 != 'r' and c0 != 'o') break;
         for (types.PARAM_MODIFIERS) |mod| {
             if (p.len > mod.len and ch.startsWith(p, mod) and !ch.isIdentChar(p[mod.len])) {
-                p = std.mem.trim(u8, p[mod.len..], " \t\r\n");
+                const rest = std.mem.trim(u8, p[mod.len..], " \t\r\n");
+                // `override: T`, `readonly?: T`, `public = 1`...: the word is the
+                // parameter's name, not a modifier.
+                if (rest.len > 0 and (rest[0] == ':' or rest[0] == '=' or rest[0] == ',' or (rest[0] == '?' and rest.len > 1 and rest[1] == ':'))) break;
+                p = rest;
                 stripped = true;
                 break;
             }
