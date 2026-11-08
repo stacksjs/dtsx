@@ -795,8 +795,18 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
         return "()";
     };
 
-    // Build DTS params — direct alloc, output ≤ raw_params.len + extra for type annotations
-    const buf = s.allocator.alloc(u8, raw_params.len * 2 + 16) catch |err| {
+    // Inferred defaults can expand a short call into an arbitrarily large
+    // object annotation. Materialize once and size from the emitted text.
+    var total_len: usize = 2;
+    var parameter_count: usize = 0;
+    for (params.items) |*param| {
+        if (param.len == 0) continue;
+        param.* = buildSingleDtsParam(s, param.*);
+        if (parameter_count > 0) total_len += 2;
+        total_len += param.len;
+        parameter_count += 1;
+    }
+    const buf = s.allocator.alloc(u8, total_len) catch |err| {
         s.pending_error = err;
         return "()";
     };
@@ -811,9 +821,8 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             pos += 2;
         }
         first = false;
-        const dts_param = buildSingleDtsParam(s, param);
-        @memcpy(buf[pos..][0..dts_param.len], dts_param);
-        pos += dts_param.len;
+        @memcpy(buf[pos..][0..param.len], param);
+        pos += param.len;
     }
     buf[pos] = ')';
     pos += 1;
@@ -3509,4 +3518,27 @@ fn checkPrivateClassBodyAllocations(allocator: Allocator) !void {
 
 test "private class projection propagates backing allocation failures" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, checkPrivateClassBodyAllocations, .{});
+}
+
+fn checkExpandedDefaultParameter(backing: Allocator) !void {
+    var arena = std.heap.ArenaAllocator.init(backing);
+    defer arena.deinit();
+    var state = Scanner.init(arena.allocator(), "function record() { return { first: 'one', second: 2, third: true, fourth: ['four'], fifth: 'five' } } export function consume(item = record()) { return item }", false, false);
+    defer state.deinit();
+    _ = try state.scan();
+    var found = false;
+    for (state.declarations.items) |declaration| {
+        if (std.mem.eql(u8, declaration.name, "consume")) {
+            found = true;
+            try std.testing.expect(std.mem.indexOf(u8, declaration.text, "consume(item?: {") != null);
+            try std.testing.expect(std.mem.indexOf(u8, declaration.text, "fourth: string[]") != null);
+            try std.testing.expect(declaration.text.len > 100);
+        }
+    }
+    try std.testing.expect(found);
+}
+
+test "inferred call defaults can expand beyond source parameter length without overrunning allocation" {
+    try checkExpandedDefaultParameter(std.testing.allocator);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkExpandedDefaultParameter, .{});
 }
