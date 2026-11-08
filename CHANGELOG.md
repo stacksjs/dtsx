@@ -1,5 +1,30 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.32...v0.11.33)
+
+## 🐛 Bug Fixes
+
+- **benchmark**: lint-clean generated markdown and matching compile flags ([fb393ec](https://github.com/stacksjs/dtsx/commit/fb393ec)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **benchmark**: measure every tool fairly and publish results with the machine ([d7c518f](https://github.com/stacksjs/dtsx/commit/d7c518f)) _(by Chris Breuer <chris@stacksjs.com>)_
+- publish qualified native assets before registry delivery ([3f52271](https://github.com/stacksjs/dtsx/commit/3f52271)) _(by Chris Breuer <chris@stacksjs.com>)_
+- resume immutable registry publication and retain native artifacts ([78cac5e](https://github.com/stacksjs/dtsx/commit/78cac5e)) _(by Chris Breuer <chris@stacksjs.com>)_
+- expose existing npm fallback credentials to releases ([2322918](https://github.com/stacksjs/dtsx/commit/2322918)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ⚡ Performance Improvements
+
+- **dtsx**: sequential project emission below 32 MB and leaner CLI startup ([5930569](https://github.com/stacksjs/dtsx/commit/5930569)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: table-driven candidate scan and reusable FFI out-parameters ([30f96f5](https://github.com/stacksjs/dtsx/commit/30f96f5)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **dtsx**: share whole-source tokens and skip unqueried reference work ([e853450](https://github.com/stacksjs/dtsx/commit/e853450)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: stop re-lexing whole sources and hashing every identifier ([cbb6526](https://github.com/stacksjs/dtsx/commit/cbb6526)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.33 ([71b3f71](https://github.com/stacksjs/dtsx/commit/71b3f71)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.30...v0.11.31)
 
 ## ✅ Tests
