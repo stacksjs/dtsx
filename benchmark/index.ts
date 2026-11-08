@@ -1,5 +1,9 @@
 /**
- * dtsx benchmark suite — zig-dtsx vs dtsx vs oxc vs tsc (TypeScript 7)
+ * dtsx benchmark suite — dtsx vs oxc vs tsc (TypeScript 7), plus the dtsx JS SDK.
+ *
+ * Result keys: `zig-dtsx` is the native engine, published simply as "dtsx" (the dtsx
+ * CLI and FFI binding). `dtsx` is the pure TypeScript SDK, published as "dtsx JS SDK"
+ * and compared only with other JavaScript SDKs (see benchmark/render.ts).
  *
  * Section 1: In-process API, no cache — zig-dtsx (Bun FFI), dtsx (Bun), oxc-transform (N-API).
  *            Every dtsx cache is cleared on every iteration; this is the raw transform.

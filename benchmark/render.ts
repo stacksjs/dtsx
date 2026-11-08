@@ -67,28 +67,32 @@ const versionLine = `Bun ${m.bun} · Zig ${m.versions.zig} · oxc-transform ${m.
 const inputColumns = results.inputs.map(i => ({ key: i.name, label: i.name }))
 const projectColumns = results.projects.map(n => ({ key: `${n} files`, label: `${n} files` }))
 
+// Headline tables: dtsx is the native engine (the dtsx CLI and the FFI binding).
 const inProcess = table('inproc', [
-  { key: 'zig-dtsx', label: 'dtsx (native, zig-dtsx)' },
+  { key: 'zig-dtsx', label: 'dtsx' },
   { key: 'oxc-transform', label: 'oxc-transform' },
-  { key: 'dtsx', label: 'dtsx (Bun/TypeScript)' },
 ], inputColumns)
 
 const cli = table('cli', [
-  { key: 'zig-dtsx', label: 'dtsx (native, zig-dtsx)' },
+  { key: 'zig-dtsx', label: 'dtsx' },
   { key: 'oxc', label: 'oxc' },
-  { key: 'dtsx', label: 'dtsx (Bun binary)' },
-  { key: 'tsc', label: 'tsc 7 (native Go)' },
+  { key: 'tsc', label: 'tsc 7' },
 ], inputColumns)
 
 const project = table('project', [
-  { key: 'zig-dtsx', label: 'dtsx (native, zig-dtsx)' },
+  { key: 'zig-dtsx', label: 'dtsx' },
   { key: 'oxc', label: 'oxc' },
-  { key: 'dtsx', label: 'dtsx (Bun binary)' },
-  { key: 'tsc', label: 'tsc 7 (native Go)' },
+  { key: 'tsc', label: 'tsc 7' },
 ], projectColumns)
 
+// JavaScript SDK tables: dtsx's TypeScript SDK against other JavaScript SDKs.
+const sdkInProcess = table('inproc', [
+  { key: 'dtsx', label: 'dtsx JS SDK' },
+  { key: 'oxc-transform', label: 'oxc-transform' },
+], inputColumns)
+
 const cachedCells = results.inputs.map(i => fmt(results.rows.find(r => r.section === 'cached' && r.input === i.name)?.avgNs ?? Number.NaN))
-const cached = `| | ${inputColumns.map(c => c.label).join(' | ')} |\n|---|${inputColumns.map(() => '---').join('|')}|\n| dtsx (Bun, warm cache hit) | ${cachedCells.join(' | ')} |`
+const cached = `| | ${inputColumns.map(c => c.label).join(' | ')} |\n|---|${inputColumns.map(() => '---').join('|')}|\n| dtsx JS SDK (warm cache hit) | ${cachedCells.join(' | ')} |`
 
 const bundled = results.tsdown
   ? `| Tool | ${[...new Set(results.tsdown.results.map(r => r.files))].map(n => `${n} source files`).join(' | ')} |\n|------|${[...new Set(results.tsdown.results.map(r => r.files))].map(() => '------').join('|')}|\n${['dtsx', 'tsdown'].map((tool) => {
@@ -97,13 +101,14 @@ const bundled = results.tsdown
       const best = Math.min(...results.tsdown!.results.filter(r => r.files === files).map(r => r.avgMs))
       return row.avgMs === best ? `**${row.avgMs.toFixed(2)} ms**` : `${row.avgMs.toFixed(2)} ms _(${(row.avgMs / best).toFixed(1)}x)_`
     })
-    const name = tool === 'dtsx' ? 'dtsx (Bun/TypeScript)' : tool
+    const name = tool === 'dtsx' ? 'dtsx JS SDK' : 'tsdown JS SDK'
     return `| ${cells.every(cell => cell.startsWith('**')) ? `**${name}**` : name} | ${cells.join(' | ')} |`
   }).join('\n')}`
   : '_Not measured in this run._'
 
 function body(level: '##' | '#'): string {
   const h2 = level === '#' ? '##' : '###'
+  const h3 = `${h2}#`
   return `Measured on **${machineLine}** — ${results.date}.
 ${versionLine}.
 
@@ -114,13 +119,13 @@ ${h2} How the comparison is kept fair
 - Every tool emits real declarations for the same inputs; the harness verifies each tool's output before timing and aborts if any tool fails, so no row can time a crash.
 - dtsx runs in its default value-inferring mode (narrow types and \`@defaultValue\` JSDoc), which does more work than isolated-declarations-only emitters.
 - \`tsc\` is TypeScript 7's native Go compiler, run directly (no Node launcher) with \`--noCheck\`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
-- oxc has no declaration CLI, so its CLI is a minimal Bun-compiled wrapper around \`oxc-transform\`, built with the same \`bun build --compile --splitting --bytecode\` flags as the dtsx Bun binary.
+- oxc has no declaration CLI, so its CLI rows run a minimal Bun-compiled wrapper around \`oxc-transform\` (\`bun build --compile --splitting --bytecode\`).
 - "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
 - Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
 
 ${h2} In-process API (no cache)
 
-_One file transformed in-process: zig-dtsx through Bun FFI, oxc-transform through N-API, dtsx through its TypeScript API._
+_One file transformed in the same process: dtsx through its native binding, oxc-transform through N-API._
 
 ${inProcess}
 
@@ -132,19 +137,27 @@ ${cli}
 
 ${h2} CLI: multi-file project
 
-_A whole directory of generated modules. zig-dtsx and tsc use multiple threads; the oxc wrapper processes files sequentially because oxc ships no parallel declaration CLI._
+_A whole directory of generated modules. dtsx and tsc use multiple threads; the oxc wrapper processes files sequentially because oxc ships no parallel declaration CLI._
 
 ${project}
 
-${h2} Bundled declarations: dtsx vs tsdown
+${h2} JavaScript SDK
 
-_Fresh bundled declaration builds of the same project, verified by strict positive and negative consumer type-checks outside the timed region._
+_The \`@stacksjs/dtsx\` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK._
+
+${h3} JS SDK: in-process, no cache
+
+${sdkInProcess}
+
+${h3} JS SDK: bundled declarations vs tsdown
+
+_Fresh builds of the same project, checked by strict positive and negative consumer type-checks outside timing._
 
 ${bundled}
 
-${h2} Watch mode and incremental rebuilds
+${h3} JS SDK: watch mode and incremental rebuilds
 
-_dtsx's content-hash cache returns an unchanged file's declarations without re-scanning. No other tool here caches, so this is shown for reference only._
+_The SDK's content-hash cache returns an unchanged file's declarations without re-scanning. No other tool here caches, so this is for reference only._
 
 ${cached}`
 }
@@ -186,7 +199,7 @@ const introSummary = `<!-- benchmarks:start -->
 
 ## Benchmarks
 
-Measured on ${machineLine} (${results.date}, Bun ${m.bun}). See [Benchmarks](/benchmarks) for methodology, the Bun CLI, bundled builds and watch mode.
+Measured on ${machineLine} (${results.date}, Bun ${m.bun}). See [Benchmarks](/benchmarks) for methodology and the JavaScript SDK comparison, including bundled builds and watch mode.
 
 ### In-process API (no cache)
 

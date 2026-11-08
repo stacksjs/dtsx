@@ -438,19 +438,18 @@ Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw num
 - Every tool emits real declarations for the same inputs; the harness verifies each tool's output before timing and aborts if any tool fails, so no row can time a crash.
 - dtsx runs in its default value-inferring mode (narrow types and `@defaultValue` JSDoc), which does more work than isolated-declarations-only emitters.
 - `tsc` is TypeScript 7's native Go compiler, run directly (no Node launcher) with `--noCheck`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
-- oxc has no declaration CLI, so its CLI is a minimal Bun-compiled wrapper around `oxc-transform`, built with the same `bun build --compile --splitting --bytecode` flags as the dtsx Bun binary.
+- oxc has no declaration CLI, so its CLI rows run a minimal Bun-compiled wrapper around `oxc-transform` (`bun build --compile --splitting --bytecode`).
 - "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
 - Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
 
 ### In-process API (no cache)
 
-_One file transformed in-process: zig-dtsx through Bun FFI, oxc-transform through N-API, dtsx through its TypeScript API._
+_One file transformed in the same process: dtsx through its native binding, oxc-transform through N-API._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **5.64 µs** | **11.74 µs** | **43.43 µs** | **153.10 µs** |
+| **dtsx** | **5.64 µs** | **11.74 µs** | **43.43 µs** | **153.10 µs** |
 | oxc-transform | 6.60 µs _(1.17x)_ | 18.83 µs _(1.60x)_ | 45.25 µs _(1.04x)_ | 225.76 µs _(1.47x)_ |
-| dtsx (Bun/TypeScript) | 34.29 µs _(6.1x)_ | 50.06 µs _(4.3x)_ | 152.29 µs _(3.5x)_ | 637.78 µs _(4.2x)_ |
 
 ### CLI: single file
 
@@ -458,38 +457,47 @@ _Each tool runs as an executable via subprocess, so process startup is included.
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **2.13 ms** | **2.11 ms** | **2.13 ms** | **2.34 ms** |
+| **dtsx** | **2.13 ms** | **2.11 ms** | **2.13 ms** | **2.34 ms** |
 | oxc | 8.55 ms _(4.0x)_ | 8.65 ms _(4.1x)_ | 8.42 ms _(4.0x)_ | 8.61 ms _(3.7x)_ |
-| dtsx (Bun binary) | 8.44 ms _(4.0x)_ | 8.82 ms _(4.2x)_ | 10.00 ms _(4.7x)_ | 12.84 ms _(5.5x)_ |
-| tsc 7 (native Go) | 28.10 ms _(13x)_ | 27.90 ms _(13x)_ | 27.78 ms _(13x)_ | 28.98 ms _(12x)_ |
+| tsc 7 | 28.10 ms _(13x)_ | 27.90 ms _(13x)_ | 27.78 ms _(13x)_ | 28.98 ms _(12x)_ |
 
 ### CLI: multi-file project
 
-_A whole directory of generated modules. zig-dtsx and tsc use multiple threads; the oxc wrapper processes files sequentially because oxc ships no parallel declaration CLI._
+_A whole directory of generated modules. dtsx and tsc use multiple threads; the oxc wrapper processes files sequentially because oxc ships no parallel declaration CLI._
 
 | Tool | 50 files | 100 files | 500 files |
 |------|------|------|------|
-| **dtsx (native, zig-dtsx)** | **8.90 ms** | **14.59 ms** | **61.90 ms** |
+| **dtsx** | **8.90 ms** | **14.59 ms** | **61.90 ms** |
 | oxc | 20.75 ms _(2.3x)_ | 32.20 ms _(2.2x)_ | 125.04 ms _(2.0x)_ |
-| dtsx (Bun binary) | 47.84 ms _(5.4x)_ | 72.26 ms _(5.0x)_ | 241.43 ms _(3.9x)_ |
-| tsc 7 (native Go) | 53.92 ms _(6.1x)_ | 78.31 ms _(5.4x)_ | 291.59 ms _(4.7x)_ |
+| tsc 7 | 53.92 ms _(6.1x)_ | 78.31 ms _(5.4x)_ | 291.59 ms _(4.7x)_ |
 
-### Bundled declarations: dtsx vs tsdown
+### JavaScript SDK
 
-_Fresh bundled declaration builds of the same project, verified by strict positive and negative consumer type-checks outside the timed region._
+_The `@stacksjs/dtsx` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK._
+
+#### JS SDK: in-process, no cache
+
+| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
+|------|------|------|------|------|
+| **oxc-transform** | **6.60 µs** | **18.83 µs** | **45.25 µs** | **225.76 µs** |
+| dtsx JS SDK | 34.29 µs _(5.2x)_ | 50.06 µs _(2.7x)_ | 152.29 µs _(3.4x)_ | 637.78 µs _(2.8x)_ |
+
+#### JS SDK: bundled declarations vs tsdown
+
+_Fresh builds of the same project, checked by strict positive and negative consumer type-checks outside timing._
 
 | Tool | 2 source files | 11 source files | 101 source files |
 |------|------|------|------|
-| **dtsx (Bun/TypeScript)** | **2.41 ms** | **6.18 ms** | **44.00 ms** |
-| tsdown | 35.09 ms _(14.6x)_ | 39.44 ms _(6.4x)_ | 70.01 ms _(1.6x)_ |
+| **dtsx JS SDK** | **2.41 ms** | **6.18 ms** | **44.00 ms** |
+| tsdown JS SDK | 35.09 ms _(14.6x)_ | 39.44 ms _(6.4x)_ | 70.01 ms _(1.6x)_ |
 
-### Watch mode and incremental rebuilds
+#### JS SDK: watch mode and incremental rebuilds
 
-_dtsx's content-hash cache returns an unchanged file's declarations without re-scanning. No other tool here caches, so this is shown for reference only._
+_The SDK's content-hash cache returns an unchanged file's declarations without re-scanning. No other tool here caches, so this is for reference only._
 
 | | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |---|---|---|---|---|
-| dtsx (Bun, warm cache hit) | 96 ns | 260 ns | 385 ns | 1.43 µs |
+| dtsx JS SDK (warm cache hit) | 96 ns | 260 ns | 385 ns | 1.43 µs |
 
 <!-- benchmarks:end -->
 

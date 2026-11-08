@@ -5,7 +5,7 @@ This guide covers performance optimization techniques and best practices for dts
 ## Running the benchmarks
 
 ```sh
-bun run benchmark:prepare   # build zig-dtsx, the dtsx binary and the oxc wrapper
+bun run benchmark:prepare   # build the dtsx CLI and the oxc wrapper
 bun run benchmark:publish   # measure, write benchmark/results.json, regenerate README + docs tables
 ```
 
