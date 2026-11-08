@@ -104,10 +104,21 @@ jobs:
       - name: Qualify packaged Linux FFI library before publication
         run: bun scripts/verify-native-library.ts --inference
 
+      - name: Retain qualified native release artifacts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: native-release-${{ env.RELEASE_TAG }}
+          path: |
+            packages/dtsx/bin/zig-dtsx-*.zip
+            packages/dtsx/bin/zig-dtsx-lib-*.tar.gz
+          if-no-files-found: error
+
       # Ship every package to the Pantry registry (registry.pantry.dev). This is
       # zig-dtsx's home — Home consumes the native binary via `pantry install`.
       - name: Publish to Pantry registry
-        run: pantry publish
+        # Registry versions are immutable. A retry must verify the full existing
+        # payload rather than overwrite it or fail on an already-published version.
+        run: pantry publish --verify-existing
         env:
           # Token path (HTTP upload) is preferred; AWS creds enable the S3 fallback.
           PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
