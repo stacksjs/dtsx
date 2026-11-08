@@ -228,8 +228,7 @@ pub const Scanner = struct {
                 const next = self.source[self.pos + 1];
                 if (next == ch.CH_SLASH) {
                     // Line comment — SIMD scan via indexOfChar.
-                    const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
-                    self.pos = if (nl) |n| n + 1 else self.len;
+                    self.pos = @min(ch.lineCommentEnd(self.source, self.pos + 2) + 1, self.len);
                     continue;
                 }
                 if (next == ch.CH_STAR) {
@@ -382,8 +381,7 @@ pub const Scanner = struct {
         if (c == ch.CH_SLASH and self.pos + 1 < self.len) {
             const next = self.source[self.pos + 1];
             if (next == ch.CH_SLASH) {
-                const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
-                self.pos = if (nl) |n| n + 1 else self.len;
+                self.pos = @min(ch.lineCommentEnd(self.source, self.pos + 2) + 1, self.len);
                 return true;
             }
             if (next == ch.CH_STAR) {
@@ -466,8 +464,7 @@ pub const Scanner = struct {
             if (sc == ch.CH_SLASH and self.pos + 1 < self.len) {
                 const next = self.source[self.pos + 1];
                 if (next == ch.CH_SLASH) {
-                    const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
-                    self.pos = if (nl) |n| n + 1 else self.len;
+                    self.pos = @min(ch.lineCommentEnd(self.source, self.pos + 2) + 1, self.len);
                     continue;
                 }
                 if (next == ch.CH_STAR) {
@@ -565,8 +562,7 @@ pub const Scanner = struct {
                 continue;
             }
             if (sc == ch.CH_SLASH and self.pos + 1 < self.len and self.source[self.pos + 1] == ch.CH_SLASH) {
-                const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
-                self.pos = if (nl) |n| n + 1 else self.len;
+                self.pos = @min(ch.lineCommentEnd(self.source, self.pos + 2) + 1, self.len);
                 continue;
             }
             break;
@@ -646,8 +642,7 @@ pub const Scanner = struct {
                 // Inline slash handling — avoid skipNonCode overhead
                 const next = self.source[self.pos + 1];
                 if (next == ch.CH_SLASH) {
-                    const nl = ch.indexOfChar(self.source, ch.CH_LF, self.pos + 2);
-                    self.pos = if (nl) |n| n + 1 else self.len;
+                    self.pos = @min(ch.lineCommentEnd(self.source, self.pos + 2) + 1, self.len);
                     continue;
                 }
                 if (next == ch.CH_STAR) {
@@ -926,10 +921,21 @@ pub const Scanner = struct {
     /// Peek at what char comes after a word (skipping whitespace).
     /// Defensive bounds check on pos+word.len handles the edge where the
     /// caller positions at end-of-source.
-    pub inline fn peekAfterWord(self: *const Scanner, word: []const u8) u8 {
+    /// First code byte after `word`, skipping whitespace and comments
+    /// (`private /* note */ (` is a method named `private`).
+    pub fn peekAfterWord(self: *const Scanner, word: []const u8) u8 {
         if (self.pos + word.len > self.len) return 0;
         var p = self.pos + word.len;
-        while (p < self.len and ch.isWhitespace(self.source[p])) p += 1;
+        while (p < self.len) {
+            const c = self.source[p];
+            if (ch.isWhitespace(c)) {
+                p += 1;
+            } else if (c == '/' and p + 1 < self.len and self.source[p + 1] == '/') {
+                p = ch.lineCommentEnd(self.source, p + 2);
+            } else if (c == '/' and p + 1 < self.len and self.source[p + 1] == '*') {
+                p = if (ch.indexOf(self.source, "*/", p + 2)) |close| close + 2 else self.len;
+            } else break;
+        }
         return if (p < self.len) self.source[p] else 0;
     }
 
@@ -1252,7 +1258,7 @@ fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(vo
             continue;
         }
         if (c == '/' and i + 1 < value.len and value[i + 1] == '/') {
-            i = ch.indexOfChar(value, '\n', i + 2) orelse value.len;
+            i = ch.lineCommentEnd(value, i + 2);
             continue;
         }
         if (c == '/' and i + 1 < value.len and value[i + 1] == '*') {

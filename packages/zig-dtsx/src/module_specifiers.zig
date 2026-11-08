@@ -225,7 +225,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
             },
             '/' => {
                 if (i + 1 < content.len and content[i + 1] == '/') {
-                    position.* = std.mem.indexOfScalarPos(u8, content, i + 2, '\n') orelse content.len;
+                    position.* = ch.lineCommentEnd(content, i + 2);
                     continue;
                 }
                 if (i + 1 < content.len and content[i + 1] == '*') {

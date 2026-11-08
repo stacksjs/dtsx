@@ -18,7 +18,7 @@ fn previousCodeIndex(source: []const u8, from: isize) isize {
             continue;
         }
         // Inside a line comment: its line has a `//` before `at`.
-        const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..at], '\n')) |nl| nl + 1 else 0;
+        const line_start = if (std.mem.lastIndexOfAny(u8, source[0..at], "\r\n")) |nl| nl + 1 else 0;
         if (lineCommentStart(source, line_start, at)) |comment| {
             p = @as(isize, @intCast(comment)) - 1;
             continue;
@@ -47,10 +47,155 @@ fn lineCommentStart(source: []const u8, line_start: usize, up_to: usize) ?usize 
     return null;
 }
 
+fn isRegexPrefixWord(word: []const u8) bool {
+    const words = [_][]const u8{ "return", "typeof", "void", "delete", "throw", "new", "in", "of", "case", "instanceof", "yield", "await", "else", "do" };
+    for (words) |candidate| if (std.mem.eql(u8, word, candidate)) return true;
+    return false;
+}
+
+fn isRegexPrefixByte(c: u8) bool {
+    return switch (c) {
+        '=', '(', '[', '!', '&', '|', '?', ':', ',', ';', '{', '}', '^', '~', '+', '-', '*', '%', '<', '>' => true,
+        else => false,
+    };
+}
+
+/// Whether the `)` at `end` closes a control header (`if (...)`, `while`,
+/// `for`, `with`, `switch`, `catch`), after which `/` starts a regex; a call's
+/// `)` ends an expression instead. Lexes from the start of `source`, as the
+/// TypeScript emitter does.
+fn closesControlHeader(source: []const u8, end: usize) bool {
+    var parentheses: [256]bool = undefined;
+    var paren_count: usize = 0;
+    var template_expressions: [64]i64 = undefined;
+    var template_count: usize = 0;
+    var brace_depth: i64 = 0;
+    var in_template = false;
+    var previous: []const u8 = "";
+    var before_previous: []const u8 = "";
+    var regex_allowed = true;
+    var pos: usize = 0;
+    while (pos <= end and pos < source.len) {
+        const c = source[pos];
+        if (in_template) {
+            if (c == '\\') {
+                pos += 2;
+                continue;
+            }
+            if (c == '`') {
+                in_template = false;
+                before_previous = previous;
+                previous = "literal";
+                regex_allowed = false;
+            } else if (c == '$' and pos + 1 < source.len and source[pos + 1] == '{') {
+                if (template_count == template_expressions.len) return false;
+                template_expressions[template_count] = brace_depth;
+                template_count += 1;
+                brace_depth += 1;
+                in_template = false;
+                before_previous = previous;
+                previous = "{";
+                regex_allowed = true;
+                pos += 1;
+            }
+            pos += 1;
+            continue;
+        }
+        if (ch.isWhitespace(c)) {
+            pos += 1;
+            continue;
+        }
+        if (c == '/' and pos + 1 < source.len and source[pos + 1] == '/') {
+            pos = @min(ch.lineCommentEnd(source, pos + 2) + 1, source.len);
+            continue;
+        }
+        if (c == '/' and pos + 1 < source.len and source[pos + 1] == '*') {
+            pos = if (std.mem.indexOfPos(u8, source, pos + 2, "*/")) |close| close + 2 else source.len;
+            continue;
+        }
+        if (c == '\'' or c == '"') {
+            pos += 1;
+            while (pos < source.len) {
+                const next = source[pos];
+                pos += 1;
+                if (next == '\\') {
+                    pos += 1;
+                } else if (next == c) break;
+            }
+            before_previous = previous;
+            previous = "literal";
+            regex_allowed = false;
+            continue;
+        }
+        if (c == '`') {
+            in_template = true;
+            pos += 1;
+            continue;
+        }
+        // Private identifiers are one value token, even when named like a keyword.
+        if (ch.isIdentStart(c) or (c == '#' and pos + 1 < source.len and ch.isIdentStart(source[pos + 1]))) {
+            const start = pos;
+            pos += 1;
+            while (pos < source.len and ch.isIdentChar(source[pos])) pos += 1;
+            const word = source[start..pos];
+            const allows = !std.mem.eql(u8, previous, ".") and isRegexPrefixWord(word);
+            before_previous = previous;
+            previous = word;
+            regex_allowed = allows;
+            continue;
+        }
+        if (c == '(') {
+            const control = !std.mem.eql(u8, before_previous, ".") and (std.mem.eql(u8, previous, "if") or
+                std.mem.eql(u8, previous, "while") or std.mem.eql(u8, previous, "for") or
+                std.mem.eql(u8, previous, "with") or std.mem.eql(u8, previous, "switch") or
+                std.mem.eql(u8, previous, "catch") or
+                (std.mem.eql(u8, previous, "await") and std.mem.eql(u8, before_previous, "for")));
+            if (paren_count == parentheses.len) return false;
+            parentheses[paren_count] = control;
+            paren_count += 1;
+            before_previous = previous;
+            previous = "(";
+            regex_allowed = true;
+        } else if (c == ')') {
+            var control = false;
+            if (paren_count > 0) {
+                paren_count -= 1;
+                control = parentheses[paren_count];
+            }
+            if (pos == end) return control;
+            before_previous = previous;
+            previous = ")";
+            regex_allowed = control;
+        } else if (c == '/' and regex_allowed) {
+            pos = skipRegex(source, pos);
+            before_previous = previous;
+            previous = "literal";
+            regex_allowed = false;
+            continue;
+        } else {
+            if (c == '{') {
+                brace_depth += 1;
+            } else if (c == '}') {
+                brace_depth -= 1;
+                if (template_count > 0 and template_expressions[template_count - 1] == brace_depth) {
+                    template_count -= 1;
+                    in_template = true;
+                }
+            }
+            before_previous = previous;
+            previous = source[pos .. pos + 1];
+            regex_allowed = c == '/' or isRegexPrefixByte(c);
+        }
+        pos += 1;
+    }
+    return false;
+}
+
 pub fn isRegexStart(source: []const u8, position: usize) bool {
     const p = previousCodeIndex(source, @as(isize, @intCast(position)) - 1);
     if (p < 0) return true; // start of file
     const prev = source[@intCast(p)];
+    if (prev == ')') return closesControlHeader(source, @intCast(p));
     // After these chars, `/` starts a regex
     if (prev == ch.CH_EQUAL or prev == ch.CH_LPAREN or prev == ch.CH_LBRACKET or
         prev == ch.CH_EXCL or prev == ch.CH_AMP or prev == ch.CH_PIPE or

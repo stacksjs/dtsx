@@ -56,6 +56,12 @@ pub inline fn isIdentChar(ch: u8) bool {
     return isIdentStart(ch) or (ch >= '0' and ch <= '9');
 }
 
+/// End of a `//` comment whose text starts at `from`: the next LF or CR (a
+/// lone CR is a line terminator too), or the end of `source`.
+pub inline fn lineCommentEnd(source: []const u8, from: usize) usize {
+    return std.mem.indexOfAnyPos(u8, source, from, "\r\n") orelse source.len;
+}
+
 /// Check if a character is a digit (0-9)
 pub inline fn isDigit(ch: u8) bool {
     return ch >= '0' and ch <= '9';
