@@ -108,7 +108,7 @@ pub fn scanMainLoop(s: *Scanner) !void {
             const kind: []const u8 = if (ch0 == 'l') "let" else "var";
             const decls = ext.extractVariable(s, stmt_start, kind, false);
             for (decls) |decl| s.putNonExportedType(decl.name, decl);
-        } else if ((ch0 == 'm' and s.matchWord("module")) or (ch0 == 'n' and s.matchWord("namespace"))) {
+        } else if ((ch0 == 'm' and s.matchWord("module") and s.isModuleLikeDeclaration(6)) or (ch0 == 'n' and s.matchWord("namespace"))) {
             // Both module/namespace dispatch to the same extractor; share the
             // append step and pick the keyword from the first byte.
             const kw: []const u8 = if (ch0 == 'm') "module" else "namespace";
@@ -287,7 +287,7 @@ fn handleExport(s: *Scanner, stmt_start: usize) !void {
         s.pos += 7;
         s.skipWhitespaceAndComments();
         ext.handleDeclare(s, stmt_start, true);
-    } else if ((ech == 'n' and s.matchWord("namespace")) or (ech == 'm' and s.matchWord("module"))) {
+    } else if ((ech == 'n' and s.matchWord("namespace")) or (ech == 'm' and s.matchWord("module") and s.isModuleLikeDeclaration(6))) {
         // Same extractor for both — pick the keyword from the first byte.
         const kw: []const u8 = if (ech == 'n') "namespace" else "module";
         const decl = ext.extractModule(s, stmt_start, true, kw);

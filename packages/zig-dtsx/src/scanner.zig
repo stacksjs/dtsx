@@ -417,6 +417,18 @@ pub const Scanner = struct {
         return comptime_match(word.len, src_slice, word);
     }
 
+    /// `module` starts a declaration only when a name or string follows it:
+    /// `module.exports = ...` and `module = ...` are expressions.
+    pub fn isModuleLikeDeclaration(self: *const Scanner, word_len: usize) bool {
+        var p = self.pos + word_len;
+        while (p < self.len) : (p += 1) {
+            const c = self.source[p];
+            if (c == ' ' or c == '\t' or c == '\n' or c == '\r') continue;
+            return c != '.' and c != '=';
+        }
+        return false;
+    }
+
     /// Check if current position is at a top-level statement-starting keyword
     pub fn isTopLevelKeyword(self: *const Scanner) bool {
         if (self.pos >= self.len) return false;

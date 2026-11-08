@@ -1074,6 +1074,106 @@ fn findTopLevelComma(str: []const u8) ?usize {
 }
 
 /// Find the main arrow (=>) in a function, ignoring nested arrows
+/// `left | right` with duplicate members removed; `unknown` absorbs the union.
+fn unionOf(alloc: std.mem.Allocator, left: []const u8, right: []const u8) InferError![]const u8 {
+    if (std.mem.eql(u8, left, right)) return left;
+    if (std.mem.eql(u8, left, "unknown") or std.mem.eql(u8, right, "unknown")) return "unknown";
+    var members = std.array_list.Managed([]const u8).init(alloc);
+    defer members.deinit();
+    for ([_][]const u8{ left, right }) |side| {
+        var depth: i32 = 0;
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i <= side.len) : (i += 1) {
+            const at_end = i == side.len;
+            const c: u8 = if (at_end) '|' else side[i];
+            switch (c) {
+                '(', '[', '{', '<' => depth += 1,
+                ')', ']', '}', '>' => depth -= 1,
+                '|' => if (depth == 0) {
+                    const member = trim(side[start..i]);
+                    if (member.len > 0) {
+                        if (std.mem.eql(u8, member, "unknown")) return "unknown";
+                        var seen = false;
+                        for (members.items) |existing| {
+                            if (std.mem.eql(u8, existing, member)) seen = true;
+                        }
+                        if (!seen) try members.append(member);
+                    }
+                    start = i + 1;
+                },
+                else => {},
+            }
+        }
+    }
+    if (members.items.len == 1) return members.items[0];
+    return std.mem.join(alloc, " | ", members.items);
+}
+
+/// Whether `value` is a single operand (identifier, member chain, call or
+/// element access) with no top-level binary operator.
+fn isUnaryOperand(value: []const u8) bool {
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        switch (c) {
+            '\'', '"', '`' => {
+                var j = i + 1;
+                while (j < value.len and value[j] != c) : (j += 1) {
+                    if (value[j] == '\\') j += 1;
+                }
+                i = j;
+            },
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -= 1,
+            '?' => if (depth == 0 and !(i + 1 < value.len and value[i + 1] == '.')) return false,
+            '=', '!', '<', '>', '&', '|', '+', '-', '*', '/', '%', ',', ':' => if (depth == 0) return false,
+            ' ', '\t', '\n', '\r' => if (depth == 0) {
+                const rest = std.mem.trimStart(u8, value[i..], " \t\n\r");
+                if (rest.len > 0 and rest[0] != '.' and rest[0] != '?' and rest[0] != '(' and rest[0] != '[') return false;
+            },
+            else => {},
+        }
+    }
+    return true;
+}
+
+/// Rightmost `+ - * / %` outside brackets, string/template literals and
+/// comments. Splitting inside a literal (`'dist/index.js'`) would hand an
+/// unterminated half to later tokenization.
+fn lastTopLevelArithmetic(value: []const u8) ?usize {
+    var depth: i32 = 0;
+    var last: ?usize = null;
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        switch (c) {
+            '\'', '"', '`' => {
+                var j = i + 1;
+                while (j < value.len and value[j] != c) : (j += 1) {
+                    if (value[j] == '\\') j += 1;
+                }
+                i = j;
+            },
+            '/' => {
+                if (i + 1 < value.len and value[i + 1] == '/') {
+                    i = std.mem.indexOfScalarPos(u8, value, i + 2, '\n') orelse value.len;
+                } else if (i + 1 < value.len and value[i + 1] == '*') {
+                    i = if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |end| end + 1 else value.len;
+                } else if (depth == 0) last = i;
+            },
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -= 1,
+            '+', '-', '*', '%' => if (depth == 0) {
+                last = i;
+            },
+            else => {},
+        }
+    }
+    return last;
+}
+
 fn findMainArrowIndex(str: []const u8) ?usize {
     // Only an existing `=>` can be returned; most data initializers have none,
     // so a vectorized substring check avoids the depth-tracking walk.
@@ -1376,18 +1476,12 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         }
     }
 
-    var expression_depth: i32 = 0;
-    var i = value.len;
-    while (i > 0) {
-        i -= 1;
+    if (lastTopLevelArithmetic(value)) |i| {
         const c = value[i];
-        if (c == ')' or c == ']' or c == '}') expression_depth += 1 else if (c == '(' or c == '[' or c == '{') expression_depth -= 1 else if (expression_depth == 0 and (c == '+' or c == '-' or c == '*' or c == '/' or c == '%')) {
-            const left = try inferBodyExpressionTypeScoped(alloc, value[0..i], parameters, depth + 1, class_scope, return_scope);
-            const right = try inferBodyExpressionTypeScoped(alloc, value[i + 1 ..], parameters, depth + 1, class_scope, return_scope);
-            if (c == '+' and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
-            if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
-            break;
-        }
+        const left = try inferBodyExpressionTypeScoped(alloc, value[0..i], parameters, depth + 1, class_scope, return_scope);
+        const right = try inferBodyExpressionTypeScoped(alloc, value[i + 1 ..], parameters, depth + 1, class_scope, return_scope);
+        if (c == '+' and (std.mem.eql(u8, left, "string") or std.mem.eql(u8, right, "string"))) return "string";
+        if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
     }
 
     var inferred = if (value.len >= 2 and value[0] == '{' and value[value.len - 1] == '}')
@@ -1581,7 +1675,9 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
             awaited = awaited[8 .. awaited.len - 1];
         return awaited;
     }
-    if (ch.startsWith(trimmed, "typeof ")) return "string";
+    // `typeof x` is a string, but `typeof x === 'object' && ...` is a larger
+    // expression; leave those to the comparison and logical rules below.
+    if (ch.startsWith(trimmed, "typeof ") and isUnaryOperand(trimmed[7..])) return "string";
     if (ch.startsWith(trimmed, "void ")) return "undefined";
     if (ch.startsWith(trimmed, "delete ")) return "boolean";
     if (trimmed[0] == '!') return "boolean";
@@ -1761,8 +1857,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
                 .falsy => return inferNarrowTypeWithKeyConstants(alloc, right_expression, is_const, in_union, depth + 1, key_constants),
                 .unknown => {},
             };
-            if (std.mem.eql(u8, left, right)) return left;
-            return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
+            return unionOf(alloc, left, right);
         }
     }
 

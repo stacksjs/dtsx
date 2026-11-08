@@ -204,6 +204,9 @@ fn blockCommentEnd(content: []const u8, from: usize) ?usize {
 
 fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: bool) VisitError!void {
     var braces: usize = 0;
+    // End of the last real token. Regex detection looks back from here, so a
+    // comment between a token and `/` is not mistaken for preceding code.
+    var code_end = position.*;
     while (position.* < content.len) {
         const i = position.*;
         const c = content[i];
@@ -221,14 +224,16 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                     position.* = (blockCommentEnd(content, i + 2) orelse return error.InvalidContext) + 2;
                     continue;
                 }
-                if (lexical.isRegexStart(content, i)) {
+                if (lexical.isRegexStart(content, code_end)) {
                     position.* = lexical.skipRegex(content, i);
                     try sink.push(.{ .start = i, .end = position.*, .kind = .template });
+                    code_end = position.*;
                     continue;
                 }
             },
             '`' => {
                 try scanTemplate(sink, content, position);
+                code_end = position.*;
                 continue;
             },
             '\'', '"' => {
@@ -242,6 +247,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                 }
                 position.* = p + 1;
                 try sink.push(.{ .start = i, .end = position.*, .kind = .quoted });
+                code_end = position.*;
                 continue;
             },
             else => if (ident_start_table[c]) {
@@ -249,11 +255,13 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                 while (p < content.len and ident_char_table[content[p]]) p += 1;
                 position.* = p;
                 try sink.push(.{ .start = i, .end = p, .kind = .word });
+                code_end = p;
                 continue;
             },
         }
         position.* += 1;
         try sink.push(.{ .start = i, .end = position.*, .kind = .punctuation });
+        code_end = position.*;
         if (substitution) {
             if (c == '{') braces += 1;
             if (c == '}') {

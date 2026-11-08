@@ -1213,7 +1213,10 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
         has_body = true;
         const body_start = s.pos;
         _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
-        if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
+        // Isolated mode prefers annotations, but an unannotated function still
+        // returns what its body returns (matching the TypeScript emitter);
+        // declaring it `void` unread published functions as returning nothing.
+        if (!has_explicit_return_type and !is_generator) {
             const inferred = type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics) catch |err| blk: {
                 s.pending_error = err;
                 break :blk return_type;
@@ -1232,6 +1235,9 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
 
     const dts_params = buildDtsParams(s, raw_params);
     const func_name = if (name.len > 0) name else "default";
+    // An anonymous default export is `export default function (...)`;
+    // `default` is its binding name, not part of the emitted syntax.
+    const text_name: []const u8 = if (name.len == 0 and is_default) "" else func_name;
 
     // Build DTS text — single alloc + memcpy is cheaper than ArrayList init +
     // multiple appendSlice + toOwnedSlice for the fixed-shape function header.
@@ -1241,15 +1247,15 @@ pub fn extractFunction(s: *Scanner, decl_start: usize, is_exported: bool, is_asy
     // signal that consumers (and the dtsx TS reference impl) preserve.
     const export_prefix: []const u8 = if (is_default) "export default function " else if (is_exported) "export declare function " else "declare function ";
     const colon_sep = ": ";
-    const total = export_prefix.len + func_name.len + generics.len +
+    const total = export_prefix.len + text_name.len + generics.len +
         dts_params.len + colon_sep.len + return_type.len + 1; // +1 for ';'
     const dts_text = blk: {
         const buf = s.allocator.alloc(u8, total) catch break :blk @as([]const u8, "");
         var tp: usize = 0;
         @memcpy(buf[tp..][0..export_prefix.len], export_prefix);
         tp += export_prefix.len;
-        @memcpy(buf[tp..][0..func_name.len], func_name);
-        tp += func_name.len;
+        @memcpy(buf[tp..][0..text_name.len], text_name);
+        tp += text_name.len;
         @memcpy(buf[tp..][0..generics.len], generics);
         tp += generics.len;
         @memcpy(buf[tp..][0..dts_params.len], dts_params);
