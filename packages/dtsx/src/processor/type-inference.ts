@@ -1305,36 +1305,48 @@ export function inferArrayType(value: string, isConst: boolean, _depth: number =
  */
 export function parseArrayElements(content: string): string[] {
   const elements: string[] = []
-  let start = 0
   let depth = 0
   let inString = false
   let stringChar = 0
+  // Comments are trivia: they never split elements and are trimmed from both
+  // ends of an element (`'a', // note` is the element `'a'`).
+  let start = -1 // first code character of the current element
+  let end = 0 // one past its last code character
 
   for (let i = 0; i < content.length; i++) {
     const c = content.charCodeAt(i)
-
-    if (!inString && (c === 34 || c === 39 || c === 96)) { // double, single, backtick
+    if (inString) {
+      if (c === 92) i++ // backslash escape
+      else if (c === stringChar) inString = false
+      end = i + 1
+      continue
+    }
+    if (c === 47 && content.charCodeAt(i + 1) === 47) { // line comment
+      const newline = content.indexOf('\n', i + 2)
+      i = (newline === -1 ? content.length : newline) - 1
+      continue
+    }
+    if (c === 47 && content.charCodeAt(i + 1) === 42) { // block comment
+      const close = content.indexOf('*/', i + 2)
+      i = (close === -1 ? content.length : close + 2) - 1
+      continue
+    }
+    if (c === 32 || c === 9 || c === 10 || c === 13) continue
+    if (c === 44 && depth === 0) { // ,
+      if (start !== -1) elements.push(content.slice(start, end))
+      start = -1
+      continue
+    }
+    if (c === 34 || c === 39 || c === 96) { // double, single, backtick
       inString = true
       stringChar = c
     }
-    else if (inString && c === stringChar && (i === 0 || content.charCodeAt(i - 1) !== 92)) { // not escaped
-      inString = false
-    }
-
-    if (!inString) {
-      if (c === 91 || c === 123 || c === 40) depth++ // [ { (
-      else if (c === 93 || c === 125 || c === 41) depth-- // ] } )
-      else if (c === 44 && depth === 0) { // ,
-        const elem = content.substring(start, i).trim()
-        if (elem) elements.push(elem)
-        start = i + 1
-        continue
-      }
-    }
+    else if (c === 91 || c === 123 || c === 40) depth++ // [ { (
+    else if (c === 93 || c === 125 || c === 41) depth-- // ] } )
+    if (start === -1) start = i
+    end = i + 1
   }
-
-  const last = content.substring(start).trim()
-  if (last) elements.push(last)
+  if (start !== -1) elements.push(content.slice(start, end))
 
   return elements
 }
@@ -1375,6 +1387,8 @@ function isSimpleArrayDefault(val: string): boolean {
     }
     // Check for '=>'
     if (c === 61 /* = */ && i + 1 < len && val.charCodeAt(i + 1) === 62 /* > */) return false
+    // A comment would be collapsed into the default text; rebuild from elements.
+    if (c === 47 /* / */ && (val.charCodeAt(i + 1) === 47 || val.charCodeAt(i + 1) === 42)) return false
     // Check for keywords at word boundary
     if (c >= 97 && c <= 122) { // a-z
       const start = i

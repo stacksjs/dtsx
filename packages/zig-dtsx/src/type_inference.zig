@@ -361,45 +361,45 @@ pub fn parseArrayElements(alloc: std.mem.Allocator, content: []const u8) InferEr
         est += 1;
     };
     try elements.ensureTotalCapacity(est);
-    var current_start: usize = 0;
     var depth: i32 = 0;
     var in_string = false;
     var string_char: u8 = 0;
+    // Comments are trivia: they never split elements and are trimmed from
+    // both ends of an element (`'a', // note` is the element `'a'`).
+    var start: ?usize = null; // first code byte of the current element
+    var end: usize = 0; // one past its last code byte
     var i: usize = 0;
-
-    // Skip leading whitespace for current_start
-    while (current_start < content.len and ch.isWhitespace(content[current_start])) current_start += 1;
-
     while (i < content.len) : (i += 1) {
         const c = content[i];
-        if (!in_string and (c == '"' or c == '\'' or c == '`')) {
+        if (in_string) {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == string_char) in_string = false;
+            end = i + 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < content.len and content[i + 1] == '/') {
+            i = (ch.indexOfChar(content, '\n', i + 2) orelse content.len) - 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < content.len and content[i + 1] == '*') {
+            i = (if (ch.indexOf(content, "*/", i + 2)) |close| close + 2 else content.len) - 1;
+            continue;
+        }
+        if (ch.isWhitespace(c)) continue;
+        if (c == ',' and depth == 0) {
+            if (start) |first| try elements.append(content[first..end]);
+            start = null;
+            continue;
+        }
+        if (c == '"' or c == '\'' or c == '`') {
             in_string = true;
             string_char = c;
-        } else if (in_string and c == string_char and !ch.isEscaped(content, i)) {
-            in_string = false;
-        }
-
-        if (!in_string) {
-            if (c == '[' or c == '{' or c == '(') depth += 1;
-            if (c == ']' or c == '}' or c == ')') depth -= 1;
-
-            if (c == ',' and depth == 0) {
-                const elem = trim(content[current_start..i]);
-                if (elem.len > 0) {
-                    try elements.append(elem);
-                }
-                current_start = i + 1;
-                while (current_start < content.len and ch.isWhitespace(content[current_start])) current_start += 1;
-                continue;
-            }
-        }
+        } else if (c == '[' or c == '{' or c == '(') depth += 1 else if (c == ']' or c == '}' or c == ')') depth -= 1;
+        if (start == null) start = i;
+        end = i + 1;
     }
-
-    // Last element
-    const last = trim(content[current_start..content.len]);
-    if (last.len > 0) {
-        try elements.append(last);
-    }
+    if (start) |first| try elements.append(content[first..end]);
 
     // toOwnedSlice() trims unused capacity — important for non-arena callers.
     return elements.toOwnedSlice();
@@ -817,24 +817,33 @@ const ObjectProperty = struct {
 };
 
 /// Keep leading property comments separate from the key and its modifiers.
-fn splitPropertyComments(raw: []const u8) struct { comments: []const u8, key: []const u8 } {
+/// Block and JSDoc comments are carried to the property; `//` comments are
+/// dropped, as in the TypeScript emitter.
+fn splitPropertyComments(alloc: std.mem.Allocator, raw: []const u8) InferError!struct { comments: []const u8, key: []const u8 } {
     const text = trim(raw);
+    var kept = std.array_list.Managed(u8).init(alloc);
+    var line_comment = false;
     var pos: usize = 0;
     while (pos < text.len) {
         while (pos < text.len and ch.isWhitespace(text[pos])) pos += 1;
         if (ch.startsWith(text[pos..], "/*")) {
             const end = ch.indexOf(text, "*/", pos + 2) orelse break;
+            if (kept.items.len > 0) try kept.append('\n');
+            try kept.appendSlice(text[pos .. end + 2]);
             pos = end + 2;
         } else if (ch.startsWith(text[pos..], "//")) {
+            line_comment = true;
             pos = ch.indexOfChar(text, '\n', pos + 2) orelse text.len;
         } else break;
     }
-    return .{ .comments = trim(text[0..pos]), .key = trim(text[pos..]) };
+    // Without line comments the kept text is the original prefix verbatim.
+    const comments = if (line_comment) kept.items else trim(text[0..pos]);
+    return .{ .comments = comments, .key = trim(text[pos..]) };
 }
 
 /// Move a shorthand method's type parameters from its key to its callable type.
 fn objectProperty(alloc: std.mem.Allocator, raw_key: []const u8, raw_value: []const u8, is_method: bool) InferError!ObjectProperty {
-    const split = splitPropertyComments(raw_key);
+    const split = try splitPropertyComments(alloc, raw_key);
     var key = split.key;
     var value = trim(raw_value);
     if (is_method) {
