@@ -107,10 +107,16 @@ pub fn fromWire(wire: WireContext, source: []const u8) !Context {
     return .{ .wire = wire };
 }
 
+/// Byte offsets are 32-bit (sources over 4 GiB are rejected by tokens()),
+/// which halves token arrays and the memory traffic of whole-source lexing.
+inline fn tok(start: usize, end: usize, kind: @FieldType(Token, "kind")) Token {
+    return .{ .start = @intCast(start), .end = @intCast(end), .kind = kind };
+}
+
 const Token = struct {
-    start: usize,
-    end: usize,
-    kind: enum { word, quoted, punctuation, template },
+    start: u32,
+    end: u32,
+    kind: enum(u8) { word, quoted, punctuation, template },
 };
 
 pub const SyntaxToken = Token;
@@ -120,6 +126,7 @@ pub const VisitError = SyntaxError || error{StopVisit};
 pub const tokenizeDeclarationSyntax = tokens;
 
 fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token {
+    if (content.len > std.math.maxInt(u32)) return error.InvalidContext;
     var result = std.array_list.Managed(Token).init(allocator);
     errdefer result.deinit();
     // Declaration syntax averages well under one token per three bytes; sizing
@@ -149,6 +156,7 @@ const ListSink = struct {
 /// sees exactly the sequence `tokens` would return, and the same lexical
 /// errors are reported, so whole-source checks can avoid allocation.
 pub fn visitDeclarationSyntax(content: []const u8, sink: anytype) VisitError!void {
+    if (content.len > std.math.maxInt(u32)) return error.InvalidContext;
     var i: usize = 0;
     try scanCode(sink, content, &i, false);
 }
@@ -165,11 +173,11 @@ fn scanTemplate(sink: anytype, content: []const u8, position: *usize) VisitError
             position.* += 2;
         } else if (content[i] == '`') {
             position.* += 1;
-            try sink.push(.{ .start = raw_start, .end = position.*, .kind = .template });
+            try sink.push(tok(raw_start, position.*, .template));
             return;
         } else if (content[i] == '$' and i + 1 < content.len and content[i + 1] == '{') {
-            try sink.push(.{ .start = raw_start, .end = i + 1, .kind = .template });
-            try sink.push(.{ .start = i + 1, .end = i + 2, .kind = .punctuation });
+            try sink.push(tok(raw_start, i + 1, .template));
+            try sink.push(tok(i + 1, i + 2, .punctuation));
             position.* += 2;
             try scanCode(sink, content, position, true);
             raw_start = position.*;
@@ -226,7 +234,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                 }
                 if (lexical.isRegexStart(content, code_end)) {
                     position.* = lexical.skipRegex(content, i);
-                    try sink.push(.{ .start = i, .end = position.*, .kind = .template });
+                    try sink.push(tok(i, position.*, .template));
                     code_end = position.*;
                     continue;
                 }
@@ -246,7 +254,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                     p += 2;
                 }
                 position.* = p + 1;
-                try sink.push(.{ .start = i, .end = position.*, .kind = .quoted });
+                try sink.push(tok(i, position.*, .quoted));
                 code_end = position.*;
                 continue;
             },
@@ -254,13 +262,13 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                 var p = i + 1;
                 while (p < content.len and ident_char_table[content[p]]) p += 1;
                 position.* = p;
-                try sink.push(.{ .start = i, .end = p, .kind = .word });
+                try sink.push(tok(i, p, .word));
                 code_end = p;
                 continue;
             },
         }
         position.* += 1;
-        try sink.push(.{ .start = i, .end = position.*, .kind = .punctuation });
+        try sink.push(tok(i, position.*, .punctuation));
         code_end = position.*;
         if (substitution) {
             if (c == '{') braces += 1;

@@ -6,6 +6,14 @@ const Declaration = @import("types.zig").Declaration;
 const Token = syntax.SyntaxToken;
 
 pub fn directConstValueAlias(allocator: std.mem.Allocator, value: []const u8) !?[]const u8 {
+    // Without a `/` there are no comments, so the value is one word token
+    // exactly when its trimmed text is a single identifier; skip tokenizing.
+    if (std.mem.indexOfScalar(u8, value, '/') == null) {
+        const trimmed = std.mem.trim(u8, value, " \t\n\r");
+        if (trimmed.len == 0 or !syntax.ident_start_table[trimmed[0]]) return null;
+        for (trimmed[1..]) |c| if (!syntax.ident_char_table[c]) return null;
+        return if (oneOf(trimmed, &.{ "true", "false", "null", "undefined", "this", "super" })) null else trimmed;
+    }
     const items = try syntax.tokenizeDeclarationSyntax(allocator, value);
     defer allocator.free(items);
     if (items.len != 1 or items[0].kind != .word) return null;
