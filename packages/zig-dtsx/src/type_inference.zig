@@ -256,7 +256,11 @@ fn inferAccessType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]co
         const bracket = std.mem.lastIndexOfScalar(u8, value, '[') orelse return null;
         const base = trim(value[0..bracket]);
         const index = trim(value[bracket + 1 .. value.len - 1]);
-        if (isEntityName(base) and index.len > 0) {
+        // Only indexes that are valid in a type: an identifier (queried with
+        // typeof), a string literal or a number. `a[b as keyof T]` and other
+        // value expressions cannot appear inside an indexed access type.
+        const is_literal_index = isNumericLiteral(index) or (index.len >= 2 and (index[0] == '\'' or index[0] == '"') and index[index.len - 1] == index[0]);
+        if (isEntityName(base) and (isIdentifierName(index) or is_literal_index)) {
             const index_type = if (isIdentifierName(index)) try std.fmt.allocPrint(alloc, "typeof {s}", .{index}) else index;
             return try std.fmt.allocPrint(alloc, "(typeof {s})[{s}]", .{ base, index_type });
         }
