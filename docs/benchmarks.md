@@ -8,7 +8,8 @@ description: Measured dtsx performance against oxc, tsc 7 and tsdown.
 # Benchmarks
 
 Measured on **Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64)** — 2026-11-08.
-Bun 1.4.4 · Zig 0.17.1 · oxc-transform 0.157.0 · TypeScript 7.0.2 (native `tsc`) · tsdown 0.23.7.
+dtsx 0.11.33 at [`0eccc51`](https://github.com/stacksjs/dtsx/commit/0eccc51) · Bun 1.4.4 · Zig 0.17.1 · oxc-transform 0.157.0 · TypeScript 7.0.2 (native `tsc`) · tsdown 0.23.7.
+Each time is the median of 3 full runs; the 1-minute load average ranged 7.3–13.8 during measurement.
 
 Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw numbers live in [`benchmark/results.json`](https://github.com/stacksjs/dtsx/blob/main/benchmark/results.json).
 
@@ -27,8 +28,8 @@ _One file transformed in the same process: dtsx through its native binding, oxc-
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx** | **5.64 µs** | **11.74 µs** | **43.43 µs** | **153.10 µs** |
-| oxc-transform | 6.60 µs _(1.17x)_ | 18.83 µs _(1.60x)_ | 45.25 µs _(1.04x)_ | 225.76 µs _(1.47x)_ |
+| **dtsx** | **6.26 µs** | **14.05 µs** | **44.21 µs** | **164.40 µs** |
+| oxc-transform | 7.24 µs _(1.16x)_ | 20.24 µs _(1.44x)_ | 49.90 µs _(1.13x)_ | 250.75 µs _(1.53x)_ |
 
 ## CLI: single file
 
@@ -36,9 +37,9 @@ _Each tool runs as an executable via subprocess, so process startup is included.
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx** | **2.13 ms** | **2.11 ms** | **2.13 ms** | **2.34 ms** |
-| oxc | 8.55 ms _(4.0x)_ | 8.65 ms _(4.1x)_ | 8.42 ms _(4.0x)_ | 8.61 ms _(3.7x)_ |
-| tsc 7 | 28.10 ms _(13x)_ | 27.90 ms _(13x)_ | 27.78 ms _(13x)_ | 28.98 ms _(12x)_ |
+| **dtsx** | **2.95 ms** | **2.88 ms** | **3.11 ms** | **3.31 ms** |
+| oxc | 10.64 ms _(3.6x)_ | 10.34 ms _(3.6x)_ | 11.09 ms _(3.6x)_ | 10.51 ms _(3.2x)_ |
+| tsc 7 | 34.52 ms _(12x)_ | 33.44 ms _(12x)_ | 34.86 ms _(11x)_ | 36.07 ms _(11x)_ |
 
 ## CLI: multi-file project
 
@@ -46,9 +47,9 @@ _A whole directory of generated modules. dtsx and tsc use multiple threads; the 
 
 | Tool | 50 files | 100 files | 500 files |
 |------|------|------|------|
-| **dtsx** | **8.90 ms** | **14.59 ms** | **61.90 ms** |
-| oxc | 20.75 ms _(2.3x)_ | 32.20 ms _(2.2x)_ | 125.04 ms _(2.0x)_ |
-| tsc 7 | 53.92 ms _(6.1x)_ | 78.31 ms _(5.4x)_ | 291.59 ms _(4.7x)_ |
+| **dtsx** | **10.53 ms** | **17.82 ms** | **74.57 ms** |
+| oxc | 26.38 ms _(2.5x)_ | 39.55 ms _(2.2x)_ | 186.20 ms _(2.5x)_ |
+| tsc 7 | 71.98 ms _(6.8x)_ | 123.11 ms _(6.9x)_ | 412.65 ms _(5.5x)_ |
 
 ## JavaScript SDK
 
@@ -58,8 +59,8 @@ _The `@stacksjs/dtsx` SDK, which powers the bundler and build-tool plugins, call
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **oxc-transform** | **6.60 µs** | **18.83 µs** | **45.25 µs** | **225.76 µs** |
-| dtsx JS SDK | 34.29 µs _(5.2x)_ | 50.06 µs _(2.7x)_ | 152.29 µs _(3.4x)_ | 637.78 µs _(2.8x)_ |
+| **oxc-transform** | **7.24 µs** | **20.24 µs** | **49.90 µs** | **250.75 µs** |
+| dtsx JS SDK | 33.50 µs _(4.6x)_ | 60.43 µs _(3.0x)_ | 167.24 µs _(3.4x)_ | 719.45 µs _(2.9x)_ |
 
 ### JS SDK: bundled declarations vs tsdown
 
@@ -67,8 +68,8 @@ _Fresh builds of the same project, checked by strict positive and negative consu
 
 | Tool | 2 source files | 11 source files | 101 source files |
 |------|------|------|------|
-| **dtsx JS SDK** | **2.41 ms** | **6.18 ms** | **44.00 ms** |
-| tsdown JS SDK | 35.09 ms _(14.6x)_ | 39.44 ms _(6.4x)_ | 70.01 ms _(1.6x)_ |
+| **dtsx JS SDK** | **4.56 ms** | **7.56 ms** | **61.24 ms** |
+| tsdown JS SDK | 48.72 ms _(10.7x)_ | 47.42 ms _(6.3x)_ | 87.73 ms _(1.4x)_ |
 
 ### JS SDK: watch mode and incremental rebuilds
 
@@ -76,4 +77,4 @@ _The SDK's content-hash cache returns an unchanged file's declarations without r
 
 | | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |---|---|---|---|---|
-| dtsx JS SDK (warm cache hit) | 96 ns | 260 ns | 385 ns | 1.43 µs |
+| dtsx JS SDK (warm cache hit) | 107 ns | 188 ns | 407 ns | 1.49 µs |

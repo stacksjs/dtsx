@@ -68,7 +68,8 @@ const loads = (results.loadAverage ?? []).flatMap(l => [l.start, l.end])
 const runLine = results.runs && results.runs > 1
   ? `Each time is the median of ${results.runs} full runs${loads.length ? `; the 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement` : ''}.`
   : loads.length ? `The 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement.` : ''
-const versionLine = `Bun ${m.bun} · Zig ${m.versions.zig} · oxc-transform ${m.versions['oxc-transform']} · TypeScript ${m.versions.typescript} (native \`tsc\`) · tsdown ${m.versions.tsdown}`
+const sourceLine = m.commit ? `dtsx ${m.versions.dtsx} at [\`${m.commit}\`](https://github.com/stacksjs/dtsx/commit/${m.commit.replace(/-dirty$/, '')})` : `dtsx ${m.versions.dtsx}`
+const versionLine = `${sourceLine} · Bun ${m.bun} · Zig ${m.versions.zig} · oxc-transform ${m.versions['oxc-transform']} · TypeScript ${m.versions.typescript} (native \`tsc\`) · tsdown ${m.versions.tsdown}`
 
 const inputColumns = results.inputs.map(i => ({ key: i.name, label: i.name }))
 const projectColumns = results.projects.map(n => ({ key: `${n} files`, label: `${n} files` }))

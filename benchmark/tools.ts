@@ -70,6 +70,8 @@ export interface MachineInfo {
   arch: string
   bun: string
   versions: Record<string, string>
+  /** Measured source revision (short SHA, `-dirty` when the tree had changes). */
+  commit: string
 }
 
 export function machineInfo(): MachineInfo {
@@ -90,7 +92,10 @@ export function machineInfo(): MachineInfo {
     }
   })()
   const zig = sh('zig', ['version']) || (pantryZig ? sh(pantryZig, ['version']) : '')
+  const sha = sh('git', ['-C', root, 'rev-parse', '--short', 'HEAD'])
+  const dirty = sh('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no', '--', 'packages', 'benchmark']) !== ''
   return {
+    commit: sha ? `${sha}${dirty ? '-dirty' : ''}` : 'unknown',
     model,
     cpu,
     cores: cpus().length,
