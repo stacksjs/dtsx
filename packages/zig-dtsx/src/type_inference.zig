@@ -306,7 +306,7 @@ pub fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]
     }
     if (!isEntityName(entity)) return null;
     const arguments = trim(value[open + 1 .. value.len - 1]);
-    const has_inline_function = findMainArrowIndex(arguments) != null or ch.startsWith(arguments, "function") or ch.startsWith(arguments, "async function");
+    const has_inline_function = findArrowOutsideParens(arguments) != null or ch.startsWith(arguments, "function") or ch.startsWith(arguments, "async function");
     const has_reference_argument = isEntityName(arguments);
     const has_nested_call = !has_inline_function and ch.endsWith(arguments, ")") and (try inferCallType(alloc, arguments)) != null;
     const dot = std.mem.indexOfScalar(u8, entity, '.');
@@ -1211,6 +1211,43 @@ fn findMainArrowIndex(str: []const u8) ?usize {
         if (c == '=' and str[i + 1] == '>' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 and angle_depth == 0) {
             return i;
         }
+    }
+    return null;
+}
+
+/// The TypeScript emitter's arrow search, used where the native engine must
+/// decide exactly as it does: braces do not nest, so an arrow inside an object
+/// argument counts (`defineStore('id', { state: () => ... })`).
+fn findArrowOutsideParens(str: []const u8) ?usize {
+    // Only an existing `=>` can be returned; most data initializers have none,
+    // so a vectorized substring check avoids the walk.
+    if (ch.indexOf(str, "=>", 0) == null) return null;
+    // Mirrors the TypeScript emitter: parentheses and brackets nest, braces do
+    // not, and a balanced `<...>` (type arguments) is skipped whole so an arrow
+    // inside a type argument is not the value's main arrow.
+    var paren_depth: i32 = 0;
+    var bracket_depth: i32 = 0;
+    var in_string = false;
+    var string_char: u8 = 0;
+    var i: usize = 0;
+    while (i + 1 < str.len) : (i += 1) {
+        const c = str[i];
+        const prev: u8 = if (i > 0) str[i - 1] else 0;
+        if (!in_string and (c == '"' or c == '\'' or c == '`')) {
+            in_string = true;
+            string_char = c;
+        } else if (in_string and c == string_char and prev != '\\') {
+            in_string = false;
+        }
+        if (in_string) continue;
+        if (c == '<') {
+            if (findMatchingBracket(str, i, '<', '>')) |end| {
+                i = end;
+                continue;
+            }
+        }
+        if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1;
+        if (c == '=' and str[i + 1] == '>' and paren_depth == 0 and bracket_depth == 0) return i;
     }
     return null;
 }
