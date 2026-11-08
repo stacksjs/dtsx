@@ -67,6 +67,7 @@ test('a native project plan derives source contexts from the canonical resolved 
       outputFile: join(directory, 'dist/index.d.ts'),
       sourceHash: new Bun.CryptoHasher('sha256').update(source).digest('hex'),
       rewrites: [{ specifier: './options', resolvedSource: options, declarationOutput: join(directory, 'dist/options.d.ts'), emittedSpecifier: './options.js' }],
+      inferenceSources: [{ specifier: './options', source: 'export interface Options { scale: number }\n' }],
     })
     expect(native.processSourceWithContext(file.source, file.context)).toContain("from './options.js'")
     expect(native.processSourceWithContext(plan.files[1].source, plan.files[1].context)).toContain('interface Options')

@@ -122,6 +122,7 @@ fn processSourceInternalWithContext(
 
     // Scan
     var scanner = Scanner.init(arena_alloc, source, keep_comments, isolated_declarations);
+    if (context) |value| scanner.inference_sources = value.wire.inferenceSources;
     _ = try scanner.scan();
 
     // Emit — result buffer uses c_allocator directly so it survives arena.reset().

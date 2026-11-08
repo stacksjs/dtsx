@@ -494,6 +494,10 @@ pub fn isNumericLiteral(v: []const u8) bool {
 pub fn inferTypeFromDefault(s: *Scanner, value: []const u8) []const u8 {
     const v = std.mem.trim(u8, value, " \t\r\n");
     if (v.len == 0) return "unknown";
+    if (@import("semantic_context.zig").expressionType(s, v) catch |err| {
+        s.pending_error = err;
+        return "unknown";
+    }) |known| return known;
     // Dispatch on first byte to avoid running multiple checks for cases that
     // can't possibly match. e.g. a value starting with `[` is never `true`.
     const simple: []const u8 = switch (v[0]) {
@@ -1856,6 +1860,20 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
     var members = std.array_list.Managed([]const u8).init(s.allocator);
     defer members.deinit();
     try members.ensureTotalCapacity(16);
+    var fields = std.StringHashMap([]const u8).init(s.allocator);
+    defer fields.deinit();
+    var pending = std.array_list.Managed(@import("semantic_context.zig").PendingReturn).init(s.allocator);
+    defer pending.deinit();
+    const previous_static = s.class_receiver_static;
+    const previous_fields = s.class_fields;
+    const previous_returns = s.class_returns;
+    s.class_fields = &fields;
+    s.class_returns = &pending;
+    defer {
+        s.class_fields = previous_fields;
+        s.class_returns = previous_returns;
+        s.class_receiver_static = previous_static;
+    }
     var private_members = std.StringHashMap(void).init(s.allocator);
     defer private_members.deinit();
 
@@ -1955,6 +1973,7 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
 
         // Private signatures erase implementation types but retain class identity.
         const member_start = s.pos;
+        s.class_receiver_static = is_static;
         if ((s.matchWord("get") or s.matchWord("set")) and isAccessorFollowed(s)) {
             s.pos += 3;
             s.skipWhitespaceAndComments();
@@ -2056,7 +2075,7 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
                 const body_start = s.pos;
                 _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
                 if (!s.isolated_declarations and ret_type_raw.len == 0) {
-                    ret_type = type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], "()", 0, s) catch |err| {
+                    ret_type = (try @import("semantic_context.zig").deferReturn(s, s.source[body_start..s.pos], "()", "", false)) orelse type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], "()", 0, s) catch |err| {
                         s.pending_error = err;
                         return "{}";
                     };
@@ -2131,6 +2150,14 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
     }
 
     if (s.pending_error) |err| return err;
+    for (pending.items) |item| {
+        s.class_receiver_static = item.is_static;
+        var inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, item.body, item.parameters, 0, s, item.generics);
+        if (item.is_async and !ch.startsWith(inferred, "Promise<")) inferred = try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred});
+        for (members.items) |*member| {
+            if (std.mem.indexOf(u8, member.*, item.marker) != null) member.* = try std.mem.replaceOwned(u8, s.allocator, member.*, item.marker, inferred);
+        }
+    }
     if (members.items.len == 0) return "{}";
 
     // Join members — direct alloc + memcpy. Total = "{\n" + members joined by
@@ -2223,11 +2250,12 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
             if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-                const inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics);
-                ret_type = if (is_async and !ch.startsWith(inferred, "Promise<"))
-                    try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred})
-                else
-                    inferred;
+                if (try @import("semantic_context.zig").deferReturn(s, s.source[body_start..s.pos], raw_params, generics, is_async)) |marker| {
+                    ret_type = marker;
+                } else {
+                    const inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics);
+                    ret_type = if (is_async and !ch.startsWith(inferred, "Promise<")) try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) else inferred;
+                }
             }
         } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {
             s.pos += 1;
@@ -2328,6 +2356,11 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             }
         }
 
+        if (s.class_fields) |fields| {
+            const key = if (is_static) try std.fmt.allocPrint(s.allocator, "static:{s}", .{member_name}) else member_name;
+            const field_type = if (is_optional) try std.fmt.allocPrint(s.allocator, "({s}) | undefined", .{prop_type}) else prop_type;
+            try fields.put(key, field_type);
+        }
         const opt_mark: []const u8 = if (is_optional) "?" else "";
         // Direct alloc — fixed shape "<prefix><name>[?]: <type>;".
         const prop_total = mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;

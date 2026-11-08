@@ -102,7 +102,7 @@ jobs:
           build_target x86_64-freebsd  freebsd-x64   ""     lib libzig-dtsx.so
 
       - name: Qualify packaged Linux FFI library before publication
-        run: bun scripts/verify-native-library.ts
+        run: bun scripts/verify-native-library.ts --inference
 
       # Ship every package to the Pantry registry (registry.pantry.dev). This is
       # zig-dtsx's home — Home consumes the native binary via `pantry install`.

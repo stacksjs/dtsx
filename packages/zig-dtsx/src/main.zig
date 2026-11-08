@@ -318,6 +318,7 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
     const source = task.source;
 
     var scanner = Scanner.init(alloc, source, task.keep_comments, task.isolated_declarations);
+    if (task.context) |value| scanner.inference_sources = value.wire.inferenceSources;
     _ = try scanner.scan();
     var context = task.context;
     const output = if (context) |*value| try emitter.processDeclarationsWithContext(
@@ -656,6 +657,7 @@ fn processBatchRequest(alloc: std.mem.Allocator, keep_comments: bool, isolated_d
         defer context.deinit();
         context.delivered_sources = &delivered;
         var scanner = Scanner.init(a, file.source, keep_comments, isolated_declarations);
+        scanner.inference_sources = context.wire.inferenceSources;
         _ = scanner.scan() catch |err| {
             writeErr("error: ");
             writeErr(file.context.sourceFile);

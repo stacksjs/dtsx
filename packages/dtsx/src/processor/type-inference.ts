@@ -516,7 +516,7 @@ export function inferNarrowTypeInUnion(value: unknown, isConst: boolean = false,
  * declarations remain annotation-first and never scan implementation bodies.
  */
 export function inferFunctionBodyReturnType(body: string, isAsync: boolean = false, parameters: string = '', classExpression?: (value: string) => string | undefined, assertedType?: (type: string, position: number) => string): string {
-  const parameterTypes = collectParameterTypes(parameters)
+  const parameterTypes = collectParameterTypes(parameters, classExpression)
   const returnTypes: string[] = []
   let hasBareReturn = false
   let i = 0
@@ -634,45 +634,90 @@ export function inferFunctionBodyReturnType(body: string, isAsync: boolean = fal
   return isAsync && !returnType.startsWith('Promise<') ? `Promise<${returnType}>` : returnType
 }
 
-function collectParameterTypes(parameters: string): Map<string, string> {
+function collectParameterTypes(parameters: string, resolve?: (value: string) => string | undefined): Map<string, string> {
   const types = new Map<string, string>()
   const content = parameters.startsWith('(') && parameters.endsWith(')') ? parameters.slice(1, -1) : parameters
+  const tokens = tokenizeDeclarationSyntax(content)
   let start = 0
-  let structuralDepth = 0
-  let typeArgumentDepth = 0
-  for (let i = 0; i <= content.length; i++) {
-    const char = content.charCodeAt(i)
-    if (char === 40 || char === 91 || char === 123) structuralDepth++
-    else if (char === 41 || char === 93 || char === 125) structuralDepth--
-    else if (char === 60) typeArgumentDepth++
-    else if (char === 62 && content.charCodeAt(i - 1) !== 61 && typeArgumentDepth > 0) typeArgumentDepth--
-    if (i !== content.length && (char !== 44 || structuralDepth !== 0 || typeArgumentDepth !== 0)) continue
-
-    const parameter = content.slice(start, i).trim()
-    const colon = parameter.indexOf(':')
-    if (colon !== -1) {
-      const name = parameter.slice(0, colon).trim().replace(/^\.\.\./, '').replace(/\?$/, '')
-      let type = parameter.slice(colon + 1).trim()
-      const defaultValue = type.indexOf('=')
-      if (defaultValue !== -1) type = type.slice(0, defaultValue).trim()
-      if (isIdentifierName(name) && type) types.set(name, type)
+  let depth = 0
+  const parts: string[] = []
+  for (const token of tokens) {
+    const text = content.slice(token.start, token.end)
+    if (text === ',' && depth === 0) { parts.push(content.slice(start, token.start)); start = token.end }
+    if (['(', '[', '{', '<'].includes(text)) depth++
+    else if ([')', ']', '}'].includes(text) || text === '>' && content[token.start - 1] !== '=') depth--
+  }
+  parts.push(content.slice(start))
+  for (const part of parts) {
+    const tokens = tokenizeDeclarationSyntax(part)
+    let colon = -1
+    let equal = -1
+    let depth = 0
+    for (const token of tokens) {
+      const text = part.slice(token.start, token.end)
+      if (depth === 0 && text === ':' && colon === -1) colon = token.start
+      if (depth === 0 && text === '=' && part[token.end] !== '>') { equal = token.start; break }
+      if (['(', '[', '{', '<'].includes(text)) depth++
+      else if ([')', ']', '}'].includes(text) || text === '>' && part[token.start - 1] !== '=') depth--
     }
-    start = i + 1
+    const name = part.slice(0, colon !== -1 ? colon : equal !== -1 ? equal : undefined).trim().replace(/^\.\.\./, '').replace(/\?$/, '')
+    if (!isIdentifierName(name)) continue
+    let type = colon !== -1 ? part.slice(colon + 1, equal !== -1 ? equal : undefined).trim() : ''
+    if (!type && equal !== -1) {
+      const value = part.slice(equal + 1).trim()
+      type = resolve?.(value) ?? inferNarrowType(value, false)
+    }
+    if (type) {
+      // A default runs only for undefined. An optional parameter without one
+      // remains possibly undefined inside the implementation.
+      if (equal === -1 && part.slice(0, colon).trim().endsWith('?')) type = `(${type}) | undefined`
+      types.set(name, type)
+    }
   }
   return types
 }
 
-function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>, classExpression?: (value: string) => string | undefined, assertedType?: (type: string, position: number) => string, position = 0): string {
+/** Read a known object member without manufacturing a type for opaque shapes. */
+function objectMemberType(type: string, name: string): string | undefined {
+  type = type.trim()
+  if (!type.startsWith('{') || !type.endsWith('}')) return undefined
+  const content = type.slice(1, -1)
+  const tokens = tokenizeDeclarationSyntax(content)
+  let start = 0
+  let depth = 0
+  for (let index = 0; index <= tokens.length; index++) {
+    const token = tokens[index]
+    const text = token ? content.slice(token.start, token.end) : ';'
+    if (depth === 0 && (text === ';' || text === ',')) {
+      const member = content.slice(start, token?.start).trim()
+      const colon = member.indexOf(':')
+      if (colon !== -1 && member.slice(0, colon).trim() === name) return member.slice(colon + 1).trim()
+      start = token?.end ?? content.length
+    }
+    if (['(', '[', '{', '<'].includes(text)) depth++
+    else if ([')', ']', '}'].includes(text) || text === '>' && token && content[token.start - 1] !== '=') depth--
+  }
+  return undefined
+}
+
+function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap<string, string>, classExpression?: (value: string) => string | undefined, assertedType?: (type: string, position: number) => string, position = 0, inferenceDepth = 0): string {
+  if (inferenceDepth >= MAX_INFERENCE_DEPTH) return 'unknown'
   let value = expression.trim()
   while (hasBalancedOuterParentheses(value)) value = value.slice(1, -1).trim()
   const classType = classExpression?.(value)
   if (classType) return classType
   if (isJsxExpression(value)) return 'JSX.Element'
   if (value.startsWith('await ')) {
-    const awaited = inferBodyExpressionType(value.slice(6), parameterTypes, classExpression, assertedType, position)
+    const awaited = inferBodyExpressionType(value.slice(6), parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
     return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
   }
   if (parameterTypes.has(value)) return parameterTypes.get(value)!
+  const member = /^([\w$]+)\.([\w$]+)$/.exec(value)
+  if (member) {
+    const type = parameterTypes.get(member[1])
+    const property = type && objectMemberType(type, member[2])
+    if (property) return property
+  }
   if (value.startsWith('!')) return 'boolean'
   if (value.startsWith('fetch(')) return 'Promise<Response>'
 
@@ -682,8 +727,8 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
 
   const conditional = splitTopLevelConditional(value)
   if (conditional) {
-    const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes, classExpression, assertedType, position)
-    const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes, classExpression, assertedType, position)
+    const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
+    const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
     return whenTrue === whenFalse ? whenTrue : joinReturnTypes([whenTrue, whenFalse])
   }
 
@@ -698,15 +743,17 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     if (char === 41 || char === 93 || char === 125) depth++
     else if (char === 40 || char === 91 || char === 123) depth--
     else if (depth === 0 && (char === 43 || char === 45 || char === 42 || char === 47 || char === 37)) {
-      const left = inferBodyExpressionType(value.slice(0, i), parameterTypes, classExpression, assertedType, position)
-      const right = inferBodyExpressionType(value.slice(i + 1), parameterTypes, classExpression, assertedType, position)
+      const left = inferBodyExpressionType(value.slice(0, i), parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
+      const right = inferBodyExpressionType(value.slice(i + 1), parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
       if (char === 43 && (left === 'string' || right === 'string')) return 'string'
       if (left === 'number' && right === 'number') return 'number'
       break
     }
   }
 
-  const inferred = inferNarrowType(value, false)
+  const inferred = value.startsWith('{') && value.endsWith('}')
+    ? inferObjectType(value, false, inferenceDepth + 1, undefined, item => inferBodyExpressionType(item, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1))
+    : inferNarrowType(value, false)
   const tokens = tokenizeDeclarationSyntax(inferred)
   let result = ''
   let cursor = 0
@@ -1347,7 +1394,7 @@ function isSimpleArrayDefault(val: string): boolean {
 /**
  * Infer object type from object literal
  */
-export function inferObjectType(value: string, isConst: boolean, _depth: number = 0, keyConstants?: KeyConstants): string {
+export function inferObjectType(value: string, isConst: boolean, _depth: number = 0, keyConstants?: KeyConstants, resolve?: (value: string) => string): string {
   // Remove braces
   const content = value.slice(1, -1).trim()
 
@@ -1428,7 +1475,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       }
     }
     else {
-      valueType = inferNarrowType(val, isConst, false, _depth + 1, keyConstants)
+      valueType = resolve?.(val) ?? inferNarrowType(val, isConst, false, _depth + 1, keyConstants)
 
       // A property naming another binding (`driver: paymentDriver`,
       // `webhook: manage.webhook`) has that binding's type, exactly as the
@@ -2647,11 +2694,11 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       // The source annotation already contains the required Promise wrapper.
     }
     else if (body.startsWith('{')) {
-      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), true, params)
+      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), true, signature.params)
     }
     else {
       // Expression body - try to infer
-      returnType = inferBodyExpressionType(body, collectParameterTypes(params))
+      returnType = inferBodyExpressionType(body, collectParameterTypes(signature.params))
     }
 
     const funcType = `${params} => ${explicitReturnType || returnType.startsWith('Promise<') ? returnType : `Promise<${returnType}>`}`
@@ -2706,7 +2753,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       returnType = explicitReturnType
     }
     else if (body.startsWith('{')) {
-      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), false, params)
+      returnType = inferFunctionBodyReturnType(body.slice(1, body.endsWith('}') ? -1 : undefined), false, signature.params)
     }
     else if (isJsxExpression(body) || (hasBalancedOuterParentheses(body) && isJsxExpression(body.slice(1, -1).trim()))) {
       // Nested callbacks inside parenthesized JSX are implementation details,
@@ -2753,7 +2800,7 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
         returnType = 'unknown'
       }
       else {
-        returnType = inferBodyExpressionType(body, collectParameterTypes(params))
+        returnType = inferBodyExpressionType(body, collectParameterTypes(signature.params))
       }
     }
 

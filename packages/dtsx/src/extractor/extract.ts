@@ -22,6 +22,7 @@ export function extractDeclarations(
   filePath: string,
   keepComments: boolean = true,
   isolatedDeclarations: boolean = false,
+  importedFunctions?: ReadonlySet<string>,
 ): Declaration[] {
   // Component files are transformed into virtual TS modules before scanning.
   if (isVueFile(filePath)) {
@@ -32,7 +33,7 @@ export function extractDeclarations(
   }
 
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}`
+  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}:${JSON.stringify([...(importedFunctions ?? [])].sort())}`
   const cached = declarationCache.get(cacheKey)
 
   if (cached && cached.contentHash === contentHash) {
@@ -42,7 +43,7 @@ export function extractDeclarations(
 
   const declarations = isolatedDeclarations
     ? scanIsolatedDeclarations(sourceCode, filePath, keepComments)
-    : scanSemanticDeclarations(sourceCode, filePath, keepComments)
+    : scanSemanticDeclarations(sourceCode, filePath, keepComments, importedFunctions)
 
   declarationCache.set(cacheKey, { declarations, contentHash, lastAccess: ++_accessCounter })
 

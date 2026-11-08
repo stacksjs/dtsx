@@ -194,6 +194,8 @@ export interface SourceEmissionContext {
   outputFile: string
   /** SHA-256 of the exact UTF-8 source bytes. */
   sourceHash: string
+  /** Resolved authored dependency snapshots for native monomorphic-call inference. */
+  inferenceSources?: Array<{ specifier: string, source: string }>
   /** Original imports required by the owning project's augmentation graph. */
   augmentationImports?: string[]
   rewrites: Array<{

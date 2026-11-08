@@ -49,7 +49,7 @@ function assignedType(declared: string, value: string): string | undefined {
  * Infer identifier aliases and monomorphic local calls before private closure.
  * This models straight-line assignments, not TypeScript's complete control-flow graph.
  */
-export function inferDeclarationValueAliases(source: string, declarations: Declaration[], candidates: ReadonlyMap<string, Declaration>): void {
+export function inferDeclarationValueAliases(source: string, declarations: Declaration[], candidates: ReadonlyMap<string, Declaration>, importedFunctions: ReadonlySet<string> = new Set()): void {
   const bindings = new Map<string, Binding>()
   const ordered: Declaration[] = []
   const seen = new Set<Declaration>()
@@ -67,6 +67,7 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
   }
   ordered.sort((left, right) => (left.start ?? 0) - (right.start ?? 0))
   const declaredFunctions = new Set(ordered.filter(item => item.kind === 'function' && !item.generics).map(item => item.name))
+  for (const name of importedFunctions) declaredFunctions.add(name)
   const callRoots = new Map<string, string | undefined>()
   const directCall = (value: string): string | undefined => {
     value = value.trimStart()
@@ -111,6 +112,11 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
   }
   const localCalls = new Map<string, Declaration>()
   for (const item of ordered) if (item.kind === 'function' && !item.generics && counts.get(item.name) === 1) localCalls.set(item.name, item)
+  for (const name of importedFunctions) {
+    // The project resolver verified this binding has one non-generic signature.
+    const declaration = ordered.find(item => item.kind === 'import' && extractAllImportedItems(item.text).includes(name))
+    if (declaration) localCalls.set(name, declaration)
+  }
   let callTypeName = '__dtsx_call_result'
   while (source.includes(callTypeName)) callTypeName += '_'
   const callType = (name: string): string => `(typeof ${name}) extends (...args: never[]) => infer ${callTypeName} ? ${callTypeName} : never`

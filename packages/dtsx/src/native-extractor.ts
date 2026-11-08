@@ -17,8 +17,9 @@ export function extractDeclarations(
   filePath: string,
   keepComments = true,
   isolatedDeclarations = false,
+  importedFunctions?: ReadonlySet<string>,
 ): Declaration[] {
-  return scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations)
+  return scanDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations, importedFunctions)
 }
 
 export async function extractDeclarationsAsync(

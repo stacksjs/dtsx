@@ -15,6 +15,7 @@ import { assertSafeOutputConfiguration, publishDeclarationOutputs } from './decl
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
+import { monomorphicImportFunctions } from './inferred-imports'
 import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
@@ -652,7 +653,16 @@ async function processFileWithStatsFromSource(
   }
 
   // Extract declarations
-  let declarations = extractDeclarations(processedSource, filePath, config.keepComments, config.isolatedDeclarations ?? false)
+  const inferenceSources = new Map<string, string>()
+  if (!config.isolatedDeclarations) {
+    const resolver = await getModuleResolver(config)
+    for (const reference of scanReExportSpecifiers(processedSource, { includeImports: true })) {
+      const resolved = resolver(reference.specifier, filePath).resolved
+      if (resolved && !resolved.split(/[/\\]/).includes('node_modules')) inferenceSources.set(reference.specifier, await readTextFile(resolved))
+    }
+  }
+  const importedFunctions = inferenceSources.size ? monomorphicImportFunctions(processedSource, inferenceSources) : undefined
+  let declarations = extractDeclarations(processedSource, filePath, config.keepComments, config.isolatedDeclarations ?? false, importedFunctions)
 
   // Run onDeclarations hooks (may modify declarations)
   if (pluginManager) {

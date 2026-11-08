@@ -2,6 +2,14 @@
 
 A tsup plugin for automatic TypeScript declaration file generation using dtsx.
 
+## Supported tsup versions
+
+The plugin supports tsup `>=8.3.6 <8.5.1` and requires `@swc/core` as a peer.
+These dependencies are checked together in strict consumers of the normally
+packed plugin. tsup 8.5.1 and 9.0.0 publish declarations that import a missing
+`./types.cts` file; this range avoids advertising a broken SDK contract.
+The SWC peer supplies the types referenced by tsup 8.5.0's public declarations.
+
 ## Installation
 
 ```bash

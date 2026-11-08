@@ -4,6 +4,7 @@
  * Produces the same Declaration[] shape that the processor expects.
  */
 import type { Declaration } from '../types'
+import { functionCount } from '../call-signatures'
 import { projectBindingPattern } from '../binding-patterns'
 import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
@@ -114,8 +115,8 @@ export function scanIsolatedDeclarations(source: string, filename: string, keepC
 /**
  * Scan a regular TypeScript source file and retain values needed by type inference.
  */
-export function scanSemanticDeclarations(source: string, filename: string, keepComments: boolean = true): Declaration[] {
-  return scanDeclarationsInternal(source, filename, keepComments, false)
+export function scanSemanticDeclarations(source: string, filename: string, keepComments: boolean = true, importedFunctions?: ReadonlySet<string>): Declaration[] {
+  return scanDeclarationsInternal(source, filename, keepComments, false, false, importedFunctions)
 }
 
 /** Ambient block members bind implicitly; retain them without public-root pruning. */
@@ -124,7 +125,7 @@ export function scanAmbientDeclarationMembers(source: string, filename: string, 
 }
 
 /** Scan TypeScript source code without constructing a TypeScript AST. */
-function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean, retainAmbientMembers = false): Declaration[] {
+function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean, retainAmbientMembers = false, importedFunctions?: ReadonlySet<string>): Declaration[] {
   const source = _source
   const keepComments = _keepComments
   const isolatedDeclarations = _isolatedDeclarations
@@ -136,9 +137,32 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   const functionBodies = new Set<Declaration>()
   let pos = 0
   let classHelperCounter = 0
+  const classFrames: Array<{ fields: Map<string, string>, pending: Array<() => void>, isStatic: boolean }> = []
+
+  function knownExpressionType(value: string): string | undefined {
+    const field = /^this\.([\w$]+)$/.exec(value)
+    if (field) {
+      const frame = classFrames.at(-1)
+      return frame?.fields.get(`${frame.isStatic ? 'static:' : ''}${field[1]}`)
+    }
+    const call = /^([\w$]+)\s*\(/.exec(value)
+    if (!call || !value.endsWith(')')) return undefined
+    const tokens = tokenizeDeclarationSyntax(value)
+    let depth = 0
+    for (let index = 1; index < tokens.length; index++) {
+      const text = value.slice(tokens[index].start, tokens[index].end)
+      if (text === '(') depth++
+      else if (text === ')' && --depth === 0 && index !== tokens.length - 1) return undefined
+    }
+    const candidates = [...declarations, ...nonExportedTypes.values()].filter(item => item.kind === 'function' && item.name === call[1])
+    if (candidates.length !== 1 || candidates[0].generics || functionCount(source, call[1]) !== 1) return undefined
+    return candidates[0].returnType
+  }
 
   function scopedClassExpression(expression: string): string | undefined {
     const value = expression.trim()
+    const known = knownExpressionType(value)
+    if (known) return known
     if (!value.startsWith('class')) return undefined
     const tokens = tokenizeDeclarationSyntax(value)
     if (tokens[0]?.kind !== 'word' || value.slice(tokens[0].start, tokens[0].end) !== 'class') return undefined
@@ -157,6 +181,12 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     const text = members.map(item => item.text.replace(/^export\s+/, '').replace(/^declare\s+/, '')).join('\n')
     nonExportedTypes.set(helper, { kind: 'module', name: helper, text: `declare namespace ${helper} {\n${text}\n}`, moduleForm: 'namespace', isExported: false, start: pos, end: pos })
     return `typeof ${helper}.${name}`
+  }
+
+  function scopedMemberExpression(value: string, isStatic: boolean): string | undefined {
+    const field = /^this\.([\w$]+)$/.exec(value)
+    if (field) return classFrames.at(-1)?.fields.get(`${isStatic ? 'static:' : ''}${field[1]}`)
+    return scopedClassExpression(value)
   }
 
   function retainPrivateFunction(declaration: Declaration): void {
@@ -1834,6 +1864,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   /** Infer type from a default value expression (simple cases) */
   function inferTypeFromDefault(value: string): string {
     const v = value.trim()
+    const known = knownExpressionType(v)
+    if (known) return known
     if (v === 'true' || v === 'false')
       return 'boolean'
     if (isNumericLiteral(v))
@@ -2644,6 +2676,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       return '{}'
 
     pos++ // skip {
+    const frame = { fields: new Map<string, string>(), pending: [] as Array<() => void>, isStatic: false }
+    classFrames.push(frame)
     const members: string[] = []
     const privateMembers = new Set<string>()
 
@@ -2707,6 +2741,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       // Keep private identity without exposing implementation signatures.
       const memberStart = pos
+      frame.isStatic = isStatic
       if ((matchWord('get') || matchWord('set')) && isMemberNameStart(peekAfterWord(source.slice(pos, pos + 3)))) {
         pos += 3
         skipWhitespaceAndComments()
@@ -2788,17 +2823,25 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           extractParamList() // empty params for getter
           skipWhitespaceAndComments()
           let retType = extractReturnType()
+          let getterBody: string | undefined
           skipWhitespaceAndComments()
           if (pos < len && source.charCodeAt(pos) === CH_LBRACE) {
             const bodyStart = pos + 1
             findMatchingClose(CH_LBRACE, CH_RBRACE)
-            if (!retType && !isolatedDeclarations)
-              retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), false, '()', scopedClassExpression)
+            if (!retType && !isolatedDeclarations) {
+              getterBody = source.slice(bodyStart, pos - 1)
+              retType = inferFunctionBodyReturnType(getterBody, false, '()', value => scopedMemberExpression(value, isStatic))
+            }
           }
           else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
             pos++
           }
+          const index = output.length
           output.push(`${modPrefix}get ${memberName}(): ${retType || 'unknown'};`)
+          if (getterBody) frame.pending.push(() => {
+            const type = inferFunctionBodyReturnType(getterBody!, false, '()', value => scopedMemberExpression(value, isStatic))
+            output[index] = `${modPrefix}get ${memberName}(): ${type};`
+          })
         }
         else {
           // 'get' is used as a method name
@@ -2851,6 +2894,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
     }
 
+    for (const infer of frame.pending) infer()
+    classFrames.pop()
     return `{\n${members.join('\n')}\n}`
   }
 
@@ -2951,6 +2996,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       skipWhitespaceAndComments()
 
       let retType = extractReturnType()
+      let inferredBody: string | undefined
       const hasExplicitReturnType = retType.length > 0
       if (!retType) {
         if (isAsync && isGenerator)
@@ -2970,7 +3016,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         // As for functions: an unannotated method returns what its body does,
         // in isolated mode too, rather than being declared `void` unread.
         if (!hasExplicitReturnType && !isGenerator) {
-          retType = inferFunctionBodyReturnType(source.slice(bodyStart, pos - 1), isAsync, rawParams, scopedClassExpression)
+          inferredBody = source.slice(bodyStart, pos - 1)
+          retType = inferFunctionBodyReturnType(inferredBody, isAsync, rawParams, value => scopedMemberExpression(value, isStatic))
         }
       }
       else if (pos < len && source.charCodeAt(pos) === CH_SEMI) {
@@ -2984,7 +3031,12 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       // which fails the whole file, so one generator method takes out every type
       // the package ships. Nothing is lost: `retType` above is already resolved
       // to Generator<...> / AsyncGenerator<...> when the source did not annotate.
+      const memberIndex = members.length
       members.push(`${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${retType};`)
+      if (inferredBody) classFrames.at(-1)?.pending.push(() => {
+        const type = inferFunctionBodyReturnType(inferredBody!, isAsync, rawParams, value => scopedMemberExpression(value, isStatic))
+        members[memberIndex] = `${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${type};`
+      })
     }
     else if (nextCh === CH_COLON || nextCh === CH_EQUAL || nextCh === CH_SEMI || nextCh === CH_RBRACE || nextCh === CH_LF || nextCh === CH_CR) {
       // Property
@@ -3094,6 +3146,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
 
       const optMark = isOptional ? '?' : ''
+      classFrames.at(-1)?.fields.set(`${isStatic ? 'static:' : ''}${memberName}`, isOptional ? `(${type}) | undefined` : type)
       members.push(`${modPrefix}${memberName}${optMark}: ${type};`)
     }
     else {
@@ -4105,7 +4158,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   attachFunctionProperties(source, declarations, nonExportedTypes, nonExportedFunctionGroups)
   attachEnumBodies(declarations, nonExportedTypes)
   attachComputedKeyConstants(declarations, nonExportedTypes)
-  if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes)
+  if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes, importedFunctions)
 
   if (retainAmbientMembers) {
     const present = new Set(declarations)

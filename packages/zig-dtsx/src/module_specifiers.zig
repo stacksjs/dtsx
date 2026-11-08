@@ -11,6 +11,8 @@ pub const Rewrite = struct {
     emittedSpecifier: []const u8,
 };
 
+pub const InferenceSource = struct { specifier: []const u8, source: []const u8 };
+
 pub const WireContext = struct {
     version: u32,
     moduleSpecifierMode: []const u8,
@@ -19,6 +21,7 @@ pub const WireContext = struct {
     sourceHash: []const u8,
     rewrites: []const Rewrite,
     augmentationImports: []const []const u8 = &.{},
+    inferenceSources: []const InferenceSource = &.{},
 };
 
 pub const Context = struct {

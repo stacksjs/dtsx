@@ -82,7 +82,7 @@ fn directCall(allocator: std.mem.Allocator, original: []const u8, functions: *co
     return null;
 }
 
-fn functionReturn(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+pub fn functionReturn(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
     const items = try syntax.tokenizeDeclarationSyntax(allocator, text);
     defer allocator.free(items);
     var depth: usize = 0;
@@ -550,6 +550,10 @@ fn sourceOrder(_: void, left: *Declaration, right: *Declaration) bool {
 }
 
 pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []const u8, declarations: []Declaration, candidates: *std.StringHashMap(Declaration)) !void {
+    return inferDeclarationValueAliasesWithImports(allocator, source, declarations, candidates, null);
+}
+
+pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, source: []const u8, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), imports: ?*const std.StringHashMap(void)) !void {
     var context = Context{
         .allocator = allocator,
         .source = source,
@@ -590,6 +594,16 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
     }
     std.mem.sort(*Declaration, ordered.items, {}, sourceOrder);
     for (ordered.items) |entry| if (entry.kind == .function_decl and entry.generics.len == 0) try context.functions.put(entry.name, {});
+    if (imports) |known| {
+        var names = known.keyIterator();
+        while (names.next()) |name| {
+            try context.functions.put(name.*, {});
+            var inferred_name: []const u8 = "__dtsx_call_result";
+            while (std.mem.indexOf(u8, source, inferred_name) != null) inferred_name = try std.fmt.allocPrint(allocator, "{s}_", .{inferred_name});
+            const call_type = try std.fmt.allocPrint(allocator, "(typeof {s}) extends (...args: never[]) => infer {s} ? {s} : never", .{ name.*, inferred_name, inferred_name });
+            try context.local_calls.put(name.*, .{ .type = call_type, .flow = call_type });
+        }
+    }
     var has_call = false;
     for (ordered.items) |entry| {
         if (entry.kind == .variable_decl and entry.type_annotation.len == 0 and try directCall(allocator, entry.value, &context.functions) != null) {

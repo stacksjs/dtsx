@@ -1239,7 +1239,8 @@ pub fn inferFunctionBodyReturnTypeScoped(alloc: std.mem.Allocator, body: []const
     return inferFunctionBodyReturnTypeGeneric(alloc, body, parameters, depth, class_scope, "");
 }
 
-pub fn inferFunctionBodyReturnTypeGeneric(alloc: std.mem.Allocator, body: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, generics: []const u8) InferError![]const u8 {
+pub fn inferFunctionBodyReturnTypeGeneric(alloc: std.mem.Allocator, body: []const u8, raw_parameters: []const u8, depth: usize, class_scope: ?*ClassScope, generics: []const u8) InferError![]const u8 {
+    const parameters = try bodyParameters(alloc, raw_parameters, class_scope);
     const content = if (body.len >= 2 and body[0] == '{' and body[body.len - 1] == '}') body[1 .. body.len - 1] else body;
     var return_scope = return_scopes.Scope.init(alloc, class_scope, content, generics);
     defer return_scope.deinit();
@@ -1334,6 +1335,7 @@ fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, par
 }
 
 fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, return_scope: ?*return_scopes.Scope) InferError![]const u8 {
+    if (depth >= MAX_INFERENCE_DEPTH) return "unknown";
     var value = trim(expression);
     while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
         value = trim(value[1 .. value.len - 1]);
@@ -1341,7 +1343,15 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     if (class_scope) |scope| {
         if (try @import("class_expressions.zig").resolve(scope, value)) |class_type| return class_type;
     }
+    if (class_scope) |scope| {
+        if (try @import("semantic_context.zig").expressionType(scope, value)) |known| return known;
+    }
     if (isJsxExpression(value)) return "JSX.Element";
+    if (std.mem.indexOfScalar(u8, value, '.')) |dot| {
+        if (findParameterType(parameters, value[0..dot])) |object| {
+            if (try objectMemberType(alloc, object, value[dot + 1 ..])) |property| return property;
+        }
+    }
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
     if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
 
@@ -1377,7 +1387,10 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         }
     }
 
-    var inferred = try inferNarrowType(alloc, value, false, false, depth + 1);
+    var inferred = if (value.len >= 2 and value[0] == '{' and value[value.len - 1] == '}')
+        try inferObjectTypeContextual(alloc, value, false, depth + 1, null, parameters, class_scope, return_scope)
+    else
+        try inferNarrowType(alloc, value, false, false, depth + 1);
     var parameter_iter = std.mem.tokenizeAny(u8, parameters, "(),");
     while (parameter_iter.next()) |parameter| {
         const colon = std.mem.indexOfScalar(u8, parameter, ':') orelse continue;
@@ -1388,6 +1401,84 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         if (std.mem.indexOf(u8, inferred, needle) != null) inferred = try std.mem.replaceOwned(u8, alloc, inferred, needle, parameter_type);
     }
     return inferred;
+}
+
+/// Implementation bindings differ from the externally optional call signature.
+pub fn bodyParameters(alloc: std.mem.Allocator, raw: []const u8, scope: ?*ClassScope) InferError![]const u8 {
+    const syntax = @import("module_specifiers.zig");
+    const stripped = trim(raw);
+    const content = if (stripped.len >= 2 and stripped[0] == '(' and stripped[stripped.len - 1] == ')') stripped[1 .. stripped.len - 1] else stripped;
+    const tokens = try syntax.tokenizeDeclarationSyntax(alloc, content);
+    var result = std.array_list.Managed(u8).init(alloc);
+    var start: usize = 0;
+    var depth: isize = 0;
+    var index: usize = 0;
+    while (index <= tokens.len) : (index += 1) {
+        const token = if (index < tokens.len) tokens[index] else null;
+        const text = if (token) |item| content[item.start..item.end] else ",";
+        if (depth == 0 and std.mem.eql(u8, text, ",")) {
+            const part = trim(content[start..if (token) |item| item.start else content.len]);
+            if (part.len > 0) {
+                const items = try syntax.tokenizeDeclarationSyntax(alloc, part);
+                var nesting: isize = 0;
+                var colon: ?usize = null;
+                var equal: ?usize = null;
+                for (items) |item| {
+                    const piece = part[item.start..item.end];
+                    if (nesting == 0 and std.mem.eql(u8, piece, ":") and colon == null) colon = item.start;
+                    if (nesting == 0 and std.mem.eql(u8, piece, "=") and (item.end == part.len or part[item.end] != '>')) {
+                        equal = item.start;
+                        break;
+                    }
+                    if (oneOfSyntax(piece, &.{ "(", "[", "{", "<" })) nesting += 1 else if (oneOfSyntax(piece, &.{ ")", "]", "}" }) or std.mem.eql(u8, piece, ">") and (item.start == 0 or part[item.start - 1] != '=')) nesting -= 1;
+                }
+                var name = trim(part[0 .. colon orelse equal orelse part.len]);
+                const optional = ch.endsWith(name, "?");
+                if (optional) name = name[0 .. name.len - 1];
+                if (ch.startsWith(name, "...")) name = name[3..];
+                if (isIdentifierName(name)) {
+                    const inferred = if (colon) |at| trim(part[at + 1 .. equal orelse part.len]) else if (equal) |at| if (scope) |root| @import("extractors.zig").inferTypeFromDefault(root, trim(part[at + 1 ..])) else try inferNarrowType(alloc, trim(part[at + 1 ..]), false, false, 0) else "unknown";
+                    if (result.items.len > 0) try result.appendSlice(", ");
+                    try result.appendSlice(name);
+                    try result.appendSlice(": ");
+                    if (optional and equal == null) try result.append('(');
+                    try result.appendSlice(inferred);
+                    if (optional and equal == null) try result.appendSlice(") | undefined");
+                }
+            }
+            start = if (token) |item| item.end else content.len;
+        }
+        if (oneOfSyntax(text, &.{ "(", "[", "{", "<" })) depth += 1 else if (oneOfSyntax(text, &.{ ")", "]", "}" }) or std.mem.eql(u8, text, ">") and token != null and (token.?.start == 0 or content[token.?.start - 1] != '=')) depth -= 1;
+    }
+    return result.toOwnedSlice();
+}
+
+fn oneOfSyntax(value: []const u8, choices: []const []const u8) bool {
+    for (choices) |choice| if (std.mem.eql(u8, value, choice)) return true;
+    return false;
+}
+
+fn objectMemberType(alloc: std.mem.Allocator, raw_type: []const u8, name: []const u8) InferError!?[]const u8 {
+    const object = trim(raw_type);
+    if (object.len < 2 or object[0] != '{' or object[object.len - 1] != '}') return null;
+    const content = object[1 .. object.len - 1];
+    const tokens = try @import("module_specifiers.zig").tokenizeDeclarationSyntax(alloc, content);
+    var start: usize = 0;
+    var depth: isize = 0;
+    var index: usize = 0;
+    while (index <= tokens.len) : (index += 1) {
+        const token = if (index < tokens.len) tokens[index] else null;
+        const text = if (token) |item| content[item.start..item.end] else ";";
+        if (depth == 0 and (std.mem.eql(u8, text, ";") or std.mem.eql(u8, text, ","))) {
+            const member = trim(content[start..if (token) |item| item.start else content.len]);
+            if (std.mem.indexOfScalar(u8, member, ':')) |colon| {
+                if (std.mem.eql(u8, trim(member[0..colon]), name)) return trim(member[colon + 1 ..]);
+            }
+            start = if (token) |item| item.end else content.len;
+        }
+        if (oneOfSyntax(text, &.{ "(", "[", "{", "<" })) depth += 1 else if (oneOfSyntax(text, &.{ ")", "]", "}" }) or std.mem.eql(u8, text, ">") and token != null and (token.?.start == 0 or content[token.?.start - 1] != '=')) depth -= 1;
+    }
+    return null;
 }
 
 fn findParameterType(parameters: []const u8, name: []const u8) ?[]const u8 {
@@ -2085,6 +2176,10 @@ pub fn inferObjectType(alloc: std.mem.Allocator, value: []const u8, is_const: bo
 }
 
 pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
+    return inferObjectTypeContextual(alloc, value, is_const, depth, key_constants, null, null, null);
+}
+
+fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_const: bool, depth: usize, key_constants: ?*const KeyConstants, parameters: ?[]const u8, class_scope: ?*ClassScope, return_scope: ?*return_scopes.Scope) InferError![]const u8 {
     const content = trim(value[1 .. value.len - 1]);
     if (content.len == 0) return "{}";
     if (depth >= MAX_INFERENCE_DEPTH) return "Record<string, unknown>";
@@ -2125,6 +2220,8 @@ pub fn inferObjectTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
 
         var val_type = if (prop.is_method)
             prop.value
+        else if (parameters != null)
+            try inferBodyExpressionTypeScoped(alloc, prop.value, parameters.?, depth + 1, class_scope, return_scope)
         else if (std.mem.eql(u8, prop.key, prop.value) and isIdentifierName(prop.value))
             (if (!is_const and key_constants != null) key_constants.?.mutable_binding_types.get(prop.value) else null) orelse try std.fmt.allocPrint(alloc, "typeof {s}", .{prop.value})
         else
@@ -2569,9 +2666,9 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
 
             var return_type: []const u8 = signature.return_type;
             if (return_type.len == 0 and body.len > 0 and body[0] == '{') {
-                return_type = try inferFunctionBodyReturnType(alloc, body, params, depth + 1);
+                return_type = try inferFunctionBodyReturnType(alloc, body, signature.params, depth + 1);
             } else if (return_type.len == 0 and body.len > 0) {
-                return_type = try inferBodyExpressionType(alloc, body, params, depth + 1);
+                return_type = try inferBodyExpressionType(alloc, body, try bodyParameters(alloc, signature.params, null), depth + 1);
             }
             if (return_type.len == 0) return_type = "unknown";
 
@@ -2633,7 +2730,7 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
             if (explicit_return_type.len > 0) {
                 return_type = explicit_return_type;
             } else if (body.len > 0 and body[0] == '{') {
-                return_type = try inferFunctionBodyReturnType(alloc, body, params, depth + 1);
+                return_type = try inferFunctionBodyReturnType(alloc, body, signature.params, depth + 1);
             } else if (isDeclarationType(body)) {
                 return_type = body;
             } else if (isJsxExpression(body) or (body.len >= 2 and body[0] == '(' and body[body.len - 1] == ')' and
@@ -2648,7 +2745,7 @@ pub fn inferFunctionType(alloc: std.mem.Allocator, value: []const u8, in_union: 
                 const inner = try extractInnerFunctionSignature(alloc, body, generics);
                 return_type = inner;
             } else {
-                return_type = try inferBodyExpressionType(alloc, body, params, depth + 1);
+                return_type = try inferBodyExpressionType(alloc, body, try bodyParameters(alloc, signature.params, null), depth + 1);
             }
 
             var result = std.array_list.Managed(u8).init(alloc);
@@ -2920,7 +3017,7 @@ test "parameter and relational expressions infer through arrows" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    try std.testing.expectEqualStrings("(value?: number) => number", try inferNarrowType(alloc, "(value?: number) => value", false, false, 0));
+    try std.testing.expectEqualStrings("(value?: number) => (number) | undefined", try inferNarrowType(alloc, "(value?: number) => value", false, false, 0));
     try std.testing.expectEqualStrings("(...values: number[]) => number[]", try inferNarrowType(alloc, "(...values: number[]) => values", false, false, 0));
     try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "(((1)))", false, false, 0));
     try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "key in object", false, false, 0));

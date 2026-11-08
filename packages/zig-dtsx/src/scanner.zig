@@ -117,6 +117,10 @@ pub const Scanner = struct {
     external_module: bool = false,
     pending_error: ?anyerror = null,
     binding_name_counter: usize = 0,
+    inference_sources: []const module_syntax.InferenceSource = &.{},
+    class_fields: ?*std.StringHashMap([]const u8) = null,
+    class_receiver_static: bool = false,
+    class_returns: ?*std.array_list.Managed(@import("semantic_context.zig").PendingReturn) = null,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes
@@ -1005,7 +1009,11 @@ pub const Scanner = struct {
         try @import("function_properties.zig").attach(self.allocator, self.source, self.declarations.items, &self.non_exported_types, &self.non_exported_function_groups);
         try @import("enum_declarations.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         try @import("computed_keys.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
-        if (!self.isolated_declarations) try value_inference.inferDeclarationValueAliases(self.allocator, self.source, self.declarations.items, &self.non_exported_types);
+        if (!self.isolated_declarations) {
+            var imports = try @import("semantic_context.zig").importedFunctions(self);
+            defer imports.deinit();
+            try value_inference.inferDeclarationValueAliasesWithImports(self.allocator, self.source, self.declarations.items, &self.non_exported_types, &imports);
+        }
 
         // Resolve referenced non-exported types from the surviving public signatures.
         if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {

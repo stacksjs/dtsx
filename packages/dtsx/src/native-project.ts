@@ -13,6 +13,8 @@ export interface NativeSourceEmissionContext {
   sourceFile: string
   outputFile: string
   sourceHash: string
+  /** Resolved authored dependency snapshots for native monomorphic-call inference. */
+  inferenceSources?: Array<{ specifier: string, source: string }>
   /** Original imports needed to load project module augmentation providers. */
   augmentationImports?: string[]
   rewrites: Array<{
@@ -66,6 +68,9 @@ export async function planNativeDeclarationProject(options?: Partial<DtsGenerati
     const context: NativeSourceEmissionContext = {
       version: 1, moduleSpecifierMode: mode, sourceFile, outputFile,
       sourceHash: createHash('sha256').update(bytes).digest('hex'), rewrites,
+    }
+    if (!config.isolatedDeclarations && rewrites.length) {
+      context.inferenceSources = await Promise.all(rewrites.map(async entry => ({ specifier: entry.specifier, source: await readFile(entry.resolvedSource, 'utf8') })))
     }
     const augmentationImports = plan.augmentationImports.get(sourceFile)
     if (augmentationImports?.size) context.augmentationImports = [...augmentationImports]
