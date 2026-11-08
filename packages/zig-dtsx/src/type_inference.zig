@@ -1560,24 +1560,27 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     }
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
     if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
+    // The checks below follow the TypeScript emitter's order.
+    if (value.len > 0 and value[0] == '!') return "boolean";
+    if (ch.startsWith(value, "fetch(")) return "Promise<Response>";
+    // A callback's signature and body belong to that value, not to the
+    // enclosing expression's comparison/conditional operators.
+    if (isFunctionExpression(value)) return inferNarrowType(alloc, value, false, false, depth + 1);
 
-    if (return_scope != null) {
-        if (findTopLevelToken(value, "?", 0)) |question| {
-            if (question + 1 < value.len and value[question + 1] != '?' and value[question + 1] != '.') {
-                if (findTopLevelToken(value, ":", question + 1)) |colon| {
-                    const left = try inferBodyExpressionTypeScoped(alloc, value[question + 1 .. colon], parameters, depth + 1, class_scope, return_scope);
-                    const right = try inferBodyExpressionTypeScoped(alloc, value[colon + 1 ..], parameters, depth + 1, class_scope, return_scope);
-                    if (std.mem.eql(u8, left, right)) return left;
-                    return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
-                }
-            }
-        }
+    if (splitTopLevelConditional(value)) |conditional| {
+        const when_true = try inferBodyExpressionTypeScoped(alloc, conditional.when_true, parameters, depth + 1, class_scope, return_scope);
+        const when_false = try inferBodyExpressionTypeScoped(alloc, conditional.when_false, parameters, depth + 1, class_scope, return_scope);
+        if (std.mem.eql(u8, when_true, when_false)) return when_true;
+        const left = if (findMainArrowIndex(when_true) != null) try std.fmt.allocPrint(alloc, "({s})", .{when_true}) else when_true;
+        const right = if (findMainArrowIndex(when_false) != null) try std.fmt.allocPrint(alloc, "({s})", .{when_false}) else when_false;
+        return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
     }
     if (return_scope) |scope| {
         if (try return_scopes.assertion(alloc, value)) |asserted| {
             if (try scope.resolve(asserted)) |resolved| return resolved;
         }
     }
+    if (hasTopLevelComparison(value)) return "boolean";
 
     if (lastTopLevelArithmetic(value)) |i| {
         const c = value[i];
@@ -1587,20 +1590,138 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
     }
 
-    var inferred = if (value.len >= 2 and value[0] == '{' and value[value.len - 1] == '}')
+    const inferred = if (value.len >= 2 and value[0] == '{' and value[value.len - 1] == '}')
         try inferObjectTypeContextual(alloc, value, false, depth + 1, null, parameters, class_scope, return_scope)
     else
         try inferNarrowType(alloc, value, false, false, depth + 1);
-    var parameter_iter = std.mem.tokenizeAny(u8, parameters, "(),");
-    while (parameter_iter.next()) |parameter| {
-        const colon = std.mem.indexOfScalar(u8, parameter, ':') orelse continue;
-        const name = trim(parameter[0..colon]);
-        const parameter_type = trim(parameter[colon + 1 ..]);
-        if (!isIdentifierName(name) or parameter_type.len == 0) continue;
-        const needle = try std.fmt.allocPrint(alloc, "typeof {s}", .{name});
-        if (std.mem.indexOf(u8, inferred, needle) != null) inferred = try std.mem.replaceOwned(u8, alloc, inferred, needle, parameter_type);
+    return substituteBodyQueries(alloc, inferred, parameters);
+}
+
+/// Body locals are not visible in a declaration: `typeof p.a.b` for a
+/// parameter `p: T` becomes `(T)["a"]["b"]`, any other `typeof x` becomes
+/// `unknown`, and `ReturnType<typeof x>` over an unresolved query collapses
+/// to one `unknown` (mirrors the TypeScript emitter).
+fn substituteBodyQueries(alloc: std.mem.Allocator, inferred: []const u8, parameters: []const u8) InferError![]const u8 {
+    if (std.mem.indexOf(u8, inferred, "typeof") == null) return inferred;
+    const syntax = @import("module_specifiers.zig");
+    // The TypeScript tokenizer is lenient; a type the strict native tokenizer
+    // cannot read is left as it is rather than failing the file.
+    const tokens = syntax.tokenizeDeclarationSyntax(alloc, inferred) catch |err| switch (err) {
+        error.InvalidContext => return inferred,
+        else => |e| return e,
+    };
+    const text = struct {
+        fn of(source: []const u8, items: []const syntax.SyntaxToken, index: usize) []const u8 {
+            return if (index < items.len) source[items[index].start..items[index].end] else "";
+        }
+    }.of;
+    var result = std.array_list.Managed(u8).init(alloc);
+    var cursor: usize = 0;
+    var index: usize = 0;
+    while (index < tokens.len) : (index += 1) {
+        const token = tokens[index];
+        if (token.kind != .word or !std.mem.eql(u8, text(inferred, tokens, index), "typeof")) continue;
+        if (index + 1 >= tokens.len or tokens[index + 1].kind != .word) continue;
+        var query_type: ?[]const u8 = findParameterType(parameters, text(inferred, tokens, index + 1));
+        const unresolved = query_type == null;
+        var start: usize = token.start;
+        var end: usize = tokens[index + 1].end;
+        const query_index = index;
+        index += 1;
+        while (index + 2 < tokens.len and std.mem.eql(u8, text(inferred, tokens, index + 1), ".") and tokens[index + 2].kind == .word) {
+            if (!unresolved) query_type = try std.fmt.allocPrint(alloc, "({s})[\"{s}\"]", .{ query_type.?, text(inferred, tokens, index + 2) });
+            end = tokens[index + 2].end;
+            index += 2;
+        }
+        if (unresolved and query_index >= 2 and
+            std.mem.eql(u8, text(inferred, tokens, query_index - 2), "ReturnType") and
+            std.mem.eql(u8, text(inferred, tokens, query_index - 1), "<") and
+            std.mem.eql(u8, text(inferred, tokens, index + 1), ">"))
+        {
+            start = tokens[query_index - 2].start;
+            index += 1;
+            end = tokens[index].end;
+        }
+        try result.appendSlice(inferred[cursor..start]);
+        try result.appendSlice(query_type orelse "unknown");
+        cursor = end;
     }
-    return inferred;
+    try result.appendSlice(inferred[cursor..]);
+    return result.items;
+}
+
+/// A top-level comparison operator makes an expression boolean.
+fn hasTopLevelComparison(value: []const u8) bool {
+    var depth: i32 = 0;
+    var index: usize = 0;
+    while (index < value.len) : (index += 1) {
+        const c = value[index];
+        if (c == '"' or c == '\'' or c == '`') {
+            index = skipQuotedValue(value, index, c) - 1;
+            continue;
+        }
+        if (c == '(' or c == '[' or c == '{') {
+            depth += 1;
+            continue;
+        }
+        if (c == ')' or c == ']' or c == '}') {
+            depth -= 1;
+            continue;
+        }
+        if (depth != 0) continue;
+        const rest = value[index..];
+        if (ch.startsWith(rest, "===") or ch.startsWith(rest, "!==") or ch.startsWith(rest, "==") or
+            ch.startsWith(rest, "!=") or ch.startsWith(rest, ">=") or ch.startsWith(rest, "<=")) return true;
+        if ((c == '>' or c == '<') and (index == 0 or value[index - 1] != '=') and (index + 1 >= value.len or value[index + 1] != '=')) return true;
+    }
+    return false;
+}
+
+fn splitTopLevelConditional(value: []const u8) ?struct { when_true: []const u8, when_false: []const u8 } {
+    var depth: i32 = 0;
+    var question: ?usize = null;
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        // Literal text and comments cannot hold the operator.
+        if (c == '"' or c == '\'' or c == '`') {
+            i = skipQuotedValue(value, i, c) - 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and (value[i + 1] == '/' or value[i + 1] == '*')) {
+            i = if (value[i + 1] == '/') (std.mem.indexOfScalarPos(u8, value, i + 2, '\n') orelse value.len) - 1 else (if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 1 else value.len - 1);
+            continue;
+        }
+        if (c == '(' or c == '[' or c == '{') {
+            depth += 1;
+        } else if (c == ')' or c == ']' or c == '}') {
+            depth -= 1;
+        } else if (c == '?' and depth == 0 and !(i + 1 < value.len and value[i + 1] == '?')) {
+            question = i;
+        } else if (c == ':' and depth == 0) {
+            if (question) |q| return .{ .when_true = value[q + 1 .. i], .when_false = value[i + 1 ..] };
+        }
+    }
+    return null;
+}
+
+/// A complete function value: `function ...`, or an arrow whose header is a
+/// parameter list (optionally async, generic, annotated) or one identifier.
+fn isFunctionExpression(value: []const u8) bool {
+    if (ch.startsWith(value, "function") and (value.len == 8 or !ch.isIdentChar(value[8]))) return true;
+    const arrow = findMainArrowIndex(value) orelse return false;
+    var header = trim(value[0..arrow]);
+    if (ch.startsWith(header, "async") and (header.len == 5 or !ch.isIdentChar(header[5]))) header = trim(header[5..]);
+    if (header.len > 0 and header[0] == '<') {
+        const end = findMatchingBracket(header, 0, '<', '>') orelse return false;
+        header = trim(header[end + 1 ..]);
+    }
+    if (header.len > 0 and header[0] == '(') {
+        const close = findMatchingBracket(header, 0, '(', ')') orelse return false;
+        const suffix = trim(header[close + 1 ..]);
+        return suffix.len == 0 or suffix[0] == ':';
+    }
+    return isIdentifierName(header);
 }
 
 /// Implementation bindings differ from the externally optional call signature.
