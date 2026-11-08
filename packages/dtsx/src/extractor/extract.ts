@@ -5,6 +5,7 @@
  */
 import type { Declaration } from '../types'
 import { isStxFile, transformStxToTs } from '../stx'
+import { clearSourceSyntaxTokens } from '../module-references'
 import { isVueFile, transformVueSfcToTs } from '../vue'
 import { hashContent } from './hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './scanner'
@@ -68,4 +69,5 @@ export function extractDeclarations(
  */
 export function clearDeclarationCache(): void {
   declarationCache.clear()
+  clearSourceSyntaxTokens()
 }

@@ -2,7 +2,7 @@
  * Processor module - converts declarations to DTS format
  */
 import type { Declaration, DeclarationKind, ProcessingContext } from '../types'
-import { isExternalModuleSource, isPrivateImportableDeclaration } from '../declaration-references'
+import { isExternalModuleSource, isExternalModuleText, isPrivateImportableDeclaration } from '../declaration-references'
 import { extractTripleSlashDirectives } from '../extractor/directives'
 import { formatComments } from './comments'
 import { processClassDeclaration, processEnumDeclaration, processFunctionDeclaration, processInterfaceDeclaration, processModuleDeclaration, processTypeDeclaration, processVariableDeclaration } from './declarations'
@@ -310,8 +310,9 @@ export function processDeclarations(
   // Keep original module identity when imports were pruned, and prevent ambient
   // local bindings from becoming implicit named exports. Augmentations alone
   // introduce no local binding and need no extra clause in an existing module.
-  if (isExternalModuleSource(context.sourceCode) && exports.length === 0
-    && (!isExternalModuleSource(result) || declarations.some(isPrivateImportableDeclaration))) {
+  // Cheapest conditions first; each check is pure, so the order is free.
+  if (exports.length === 0 && isExternalModuleSource(context.sourceCode)
+    && (declarations.some(isPrivateImportableDeclaration) || !isExternalModuleText(result))) {
     result += `${result ? '\n' : ''}export {};`
   }
 

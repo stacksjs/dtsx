@@ -1,7 +1,7 @@
 import type { Declaration } from './types'
 import { directConstValueAlias, returnTypeExpectsObject } from './declaration-references'
 import { isIdentChar, isIdentStart } from './lexical'
-import { tokenizeDeclarationSyntax } from './module-references'
+import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from './module-references'
 import { extractAllImportedItems } from './processor/imports'
 import { inferNarrowType } from './processor/type-inference'
 
@@ -92,7 +92,7 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     return undefined
   }
   const callCandidates = new Set(ordered.filter(item => item.kind === 'variable' && !item.typeAnnotation && typeof item.value === 'string').map(item => directCall(item.value as string)).filter((name): name is string => name !== undefined))
-  const sourceTokens = callCandidates.size ? tokenizeDeclarationSyntax(source) : undefined
+  const sourceTokens = callCandidates.size ? sourceSyntaxTokens(source) : undefined
   const counts = new Map<string, number>()
   if (sourceTokens) {
     let depth = 0
@@ -139,7 +139,7 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     hasAlias = true
   }
   if (!hasAlias) return
-  const tokens = sourceTokens ?? tokenizeDeclarationSyntax(source)
+  const tokens = sourceTokens ?? sourceSyntaxTokens(source)
   const text = (index: number): string => tokens[index] ? source.slice(tokens[index].start, tokens[index].end) : ''
   const pairs = new Map<number, number>()
   const parents = new Map<number, number>()

@@ -1,5 +1,5 @@
 import type { Declaration } from './types'
-import { tokenizeDeclarationSyntax } from './module-references'
+import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from './module-references'
 import { inferNarrowType } from './processor/type-inference'
 
 /** Retain TypeScript's function/namespace merging for authored expando assignments. */
@@ -20,15 +20,22 @@ export function attachFunctionProperties(source: string, declarations: Declarati
     counts.set(declaration.name, count)
     if (count > 1) overloaded.add(declaration.name)
   }
-  const tokens = tokenizeDeclarationSyntax(source)
+  const tokens = sourceSyntaxTokens(source)
   const text = (index: number): string => tokens[index] ? source.slice(tokens[index].start, tokens[index].end) : ''
   const properties = new Map<string, Map<string, string[]>>()
   let depth = 0
   for (let index = 0; index < tokens.length; index++) {
+    const current = tokens[index]
+    if (current.kind === 'punctuation') {
+      const code = source.charCodeAt(current.start)
+      if (code === 40 || code === 91 || code === 123) depth++
+      else if (code === 41 || code === 93 || code === 125) depth--
+      continue
+    }
+    // Structural checks before slicing or hashing the candidate name.
+    if (depth || tokens[index + 2]?.kind !== 'word' || text(index + 1) !== '.' || text(index + 3) !== '=') continue
     const word = text(index)
-    if (['(', '[', '{'].includes(word)) { depth++; continue }
-    if ([')', ']', '}'].includes(word)) { depth--; continue }
-    if (depth || !functions.has(word) || text(index + 1) !== '.' || tokens[index + 2]?.kind !== 'word' || text(index + 3) !== '=') continue
+    if (!functions.has(word)) continue
     const property = text(index + 2)
     const start = index + 4
     let end = start

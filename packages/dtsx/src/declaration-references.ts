@@ -1,6 +1,7 @@
 import type { Declaration } from './types'
 import { bindingPatternNames } from './binding-patterns'
-import { tokenizeDeclarationSyntax } from './module-references'
+import type { SyntaxToken } from './module-references'
+import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from './module-references'
 
 /** A direct const alias preserves the referenced value's type identity. */
 export function directConstValueAlias(value: string): string | undefined {
@@ -24,15 +25,33 @@ export function returnTypeExpectsObject(prefix: string): boolean {
 
 /** Original top-level syntax, independent of imports or declarations pruned later. */
 export function isExternalModuleSource(source: string): boolean {
-  const tokens = tokenizeDeclarationSyntax(source)
+  return isExternalModuleTokens(source, sourceSyntaxTokens(source))
+}
+
+/** The same check for generated text, without retaining its tokens. */
+export function isExternalModuleText(text: string): boolean {
+  return isExternalModuleTokens(text, tokenizeDeclarationSyntax(text))
+}
+
+function isExternalModuleTokens(source: string, tokens: readonly SyntaxToken[]): boolean {
   let depth = 0
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]
+    if (token.kind === 'punctuation') {
+      // Only one-character punctuation tokens can be brackets.
+      const code = source.charCodeAt(token.start)
+      if (code === 123 || code === 40 || code === 91) depth++
+      else if (code === 125 || code === 41 || code === 93) depth--
+      continue
+    }
+    if (depth !== 0 || token.kind !== 'word' || token.end - token.start !== 6) continue
     const text = source.slice(token.start, token.end)
-    const next = tokens[i + 1] ? source.slice(tokens[i + 1].start, tokens[i + 1].end) : ''
-    if (depth === 0 && token.kind === 'word' && (text === 'export' || (text === 'import' && next !== '(' && next !== '.'))) return true
-    if (text === '{' || text === '(' || text === '[') depth++
-    else if (text === '}' || text === ')' || text === ']') depth--
+    if (text === 'export') return true
+    if (text === 'import') {
+      const following = tokens[i + 1]
+      const next = following ? source.slice(following.start, following.end) : ''
+      if (next !== '(' && next !== '.') return true
+    }
   }
   return false
 }

@@ -4328,29 +4328,57 @@ function isWordInText(name: string, text: string): boolean {
   return false
 }
 
-/** Extract all identifier words from text into an existing Set. O(n) single pass. */
-function addWordsToSet(text: string, words: Set<string>): void {
-  let i = 0
-  const len = text.length
-  while (i < len) {
-    const c = text.charCodeAt(i)
-    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36 || c > 127) {
-      const start = i
-      i++
-      while (i < len) {
-        const ch = text.charCodeAt(i)
-        if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) || ch === 95 || ch === 36 || ch > 127) {
-          i++
+/**
+ * Finds which candidate names occur as identifier-shaped runs in text. A
+ * length/first-unit prefilter means most words are never sliced or hashed.
+ */
+class CandidateNames {
+  private readonly lengths = new Uint8Array(65)
+  private readonly firstUnits = new Uint8Array(65536)
+  readonly size: number
+
+  constructor(private readonly names: ReadonlyMap<string, Declaration>) {
+    for (const name of names.keys()) {
+      if (!name) continue
+      this.lengths[Math.min(name.length, 64)] = 1
+      this.firstUnits[name.charCodeAt(0)] = 1
+    }
+    this.size = names.size
+  }
+
+  /**
+   * Add every candidate name found in `text` to `words`. Returns whether a
+   * found name is a private function/variable (a value candidate).
+   */
+  scan(text: string, words: Set<string>): boolean {
+    if (this.size === 0) return false
+    let mentionsValue = false
+    let i = 0
+    const len = text.length
+    while (i < len) {
+      const c = text.charCodeAt(i)
+      if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36 || c > 127) {
+        const start = i
+        i++
+        while (i < len) {
+          const ch = text.charCodeAt(i)
+          if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || (ch >= 48 && ch <= 57) || ch === 95 || ch === 36 || ch > 127) i++
+          else break
         }
-        else {
-          break
+        if (this.firstUnits[c] === 1 && this.lengths[Math.min(i - start, 64)] === 1) {
+          const word = text.substring(start, i)
+          const candidate = this.names.get(word)
+          if (candidate !== undefined) {
+            words.add(word)
+            if (candidate.kind === 'function' || candidate.kind === 'variable') mentionsValue = true
+          }
         }
       }
-      words.add(text.substring(start, i))
+      else {
+        i++
+      }
     }
-    else {
-      i++
-    }
+    return mentionsValue
   }
 }
 
@@ -4407,17 +4435,21 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   const declNames = new Set<string>()
   for (const d of declarations) declNames.add(d.name)
 
-  // Build a word set from all declaration texts — O(1) lookups per type name
+  // Only non-exported names are ever looked up, so record just those words
+  // instead of every identifier occurrence. Value references are queried
+  // only for private functions/variables, and each collected reference is a
+  // word of the declaration text, so texts naming none of them are skipped.
+  const candidates = new CandidateNames(nonExportedTypes)
   const wordSet = new Set<string>()
   const valueReferences = new Set<string>()
+  const addReferences = (declaration: Declaration): void => {
+    if (candidates.scan(declaration.text, wordSet)) collectDeclarationValueReferences(declaration, valueReferences)
+  }
   const initializerReferences = new Set<string>()
-  const textParts: string[] = []
   for (let i = 0; i < declarations.length; i++) {
     const declaration = declarations[i]
     if (declaration.kind !== 'import') {
-      textParts.push(declaration.text)
-      addWordsToSet(declaration.text, wordSet)
-      collectDeclarationValueReferences(declaration, valueReferences)
+      addReferences(declaration)
       if (typeof declaration.value === 'string') addInitializerReferences(declaration.value, initializerReferences)
     }
   }
@@ -4463,9 +4495,7 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
     // Incrementally add new words from inserted declarations
     for (const decl of toInsert) {
       if (decl.kind !== 'import') {
-        textParts.push(decl.text)
-        addWordsToSet(decl.text, wordSet)
-        collectDeclarationValueReferences(decl, valueReferences)
+        addReferences(decl)
         if (typeof decl.value === 'string') addInitializerReferences(decl.value, initializerReferences)
       }
     }

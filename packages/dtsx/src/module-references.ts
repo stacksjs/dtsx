@@ -20,21 +20,25 @@ export interface ModuleReference {
 
 export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
   const tokens: SyntaxToken[] = []
+  const length = source.length
   let position = 0
 
+  // Character codes are compared directly; indexing would allocate a
+  // one-character string per byte inspected.
   function template(): void {
     let rawStart = position++
-    while (position < source.length) {
-      if (source[position] === '\\') position += 2
-      else if (source[position] === '`') {
+    while (position < length) {
+      const code = source.charCodeAt(position)
+      if (code === 92 /* \ */) position += 2
+      else if (code === 96 /* ` */) {
         tokens.push({ start: rawStart, end: ++position, kind: 'literal' })
         return
       }
-      else if (source[position] === '$' && source[position + 1] === '{') {
+      else if (code === 36 /* $ */ && source.charCodeAt(position + 1) === 123 /* { */) {
         tokens.push({ start: rawStart, end: position + 1, kind: 'literal' })
         tokens.push({ start: position + 1, end: position + 2, kind: 'punctuation' })
         position += 2
-        code(true)
+        code_(true)
         rawStart = position
       }
       else position++
@@ -42,56 +46,86 @@ export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
     tokens.push({ start: rawStart, end: position, kind: 'literal' })
   }
 
-  function code(substitution = false): void {
+  function code_(substitution = false): void {
     let braces = 0
-    while (position < source.length) {
+    while (position < length) {
       const start = position
-      const character = source[position]
-      if (/\s/.test(character)) { position++; continue }
-      if (character === '/' && source[position + 1] === '/') {
-        const end = source.indexOf('\n', position + 2)
-        position = end === -1 ? source.length : end + 1
+      const code = source.charCodeAt(position)
+      // ASCII whitespace inline; only non-ASCII units need the Unicode \s test.
+      if (code === 32 || (code >= 9 && code <= 13) || (code > 127 && /\s/.test(source[position]))) { position++; continue }
+      if (code === 47 /* / */) {
+        const next = source.charCodeAt(position + 1)
+        if (next === 47) {
+          const end = source.indexOf('\n', position + 2)
+          position = end === -1 ? length : end + 1
+          continue
+        }
+        if (next === 42 /* * */) {
+          const end = source.indexOf('*/', position + 2)
+          position = end === -1 ? length : end + 2
+          continue
+        }
+        if (isRegexStart(source, position)) {
+          position = skipRegexLiteral(source, position)
+          tokens.push({ start, end: position, kind: 'literal' })
+          continue
+        }
+      }
+      else if (code === 96) {
+        template()
         continue
       }
-      if (character === '/' && source[position + 1] === '*') {
-        const end = source.indexOf('*/', position + 2)
-        position = end === -1 ? source.length : end + 2
-        continue
-      }
-      if (character === '/' && isRegexStart(source, position)) {
-        position = skipRegexLiteral(source, position)
-        tokens.push({ start, end: position, kind: 'literal' })
-      }
-      else if (character === '`') template()
-      else if (character === '"' || character === '\'') {
+      else if (code === 34 || code === 39) {
         position++
         let closed = false
-        while (position < source.length) {
-          const next = source[position++]
-          if (next === '\\') position++
-          else if (next === character) { closed = true; break }
+        while (position < length) {
+          const next = source.charCodeAt(position++)
+          if (next === 92) position++
+          else if (next === code) { closed = true; break }
         }
-        tokens.push({ start, end: Math.min(position, source.length), kind: closed ? 'quoted' : 'literal' })
+        tokens.push({ start, end: Math.min(position, length), kind: closed ? 'quoted' : 'literal' })
+        continue
       }
-      else if (isIdentStart(source.charCodeAt(position))) {
+      else if (isIdentStart(code)) {
         while (isIdentChar(source.charCodeAt(++position))) {}
         tokens.push({ start, end: position, kind: 'word' })
+        continue
       }
-      else {
-        tokens.push({ start, end: ++position, kind: 'punctuation' })
-        if (substitution) {
-          if (character === '{') braces++
-          else if (character === '}') {
-            if (braces === 0) return
-            braces--
-          }
+      tokens.push({ start, end: ++position, kind: 'punctuation' })
+      if (substitution) {
+        if (code === 123) braces++
+        else if (code === 125) {
+          if (braces === 0) return
+          braces--
         }
       }
     }
   }
 
-  code()
+  code_()
   return tokens
+}
+
+let memoSource: string | undefined
+let memoTokens: readonly SyntaxToken[] = []
+
+/**
+ * Tokens of a whole source file, shared by the analyses of one scan (module
+ * detection, expando properties, call inference) instead of re-lexing the
+ * same text for each. The array is read-only and reused for the same string.
+ */
+export function sourceSyntaxTokens(source: string): readonly SyntaxToken[] {
+  if (source !== memoSource) {
+    memoTokens = tokenizeDeclarationSyntax(source)
+    memoSource = source
+  }
+  return memoTokens
+}
+
+/** Drop the shared whole-source tokens (part of clearing extraction caches). */
+export function clearSourceSyntaxTokens(): void {
+  memoSource = undefined
+  memoTokens = []
 }
 
 /** Decode a quoted module literal without executing or transpiling source. */
