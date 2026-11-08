@@ -550,10 +550,12 @@ fn sourceOrder(_: void, left: *Declaration, right: *Declaration) bool {
 }
 
 pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []const u8, declarations: []Declaration, candidates: *std.StringHashMap(Declaration)) !void {
-    return inferDeclarationValueAliasesWithImports(allocator, source, declarations, candidates, null);
+    return inferDeclarationValueAliasesWithImports(allocator, source, null, declarations, candidates, null);
 }
 
-pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, source: []const u8, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), imports: ?*const std.StringHashMap(void)) !void {
+/// `source_tokens`, when supplied, must be the declaration-syntax tokens of
+/// `source`; they are borrowed and never freed here.
+pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, source: []const u8, source_tokens: ?[]const syntax.SyntaxToken, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), imports: ?*const std.StringHashMap(void)) !void {
     var context = Context{
         .allocator = allocator,
         .source = source,
@@ -611,8 +613,9 @@ pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, sou
             break;
         }
     }
-    const source_items: ?[]const syntax.SyntaxToken = if (has_call) try syntax.tokenizeDeclarationSyntax(allocator, source) else null;
-    defer if (source_items) |tokens| allocator.free(tokens);
+    const owned_items: ?[]const syntax.SyntaxToken = if (has_call and source_tokens == null) try syntax.tokenizeDeclarationSyntax(allocator, source) else null;
+    defer if (owned_items) |tokens| allocator.free(tokens);
+    const source_items: ?[]const syntax.SyntaxToken = if (has_call) (source_tokens orelse owned_items) else null;
     if (source_items) |tokens| {
         var counts = std.StringHashMap(usize).init(allocator);
         defer counts.deinit();
@@ -662,8 +665,9 @@ pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, sou
         has_alias = true;
     }
     if (!has_alias) return;
-    const items = source_items orelse try syntax.tokenizeDeclarationSyntax(allocator, source);
-    defer if (source_items == null) allocator.free(items);
+    const late_items: ?[]const syntax.SyntaxToken = if (source_items == null and source_tokens == null) try syntax.tokenizeDeclarationSyntax(allocator, source) else null;
+    defer if (late_items) |tokens| allocator.free(tokens);
+    const items = source_items orelse source_tokens orelse late_items.?;
     context.items = items;
     var delimiters = std.array_list.Managed(usize).init(allocator);
     defer delimiters.deinit();

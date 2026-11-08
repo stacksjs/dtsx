@@ -694,7 +694,7 @@ pub fn processDeclarations(
     keep_comments: bool,
     import_order: []const []const u8,
 ) ![]const u8 {
-    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, null);
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, null, .{});
 }
 
 /// Context-aware native emission. The legacy entrypoint retains its original
@@ -708,7 +708,29 @@ pub fn processDeclarationsWithContext(
     import_order: []const []const u8,
     context: *const module_specifiers.Context,
 ) ![]const u8 {
-    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, context);
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, context, .{});
+}
+
+/// Facts the scanner already established about the source. Supplying them
+/// lets emission skip re-deriving them; omitted facts are computed as before.
+pub const SourceFacts = struct {
+    /// Whether the source has a top-level import/export (Scanner.external_module).
+    external_module: ?bool = null,
+};
+
+/// Emission for callers that just scanned `source_code` and can hand over the
+/// scanner's facts. Output is identical to processDeclarations(WithContext).
+pub fn processScannedDeclarations(
+    alloc: std.mem.Allocator,
+    result_alloc: std.mem.Allocator,
+    declarations: []const Declaration,
+    source_code: []const u8,
+    keep_comments: bool,
+    import_order: []const []const u8,
+    context: ?*const module_specifiers.Context,
+    facts: SourceFacts,
+) ![]const u8 {
+    return processDeclarationsInternal(alloc, result_alloc, declarations, source_code, keep_comments, import_order, context, facts);
 }
 
 fn processDeclarationsInternal(
@@ -719,6 +741,7 @@ fn processDeclarationsInternal(
     keep_comments: bool,
     import_order: []const []const u8,
     context: ?*const module_specifiers.Context,
+    facts: SourceFacts,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(result_alloc);
     errdefer result.deinit();
@@ -1272,11 +1295,22 @@ fn processDeclarationsInternal(
         try result.appendSlice(stmt);
     }
 
-    if (exports_idx.len == 0 and try references.isExternalModuleSource(alloc, source_code)) {
-        var needs_boundary = !try references.isExternalModuleSource(alloc, result.items);
+    const source_is_module = if (exports_idx.len == 0)
+        facts.external_module orelse try references.isExternalModuleSource(alloc, source_code)
+    else
+        false;
+    if (source_is_module) {
+        // A private importable declaration always needs the boundary; only
+        // otherwise does the emitted text have to be checked for its own
+        // top-level import/export.
+        var needs_boundary = false;
         for (declarations) |declaration| {
-            if (references.isPrivateImportableDeclaration(declaration)) needs_boundary = true;
+            if (references.isPrivateImportableDeclaration(declaration)) {
+                needs_boundary = true;
+                break;
+            }
         }
+        if (!needs_boundary) needs_boundary = !try references.emittedTextIsExternalModule(result.items);
         if (needs_boundary) {
             if (result.items.len > 0) try result.append('\n');
             try result.appendSlice("export {};");

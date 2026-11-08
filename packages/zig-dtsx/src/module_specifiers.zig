@@ -115,19 +115,47 @@ const Token = struct {
 
 pub const SyntaxToken = Token;
 pub const SyntaxError = std.mem.Allocator.Error || error{InvalidContext};
+/// Visitors may stop a token walk early by returning error.StopVisit.
+pub const VisitError = SyntaxError || error{StopVisit};
 pub const tokenizeDeclarationSyntax = tokens;
 
 fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token {
     var result = std.array_list.Managed(Token).init(allocator);
     errdefer result.deinit();
+    // Declaration syntax averages well under one token per three bytes; sizing
+    // up front avoids repeated regrowth while tokenizing whole sources.
+    try result.ensureTotalCapacity(content.len / 3 + 8);
     var i: usize = 0;
-    try scanCode(&result, content, &i, false);
+    scanCode(ListSink{ .list = &result }, content, &i, false) catch |err| switch (err) {
+        error.StopVisit => unreachable, // ListSink never stops early
+        else => |e| return e,
+    };
     return result.toOwnedSlice();
+}
+
+const ListSink = struct {
+    list: *std.array_list.Managed(Token),
+    inline fn push(self: ListSink, token: Token) VisitError!void {
+        // Pre-sized in tokens(); keep the common case free of a call.
+        if (self.list.items.len < self.list.capacity) {
+            self.list.appendAssumeCapacity(token);
+        } else {
+            try self.list.append(token);
+        }
+    }
+};
+
+/// Stream every token to `sink` without materializing a token array. The sink
+/// sees exactly the sequence `tokens` would return, and the same lexical
+/// errors are reported, so whole-source checks can avoid allocation.
+pub fn visitDeclarationSyntax(content: []const u8, sink: anytype) VisitError!void {
+    var i: usize = 0;
+    try scanCode(sink, content, &i, false);
 }
 
 // Template raw text is literal data. Only ${...} switches back to TypeScript
 // syntax, including nested templates and object/type braces in a substitution.
-fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, position: *usize) SyntaxError!void {
+fn scanTemplate(sink: anytype, content: []const u8, position: *usize) VisitError!void {
     var raw_start = position.*;
     position.* += 1;
     while (position.* < content.len) {
@@ -137,75 +165,100 @@ fn scanTemplate(result: *std.array_list.Managed(Token), content: []const u8, pos
             position.* += 2;
         } else if (content[i] == '`') {
             position.* += 1;
-            try result.append(.{ .start = raw_start, .end = position.*, .kind = .template });
+            try sink.push(.{ .start = raw_start, .end = position.*, .kind = .template });
             return;
         } else if (content[i] == '$' and i + 1 < content.len and content[i + 1] == '{') {
-            try result.append(.{ .start = raw_start, .end = i + 1, .kind = .template });
-            try result.append(.{ .start = i + 1, .end = i + 2, .kind = .punctuation });
+            try sink.push(.{ .start = raw_start, .end = i + 1, .kind = .template });
+            try sink.push(.{ .start = i + 1, .end = i + 2, .kind = .punctuation });
             position.* += 2;
-            try scanCode(result, content, position, true);
+            try scanCode(sink, content, position, true);
             raw_start = position.*;
         } else position.* += 1;
     }
     return error.InvalidContext;
 }
 
-fn scanCode(result: *std.array_list.Managed(Token), content: []const u8, position: *usize, substitution: bool) SyntaxError!void {
+/// Identifier byte classes, identical to ch.isIdentStart / ch.isIdentChar.
+const ident_start_table: [256]bool = blk: {
+    var table: [256]bool = @splat(false);
+    for (0..256) |c| table[c] = ch.isIdentStart(@intCast(c));
+    break :blk table;
+};
+const ident_char_table: [256]bool = blk: {
+    var table: [256]bool = @splat(false);
+    for (0..256) |c| table[c] = ch.isIdentChar(@intCast(c));
+    break :blk table;
+};
+
+/// Index of the `*/` closing a block comment whose body starts at `from`.
+/// A vectorized scan for `*` followed by a byte check beats a generic
+/// substring search for this two-byte needle.
+fn blockCommentEnd(content: []const u8, from: usize) ?usize {
+    var p = from;
+    while (std.mem.indexOfScalarPos(u8, content, p, '*')) |star| {
+        if (star + 1 < content.len and content[star + 1] == '/') return star;
+        p = star + 1;
+    }
+    return null;
+}
+
+fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: bool) VisitError!void {
     var braces: usize = 0;
     while (position.* < content.len) {
         const i = position.*;
-        if (ch.isWhitespace(content[i])) {
-            position.* += 1;
-            continue;
-        }
-        if (i + 1 < content.len and content[i] == '/' and content[i + 1] == '/') {
-            position.* += 2;
-            while (position.* < content.len and content[position.*] != '\n') position.* += 1;
-            continue;
-        }
-        if (i + 1 < content.len and content[i] == '/' and content[i + 1] == '*') {
-            position.* += 2;
-            while (position.* + 1 < content.len and !(content[position.*] == '*' and content[position.* + 1] == '/')) position.* += 1;
-            if (position.* + 1 >= content.len) return error.InvalidContext;
-            position.* += 2;
-            continue;
-        }
-        if (content[i] == '/' and lexical.isRegexStart(content, i)) {
-            position.* = lexical.skipRegex(content, i);
-            try result.append(.{ .start = i, .end = position.*, .kind = .template });
-            continue;
-        }
-        if (content[i] == '`') {
-            try scanTemplate(result, content, position);
-        } else if (content[i] == '\'' or content[i] == '"') {
-            const quote = content[i];
-            position.* += 1;
-            var closed = false;
-            while (position.* < content.len) {
-                if (content[position.*] == '\\') {
-                    if (position.* + 1 >= content.len) return error.InvalidContext;
-                    position.* += 2;
-                } else if (content[position.*] == quote) {
-                    position.* += 1;
-                    closed = true;
-                    break;
-                } else position.* += 1;
-            }
-            if (!closed) return error.InvalidContext;
-            try result.append(.{ .start = i, .end = position.*, .kind = .quoted });
-        } else if (ch.isIdentStart(content[i])) {
-            position.* += 1;
-            while (position.* < content.len and ch.isIdentChar(content[position.*])) position.* += 1;
-            try result.append(.{ .start = i, .end = position.*, .kind = .word });
-        } else {
-            position.* += 1;
-            try result.append(.{ .start = i, .end = position.*, .kind = .punctuation });
-            if (substitution) {
-                if (content[i] == '{') braces += 1;
-                if (content[i] == '}') {
-                    if (braces == 0) return;
-                    braces -= 1;
+        const c = content[i];
+        switch (c) {
+            ' ', '\t', '\n', '\r' => {
+                position.* += 1;
+                continue;
+            },
+            '/' => {
+                if (i + 1 < content.len and content[i + 1] == '/') {
+                    position.* = std.mem.indexOfScalarPos(u8, content, i + 2, '\n') orelse content.len;
+                    continue;
                 }
+                if (i + 1 < content.len and content[i + 1] == '*') {
+                    position.* = (blockCommentEnd(content, i + 2) orelse return error.InvalidContext) + 2;
+                    continue;
+                }
+                if (lexical.isRegexStart(content, i)) {
+                    position.* = lexical.skipRegex(content, i);
+                    try sink.push(.{ .start = i, .end = position.*, .kind = .template });
+                    continue;
+                }
+            },
+            '`' => {
+                try scanTemplate(sink, content, position);
+                continue;
+            },
+            '\'', '"' => {
+                var p = i + 1;
+                while (true) {
+                    // Jump straight to the next quote or escape.
+                    p = std.mem.indexOfAnyPos(u8, content, p, &.{ c, '\\' }) orelse return error.InvalidContext;
+                    if (content[p] == c) break;
+                    if (p + 1 >= content.len) return error.InvalidContext;
+                    p += 2;
+                }
+                position.* = p + 1;
+                try sink.push(.{ .start = i, .end = position.*, .kind = .quoted });
+                continue;
+            },
+            else => if (ident_start_table[c]) {
+                var p = i + 1;
+                while (p < content.len and ident_char_table[content[p]]) p += 1;
+                position.* = p;
+                try sink.push(.{ .start = i, .end = p, .kind = .word });
+                continue;
+            },
+        }
+        position.* += 1;
+        try sink.push(.{ .start = i, .end = position.*, .kind = .punctuation });
+        if (substitution) {
+            if (c == '{') braces += 1;
+            if (c == '}') {
+                if (braces == 0) return;
+                braces -= 1;
             }
         }
     }

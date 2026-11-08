@@ -1075,6 +1075,9 @@ fn findTopLevelComma(str: []const u8) ?usize {
 
 /// Find the main arrow (=>) in a function, ignoring nested arrows
 fn findMainArrowIndex(str: []const u8) ?usize {
+    // Only an existing `=>` can be returned; most data initializers have none,
+    // so a vectorized substring check avoids the depth-tracking walk.
+    if (ch.indexOf(str, "=>", 0) == null) return null;
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
     var brace_depth: i32 = 0;

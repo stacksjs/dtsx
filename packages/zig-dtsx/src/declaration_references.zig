@@ -30,17 +30,86 @@ fn eq(source: []const u8, items: []const Token, index: usize, value: []const u8)
     return std.mem.eql(u8, text(source, items, index), value);
 }
 
+/// A source is an external module when a top-level `export`, or an `import`
+/// that is not `import(...)`/`import.meta`, appears outside any bracket. This
+/// streams tokens instead of materializing them: the whole source is still
+/// lexed so malformed literals are reported exactly as before.
 pub fn isExternalModuleSource(allocator: std.mem.Allocator, source: []const u8) !bool {
-    const items = try syntax.tokenizeDeclarationSyntax(allocator, source);
-    defer allocator.free(items);
-    var depth: usize = 0;
-    for (items, 0..) |token, i| {
-        if (depth == 0 and token.kind == .word and (eq(source, items, i, "export") or
-            (eq(source, items, i, "import") and !eq(source, items, i + 1, "(") and !eq(source, items, i + 1, ".")))) return true;
-        if (eq(source, items, i, "{") or eq(source, items, i, "(") or eq(source, items, i, "[")) depth += 1 else if ((eq(source, items, i, "}") or eq(source, items, i, ")") or eq(source, items, i, "]")) and depth > 0) depth -= 1;
-    }
-    return false;
+    _ = allocator;
+    var detector = ExternalModuleDetector{ .source = source };
+    syntax.visitDeclarationSyntax(source, &detector) catch |err| switch (err) {
+        error.StopVisit => unreachable, // stop_when_found is false
+        else => |e| return e,
+    };
+    // `import` as the final token is followed by nothing, which is neither
+    // `(` nor `.`, so it marks a module.
+    return detector.found or detector.pending_import;
 }
+
+/// Module detection for text this emitter generated itself (already derived
+/// from a lexically validated source): stop at the first top-level
+/// import/export instead of lexing the remainder. Lexical errors met before
+/// that point still propagate, as with isExternalModuleSource.
+pub fn emittedTextIsExternalModule(text_value: []const u8) syntax.SyntaxError!bool {
+    var detector = ExternalModuleDetector{ .source = text_value };
+    syntax.visitDeclarationSyntax(text_value, StopOnModule{ .detector = &detector }) catch |err| switch (err) {
+        error.StopVisit => return true,
+        else => |e| return e,
+    };
+    return detector.found or detector.pending_import;
+}
+
+const StopOnModule = struct {
+    detector: *ExternalModuleDetector,
+    pub fn push(self: StopOnModule, token: Token) syntax.VisitError!void {
+        try self.detector.push(token);
+        if (self.detector.found) return error.StopVisit;
+    }
+};
+
+/// isExternalModuleSource over already-lexed tokens of `source`.
+pub fn isExternalModuleTokens(source: []const u8, items: []const Token) bool {
+    var detector = ExternalModuleDetector{ .source = source };
+    for (items) |token| {
+        detector.push(token) catch unreachable;
+        if (detector.found) return true;
+    }
+    return detector.pending_import;
+}
+
+const ExternalModuleDetector = struct {
+    source: []const u8,
+    depth: usize = 0,
+    pending_import: bool = false,
+    found: bool = false,
+
+    pub fn push(self: *ExternalModuleDetector, token: Token) syntax.VisitError!void {
+        if (self.found) return;
+        const value = self.source[token.start..token.end];
+        if (self.pending_import) {
+            self.pending_import = false;
+            if (!(token.kind == .punctuation and (value[0] == '(' or value[0] == '.'))) {
+                self.found = true;
+                return;
+            }
+        }
+        if (token.kind == .word) {
+            if (self.depth == 0) {
+                if (std.mem.eql(u8, value, "export")) {
+                    self.found = true;
+                } else if (std.mem.eql(u8, value, "import")) {
+                    self.pending_import = true;
+                }
+            }
+        } else if (token.kind == .punctuation) {
+            switch (value[0]) {
+                '{', '(', '[' => self.depth += 1,
+                '}', ')', ']' => self.depth -|= 1,
+                else => {},
+            }
+        }
+    }
+};
 
 pub fn isPrivateImportableDeclaration(declaration: Declaration) bool {
     if (declaration.is_exported) return false;
@@ -67,16 +136,39 @@ fn oneOf(value: []const u8, values: []const []const u8) bool {
     return false;
 }
 
-fn expressionReferences(source: []const u8, items: []const Token, start: usize, end: usize, pairs: *const std.AutoHashMap(usize, usize), scopes: []const Scope, references: *std.StringHashMap(void)) !void {
+/// Matching bracket index for each opening token, or `none`. A flat array
+/// replaces a hash map: every lookup is a direct index on the token list.
+const Pairs = struct {
+    const none = std.math.maxInt(usize);
+    close: []usize,
+
+    fn get(self: Pairs, index: usize) ?usize {
+        if (index >= self.close.len) return null;
+        const value = self.close[index];
+        return if (value == none) null else value;
+    }
+};
+
+/// Punctuation tokens are always one byte, so comparing that byte is
+/// equivalent to comparing the token text with a one-character string.
+inline fn isPunct(source: []const u8, items: []const Token, index: usize, c: u8) bool {
+    return index < items.len and items[index].kind == .punctuation and source[items[index].start] == c;
+}
+
+inline fn isWord(source: []const u8, items: []const Token, index: usize, value: []const u8) bool {
+    return index < items.len and items[index].kind == .word and std.mem.eql(u8, source[items[index].start..items[index].end], value);
+}
+
+fn expressionReferences(source: []const u8, items: []const Token, start: usize, end: usize, pairs: Pairs, scopes: []const Scope, references: *std.StringHashMap(void)) !void {
     var i = start;
     while (i < end) : (i += 1) {
-        if (eq(source, items, i, "<")) {
+        if (isPunct(source, items, i, '<')) {
             if (pairs.get(i)) |close| {
                 i = close;
                 continue;
             }
         }
-        if (items[i].kind != .word or (i > 0 and eq(source, items, i - 1, ".")) or eq(source, items, i + 1, ":")) continue;
+        if (items[i].kind != .word or (i > 0 and isPunct(source, items, i - 1, '.')) or isPunct(source, items, i + 1, ':')) continue;
         if (oneOf(text(source, items, i), &.{ "true", "false", "null", "undefined", "new", "this", "super", "as", "satisfies", "typeof", "void", "keyof" })) continue;
         try addReference(source, items, i, scopes, references);
     }
@@ -86,22 +178,29 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
     const source = declaration.text;
     const items = try syntax.tokenizeDeclarationSyntax(allocator, source);
     defer allocator.free(items);
-    var pairs = std.AutoHashMap(usize, usize).init(allocator);
-    defer pairs.deinit();
+    const pairs = Pairs{ .close = try allocator.alloc(usize, items.len) };
+    defer allocator.free(pairs.close);
+    @memset(pairs.close, Pairs.none);
     var stack = std.array_list.Managed(usize).init(allocator);
     defer stack.deinit();
-    for (items, 0..) |_, i| {
-        const token = text(source, items, i);
-        if (oneOf(token, &.{ "(", "[", "{", "<" })) try stack.append(i) else if ((oneOf(token, &.{ ")", "]", "}" }) or (std.mem.eql(u8, token, ">") and !eq(source, items, i -| 1, "="))) and stack.items.len > 0) {
-            const open = stack.items[stack.items.len - 1];
-            if ((eq(source, items, open, "(") and std.mem.eql(u8, token, ")")) or
-                (eq(source, items, open, "[") and std.mem.eql(u8, token, "]")) or
-                (eq(source, items, open, "{") and std.mem.eql(u8, token, "}")) or
-                (eq(source, items, open, "<") and std.mem.eql(u8, token, ">")))
-            {
-                _ = stack.pop();
-                try pairs.put(open, i);
-            }
+    for (items, 0..) |token, i| {
+        if (token.kind != .punctuation) continue;
+        const c = source[token.start];
+        switch (c) {
+            '(', '[', '{', '<' => try stack.append(i),
+            ')', ']', '}', '>' => {
+                if (c == '>' and isPunct(source, items, i -| 1, '=')) continue;
+                if (stack.items.len == 0) continue;
+                const open = stack.items[stack.items.len - 1];
+                const opener = source[items[open].start];
+                if ((opener == '(' and c == ')') or (opener == '[' and c == ']') or
+                    (opener == '{' and c == '}') or (opener == '<' and c == '>'))
+                {
+                    _ = stack.pop();
+                    pairs.close[open] = i;
+                }
+            },
+            else => {},
         }
     }
 
@@ -111,83 +210,90 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
         scopes.deinit();
     }
     for (items, 0..) |_, open| {
-        if (!eq(source, items, open, "(")) continue;
+        if (!isPunct(source, items, open, '(')) continue;
         const close = pairs.get(open) orelse continue;
-        if (!eq(source, items, close + 1, ":") and !(eq(source, items, close + 1, "=") and eq(source, items, close + 2, ">"))) continue;
+        if (!isPunct(source, items, close + 1, ':') and !(isPunct(source, items, close + 1, '=') and isPunct(source, items, close + 2, '>'))) continue;
         var names = std.StringHashMap(void).init(allocator);
         errdefer names.deinit();
         var parameter = open + 1;
         while (parameter < close) {
             var end = parameter;
-            while (end < close and !eq(source, items, end, ",")) {
+            while (end < close and !isPunct(source, items, end, ',')) {
                 end = if (pairs.get(end)) |nested| nested + 1 else end + 1;
             }
             var binding_end = parameter;
-            while (binding_end < end and !eq(source, items, binding_end, ":") and !eq(source, items, binding_end, "=")) {
+            while (binding_end < end and !isPunct(source, items, binding_end, ':') and !isPunct(source, items, binding_end, '=')) {
                 binding_end = if (pairs.get(binding_end)) |nested| nested + 1 else binding_end + 1;
             }
             var first = parameter;
             while (oneOf(text(source, items, first), &.{ ".", "public", "private", "protected", "readonly", "override" })) first += 1;
-            if (eq(source, items, first, "{") or eq(source, items, first, "[")) {
+            if (isPunct(source, items, first, '{') or isPunct(source, items, first, '[')) {
                 const bound = try binding_patterns.bindingPatternNames(allocator, source[items[first].start..items[binding_end - 1].end]);
                 defer allocator.free(bound);
                 for (bound) |name| try names.put(name, {});
             } else if (first < items.len and items[first].kind == .word) try names.put(text(source, items, first), {});
             parameter = end + 1;
         }
-        var end = close + @as(usize, if (eq(source, items, close + 1, ":")) 2 else 3);
+        var end = close + @as(usize, if (isPunct(source, items, close + 1, ':')) 2 else 3);
         while (end < items.len) {
-            if (oneOf(text(source, items, end), &.{ ";", ",", ")", "]", "}" }) or
-                (eq(source, items, end, ">") and !eq(source, items, end -| 1, "="))) break;
+            if (items[end].kind == .punctuation) {
+                const c = source[items[end].start];
+                if (c == ';' or c == ',' or c == ')' or c == ']' or c == '}' or
+                    (c == '>' and !isPunct(source, items, end -| 1, '='))) break;
+            }
             end = if (pairs.get(end)) |nested| nested + 1 else end + 1;
         }
         try scopes.append(.{ .start = open, .end = end, .names = names });
     }
 
-    for (items, 0..) |_, i| {
-        if (eq(source, items, i, "typeof")) try addReference(source, items, i + 1, scopes.items, references);
-        if (eq(source, items, i, "export")) {
-            var next = i + 1;
-            if (eq(source, items, next, "default")) {
-                if (!oneOf(text(source, items, next + 1), &.{ "function", "class", "abstract" }))
-                    try expressionReferences(source, items, next + 1, items.len, &pairs, scopes.items, references);
-                continue;
-            }
-            if (eq(source, items, next, "type")) next += 1;
-            if (eq(source, items, next, "{")) {
-                const close = pairs.get(next) orelse continue;
-                if (eq(source, items, close + 1, "from")) continue;
-                var item = next + 1;
-                while (item < close) {
-                    if (eq(source, items, item, "type") and item + 1 < items.len and items[item + 1].kind == .word and !eq(source, items, item + 1, "as")) item += 1;
-                    try addReference(source, items, item, scopes.items, references);
-                    while (item < close and !eq(source, items, item, ",")) item += 1;
-                    item += 1;
+    for (items, 0..) |token, i| {
+        if (token.kind == .word) {
+            const word = source[token.start..token.end];
+            if (std.mem.eql(u8, word, "typeof")) {
+                try addReference(source, items, i + 1, scopes.items, references);
+            } else if (std.mem.eql(u8, word, "export")) {
+                var next = i + 1;
+                if (isWord(source, items, next, "default")) {
+                    if (!oneOf(text(source, items, next + 1), &.{ "function", "class", "abstract" }))
+                        try expressionReferences(source, items, next + 1, items.len, pairs, scopes.items, references);
+                    continue;
+                }
+                if (isWord(source, items, next, "type")) next += 1;
+                if (isPunct(source, items, next, '{')) {
+                    const close = pairs.get(next) orelse continue;
+                    if (isWord(source, items, close + 1, "from")) continue;
+                    var item = next + 1;
+                    while (item < close) {
+                        if (isWord(source, items, item, "type") and item + 1 < items.len and items[item + 1].kind == .word and !isWord(source, items, item + 1, "as")) item += 1;
+                        try addReference(source, items, item, scopes.items, references);
+                        while (item < close and !isPunct(source, items, item, ',')) item += 1;
+                        item += 1;
+                    }
                 }
             }
-        }
-        if (eq(source, items, i, "[")) {
+        } else if (token.kind == .punctuation and source[token.start] == '[') {
             if (pairs.get(i)) |close| {
-                if (oneOf(text(source, items, close + 1), &.{ ":", "?", "(" }) and !eq(source, items, i + 2, ":") and !eq(source, items, i + 2, "in"))
-                    try expressionReferences(source, items, i + 1, close, &pairs, scopes.items, references);
+                const after_close = isPunct(source, items, close + 1, ':') or isPunct(source, items, close + 1, '?') or isPunct(source, items, close + 1, '(');
+                if (after_close and !isPunct(source, items, i + 2, ':') and !isWord(source, items, i + 2, "in"))
+                    try expressionReferences(source, items, i + 1, close, pairs, scopes.items, references);
             }
         }
     }
     if (declaration.kind == .class_decl) {
         var i: usize = 0;
-        while (i < items.len and !eq(source, items, i, "{")) : (i += 1) {
-            if (eq(source, items, i, "<")) {
+        while (i < items.len and !isPunct(source, items, i, '{')) : (i += 1) {
+            if (isPunct(source, items, i, '<')) {
                 if (pairs.get(i)) |close| {
                     i = close;
                     continue;
                 }
             }
-            if (!eq(source, items, i, "extends")) continue;
+            if (!isWord(source, items, i, "extends")) continue;
             var end = i + 1;
-            while (end < items.len and !eq(source, items, end, "{") and !eq(source, items, end, "implements")) {
+            while (end < items.len and !isPunct(source, items, end, '{') and !isWord(source, items, end, "implements")) {
                 end = if (pairs.get(end)) |nested| nested + 1 else end + 1;
             }
-            try expressionReferences(source, items, i + 1, end, &pairs, scopes.items, references);
+            try expressionReferences(source, items, i + 1, end, pairs, scopes.items, references);
             break;
         }
     }

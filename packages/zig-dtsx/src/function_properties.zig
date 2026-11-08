@@ -22,7 +22,7 @@ fn closes(value: []const u8) bool {
 
 /// Preserve source expando assignments by merging a namespace into its function.
 /// Temporary maps and emitted text are owned by the source's arena.
-pub fn attach(allocator: Allocator, source: []const u8, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) !void {
+pub fn attach(allocator: Allocator, source: []const u8, tokens: []const syntax.SyntaxToken, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) !void {
     var overloaded = std.StringHashMap(void).init(allocator);
     defer overloaded.deinit();
     var counts = std.StringHashMap(usize).init(allocator);
@@ -55,22 +55,23 @@ pub fn attach(allocator: Allocator, source: []const u8, declarations: []Declarat
         try functions.put(group.key_ptr.*, &group.value_ptr.items[0]);
     };
     if (functions.count() == 0) return;
-    const tokens = try syntax.tokenizeDeclarationSyntax(allocator, source);
-    defer allocator.free(tokens);
     var properties = std.StringHashMap(Members).init(allocator);
     var depth: i32 = 0;
     var index: usize = 0;
     while (index < tokens.len) : (index += 1) {
-        const word = text(source, tokens, index);
-        if (opens(word)) {
-            depth += 1;
+        const current = tokens[index];
+        if (current.kind == .punctuation) {
+            // Punctuation tokens are one byte; compare that byte directly.
+            switch (source[current.start]) {
+                '(', '[', '{' => depth += 1,
+                ')', ']', '}' => depth -= 1,
+                else => {},
+            }
             continue;
         }
-        if (closes(word)) {
-            depth -= 1;
-            continue;
-        }
-        if (depth != 0 or !functions.contains(word) or !is(text(source, tokens, index + 1), ".") or index + 3 >= tokens.len or tokens[index + 2].kind != .word or !is(text(source, tokens, index + 3), "=")) continue;
+        const word = source[current.start..current.end];
+        // Cheap structural checks first; hash the word only for `name.prop =`.
+        if (depth != 0 or index + 3 >= tokens.len or !is(text(source, tokens, index + 1), ".") or tokens[index + 2].kind != .word or !is(text(source, tokens, index + 3), "=") or !functions.contains(word)) continue;
         const property = text(source, tokens, index + 2);
         const start = index + 4;
         var end = start;
@@ -138,7 +139,9 @@ fn checkAllocations(backing: Allocator) !void {
     try candidates.put("version", .{ .kind = .variable_decl, .name = "version", .value = "'ready'" });
     try candidates.put("makeVersion", .{ .kind = .function_decl, .name = "makeVersion", .text = "declare function makeVersion(): string;" });
     var groups: std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)) = .empty;
-    try attach(allocator, "export function read(): number { return 7 } read.version = version; read.value = makeVersion(); read.reset = (value: number): number => value;", &declarations, &candidates, &groups);
+    const source = "export function read(): number { return 7 } read.version = version; read.value = makeVersion(); read.reset = (value: number): number => value;";
+    const tokens = try syntax.tokenizeDeclarationSyntax(allocator, source);
+    try attach(allocator, source, tokens, &declarations, &candidates, &groups);
     try std.testing.expect(std.mem.indexOf(u8, declarations[0].text, "export declare namespace read") != null);
     try std.testing.expect(std.mem.indexOf(u8, declarations[0].text, "let version: string;") != null);
     try std.testing.expect(std.mem.indexOf(u8, declarations[0].text, "let reset:") != null);

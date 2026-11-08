@@ -321,21 +321,15 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
     if (task.context) |value| scanner.inference_sources = value.wire.inferenceSources;
     _ = try scanner.scan();
     var context = task.context;
-    const output = if (context) |*value| try emitter.processDeclarationsWithContext(
+    const output = try emitter.processScannedDeclarations(
         alloc,
         alloc,
         scanner.declarations.items,
         source,
         task.keep_comments,
         &default_import_order,
-        value,
-    ) else try emitter.processDeclarations(
-        alloc,
-        alloc,
-        scanner.declarations.items,
-        source,
-        task.keep_comments,
-        &default_import_order,
+        if (context) |*value| value else null,
+        .{ .external_module = scanner.external_module },
     );
 
     if (builtin.os.tag == .windows) {
@@ -667,7 +661,7 @@ fn processBatchRequest(alloc: std.mem.Allocator, keep_comments: bool, isolated_d
             return err;
         };
         const import_order = [_][]const u8{"bun"};
-        const output = emitter.processDeclarationsWithContext(a, a, scanner.declarations.items, file.source, keep_comments, &import_order, &context) catch |err| {
+        const output = emitter.processScannedDeclarations(a, a, scanner.declarations.items, file.source, keep_comments, &import_order, &context, .{ .external_module = scanner.external_module }) catch |err| {
             writeErr("error: ");
             writeErr(file.context.sourceFile);
             writeErr(": ");
@@ -803,21 +797,15 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     _ = try scanner.scan();
 
     const default_import_order = [_][]const u8{"bun"};
-    const dts_output = if (context) |*value| try emitter.processDeclarationsWithContext(
+    const dts_output = try emitter.processScannedDeclarations(
         arena_alloc,
         arena_alloc,
         scanner.declarations.items,
         source,
         keep_comments,
         &default_import_order,
-        value,
-    ) else try emitter.processDeclarations(
-        arena_alloc,
-        arena_alloc,
-        scanner.declarations.items,
-        source,
-        keep_comments,
-        &default_import_order,
+        if (context) |*value| value else null,
+        .{ .external_module = scanner.external_module },
     );
 
     if (output_file) |path| {

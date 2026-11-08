@@ -51,6 +51,20 @@ pub fn build(b: *std.Build) void {
     const lib_step = b.step("lib", "Build only the shared library");
     lib_step.dependOn(&lib_install.step);
 
+    // Profiling harness (unstripped so sampling profilers resolve symbols)
+    const bench_exe = b.addExecutable(.{
+        .name = "zig-dtsx-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const bench_install = b.addInstallArtifact(bench_exe, .{});
+    const bench_step = b.step("bench", "Build the in-process profiling harness");
+    bench_step.dependOn(&bench_install.step);
+
     // Run step
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

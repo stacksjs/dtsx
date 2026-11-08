@@ -129,21 +129,15 @@ fn processSourceInternalWithContext(
     // processDeclarations appends '\0' before toOwnedSlice, so the result is
     // already null-terminated with no extra copy needed.
     const default_import_order = [_][]const u8{"bun"};
-    const dts_output = if (context) |*value| try emitter.processDeclarationsWithContext(
+    const dts_output = try emitter.processScannedDeclarations(
         arena_alloc,
         std.heap.c_allocator,
         scanner.declarations.items,
         source,
         keep_comments,
         &default_import_order,
-        value,
-    ) else try emitter.processDeclarations(
-        arena_alloc,
-        std.heap.c_allocator,
-        scanner.declarations.items,
-        source,
-        keep_comments,
-        &default_import_order,
+        if (context) |*value| value else null,
+        .{ .external_module = scanner.external_module },
     );
 
     // dts_output[0..len] is content, dts_output.ptr[len] == 0 (null terminator)

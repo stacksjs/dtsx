@@ -129,7 +129,7 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
             var scanner = Scanner.init(a, file.source, false, options.isolated_declarations);
             _ = try scanner.scan();
             const import_order = [_][]const u8{"bun"};
-            const declarations = try emitter.processDeclarations(a, a, scanner.declarations.items, file.source, false, &import_order);
+            const declarations = try emitter.processScannedDeclarations(a, a, scanner.declarations.items, file.source, false, &import_order, null, .{ .external_module = scanner.external_module });
             const emitted = try modules.collectModuleReferences(a, declarations);
             for (emitted) |reference| {
                 if (try identities.get(file.path, reference.specifier)) |target| {

@@ -21,8 +21,8 @@ pub fn directCall(alloc: std.mem.Allocator, value: []const u8) !?[]const u8 {
     return null;
 }
 
-pub fn functionCount(alloc: std.mem.Allocator, source: []const u8, name: []const u8) !usize {
-    const tokens = try syntax.tokenizeDeclarationSyntax(alloc, source);
+/// Top-level `function <name>` declarations among `tokens` (lexed from `source`).
+pub fn functionCount(source: []const u8, tokens: []const syntax.SyntaxToken, name: []const u8) usize {
     var depth: isize = 0;
     var count: usize = 0;
     for (tokens, 0..) |token, index| {
@@ -44,7 +44,7 @@ pub fn expressionType(s: *Scanner, value: []const u8) inference.InferError!?[]co
         }
     }
     const name = try directCall(s.allocator, value) orelse return null;
-    if (try functionCount(s.allocator, s.source, name) != 1) return null;
+    if (functionCount(s.source, try s.sourceTokens(), name) != 1) return null;
     for (s.declarations.items) |declaration| {
         if (declaration.kind == .function_decl and declaration.generics.len == 0 and std.mem.eql(u8, declaration.name, name)) return try @import("value_inference.zig").functionReturn(s.allocator, declaration.text);
     }
@@ -76,7 +76,7 @@ pub fn importedFunctions(s: *Scanner) anyerror!std.StringHashMap(void) {
             defer nested.deinit();
             _ = try nested.scan();
             for (nested.declarations.items) |candidate| {
-                if (candidate.kind != .function_decl or candidate.generics.len > 0 or !candidate.is_exported or try functionCount(s.allocator, dependency.source, candidate.name) != 1) continue;
+                if (candidate.kind != .function_decl or candidate.generics.len > 0 or !candidate.is_exported or functionCount(dependency.source, try nested.sourceTokens(), candidate.name) != 1) continue;
                 for (imported.named_items) |raw| {
                     const item = std.mem.trim(u8, raw, " \t\r\n");
                     if (std.mem.startsWith(u8, item, "type ")) continue;

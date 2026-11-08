@@ -121,6 +121,9 @@ pub const Scanner = struct {
     class_fields: ?*std.StringHashMap([]const u8) = null,
     class_receiver_static: bool = false,
     class_returns: ?*std.array_list.Managed(@import("semantic_context.zig").PendingReturn) = null,
+    /// Whole-source declaration-syntax tokens, lexed once and shared by every
+    /// whole-source analysis (module detection, expandos, call inference).
+    source_tokens: ?[]const module_syntax.SyntaxToken = null,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes
@@ -142,6 +145,7 @@ pub const Scanner = struct {
     }
 
     pub fn deinit(self: *Scanner) void {
+        if (self.source_tokens) |tokens| self.allocator.free(tokens);
         self.declarations.deinit();
         if (self.non_exported_types_inited) self.non_exported_types.deinit();
         if (self.func_body_indices_inited) self.func_body_indices.deinit();
@@ -985,9 +989,17 @@ pub const Scanner = struct {
     // Public scan entry point
     // ========================================================================
 
+    /// Tokens of the whole source, lexed on first use and then reused.
+    pub fn sourceTokens(self: *Scanner) module_syntax.SyntaxError![]const module_syntax.SyntaxToken {
+        if (self.source_tokens) |tokens| return tokens;
+        const tokens = try module_syntax.tokenizeDeclarationSyntax(self.allocator, self.source);
+        self.source_tokens = tokens;
+        return tokens;
+    }
+
     /// Scan TypeScript source and extract all declarations
     pub fn scan(self: *Scanner) !ScanResult {
-        self.external_module = try declaration_refs.isExternalModuleSource(self.allocator, self.source);
+        self.external_module = declaration_refs.isExternalModuleTokens(self.source, try self.sourceTokens());
         // Skip UTF-8 BOM (EF BB BF). Check exact bytes — the previous `>= 0xEF`
         // guard was over-permissive, accepting non-BOM high bytes only to fall
         // through the strict triple-check.
@@ -1006,13 +1018,13 @@ pub const Scanner = struct {
             while (groups.next()) |group| removeOverloadImplementations(group);
         }
 
-        try @import("function_properties.zig").attach(self.allocator, self.source, self.declarations.items, &self.non_exported_types, &self.non_exported_function_groups);
+        try @import("function_properties.zig").attach(self.allocator, self.source, try self.sourceTokens(), self.declarations.items, &self.non_exported_types, &self.non_exported_function_groups);
         try @import("enum_declarations.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         try @import("computed_keys.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         if (!self.isolated_declarations) {
             var imports = try @import("semantic_context.zig").importedFunctions(self);
             defer imports.deinit();
-            try value_inference.inferDeclarationValueAliasesWithImports(self.allocator, self.source, self.declarations.items, &self.non_exported_types, &imports);
+            try value_inference.inferDeclarationValueAliasesWithImports(self.allocator, self.source, try self.sourceTokens(), self.declarations.items, &self.non_exported_types, &imports);
         }
 
         // Resolve referenced non-exported types from the surviving public signatures.
@@ -1061,16 +1073,13 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
         try decl_names.put(d.name, {});
     }
 
-    // Collect text parts for searching
-    var text_parts = std.array_list.Managed([]const u8).init(declarations.allocator);
-    try text_parts.ensureTotalCapacity(declarations.items.len);
-    defer text_parts.deinit();
-    for (declarations.items) |d| {
-        if (d.kind != .import_decl) {
-            try text_parts.append(d.text);
-        }
-    }
-
+    // Only names of non-exported declarations are ever queried, so record
+    // just those words instead of hashing every identifier occurrence. A
+    // length/first-byte prefilter rejects most words without hashing. The
+    // same pass notes whether a text names a private function/variable:
+    // every collected value reference is a word of the text, so texts naming
+    // none of them are skipped without tokenizing.
+    const words = CandidateWords{ .names = non_exported_types, .filter = CandidateFilter.init(non_exported_types) };
     var word_set = std.StringHashMap(void).init(declarations.allocator);
     defer word_set.deinit();
     var value_references = std.StringHashMap(void).init(declarations.allocator);
@@ -1079,11 +1088,9 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     defer initializer_references.deinit();
     for (declarations.items) |d| {
         if (d.value.len > 0) try addInitializerReferences(d.value, &initializer_references);
-        if (d.kind != .import_decl) try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
+        if (d.kind != .import_decl and try words.collect(d.text, &word_set))
+            try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
     }
-
-    // Track how far we've extracted words — only process new text_parts each iteration
-    var words_extracted_up_to: usize = 0;
 
     // Move outside loop — reuse across iterations
     var to_insert = std.array_list.Managed(Declaration).init(declarations.allocator);
@@ -1095,22 +1102,6 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
     defer merged.deinit();
 
     while (true) {
-        // Incrementally extract words from only the NEW text parts
-        for (text_parts.items[words_extracted_up_to..]) |part| {
-            var i: usize = 0;
-            while (i < part.len) {
-                if (ch.isIdentStart(part[i])) {
-                    const start = i;
-                    i += 1;
-                    while (i < part.len and ch.isIdentChar(part[i])) i += 1;
-                    try word_set.put(part[start..i], {});
-                } else {
-                    i += 1;
-                }
-            }
-        }
-        words_extracted_up_to = text_parts.items.len;
-
         to_insert.clearRetainingCapacity();
 
         var it = non_exported_types.iterator();
@@ -1166,13 +1157,72 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
         // Add new texts to search
         for (to_insert.items) |d| {
             if (d.kind != .import_decl) {
-                try text_parts.append(d.text);
                 if (d.value.len > 0) try addInitializerReferences(d.value, &initializer_references);
-                try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
+                if (try words.collect(d.text, &word_set))
+                    try declaration_refs.collectValueReferences(declarations.allocator, d, &value_references);
             }
         }
     }
 }
+
+const CandidateWords = struct {
+    names: *const std.StringHashMap(Declaration),
+    filter: CandidateFilter,
+
+    /// Add each candidate name occurring as an identifier-shaped run of
+    /// `text` to `found`. Raw bytes are scanned (strings and comments
+    /// included), which can only over-approximate the text's tokens. Returns
+    /// whether any found name is a private function or variable.
+    fn collect(self: CandidateWords, text: []const u8, found: *std.StringHashMap(void)) !bool {
+        if (self.names.count() == 0) return false;
+        var mentions_value = false;
+        var i: usize = 0;
+        while (i < text.len) {
+            if (!ch.isIdentStart(text[i])) {
+                i += 1;
+                continue;
+            }
+            const start = i;
+            i += 1;
+            while (i < text.len and ch.isIdentChar(text[i])) i += 1;
+            const word = text[start..i];
+            if (!self.filter.mayContain(word)) continue;
+            const candidate = self.names.getPtr(word) orelse continue;
+            try found.put(word, {});
+            if (candidate.kind == .function_decl or candidate.kind == .variable_decl) mentions_value = true;
+        }
+        return mentions_value;
+    }
+};
+
+/// Cheap membership prefilter over a fixed set of names: a word can only be in
+/// the set when both its length and its first byte occur among the names.
+const CandidateFilter = struct {
+    lengths: u64 = 0,
+    first_bytes: [4]u64 = .{ 0, 0, 0, 0 },
+
+    fn init(names: *const std.StringHashMap(Declaration)) CandidateFilter {
+        var filter = CandidateFilter{};
+        var it = names.keyIterator();
+        while (it.next()) |name| filter.add(name.*);
+        return filter;
+    }
+
+    fn add(self: *CandidateFilter, name: []const u8) void {
+        if (name.len == 0) return;
+        self.lengths |= lengthBit(name.len);
+        self.first_bytes[name[0] >> 6] |= @as(u64, 1) << @intCast(name[0] & 63);
+    }
+
+    inline fn lengthBit(len: usize) u64 {
+        return @as(u64, 1) << @intCast(@min(len, 63));
+    }
+
+    inline fn mayContain(self: CandidateFilter, word: []const u8) bool {
+        return word.len > 0 and self.lengths & lengthBit(word.len) != 0 and
+            self.first_bytes[word[0] >> 6] & (@as(u64, 1) << @intCast(word[0] & 63)) != 0;
+    }
+};
 
 fn addInitializerReferences(value: []const u8, references: *std.StringHashMap(void)) !void {
     var i: usize = 0;
