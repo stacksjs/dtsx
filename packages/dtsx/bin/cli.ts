@@ -51,11 +51,12 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     }
 
     const importOrder = ['bun']
-    // Each worker evaluates the emitter modules and warms its JIT from cold, which
-    // costs more than emitting sequentially until a project is large. Measured on an
-    // Apple M3 Pro, sequential emission wins up to ~22 MB of source (2,000 files) and
-    // workers win from ~39 MB (3,500 files), so decide by total source size.
-    const workerMinSourceBytes = 32 * 1024 * 1024
+    // Each worker warms its JIT from cold, which costs more than emitting
+    // sequentially until a project is large. Measured on an Apple M3 Pro with
+    // the embedded worker module, sequential emission wins at ~11 MB of source
+    // (1,000 files) and workers win from ~22 MB (2,000 files), so decide by
+    // total source size.
+    const workerMinSourceBytes = 16 * 1024 * 1024
     let shouldUseWorkers = false
     if (isBunRuntime && n >= 256) {
       let totalBytes = 0

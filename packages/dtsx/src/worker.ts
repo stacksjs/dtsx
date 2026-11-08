@@ -3,10 +3,32 @@
  * Uses Bun workers for high-performance parallel declaration generation
  */
 import type { Declaration, DtsGenerationConfig } from './types'
+import { existsSync } from 'node:fs'
 import { cpus } from 'node:os'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { logger } from './logger'
+
+let workerThreadUrl: URL | null | undefined
+
+/** Location of worker-thread.(js|ts) beside this module, if present. */
+function workerThreadModule(): URL | null {
+  if (workerThreadUrl !== undefined) return workerThreadUrl
+  workerThreadUrl = null
+  // Beside this module (npm build, sources), or under src/ in a compiled binary.
+  for (const candidate of ['./worker-thread.js', './worker-thread.ts', './src/worker-thread.js', './src/worker-thread.ts']) {
+    const url = new URL(candidate, import.meta.url)
+    try {
+      if (existsSync(fileURLToPath(url))) {
+        workerThreadUrl = url
+        break
+      }
+    }
+    catch { /* not a file URL */ }
+  }
+  return workerThreadUrl
+}
 
 /**
  * Worker pool configuration
@@ -346,7 +368,11 @@ catch (error) {
       });
     `
 
-    const worker = new Worker(workerCode, { eval: true })
+    // Prefer the worker-thread module: compiled binaries embed it with their
+    // bytecode, and published builds ship it next to this file. The eval'd
+    // copy remains a fallback for unusual layouts.
+    const moduleUrl = workerThreadModule()
+    const worker = moduleUrl ? new Worker(fileURLToPath(moduleUrl)) : new Worker(workerCode, { eval: true })
 
     const instance: WorkerInstance = {
       worker,
