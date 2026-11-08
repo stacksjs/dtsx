@@ -1,20 +1,27 @@
 /**
- * dtsx benchmark suite — compares dtsx vs zig-dtsx vs oxc-transform vs tsc vs tsgo
+ * dtsx benchmark suite — zig-dtsx vs dtsx vs oxc vs tsc (TypeScript 7)
  *
- * Section 1: In-process API benchmark — cached (dtsx, zig-dtsx FFI, oxc-transform, tsc)
- *            dtsx uses smart caching (hash check + cache hit) which is how it
- *            actually runs in watch mode, incremental builds, and CI pipelines.
- *            zig-dtsx uses Bun FFI to call the Zig shared library in-process.
- * Section 2: In-process API benchmark — no cache (dtsx, zig-dtsx FFI, oxc-transform, tsc)
- *            Cache cleared every iteration for raw single-transform comparison.
- * Section 3: CLI benchmark (dtsx vs zig-dtsx vs oxc vs tsc vs tsgo) — compiled binaries
- * Section 4: Multi-file project benchmarks (dtsx vs zig-dtsx vs oxc vs tsc vs tsgo)
+ * Section 1: In-process API, no cache — zig-dtsx (Bun FFI), dtsx (Bun), oxc-transform (N-API).
+ *            Every dtsx cache is cleared on every iteration; this is the raw transform.
+ * Section 2: In-process API, repeated build — dtsx's content-hash result cache on a
+ *            warm watch/incremental rebuild. Only dtsx caches, so this section is
+ *            reported separately and never used for head-to-head speedups.
+ * Section 3: CLI, single file — every tool as a native executable via subprocess.
+ * Section 4: CLI, multi-file project — every tool generating a whole directory.
+ * Section 5: Bundled declarations — dtsx vs tsdown.
  *
- * Run: bun benchmark/index.ts
+ * Fairness rules:
+ * - tsc has no in-process declaration API in TypeScript 7, so it only appears in CLI sections.
+ * - Every CLI tool's output is verified after warmup; a tool that fails to emit aborts the run.
+ * - dtsx and zig-dtsx run in their default (value-inferring) mode, which does more work than
+ *   isolated-declarations-only emitters.
+ *
+ * Run: bun benchmark/index.ts [--json benchmark/results.json] [--skip-tsdown]
  */
+import type { MachineInfo } from './tools'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { arch, cpus, platform, tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bench, run, summary } from 'mitata'
 import { isolatedDeclarationSync } from 'oxc-transform'
@@ -23,7 +30,17 @@ import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
+import { dtsxExe, machineInfo, oxcCliEnv, oxcExe, tscExe, zigDtsxExe } from './tools'
 import { runTsdownComparison, tsdownComparisonMarkdown } from './tsdown'
+
+const argv = process.argv.slice(2)
+const jsonIndex = argv.indexOf('--json')
+const jsonPath = jsonIndex >= 0 ? (argv[jsonIndex + 1] ?? join(import.meta.dir, 'results.json')) : null
+const skipTsdown = argv.includes('--skip-tsdown')
+
+for (const [name, exe] of [['dtsx', dtsxExe], ['zig-dtsx', zigDtsxExe], ['oxc-emit', oxcExe], ['tsc', tscExe]] as const) {
+  if (!existsSync(exe)) throw new Error(`${name} executable missing at ${exe}. Run \`bun run benchmark:prepare\` first.`)
+}
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -64,381 +81,183 @@ export type Callback<T> = (error: Error | null, result: T) => void
 export type Middleware = (req: Request, res: Response, next: () => void) => void
 `
 
-const inputs: Array<{ name: string, filename: string, source: string }> = [
-  {
-    name: 'small (~50 lines)',
-    filename: 'small.ts',
-    source: SMALL_SOURCE,
-  },
-  {
-    name: 'medium (~100 lines)',
-    filename: 'generics.ts',
-    source: readFileSync(join(fixtureDir, 'generics.ts'), 'utf-8'),
-  },
-  {
-    name: 'large (~330 lines)',
-    filename: 'ts-features.ts',
-    source: readFileSync(join(fixtureDir, 'ts-features.ts'), 'utf-8'),
-  },
-  {
-    name: 'xlarge (~1050 lines)',
-    filename: 'react-like.ts',
-    source: readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8'),
-  },
+interface Input { key: string, name: string, filename: string, source: string }
+
+const inputs: Input[] = [
+  { key: 'small', name: 'Small (~50 lines)', filename: 'small.ts', source: SMALL_SOURCE },
+  { key: 'medium', name: 'Medium (~100 lines)', filename: 'generics.ts', source: readFileSync(join(fixtureDir, 'generics.ts'), 'utf-8') },
+  { key: 'large', name: 'Large (~330 lines)', filename: 'ts-features.ts', source: readFileSync(join(fixtureDir, 'ts-features.ts'), 'utf-8') },
+  { key: 'xlarge', name: 'XLarge (~1050 lines)', filename: 'react-like.ts', source: readFileSync(join(fixtureDir, 'real-world', 'react-like.ts'), 'utf-8') },
 ]
 
 // ---------------------------------------------------------------------------
-// TypeScript 7 helper. TypeScript 7 exposes declaration emit through its CLI.
+// In-process helpers
 // ---------------------------------------------------------------------------
 
-function tscGenerate(source: string, filename: string): string {
-  writeFileSync(join(cliBenchDir, filename), source)
-  tscGenerateCLI(filename)
-  return readFileSync(join(cliOutDir, filename.replace(/\.ts$/, '.d.ts')), 'utf8')
+function dtsxNoCache(source: string, filename: string): string {
+  clearResultCache()
+  clearSourceFileCache()
+  clearDeclarationCache()
+  clearProcessorCaches()
+  return processSource(source, filename, true, ['bun'], false)
+}
+
+function dtsxCached(source: string, filename: string): string {
+  return processSource(source, filename, true, ['bun'], false)
+}
+
+function zigInProcess(source: string): string {
+  return zigProcessSource(source, true, false)
+}
+
+function oxcInProcess(source: string, filename: string): string {
+  return isolatedDeclarationSync(filename, source, { sourcemap: false }).code
 }
 
 // ---------------------------------------------------------------------------
-// CLI helpers — all tools run as compiled native binaries via subprocess
+// CLI helpers — all tools run as executables via subprocess
 // ---------------------------------------------------------------------------
-
-const dtsxExe = join(import.meta.dir, '..', 'packages', 'dtsx', 'bin', 'dtsx')
-const zigDtsxExe = join(import.meta.dir, '..', 'packages', 'zig-dtsx', 'zig-out', 'bin', 'zig-dtsx')
-const hasZigBin = existsSync(zigDtsxExe)
-const oxcExe = join(import.meta.dir, 'oxc-emit')
-
-// Resolve native binding for compiled oxc-emit CLI (Bun --compile can't find N-API addons via virtual FS)
-const oxcNativeBinding = (() => {
-  try {
-    const bindingPkg = `@oxc-transform/binding-${platform()}-${arch()}`
-    const pkgDir = join(import.meta.dir, '..', 'node_modules', bindingPkg)
-    const nodeFile = readdirSync(pkgDir).find(f => f.endsWith('.node'))
-    return nodeFile ? join(pkgDir, nodeFile) : undefined
-  }
-  catch { return undefined }
-})()
-const oxcCliEnv = oxcNativeBinding
-  ? { ...process.env, NAPI_RS_NATIVE_LIBRARY_PATH: oxcNativeBinding }
-  : process.env
-
-const tscExe = join(import.meta.dir, '..', 'node_modules', '.bin', 'tsc')
-const tsgoExe = tscExe
 
 const cliBenchDir = join(tmpdir(), 'dtsx-bench-cli')
 const cliOutDir = join(cliBenchDir, 'out')
+rmSync(cliBenchDir, { recursive: true, force: true })
 mkdirSync(cliOutDir, { recursive: true })
+for (const { filename, source } of inputs) writeFileSync(join(cliBenchDir, filename), source)
 
-// Pre-write input files to disk for CLI benchmarks
-for (const { filename, source } of inputs) {
-  writeFileSync(join(cliBenchDir, filename), source)
+// tsc's fastest declaration path: no type-check pass (--noCheck). --isolatedDeclarations
+// is omitted because TypeScript 7 refuses to emit when any declaration needs inference,
+// and the fixtures intentionally contain values that require it.
+const tscFlags = ['--declaration', '--emitDeclarationOnly', '--noCheck', '--skipLibCheck', '--ignoreConfig', '--quiet']
+
+const outFor = (tool: string, filename: string): string => join(cliOutDir, `${tool}-${filename.replace(/\.ts$/, '.d.ts')}`)
+
+const cliTools: Record<string, (filename: string) => void> = {
+  'zig-dtsx': filename => void spawnSync(zigDtsxExe, [join(cliBenchDir, filename), '-o', outFor('zig-dtsx', filename)], { stdio: 'pipe' }),
+  'dtsx': filename => void spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), outFor('dtsx', filename)], { stdio: 'pipe' }),
+  'oxc': filename => void spawnSync(oxcExe, [join(cliBenchDir, filename), outFor('oxc', filename)], { stdio: 'pipe', env: oxcCliEnv }),
+  'tsc': (filename) => {
+    // tsc derives the output name from the input; emit into a per-tool directory.
+    spawnSync(tscExe, [...tscFlags, '--outDir', join(cliOutDir, 'tsc'), join(cliBenchDir, filename)], { stdio: 'pipe' })
+  },
 }
 
-const cliFlags = [
-  '--declaration',
-  '--emitDeclarationOnly',
-  '--isolatedDeclarations',
-  '--skipLibCheck',
-  '--outDir',
-  cliOutDir,
-]
-
-function dtsxGenerateCLI(filename: string): void {
-  spawnSync(dtsxExe, ['emit', join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
-}
-
-function zigDtsxGenerateCLI(filename: string): void {
-  spawnSync(zigDtsxExe, [join(cliBenchDir, filename), '-o', join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe' })
-}
-
-function oxcGenerateCLI(filename: string): void {
-  spawnSync(oxcExe, [join(cliBenchDir, filename), join(cliOutDir, filename.replace(/\.ts$/, '.d.ts'))], { stdio: 'pipe', env: oxcCliEnv })
-}
-
-function tsgoGenerateCLI(filename: string): void {
-  spawnSync(tsgoExe, [
-    ...cliFlags,
-    '--ignoreConfig',
-    '--quiet',
-    join(cliBenchDir, filename),
-  ], { stdio: 'pipe' })
-}
-
-function tscGenerateCLI(filename: string): void {
-  spawnSync(tscExe, [
-    ...cliFlags,
-    '--noEmit',
-    'false',
-    join(cliBenchDir, filename),
-  ], { stdio: 'pipe' })
+function cliOutput(tool: string, filename: string): string {
+  return tool === 'tsc' ? join(cliOutDir, 'tsc', filename.replace(/\.ts$/, '.d.ts')) : outFor(tool, filename)
 }
 
 // ---------------------------------------------------------------------------
-// Warmup — ensure JIT / caches are warm before measuring
+// Warmup + verification — every tool must really produce declarations
 // ---------------------------------------------------------------------------
 
 for (const { filename, source } of inputs) {
-  processSource(source, filename, true, ['bun'], true)
-  zigProcessSource(source, true)
-  isolatedDeclarationSync(filename, source, { sourcemap: false })
-  tscGenerate(source, filename)
-  dtsxGenerateCLI(filename)
-  if (hasZigBin) zigDtsxGenerateCLI(filename)
-  oxcGenerateCLI(filename)
-  tsgoGenerateCLI(filename)
-  tscGenerateCLI(filename)
+  const produced: Record<string, string> = {
+    'dtsx': dtsxNoCache(source, filename),
+    'zig-dtsx': zigInProcess(source),
+    'oxc-transform': oxcInProcess(source, filename),
+  }
+  for (const [tool, run] of Object.entries(cliTools)) {
+    rmSync(cliOutput(tool, filename), { force: true })
+    run(filename)
+    const out = cliOutput(tool, filename)
+    produced[`${tool} (cli)`] = existsSync(out) ? readFileSync(out, 'utf8') : ''
+  }
+  for (const [tool, text] of Object.entries(produced)) {
+    if (!text.includes('export') && !text.includes('declare'))
+      throw new Error(`${tool} produced no declarations for ${filename}; refusing to time a failing tool`)
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Section 1: In-process API benchmarks — cached (dtsx vs oxc-transform vs tsc)
-//   dtsx caches parsed SourceFiles and extracted declarations. This reflects
-//   real-world performance in watch mode, incremental rebuilds, and CI where
-//   the same files are processed repeatedly.
+// Section 1: In-process, no cache
 // ---------------------------------------------------------------------------
 
 for (const { name, filename, source } of inputs) {
   summary(() => {
-    bench(`dtsx (cached) — ${name}`, () => {
-      processSource(source, filename, true, ['bun'], true)
-    })
-
-    bench(`zig-dtsx — ${name}`, () => {
-      zigProcessSource(source, true)
-    })
-
-    bench(`oxc-transform — ${name}`, () => {
-      isolatedDeclarationSync(filename, source, { sourcemap: false })
-    })
-
-    bench(`tsc — ${name}`, () => {
-      tscGenerate(source, filename)
-    })
+    bench(`inproc:zig-dtsx:${name}`, () => zigInProcess(source))
+    bench(`inproc:dtsx:${name}`, () => dtsxNoCache(source, filename))
+    bench(`inproc:oxc-transform:${name}`, () => oxcInProcess(source, filename))
   })
 }
 
 // ---------------------------------------------------------------------------
-// Section 2: In-process API benchmarks — no cache (dtsx vs oxc-transform vs tsc)
-//   Cache is cleared every iteration so each run does a full parse + transform.
-//   This is the raw single-file transform speed comparison.
+// Section 2: dtsx repeated build (content-hash cache hit)
 // ---------------------------------------------------------------------------
 
 for (const { name, filename, source } of inputs) {
-  summary(() => {
-    bench(`dtsx (no-cache) — ${name}`, () => {
-      clearResultCache()
-      clearSourceFileCache()
-      clearDeclarationCache()
-      clearProcessorCaches()
-      processSource(source, filename, true, ['bun'], true)
-    })
-
-    bench(`zig-dtsx — ${name}`, () => {
-      zigProcessSource(source, true)
-    })
-
-    bench(`oxc-transform — ${name}`, () => {
-      isolatedDeclarationSync(filename, source, { sourcemap: false })
-    })
-
-    bench(`tsc — ${name}`, () => {
-      tscGenerate(source, filename)
-    })
-  })
+  dtsxCached(source, filename)
+  bench(`cached:dtsx:${name}`, () => dtsxCached(source, filename))
 }
 
 // ---------------------------------------------------------------------------
-// Section 3: CLI benchmarks (dtsx vs oxc vs tsc vs tsgo — compiled binaries)
-//   All tools run as compiled native binaries via subprocess.
-//   dtsx is compiled via `bun build --compile --bytecode` (Zig/JSC AOT bytecode),
-//   oxc-emit is compiled the same way wrapping oxc-transform (Rust NAPI),
-//   tsgo is native Go, tsc is Node.js.
+// Section 3: CLI, single file
 // ---------------------------------------------------------------------------
 
 for (const { name, filename } of inputs) {
   summary(() => {
-    bench(`dtsx (cli) — ${name}`, () => {
-      dtsxGenerateCLI(filename)
-    })
-
-    if (hasZigBin) {
-      bench(`zig-dtsx (cli) — ${name}`, () => {
-        zigDtsxGenerateCLI(filename)
-      })
-    }
-
-    bench(`oxc (cli) — ${name}`, () => {
-      oxcGenerateCLI(filename)
-    })
-
-    bench(`tsc (cli) — ${name}`, () => {
-      tscGenerateCLI(filename)
-    })
-
-    bench(`tsgo (cli) — ${name}`, () => {
-      tsgoGenerateCLI(filename)
-    })
+    for (const [tool, run] of Object.entries(cliTools))
+      bench(`cli:${tool}:${name}`, () => run(filename))
   })
 }
 
 // ---------------------------------------------------------------------------
-// Section 4: Multi-file project benchmarks (dtsx vs oxc vs tsc vs tsgo)
-//   Real-world scenario: generate .d.ts for an entire project.
-//   dtsx uses parallel processing + caching. This is where dtsx shines —
-//   it's a purpose-built .d.ts generator, not just a single-file transformer.
+// Section 4: multi-file project
 // ---------------------------------------------------------------------------
 
-const _concurrency = Math.max(1, cpus().length - 1)
 const projectSizes = [50, 100, 500]
 const templates = inputs.map(i => i.source)
 
-// Generate multi-file projects — each file gets unique export names
-function generateProject(dir: string, count: number): string[] {
+interface Project { name: string, count: number, dir: string, files: string[] }
+
+const projects: Project[] = projectSizes.map((count) => {
+  const dir = join(tmpdir(), `dtsx-bench-project-${count}`)
+  rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   const files: string[] = []
   for (let i = 0; i < count; i++) {
-    const template = templates[i % templates.length]
-    const filename = `mod_${String(i).padStart(4, '0')}.ts`
-    const filepath = join(dir, filename)
-    // Make exports unique per file by adding a prefix comment + unique const
-    const uniqueSource = `// Module ${i}\nexport const __mod${i}_id: number = ${i}\n\n${template}`
-    writeFileSync(filepath, uniqueSource)
+    const filepath = join(dir, `mod_${String(i).padStart(4, '0')}.ts`)
+    writeFileSync(filepath, `// Module ${i}\nexport const __mod${i}_id: number = ${i}\n\n${templates[i % templates.length]}`)
     files.push(filepath)
   }
-  return files
-}
-
-interface ProjectBench {
-  name: string
-  count: number
-  dir: string
-  outDirDtsx: string
-  outDirZigDtsx: string
-  outDirOxc: string
-  outDirTsgo: string
-  outDirTsc: string
-  files: string[]
-}
-
-const projects: ProjectBench[] = projectSizes.map((count) => {
-  const dir = join(tmpdir(), `dtsx-bench-project-${count}`)
-  const outDirDtsx = join(dir, 'out-dtsx')
-  const outDirZigDtsx = join(dir, 'out-zig-dtsx')
-  const outDirOxc = join(dir, 'out-oxc')
-  const outDirTsgo = join(dir, 'out-tsgo')
-  const outDirTsc = join(dir, 'out-tsc')
-  mkdirSync(outDirDtsx, { recursive: true })
-  mkdirSync(outDirZigDtsx, { recursive: true })
-  mkdirSync(outDirOxc, { recursive: true })
-  mkdirSync(outDirTsgo, { recursive: true })
-  mkdirSync(outDirTsc, { recursive: true })
-  const files = generateProject(dir, count)
-  return {
-    name: `${count} files`,
-    count,
-    dir,
-    outDirDtsx,
-    outDirZigDtsx,
-    outDirOxc,
-    outDirTsgo,
-    outDirTsc,
-    files,
-  }
+  return { name: `${count} files`, count, dir, files }
 })
 
-function dtsxGenerateProject(p: ProjectBench): void {
-  // Clean output dir between runs for fair comparison
-  rmSync(p.outDirDtsx, { recursive: true, force: true })
-  mkdirSync(p.outDirDtsx, { recursive: true })
-  spawnSync(dtsxExe, [
-    '--project',
-    p.dir,
-    '--outdir',
-    p.outDirDtsx,
-  ], { stdio: 'pipe' })
+function projectOut(p: Project, tool: string): string {
+  return join(tmpdir(), `dtsx-bench-out-${p.count}-${tool}`)
 }
 
-function zigDtsxGenerateProject(p: ProjectBench): void {
-  rmSync(p.outDirZigDtsx, { recursive: true, force: true })
-  mkdirSync(p.outDirZigDtsx, { recursive: true })
-  spawnSync(zigDtsxExe, [
-    '--project', p.dir,
-    '--outdir', p.outDirZigDtsx,
-  ], { stdio: 'pipe' })
+const projectTools: Record<string, (p: Project) => void> = {
+  'zig-dtsx': p => void spawnSync(zigDtsxExe, ['--project', p.dir, '--outdir', projectOut(p, 'zig-dtsx')], { stdio: 'pipe' }),
+  'dtsx': p => void spawnSync(dtsxExe, ['--project', p.dir, '--outdir', projectOut(p, 'dtsx')], { stdio: 'pipe' }),
+  'oxc': p => void spawnSync(oxcExe, ['--project', p.dir, '--outdir', projectOut(p, 'oxc')], { stdio: 'pipe', env: oxcCliEnv }),
+  'tsc': p => void spawnSync(tscExe, [...tscFlags, '--outDir', projectOut(p, 'tsc'), ...p.files], { stdio: 'pipe' }),
 }
 
-function oxcGenerateProject(p: ProjectBench): void {
-  rmSync(p.outDirOxc, { recursive: true, force: true })
-  mkdirSync(p.outDirOxc, { recursive: true })
-  spawnSync(oxcExe, [
-    '--project',
-    p.dir,
-    '--outdir',
-    p.outDirOxc,
-  ], { stdio: 'pipe', env: oxcCliEnv })
+function resetOut(p: Project, tool: string): void {
+  const out = projectOut(p, tool)
+  rmSync(out, { recursive: true, force: true })
+  mkdirSync(out, { recursive: true })
 }
 
-function tsgoGenerateProject(p: ProjectBench): void {
-  rmSync(p.outDirTsgo, { recursive: true, force: true })
-  mkdirSync(p.outDirTsgo, { recursive: true })
-  spawnSync(tsgoExe, [
-    '--declaration',
-    '--emitDeclarationOnly',
-    '--isolatedDeclarations',
-    '--skipLibCheck',
-    '--ignoreConfig',
-    '--quiet',
-    '--outDir',
-    p.outDirTsgo,
-    ...p.files,
-  ], { stdio: 'pipe' })
-}
-
-function tscGenerateProject(p: ProjectBench): void {
-  rmSync(p.outDirTsc, { recursive: true, force: true })
-  mkdirSync(p.outDirTsc, { recursive: true })
-  spawnSync(tscExe, [
-    '--declaration',
-    '--emitDeclarationOnly',
-    '--isolatedDeclarations',
-    '--skipLibCheck',
-    '--noEmit',
-    'false',
-    '--outDir',
-    p.outDirTsc,
-    ...p.files,
-  ], { stdio: 'pipe' })
-}
-
-// Warmup for multi-file benchmarks
 for (const p of projects) {
-  dtsxGenerateProject(p)
-  if (hasZigBin) zigDtsxGenerateProject(p)
-  oxcGenerateProject(p)
-  tsgoGenerateProject(p)
-  tscGenerateProject(p)
+  for (const [tool, run] of Object.entries(projectTools)) {
+    resetOut(p, tool)
+    run(p)
+    const out = projectOut(p, tool)
+    const emitted = readdirSync(out).filter(f => f.endsWith('.d.ts') && statSync(join(out, f)).size > 0).length
+    if (emitted !== p.count) throw new Error(`${tool} emitted ${emitted}/${p.count} declaration files for ${p.name}`)
+  }
 }
 
 for (const p of projects) {
   summary(() => {
-    bench(`dtsx (project) — ${p.name}`, () => {
-      dtsxGenerateProject(p)
-    })
-
-    if (hasZigBin) {
-      bench(`zig-dtsx (project) — ${p.name}`, () => {
-        zigDtsxGenerateProject(p)
+    for (const [tool, run] of Object.entries(projectTools)) {
+      // Output directories are recreated outside timing would be ideal, but mitata
+      // has no per-iteration setup hook; every tool pays the same rm+mkdir cost.
+      bench(`project:${tool}:${p.name}`, () => {
+        resetOut(p, tool)
+        run(p)
       })
     }
-
-    bench(`oxc (project) — ${p.name}`, () => {
-      oxcGenerateProject(p)
-    })
-
-    bench(`tsc (project) — ${p.name}`, () => {
-      tscGenerateProject(p)
-    })
-
-    bench(`tsgo (project) — ${p.name}`, () => {
-      tsgoGenerateProject(p)
-    })
   })
 }
 
@@ -446,5 +265,26 @@ for (const p of projects) {
 // Run
 // ---------------------------------------------------------------------------
 
-await run()
-console.log(tsdownComparisonMarkdown(await runTsdownComparison()))
+const machine: MachineInfo = machineInfo()
+console.log(`\n${machine.cpu} (${machine.model}), ${machine.cores} cores, ${machine.memoryGB} GB, ${machine.os}, Bun ${machine.bun}\n`)
+
+const result = await run()
+const tsdown = skipTsdown ? null : await runTsdownComparison()
+if (tsdown) console.log(tsdownComparisonMarkdown(tsdown))
+
+if (jsonPath) {
+  const rows = result.benchmarks.map((b: any) => {
+    const [section, tool, ...rest] = String(b.alias).split(':')
+    const stats = b.runs[0].stats
+    return { section, tool, input: rest.join(':'), avgNs: stats.avg, p50Ns: stats.p50, minNs: stats.min, maxNs: stats.max, samples: stats.samples.length }
+  })
+  writeFileSync(jsonPath, `${JSON.stringify({
+    date: new Date().toISOString().slice(0, 10),
+    machine,
+    inputs: inputs.map(({ key, name, filename }) => ({ key, name, filename })),
+    projects: projectSizes,
+    rows,
+    tsdown,
+  }, null, 2)}\n`)
+  console.log(`Wrote ${jsonPath}`)
+}

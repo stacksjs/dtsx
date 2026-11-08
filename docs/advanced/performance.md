@@ -1,6 +1,15 @@
 # Performance Optimization
 
-This guide covers performance optimization techniques and best practices for dtsx.
+This guide covers performance optimization techniques and best practices for dtsx. For measured numbers against oxc, tsc 7 and tsdown, including the machine they were measured on, see [Benchmarks](/benchmarks).
+
+## Running the benchmarks
+
+```sh
+bun run benchmark:prepare   # build zig-dtsx, the dtsx binary and the oxc wrapper
+bun run benchmark:publish   # measure, write benchmark/results.json, regenerate README + docs tables
+```
+
+`benchmark:prepare` builds every executable with release settings (`zig build -Doptimize=ReleaseFast`, `bun build --compile --bytecode`). The harness verifies that each tool really emits declarations before timing it, so a failing tool aborts the run instead of producing a misleadingly fast row.
 
 ## Comparing with tsdown
 

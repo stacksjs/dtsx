@@ -12,6 +12,9 @@ hero:
       text: Get Started
       link: /intro
     - theme: alt
+      text: Benchmarks
+      link: /benchmarks
+    - theme: alt
       text: View on GitHub
       link: https://github.com/stacksjs/dtsx
 

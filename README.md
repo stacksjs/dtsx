@@ -424,51 +424,72 @@ export const promiseVal = Promise.resolve(42)
 
 dtsx produces **sound** types (correctly widened for mutable containers) while preserving original values via `@defaultValue` JSDoc — something neither tsc nor oxc does. No `as const`, no explicit annotations, no `isolatedDeclarations` flag required.
 
+<!-- benchmarks:start -->
 ## Benchmarks
 
-Benchmarked on Apple M3 Pro, macOS _(bun 1.3.11, arm64-darwin)_. Run `bun benchmark/index.ts` to reproduce.
+Measured on **Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64)** — 2026-11-08.
+Bun 1.4.4 · Zig 0.17.1 · oxc-transform 0.157.0 · TypeScript 7.0.2 (native `tsc`) · tsdown 0.23.7.
 
-### In-Process API — No Cache
+Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw numbers live in [`benchmark/results.json`](https://github.com/stacksjs/dtsx/blob/main/benchmark/results.json).
 
-_Raw single-transform comparison (cache cleared every iteration)._
+**How the comparison is kept fair**
 
-| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **zig-dtsx**|**3.37 µs**|**7.05 µs**|**21.89 µs**|**144.89 µs** |
-| oxc-transform | 7.36 µs _(2.2x)_ | 21.91 µs _(3.1x)_ | 89.66 µs _(4.1x)_ | 560.86 µs _(3.9x)_ |
-| dtsx | 15.52 µs _(4.6x)_ | 34.06 µs _(4.8x)_ | 81.96 µs _(3.7x)_ | 573.92 µs _(4.0x)_ |
-| tsc | 169.69 µs _(50.4x)_ | 410.31 µs _(58.2x)_ | 1.03 ms _(47.1x)_ | 4.02 ms _(27.7x)_ |
+- Every tool emits real declarations for the same inputs; the harness verifies each tool's output before timing and aborts if any tool fails, so no row can time a crash.
+- dtsx runs in its default value-inferring mode (narrow types and `@defaultValue` JSDoc), which does more work than isolated-declarations-only emitters.
+- `tsc` is TypeScript 7's native Go compiler, run directly (no Node launcher) with `--noCheck`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
+- oxc has no declaration CLI, so its CLI is a minimal Bun-compiled wrapper around `oxc-transform`, built with the same `bun build --compile --bytecode` flags as the dtsx Bun binary.
+- "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
+- Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
 
-### In-Process API — Cached
+### In-process API (no cache)
 
-_Smart caching (hash check + cache hit) for watch mode, incremental builds, and CI._
-
-| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **dtsx**|**97.81 ns**|**162.55 ns**|**376.39 ns**|**1.43 µs** |
-| zig-dtsx | 3.43 µs _(35.0x)_ | 7.16 µs _(44.0x)_ | 22.00 µs _(58.5x)_ | 147.21 µs _(103.0x)_ |
-| oxc-transform | 7.35 µs _(75.1x)_ | 22.66 µs _(139.4x)_ | 85.77 µs _(227.9x)_ | 558.72 µs _(390.7x)_ |
-| tsc | 236.82 µs _(2421x)_ | 463.06 µs _(2849x)_ | 1.53 ms _(4065x)_ | 4.66 ms _(3259x)_ |
-
-### CLI — Single File
-
-_Compiled native binaries via subprocess._
+_One file transformed in-process: zig-dtsx through Bun FFI, oxc-transform through N-API, dtsx through its TypeScript API._
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **zig-dtsx**|**2.69 ms**|**2.35 ms**|**2.28 ms**|**3.14 ms** |
-| oxc | 17.08 ms _(6.3x)_ | 17.12 ms _(7.3x)_ | 17.95 ms _(7.9x)_ | 17.69 ms _(5.6x)_ |
-| tsgo | 40.53 ms _(15.1x)_ | 44.10 ms _(18.8x)_ | 44.39 ms _(19.5x)_ | 57.77 ms _(18.4x)_ |
-| tsc | 384.25 ms _(142.8x)_ | 407.51 ms _(173.4x)_ | 418.81 ms _(183.7x)_ | 454.74 ms _(144.8x)_ |
+|------|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **5.88 µs** | **11.48 µs** | **41.92 µs** | **163.38 µs** |
+| oxc-transform | 6.41 µs _(1.09x)_ | 18.29 µs _(1.59x)_ | 43.81 µs _(1.05x)_ | 219.56 µs _(1.34x)_ |
+| dtsx (Bun/TypeScript) | 27.46 µs _(4.7x)_ | 49.70 µs _(4.3x)_ | 145.68 µs _(3.5x)_ | 595.29 µs _(3.6x)_ |
 
-### Multi-File Project
+### CLI: single file
+
+_Each tool runs as an executable via subprocess, so process startup is included._
+
+| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
+|------|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **1.91 ms** | **1.89 ms** | **2.04 ms** | **2.30 ms** |
+| oxc | 8.31 ms _(4.4x)_ | 8.38 ms _(4.4x)_ | 8.52 ms _(4.2x)_ | 9.13 ms _(4.0x)_ |
+| dtsx (Bun binary) | 10.66 ms _(5.6x)_ | 10.93 ms _(5.8x)_ | 12.42 ms _(6.1x)_ | 15.32 ms _(6.7x)_ |
+| tsc 7 (native Go) | 27.11 ms _(14x)_ | 27.02 ms _(14x)_ | 28.00 ms _(14x)_ | 29.97 ms _(13x)_ |
+
+### CLI: multi-file project
+
+_A whole directory of generated modules. zig-dtsx and tsc use multiple threads; the oxc wrapper processes files sequentially because oxc ships no parallel declaration CLI._
 
 | Tool | 50 files | 100 files | 500 files |
-|------|----------|-----------|-----------|
-| **zig-dtsx**|**18.10 ms**|**31.46 ms**|**~140 ms** |
-| oxc | 48.27 ms _(2.7x)_ | 79.00 ms _(2.5x)_ | ~365 ms _(2.6x)_ |
-| tsgo | 244.68 ms _(13.5x)_ | 419.65 ms _(13.3x)_ | - |
-| tsc | 871.48 ms _(48.1x)_ | - | - |
+|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **8.79 ms** | **15.18 ms** | **63.07 ms** |
+| oxc | 21.33 ms _(2.4x)_ | 32.69 ms _(2.2x)_ | 137.25 ms _(2.2x)_ |
+| tsc 7 (native Go) | 53.29 ms _(6.1x)_ | 78.07 ms _(5.1x)_ | 273.54 ms _(4.3x)_ |
+| dtsx (Bun binary) | 47.66 ms _(5.4x)_ | 118.26 ms _(7.8x)_ | 295.98 ms _(4.7x)_ |
+
+### Bundled declarations: dtsx vs tsdown
+
+_Fresh bundled declaration builds of the same project, verified by strict positive and negative consumer type-checks outside the timed region._
+
+| Tool | 2 source files | 11 source files | 101 source files |
+|------|------|------|------|
+| **dtsx (Bun/TypeScript)** | **2.23 ms** | **6.25 ms** | **43.85 ms** |
+| tsdown | 35.35 ms _(15.9x)_ | 39.88 ms _(6.4x)_ | 70.27 ms _(1.6x)_ |
+
+### Watch mode and incremental rebuilds
+
+_dtsx's content-hash cache returns an unchanged file's declarations without re-scanning. No other tool here caches, so this is shown for reference only._
+
+| | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
+|---|---|---|---|---|
+| dtsx (Bun, warm cache hit) | 94 ns | 172 ns | 375 ns | 1.39 µs |
+<!-- benchmarks:end -->
 
 ### Binary Size
 

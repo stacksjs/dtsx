@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { isolatedDeclarationSync } from 'oxc-transform'
+import { tscExe } from './tools'
 import { runTsdownComparison, tsdownComparisonMarkdown } from './tsdown'
 
 // ---------------------------------------------------------------------------
@@ -178,7 +179,7 @@ function tscGenerate(source: string, filename: string): string {
 }
 
 // dtsx (Bun) — dynamic import
-const { processSource } = await import('../packages/dtsx/src/generator')
+const { clearResultCache, processSource } = await import('../packages/dtsx/src/generator')
 const { clearSourceFileCache } = await import('../packages/dtsx/src/extractor')
 const { clearDeclarationCache } = await import('../packages/dtsx/src/extractor/extract')
 const { clearProcessorCaches } = await import('../packages/dtsx/src/processor')
@@ -188,6 +189,7 @@ function dtsxGenerate(source: string, filename: string): string {
 }
 
 function dtsxGenerateNoCache(source: string, filename: string): string {
+  clearResultCache()
   clearSourceFileCache()
   clearDeclarationCache()
   clearProcessorCaches()
@@ -216,10 +218,8 @@ function zigDtsxGenerate(source: string): string {
   return zigProcessSource!(source, true, true)
 }
 
-// TypeScript 7 is CLI-only.
-const tsgoBin = join(
-  import.meta.dir, '..', 'node_modules', 'typescript', 'bin', 'tsc',
-)
+// TypeScript 7 is CLI-only; run its native executable directly (no Node shim).
+const tsgoBin = tscExe
 const hasTsgo = existsSync(tsgoBin)
 if (hasTsgo) console.log('tsgo CLI available')
 else console.log('tsgo CLI not found, skipping')
@@ -228,8 +228,10 @@ const tsgoTmpDir = join(tmpdir(), 'dtsx-bench-tsgo')
 const tsgoOutDir = join(tsgoTmpDir, 'out')
 if (hasTsgo) mkdirSync(tsgoOutDir, { recursive: true })
 
+// --noCheck is tsc's fastest declaration path. --isolatedDeclarations is omitted
+// because TypeScript 7 emits nothing when any declaration needs inference.
 const tsgoFlags = [
-  '--declaration', '--emitDeclarationOnly', '--isolatedDeclarations',
+  '--declaration', '--emitDeclarationOnly', '--noCheck',
   '--skipLibCheck', '--ignoreConfig', '--quiet', '--outDir', tsgoOutDir,
 ]
 

@@ -8,53 +8,37 @@
 - Lightweight library
 - Cross-platform binary
 
+<!-- benchmarks:start -->
 ## Benchmarks
 
-Benchmarked on Apple M3 Pro, macOS _(bun 1.3.10, arm64-darwin)_. Run `bun benchmark/index.ts` to reproduce.
+Measured on Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64) (2026-11-08, Bun 1.4.4). See [Benchmarks](/benchmarks) for methodology, the Bun CLI, bundled builds and watch mode.
 
-### In-Process API — Cached
-
-_dtsx uses smart caching (hash check + cache hit) for watch mode, incremental builds, and CI pipelines._
+### In-process API (no cache)
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **dtsx (cached)**|**0.95 µs**|**2.16 µs**|**19.84 µs**|**105.83 µs** |
-| zig-dtsx | 4.60 µs _(4.8x)_ | 11.27 µs _(5.2x)_ | 26.75 µs _(1.3x)_ | 230.91 µs _(2.2x)_ |
-| oxc-transform | 6.76 µs _(7.1x)_ | 20.54 µs _(9.5x)_ | 79.54 µs _(4.0x)_ | 519.44 µs _(4.9x)_ |
-| tsc | 194.34 µs _(205x)_ | 438.12 µs _(203x)_ | 1.14 ms _(57x)_ | 4.20 ms _(40x)_ |
+|------|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **5.88 µs** | **11.48 µs** | **41.92 µs** | **163.38 µs** |
+| oxc-transform | 6.41 µs _(1.09x)_ | 18.29 µs _(1.59x)_ | 43.81 µs _(1.05x)_ | 219.56 µs _(1.34x)_ |
+| dtsx (Bun/TypeScript) | 27.46 µs _(4.7x)_ | 49.70 µs _(4.3x)_ | 145.68 µs _(3.5x)_ | 595.29 µs _(3.6x)_ |
 
-### In-Process API — No Cache
-
-_Cache cleared every iteration for raw single-transform comparison._
+### CLI: single file
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **zig-dtsx**|**4.68 µs**|**11.43 µs**|**27.89 µs**|**230.32 µs** |
-| oxc-transform | 6.95 µs _(1.5x)_ | 21.05 µs _(1.8x)_ | 81.46 µs _(2.9x)_ | 519.01 µs _(2.3x)_ |
-| dtsx (no-cache) | 10.42 µs _(2.2x)_ | 23.06 µs _(2.0x)_ | 67.79 µs _(2.4x)_ | 400.81 µs _(1.7x)_ |
-| tsc | 155.16 µs _(33x)_ | 389.90 µs _(34x)_ | 918.21 µs _(33x)_ | 3.82 ms _(17x)_ |
+|------|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **1.91 ms** | **1.89 ms** | **2.04 ms** | **2.30 ms** |
+| oxc | 8.31 ms _(4.4x)_ | 8.38 ms _(4.4x)_ | 8.52 ms _(4.2x)_ | 9.13 ms _(4.0x)_ |
+| dtsx (Bun binary) | 10.66 ms _(5.6x)_ | 10.93 ms _(5.8x)_ | 12.42 ms _(6.1x)_ | 15.32 ms _(6.7x)_ |
+| tsc 7 (native Go) | 27.11 ms _(14x)_ | 27.02 ms _(14x)_ | 28.00 ms _(14x)_ | 29.97 ms _(13x)_ |
 
-### CLI — Single File
-
-_All tools run as compiled native binaries via subprocess._
-
-| Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
-|------|-------------------|---------------------|--------------------|--------------------|
-| **zig-dtsx**|**2.32 ms**|**2.31 ms**|**2.42 ms**|**2.46 ms** |
-| oxc | 16.51 ms _(7.1x)_ | 15.71 ms _(6.8x)_ | 16.41 ms _(6.8x)_ | 16.14 ms _(6.6x)_ |
-| dtsx | 29.42 ms _(12.7x)_ | 29.36 ms _(12.7x)_ | 30.96 ms _(12.8x)_ | 32.30 ms _(13.1x)_ |
-| tsgo | 38.70 ms _(16.7x)_ | 41.97 ms _(18.2x)_ | 42.09 ms _(17.4x)_ | 52.83 ms _(21.5x)_ |
-| tsc | 347.31 ms _(150x)_ | 374.30 ms _(162x)_ | 376.76 ms _(156x)_ | 403.00 ms _(164x)_ |
-
-### Multi-File Project
+### CLI: multi-file project
 
 | Tool | 50 files | 100 files | 500 files |
-|------|----------|-----------|-----------|
-| **zig-dtsx**|**12.16 ms**|**23.23 ms**|**109.33 ms** |
-| oxc | 35.38 ms _(2.9x)_ | 58.62 ms _(2.5x)_ | 402.32 ms _(3.7x)_ |
-| dtsx | 55.21 ms _(4.5x)_ | 79.14 ms _(3.4x)_ | 281.40 ms _(2.6x)_ |
-| tsgo | 210.54 ms _(17.3x)_ | 413.69 ms _(17.8x)_ | 2.18 s _(20.0x)_ |
-| tsc | 774.44 ms _(63.7x)_ | 1.18 s _(50.6x)_ | 3.99 s _(36.5x)_ |
+|------|------|------|------|
+| **dtsx (native, zig-dtsx)** | **8.79 ms** | **15.18 ms** | **63.07 ms** |
+| oxc | 21.33 ms _(2.4x)_ | 32.69 ms _(2.2x)_ | 137.25 ms _(2.2x)_ |
+| tsc 7 (native Go) | 53.29 ms _(6.1x)_ | 78.07 ms _(5.1x)_ | 273.54 ms _(4.3x)_ |
+| dtsx (Bun binary) | 47.66 ms _(5.4x)_ | 118.26 ms _(7.8x)_ | 295.98 ms _(4.7x)_ |
+<!-- benchmarks:end -->
 
 ### Binary Size
 
