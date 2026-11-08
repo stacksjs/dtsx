@@ -517,16 +517,122 @@ pub fn inferTypeFromDefault(s: *Scanner, value: []const u8) []const u8 {
 }
 
 /// Infer literal type from initializer value (for const-like / static readonly)
-pub fn inferLiteralType(value: []const u8) []const u8 {
-    const v = std.mem.trim(u8, value, " \t\r\n");
-    if (v.len == 0) return "unknown";
-    return switch (v[0]) {
-        't' => if (std.mem.eql(u8, v, "true")) v else "unknown",
-        'f' => if (std.mem.eql(u8, v, "false")) v else "unknown",
-        '\'', '"' => if (v.len >= 2 and v[v.len - 1] == v[0]) v else "unknown",
-        '-', '0'...'9' => if (isNumericLiteral(v)) v else "unknown",
-        else => "unknown",
-    };
+/// Literal type of an initializer, mirroring the TypeScript emitter: `as const`
+/// is stripped, string concatenations fold to a literal (or widen to string),
+/// numeric arithmetic widens to number, and calls fall back to ReturnType.
+pub fn inferLiteralType(alloc: std.mem.Allocator, value: []const u8) []const u8 {
+    var v = std.mem.trim(u8, value, " \t\r\n");
+    if (ch.endsWith(v, "as const")) v = std.mem.trim(u8, v[0 .. v.len - 8], " \t\r\n");
+    if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "false")) return v;
+    if (v.len > 0 and isNumericLiteral(v)) return v;
+    if (literalExpressionType(alloc, v)) |expression_type| return expression_type;
+    return (type_inf.inferCallType(alloc, v) catch null) orelse "unknown";
+}
+
+fn quotedValueEnd(value: []const u8, start: usize, quote: u8) usize {
+    var index = start + 1;
+    while (index < value.len) {
+        const c = value[index];
+        if (c == '\\') {
+            index += 2;
+            continue;
+        }
+        index += 1;
+        if (c == quote) break;
+    }
+    return @min(index, value.len);
+}
+
+fn isSingleStringLiteral(value: []const u8) bool {
+    return value.len >= 2 and (value[0] == '\'' or value[0] == '"') and quotedValueEnd(value, 0, value[0]) == value.len;
+}
+
+fn literalExpressionType(alloc: std.mem.Allocator, v: []const u8) ?[]const u8 {
+    if (v.len == 0) return null;
+    if (isSingleStringLiteral(v)) return v;
+    // Top-level `+` parts (strings, templates and comments are opaque).
+    var parts = std.array_list.Managed([]const u8).init(alloc);
+    var depth: i32 = 0;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < v.len) {
+        const c = v[i];
+        if (c == '\'' or c == '"' or c == '`') {
+            i = quotedValueEnd(v, i, c);
+            continue;
+        }
+        if (c == '/' and i + 1 < v.len and (v[i + 1] == '/' or v[i + 1] == '*')) {
+            if (v[i + 1] == '/') {
+                i = std.mem.indexOfScalarPos(u8, v, i + 2, '\n') orelse v.len;
+            } else {
+                i = if (std.mem.indexOfPos(u8, v, i + 2, "*/")) |close| close + 2 else v.len;
+            }
+            continue;
+        }
+        if (c == '(' or c == '[' or c == '{') depth += 1 else if (c == ')' or c == ']' or c == '}') depth -= 1;
+        if (c == '+' and depth == 0) {
+            parts.append(v[start..i]) catch return null;
+            start = i + 1;
+        }
+        i += 1;
+    }
+    parts.append(v[start..]) catch return null;
+    if (parts.items.len > 1) {
+        var has_string = false;
+        var all_strings = true;
+        var joined = std.array_list.Managed(u8).init(alloc);
+        for (parts.items) |raw_part| {
+            const part = std.mem.trim(u8, raw_part, " \t\r\n");
+            if (isSingleStringLiteral(part)) {
+                has_string = true;
+                // Decode the literal body: \n \t \r \0 and identity escapes.
+                var j: usize = 1;
+                while (j + 1 < part.len) : (j += 1) {
+                    if (part[j] == '\\' and j + 2 < part.len) {
+                        j += 1;
+                        const decoded: u8 = switch (part[j]) {
+                            'n' => '\n',
+                            't' => '\t',
+                            'r' => '\r',
+                            '0' => 0,
+                            else => part[j],
+                        };
+                        joined.append(decoded) catch return null;
+                    } else joined.append(part[j]) catch return null;
+                }
+            } else all_strings = false;
+        }
+        if (all_strings) {
+            var quoted = std.array_list.Managed(u8).init(alloc);
+            quoted.append('\'') catch return null;
+            for (joined.items) |c| {
+                const escaped: []const u8 = switch (c) {
+                    '\\' => "\\\\",
+                    '\'' => "\\'",
+                    '\n' => "\\n",
+                    '\r' => "\\r",
+                    '\t' => "\\t",
+                    else => &.{c},
+                };
+                quoted.appendSlice(escaped) catch return null;
+            }
+            quoted.append('\'') catch return null;
+            return quoted.items;
+        }
+        return if (has_string) "string" else null;
+    }
+    // Purely numeric arithmetic (`60 * 1000`, `(1 / 2) * 60`) widens to number.
+    var has_digit = false;
+    var has_operator = false;
+    for (v) |c| {
+        switch (c) {
+            '0'...'9' => has_digit = true,
+            '+', '*', '/', '%', '-', ' ', '\t', '\n', '\r' => has_operator = true,
+            '(', ')', '.' => {},
+            else => return null,
+        }
+    }
+    return if (has_digit and has_operator) "number" else null;
 }
 
 /// Extract type from `as Type` assertion in initializer
@@ -1459,7 +1565,7 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                             std.mem.trim(u8, initializer_text[0 .. initializer_text.len - 9], " \t\r\n")
                         else
                             initializer_text;
-                        const lit = inferLiteralType(val);
+                        const lit = inferLiteralType(s.allocator, val);
                         if (!std.mem.eql(u8, lit, "unknown")) {
                             type_annotation = lit;
                         }
@@ -2363,7 +2469,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                     const has_const_assertion = ch.endsWith(init_text, " as const");
                     const inferred_value = if (has_const_assertion) std.mem.trim(u8, init_text[0 .. init_text.len - " as const".len], " \t\r\n") else init_text;
                     const is_const_like = has_const_assertion or (is_static and is_readonly);
-                    prop_type = if (is_const_like) inferLiteralType(inferred_value) else inferTypeFromDefault(s, inferred_value);
+                    prop_type = if (is_const_like or ch.endsWith(inferred_value, "as const")) inferLiteralType(s.allocator, inferred_value) else inferTypeFromDefault(s, inferred_value);
                     if (is_const_like and std.mem.eql(u8, prop_type, "unknown")) prop_type = inferTypeFromDefault(s, inferred_value);
                 }
             } else {
@@ -2870,7 +2976,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                 } else if (kw[0] == 'c') {
                     // kw is "const" — first-byte check is sufficient since it's
                     // one of "const" / "let" / "var".
-                    vtype = inferLiteralType(init_text);
+                    vtype = inferLiteralType(s.allocator, init_text);
                 } else {
                     vtype = inferTypeFromDefault(s, init_text);
                 }
