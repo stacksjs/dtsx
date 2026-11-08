@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate earlier computed-key, accessor-index and default-parameter inference.
+// Invalidate declarations produced before scoped default and imported-call inference.
 // Cached declarations must also satisfy the current source-selection policy.
-const CACHE_VERSION = 23
+const CACHE_VERSION = 24
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

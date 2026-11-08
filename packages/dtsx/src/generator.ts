@@ -15,7 +15,7 @@ import { assertSafeOutputConfiguration, publishDeclarationOutputs } from './decl
 import { createDtsError, formatDtsError } from './errors'
 import { extractDeclarations } from './extractor'
 import { formatDts } from './formatter'
-import { monomorphicImportFunctions } from './inferred-imports'
+import { monomorphicExportedFunctions, monomorphicImportFunctions } from './inferred-imports'
 import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
@@ -129,7 +129,27 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   emittedSources.set(config, new Set(files))
 
   if (config.incremental) {
-    buildCache = new BuildCache(config, project.getResolutionFingerprint())
+    let resolutionContext = project.getResolutionFingerprint()
+    if (!config.isolatedDeclarations) {
+      // A dependency becoming generic or overloaded invalidates a previously
+      // inferred imported call even when the importing source is unchanged.
+      const seen = new Set(files)
+      const functions = new Map<string, ReturnType<typeof monomorphicExportedFunctions>>()
+      for (const file of files) {
+        const source = await readTextFile(file)
+        functions.set(file, monomorphicExportedFunctions(source))
+        for (const reference of scanReExportSpecifiers(source, { includeImports: true })) {
+          const target = resolveSpecifier(reference.specifier, file).resolved
+          if (target && !target.split(/[/\\]/).includes('node_modules') && !seen.has(target)) {
+            seen.add(target)
+            functions.set(target, monomorphicExportedFunctions(await readTextFile(target)))
+          }
+        }
+      }
+      const identities = [...functions].sort(([left], [right]) => left.localeCompare(right))
+      resolutionContext = JSON.stringify([resolutionContext, identities])
+    }
+    buildCache = new BuildCache(config, resolutionContext)
 
     if (config.clearCache) {
       logger.debug('Clearing build cache...')

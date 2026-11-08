@@ -112,3 +112,26 @@ export function onlyType(value: number): number { return value }
   expect([...monomorphicImportFunctions(source, new Map([['./dependency.js', target]]))]).toEqual(['renamed'])
   expect([...monomorphicImportFunctions(source, new Map())]).toEqual([])
 })
+
+test('incremental inference invalidates imported call eligibility when an unchanged importer gains overloaded dependencies', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dtsx-imported-call-cache-'))
+  try {
+    await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src/index.ts'), "import { make } from './model.js'; export const answer = make('first');")
+    await writeFile(join(root, 'src/model.ts'), 'export function make(value: string): string { return value }')
+    const options = { cwd: root, root: 'src', outdir: 'output', entrypoints: ['index.ts'], isolatedDeclarations: false, incremental: true }
+    const initial = await generate(options)
+    expect(initial.filesFailed).toBe(0)
+    expect(await readFile(join(root, 'output/index.d.ts'), 'utf8')).toContain('typeof make')
+    const unchanged = await generate(options)
+    expect(unchanged.filesGenerated).toBe(0)
+    await writeFile(join(root, 'src/model.ts'), 'export function make(value: string): string; export function make(value: number): number; export function make(value: string | number) { return value }')
+    const updated = await generate(options)
+    expect(updated.filesFailed).toBe(0)
+    expect(await readFile(join(root, 'output/index.d.ts'), 'utf8')).toContain('answer: unknown')
+    await writeFile(join(root, 'src/model.ts'), 'export function make(value: string): string { return value }')
+    await generate(options)
+    expect(await readFile(join(root, 'output/index.d.ts'), 'utf8')).toContain('typeof make')
+  }
+  finally { await rm(root, { recursive: true, force: true }) }
+})
