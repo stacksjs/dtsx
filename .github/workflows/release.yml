@@ -118,10 +118,13 @@ jobs:
 
       # Publish the JavaScript packages to npm for downstream package-manager
       # consumers. zig-dtsx remains Pantry-only: its authored TypeScript entry
-      # loads native libraries through bun:ffi. Every npm package uses this workflow
-      # as its trusted OIDC publisher, so a partial release must fail the job.
+      # loads native libraries through bun:ffi. Prefer trusted OIDC publishing,
+      # with the existing npm secret available for packages without that trust.
+      # A partial release must still fail the job.
       - name: Publish to npm
         run: pantry publish --npm --skip zig-dtsx --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release with Pantry
         id: pantry-release
