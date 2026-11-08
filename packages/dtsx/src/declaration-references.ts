@@ -28,15 +28,35 @@ export function isExternalModuleSource(source: string): boolean {
   return isExternalModuleTokens(source, sourceSyntaxTokens(source))
 }
 
-/** The same check for generated text, without retaining its tokens. */
+/**
+ * The same check for generated text, whose tokens nobody reuses. Emitted
+ * declarations usually start with an import or export, and tokens ending
+ * strictly before a cut are the same with or without the rest of the text
+ * (lexing is left to right and never fails), so growing prefixes usually
+ * answer after a few hundred bytes.
+ */
 export function isExternalModuleText(text: string): boolean {
+  for (let cut = 1024; cut < text.length; cut *= 8) {
+    const prefix = text.slice(0, cut)
+    const verdict = moduleVerdict(prefix, tokenizeDeclarationSyntax(prefix), cut)
+    if (verdict !== undefined) return verdict
+  }
   return isExternalModuleTokens(text, tokenizeDeclarationSyntax(text))
 }
 
 function isExternalModuleTokens(source: string, tokens: readonly SyntaxToken[]): boolean {
+  return moduleVerdict(source, tokens, Infinity) ?? false
+}
+
+/**
+ * true/false once the tokens decide the question; undefined when a token
+ * reaching `trustedEnd` (possibly cut short) would have to be inspected.
+ */
+function moduleVerdict(source: string, tokens: readonly SyntaxToken[], trustedEnd: number): boolean | undefined {
   let depth = 0
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]
+    if (token.end >= trustedEnd) return undefined
     if (token.kind === 'punctuation') {
       // Only one-character punctuation tokens can be brackets.
       const code = source.charCodeAt(token.start)
@@ -49,11 +69,12 @@ function isExternalModuleTokens(source: string, tokens: readonly SyntaxToken[]):
     if (text === 'export') return true
     if (text === 'import') {
       const following = tokens[i + 1]
+      if (following === undefined ? trustedEnd !== Infinity : following.end >= trustedEnd) return undefined
       const next = following ? source.slice(following.start, following.end) : ''
       if (next !== '(' && next !== '.') return true
     }
   }
-  return false
+  return trustedEnd === Infinity ? false : undefined
 }
 
 /** Bindings in an ambient external module are implicitly exported without a clause. */
