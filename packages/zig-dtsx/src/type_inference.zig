@@ -1054,6 +1054,15 @@ fn findTopLevelToken(str: []const u8, token: []const u8, start: usize) ?usize {
             }
             continue;
         }
+        // Comments are trivia: an apostrophe or bracket in one is not code.
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '/') {
+            i = (std.mem.indexOfScalarPos(u8, str, i + 2, '\n') orelse str.len) - 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '*') {
+            i = (if (std.mem.indexOfPos(u8, str, i + 2, "*/")) |close| close + 2 else str.len) - 1;
+            continue;
+        }
         if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') brace_depth -= 1;
         if (paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 and std.mem.startsWith(u8, str[i..], token)) return i;
     }
@@ -1074,6 +1083,15 @@ fn findTopLevelComma(str: []const u8) ?usize {
             while (i < str.len and str[i] != c) : (i += 1) {
                 if (str[i] == '\\' and i + 1 < str.len) i += 1;
             }
+            continue;
+        }
+        // Comments are trivia: an apostrophe or bracket in one is not code.
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '/') {
+            i = (std.mem.indexOfScalarPos(u8, str, i + 2, '\n') orelse str.len) - 1;
+            continue;
+        }
+        if (c == '/' and i + 1 < str.len and str[i + 1] == '*') {
+            i = (if (std.mem.indexOfPos(u8, str, i + 2, "*/")) |close| close + 2 else str.len) - 1;
             continue;
         }
         if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') brace_depth -= 1 else if (c == '<') angle_depth += 1 else if (c == '>' and angle_depth > 0) angle_depth -= 1;
