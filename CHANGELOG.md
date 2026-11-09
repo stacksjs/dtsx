@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.36...v0.11.37)
+
+## ✨ Features
+
+- publish the SDK as @dtsx/dtsx ([44af1e2](https://github.com/stacksjs/dtsx/commit/44af1e2)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.37 ([7aae931](https://github.com/stacksjs/dtsx/commit/7aae931)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.35...v0.11.36)
 
 ## 🐛 Bug Fixes
