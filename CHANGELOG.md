@@ -1,5 +1,23 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.34...v0.11.35)
+
+## 🐛 Bug Fixes
+
+- **vite-plugin**: publish as @dtsx/vite-plugin ([57984a5](https://github.com/stacksjs/dtsx/commit/57984a5)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 📝 Documentation
+
+- publish v0.11.34 benchmark results with the native-backed SDK ([fed2ddd](https://github.com/stacksjs/dtsx/commit/fed2ddd)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.35 ([4372153](https://github.com/stacksjs/dtsx/commit/4372153)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.33...v0.11.34)
 
 ## ✨ Features
