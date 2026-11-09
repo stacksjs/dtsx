@@ -31,6 +31,9 @@ export default defineConfig({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `trigger` | `'build' \| 'serve' \| 'both'` | `'build'` | When to generate declarations |
+| `timing` | `'before' \| 'after'` | `'before'` | Generate before Vite writes the bundle (after it empties `outDir`) or after the build |
+| `root` | `string` | folder of `build.lib.entry`, else `./src` | Source root; declarations mirror the source from here |
+| `outdir` | `string` | Vite `build.outDir` | Output directory for declarations |
 | `entryPointsOnly` | `boolean` | `true` | Only generate for entry points |
 | `declarationDir` | `string` | Vite outDir | Output directory for declarations |
 | `bundle` | `boolean` | `false` | Bundle all declarations into one file |

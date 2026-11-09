@@ -1,7 +1,7 @@
 import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite'
 import { watch as fsWatch } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { generate } from '@stacksjs/dtsx'
 
 /**
@@ -35,7 +35,9 @@ export interface DtsPluginOptions extends DtsGenerationOption {
   watchPatterns?: string[]
 
   /**
-   * Generate declarations before or after the build
+   * Generate declarations before or after the build. In a build, 'before'
+   * generates once Vite has prepared (emptied) its outDir and before it
+   * writes the bundle, so the declarations are kept.
    * @default 'before'
    */
   timing?: 'before' | 'after'
@@ -150,6 +152,9 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
     isGenerating: false,
     changedFiles: new Set(),
   }
+
+  // Whether this build has generated, so multi-output builds generate once.
+  let generatedThisBuild = false
 
   /**
    * Generate declarations with error handling
@@ -274,24 +279,32 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
       const shouldWatch = enableWatch ?? true
 
       if (shouldWatch && (trigger === 'serve' || trigger === 'both')) {
-        const root = dtsOptions.root || state.viteConfig?.root || './src'
-        startWatcher(resolve(state.viteConfig?.root || process.cwd(), root))
+        const { cwd, root } = normalizeConfig(dtsOptions, state.viteConfig)
+        startWatcher(resolve(cwd!, root!))
       }
     },
 
     async buildStart() {
-      if (timing !== 'before') return
-
-      const shouldRun = trigger === 'both'
-        || (trigger === 'build' && state.viteConfig?.command === 'build')
-        || (trigger === 'serve' && state.viteConfig?.command === 'serve')
-
-      if (!shouldRun) return
+      if (timing !== 'before' || state.viteConfig?.command !== 'serve') return
+      if (trigger !== 'serve' && trigger !== 'both') return
 
       await generateDeclarations()
     },
 
+    // Vite empties outDir in a `renderStart` hook ordered 'pre', after
+    // `buildStart`. Declarations written before then would be deleted.
+    async renderStart() {
+      if (timing !== 'before' || generatedThisBuild) return
+      if (state.viteConfig?.command !== 'build' || trigger === 'serve') return
+
+      generatedThisBuild = true
+      await generateDeclarations()
+    },
+
     async closeBundle() {
+      // Vite calls buildStart and renderStart once per output format, and
+      // closeBundle once per build.
+      generatedThisBuild = false
       if (timing !== 'after') return
 
       if (trigger === 'build' || trigger === 'both') {
@@ -348,18 +361,54 @@ export function dts(options: DtsPluginOptions = {}): Plugin {
  * @returns Normalized configuration
  */
 function normalizeConfig(options: DtsGenerationOption, viteConfig: ResolvedConfig | null): DtsGenerationOption {
-  const root = options.root || viteConfig?.root || './src'
+  const cwd = options.cwd || viteConfig?.root || process.cwd()
+  const root = options.root || defaultRoot(cwd, viteConfig)
   const outdir = options.outdir || viteConfig?.build?.outDir || './dist'
+
+  // The Vite config is build tooling, not library source.
+  const exclude = [...(options.exclude ?? [])]
+  const configFile = viteConfig?.configFile
+  if (!options.root && configFile && isInside(configFile, resolve(cwd, root)))
+    exclude.push(configFile)
 
   return {
     ...options,
-    cwd: options.cwd || viteConfig?.root || process.cwd(),
+    cwd,
     root,
     entrypoints: options.entrypoints || ['**/*.ts'],
+    exclude,
     outdir,
     clean: options.clean,
     tsconfigPath: options.tsconfigPath,
   }
+}
+
+/**
+ * The source root when none is configured: the folder holding the library
+ * entries (`build.lib.entry`), else `src`. Declarations then mirror the
+ * source from there, so `src/index.ts` emits `<outDir>/index.d.ts`.
+ */
+function defaultRoot(cwd: string, viteConfig: ResolvedConfig | null): string {
+  const lib = viteConfig?.build?.lib
+  const entry = lib ? lib.entry : undefined
+  const entries = typeof entry === 'string' ? [entry] : Array.isArray(entry) ? entry : entry ? Object.values(entry) : []
+  if (entries.length === 0)
+    return './src'
+
+  const directories = entries.map(file => dirname(resolve(cwd, file)))
+  return directories.reduce(commonDirectory)
+}
+
+function commonDirectory(a: string, b: string): string {
+  let common = a
+  while (!isInside(b, common) && dirname(common) !== common)
+    common = dirname(common)
+  return common
+}
+
+function isInside(path: string, directory: string): boolean {
+  const rel = relative(directory, path)
+  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
 /**

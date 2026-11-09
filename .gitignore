@@ -27,3 +27,4 @@ benchmark/oxc-emit
 *.node
 /packages/dtsx/.test-cli
 pantry
+/packages/vite-plugin/test/.vite-project-*/
