@@ -7,6 +7,7 @@
 import * as nodeFs from 'node:fs'
 import { parentPort } from 'node:worker_threads'
 import { extractDeclarations } from './extractor'
+import { emitNatively } from './process-source'
 import { processDeclarations } from './processor'
 
 const bun = typeof Bun !== 'undefined' ? Bun : null;
@@ -64,11 +65,15 @@ else {
         const outPath = outPaths ? outPaths[i] : (file ? file.outPath : undefined);
         try {
           const sourceCode = sources ? sources[i] : (file?.sourceCode || '');
-          const declarations = extractDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations);
-          ctx.filePath = filePath;
-          ctx.sourceCode = sourceCode;
-          ctx.declarations = declarations;
-          const content = processDeclarations(declarations, ctx, keepComments ?? true, importOrder);
+          let declarations = null;
+          let content = emitNatively(sourceCode, filePath, keepComments ?? true, importOrder ?? ['bun'], isolatedDeclarations ?? false);
+          if (content === null) {
+            declarations = extractDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations);
+            ctx.filePath = filePath;
+            ctx.sourceCode = sourceCode;
+            ctx.declarations = declarations;
+            content = processDeclarations(declarations, ctx, keepComments ?? true, importOrder);
+          }
 
           if (writeOutput) {
             if (!outPath) {

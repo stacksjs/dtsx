@@ -18,11 +18,14 @@ import { formatDts } from './formatter'
 import { monomorphicExportedFunctions, monomorphicImportFunctions } from './inferred-imports'
 import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
+import { emitWithNativeEngine } from './native-engine'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
+import { isStxFile, transformStxToTs } from './stx'
 import { applyTypeMappings, createTypeMapper } from './type-mappings'
 import { addSourceMapComment, checkIsolatedDeclarationsConfig, createDiff, generateDeclarationMap, sourceMapCommentPrefix, validateDtsContent, writeToFile } from './utils'
+import { isVueFile, transformVueSfcToTs } from './vue'
 
 const moduleResolvers = new WeakMap<DtsGenerationConfig, Promise<ModuleResolver>>()
 const emittedSources = new WeakMap<DtsGenerationConfig, Set<string>>()
@@ -638,7 +641,7 @@ export async function processFile(
  * Process TypeScript source code from a string (for stdin support)
  * Re-exported from process-source.ts for backward compatibility
  */
-export { clearResultCache, processSource, processSourceIsolated, processSourceSemantic } from './process-source'
+export { clearResultCache, processSource, processSourceIsolated, processSourceSemantic, processSourceWithTypeScriptEngine } from './process-source'
 
 /**
  * Process a single TypeScript file and return DTS with statistics
@@ -681,6 +684,15 @@ async function processFileWithStatsFromSource(
       if (resolved && !resolved.split(/[/\\]/).includes('node_modules')) inferenceSources.set(reference.specifier, await readTextFile(resolved))
     }
   }
+  // The native engine emits finished declaration text. It is used unless a
+  // plugin needs the extracted declaration objects or the configuration asks
+  // for an import order it does not implement; any native failure falls back.
+  const nativeContent = pluginManager?.hasDeclarationHooks()
+    ? null
+    : emitNativelyWithContext(processedSource, filePath, config, inferenceSources, augmentationImports)
+  if (nativeContent !== null)
+    return finishFileContent(nativeContent, filePath, processedSource, config, pluginManager, typeMapper, countDeclarationStatements(nativeContent))
+
   const importedFunctions = inferenceSources.size ? monomorphicImportFunctions(processedSource, inferenceSources) : undefined
   let declarations = extractDeclarations(processedSource, filePath, config.keepComments, config.isolatedDeclarations ?? false, importedFunctions)
 
@@ -707,8 +719,48 @@ async function processFileWithStatsFromSource(
   }
 
   // Process declarations to generate DTS
-  let dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
-  dtsContent = await rewriteRelativeDeclarationSpecifiers(dtsContent, filePath, config)
+  const dtsContent = processDeclarations(declarations, context, config.keepComments, config.importOrder)
+  return finishFileContent(dtsContent, filePath, processedSource, config, pluginManager, typeMapper, { declarationCount: declarations.length, importCount, exportCount })
+}
+
+/** Declaration counts read from emitted text (native output has no declaration objects). */
+function countDeclarationStatements(content: string): { declarationCount: number, importCount: number, exportCount: number } {
+  let declarationCount = 0
+  let importCount = 0
+  let exportCount = 0
+  for (const line of content.split('\n')) {
+    if (!line || line.startsWith(' ') || line.startsWith('\t') || line.startsWith('}') || line.startsWith('*') || line.startsWith('/')) continue
+    declarationCount++
+    if (line.startsWith('import ')) importCount++
+    else if (line.startsWith('export ')) exportCount++
+  }
+  return { declarationCount, importCount, exportCount }
+}
+
+function emitNativelyWithContext(source: string, filePath: string, config: DtsGenerationConfig, inferenceSources: ReadonlyMap<string, string>, augmentationImports?: ReadonlySet<string>): string | null {
+  const importOrder = config.importOrder ?? ['bun']
+  if (importOrder.length !== 1 || importOrder[0] !== 'bun') return null
+  const input = isVueFile(filePath) ? transformVueSfcToTs(source) : isStxFile(filePath) ? transformStxToTs(source) : source
+  return emitWithNativeEngine(input, {
+    keepComments: config.keepComments ?? true,
+    isolatedDeclarations: config.isolatedDeclarations ?? false,
+    sourceFile: filePath,
+    inferenceSources,
+    augmentationImports,
+  })
+}
+
+/** Shared post-processing for emitted declaration text, whichever engine produced it. */
+async function finishFileContent(
+  emitted: string,
+  filePath: string,
+  processedSource: string,
+  config: DtsGenerationConfig,
+  pluginManager: PluginManager | undefined,
+  typeMapper: TypeMapper | undefined,
+  counts: { declarationCount: number, importCount: number, exportCount: number },
+): Promise<{ content: string, declarationCount: number, importCount: number, exportCount: number }> {
+  let dtsContent = await rewriteRelativeDeclarationSpecifiers(emitted, filePath, config)
 
   if (typeMapper) {
     dtsContent = applyTypeMappings(dtsContent, typeMapper, { filePath })
@@ -731,9 +783,7 @@ async function processFileWithStatsFromSource(
 
   return {
     content: dtsContent,
-    declarationCount: declarations.length,
-    importCount,
-    exportCount,
+    ...counts,
   }
 }
 

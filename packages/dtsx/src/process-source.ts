@@ -3,8 +3,21 @@ import { extractDeclarations } from './extractor/extract'
 import { hashContent } from './extractor/hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './extractor/scanner'
 import { processDeclarations } from './processor'
+import { emitWithNativeEngine } from './native-engine'
 import { isStxFile, transformStxToTs } from './stx'
 import { isVueFile, transformVueSfcToTs } from './vue'
+
+/**
+ * Emit through the native engine when it can produce this output: the engine
+ * is loaded and the import order is the default one it implements. Returns
+ * null otherwise, or when the native emitter rejects the input, and the
+ * TypeScript engine runs instead.
+ */
+export function emitNatively(sourceCode: string, filename: string, keepComments: boolean, importOrder: readonly string[], isolatedDeclarations: boolean): string | null {
+  if (importOrder.length !== 1 || importOrder[0] !== 'bun') return null
+  const source = isVueFile(filename) ? transformVueSfcToTs(sourceCode) : isStxFile(filename) ? transformStxToTs(sourceCode) : sourceCode
+  return emitWithNativeEngine(source, { keepComments, isolatedDeclarations })
+}
 
 // ---------------------------------------------------------------------------
 // Result-level cache: caches the FINAL DTS output string, not just declarations.
@@ -36,18 +49,8 @@ export function processSource(
     return cached.result
   }
 
-  // Extract declarations (has its own cache layer too)
-  const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
-
-  // Create processing context
-  const context: ProcessingContext = {
-    filePath: filename,
-    sourceCode,
-    declarations,
-  }
-
-  // Process declarations to generate DTS
-  const result = processDeclarations(declarations, context, keepComments, importOrder)
+  const result = emitNatively(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
+    ?? emitWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
 
   // Store in result cache
   resultCache.set(cacheKey, { result, contentHash, lastAccess: ++_resultAccessCounter })
@@ -88,6 +91,17 @@ export function processSourceSemantic(
   return processSource(sourceCode, filename, keepComments, importOrder, false)
 }
 
+function emitWithTypeScriptEngine(sourceCode: string, filename: string, keepComments: boolean, importOrder: string[], isolatedDeclarations: boolean): string {
+  // Extract declarations (has its own cache layer too)
+  const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
+  const context: ProcessingContext = {
+    filePath: filename,
+    sourceCode,
+    declarations,
+  }
+  return processDeclarations(declarations, context, keepComments, importOrder)
+}
+
 export function clearResultCache(): void {
   resultCache.clear()
 }
@@ -97,6 +111,21 @@ export function clearResultCache(): void {
  * Use when processing many files once (no cache benefit).
  */
 export function processSourceDirect(
+  sourceCode: string,
+  filename: string = 'stdin.ts',
+  keepComments: boolean = true,
+  importOrder: string[] = ['bun'],
+  isolatedDeclarations: boolean = false,
+): string {
+  return emitNatively(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
+    ?? processSourceWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
+}
+
+/**
+ * Emit through the TypeScript engine only, without the native engine or the
+ * result cache: the reference the native engine is held to.
+ */
+export function processSourceWithTypeScriptEngine(
   sourceCode: string,
   filename: string = 'stdin.ts',
   keepComments: boolean = true,

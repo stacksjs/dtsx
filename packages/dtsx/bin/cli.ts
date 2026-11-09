@@ -57,8 +57,11 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
     // (1,000 files) and workers win from ~22 MB (2,000 files), so decide by
     // total source size.
     const workerMinSourceBytes = 16 * 1024 * 1024
+    // The native engine emits a file in microseconds, so a worker pool only
+    // pays off on the TypeScript fallback engine.
+    const { nativeEngineAvailable } = await import('../src/native-engine')
     let shouldUseWorkers = false
-    if (isBunRuntime && n >= 256) {
+    if (isBunRuntime && n >= 256 && !nativeEngineAvailable()) {
       let totalBytes = 0
       for (let i = 0; i < n && !shouldUseWorkers; i++) {
         totalBytes += bun.file(inPaths[i]).size
@@ -232,6 +235,7 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
       // Direct imports — skip processSourceDirect wrapper for less call overhead
       const { scanDeclarations } = await import('../src/extractor/scanner')
       const { processDeclarations } = await import('../src/processor')
+      const { emitNatively } = await import('../src/process-source')
 
       // Phase 1: Read all sources into memory
       const sources: string[] = new Array(n)
@@ -253,6 +257,11 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
       const results: string[] = new Array(n)
       const ctx = { filePath: '', sourceCode: '', declarations: [] as any[] }
       for (let i = 0; i < n; i++) {
+        const native = emitNatively(sources[i], files[i], true, importOrder, isoDecl)
+        if (native !== null) {
+          results[i] = native
+          continue
+        }
         const decls = scanDeclarations(sources[i], files[i], true, isoDecl)
         ctx.filePath = files[i]
         ctx.sourceCode = sources[i]

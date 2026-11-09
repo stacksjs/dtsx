@@ -110,6 +110,11 @@ export class PluginManager {
     this.plugins.push(plugin)
   }
 
+  /** Whether any registered plugin transforms extracted declaration objects. */
+  hasDeclarationHooks(): boolean {
+    return this.plugins.some(plugin => plugin.onDeclarations !== undefined)
+  }
+
   /**
    * Unregister a plugin by name
    */

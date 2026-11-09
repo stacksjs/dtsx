@@ -68,7 +68,8 @@
     "dtsx": "./dist/bin/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "native"
   ],
   "scripts": {
     "benchmark": "bun run benchmark.ts",
