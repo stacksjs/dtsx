@@ -1,0 +1,56 @@
+{
+  "name": "@dtsx/tsdown",
+  "type": "module",
+  "version": "0.11.38",
+  "description": "A tsdown plugin that generates your declarations with dtsx.",
+  "author": "Chris Breuer <chris@stacksjs.org>",
+  "license": "MIT",
+  "homepage": "https://github.com/stacksjs/dtsx/tree/main/packages/tsdown-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stacksjs/dtsx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stacksjs/dtsx/issues"
+  },
+  "keywords": [
+    "dts",
+    "dtsx",
+    "declarations",
+    "typescript",
+    "types",
+    "tsdown",
+    "plugin"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "LICENSE.md",
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build.ts",
+    "lint": "bunx --bun pickier run . --mode lint",
+    "lint:fix": "bunx --bun pickier run . --mode lint --fix",
+    "fresh": "bunx rimraf node_modules/ bun.lock && bun i",
+    "changelog": "bunx changelogen --output CHANGELOG.md",
+    "prepublishOnly": "bun --bun run build",
+    "release": "bun run changelog && bunx bumpp package.json --all",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@dtsx/dtsx": "workspace:*"
+  },
+  "devDependencies": {},
+  "peerDependencies": {
+    "tsdown": ">=0.23.0"
+  }
+}

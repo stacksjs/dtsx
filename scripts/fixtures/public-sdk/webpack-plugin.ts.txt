@@ -1,4 +1,4 @@
-import DtsxWebpackPlugin, { dtsx, dtsxCheck, dtsxWatch, type DtsxWebpackOptions } from 'webpack-plugin-dtsx'
+import DtsxWebpackPlugin, { dtsx, dtsxCheck, dtsxWatch, type DtsxWebpackOptions } from '@dtsx/webpack'
 import type { WebpackPluginInstance } from 'webpack'
 const options: DtsxWebpackOptions = { moduleSpecifierMode: 'node' }
 const plugin: WebpackPluginInstance = new DtsxWebpackPlugin(options)

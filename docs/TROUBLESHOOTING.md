@@ -422,7 +422,7 @@ dtsx generate --clear-cache
 
 ### Vite Plugin Not Running
 
-**Problem**: @dtsx/vite-plugin doesn't generate files
+**Problem**: @dtsx/vite doesn't generate files
 
 **Solutions**:
 
@@ -449,7 +449,7 @@ export default {
 
 ### webpack Plugin Errors
 
-**Problem**: webpack-plugin-dtsx throws errors
+**Problem**: @dtsx/webpack throws errors
 
 **Solutions**:
 
@@ -487,7 +487,7 @@ export default {
 
 ### esbuild Plugin Not Generating
 
-**Problem**: esbuild-plugin-dtsx produces no output
+**Problem**: @dtsx/esbuild produces no output
 
 **Solution**: Check trigger and entry points:
 

@@ -16,7 +16,7 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
-describe('bun-plugin-dtsx', () => {
+describe('@dtsx/bun', () => {
   it('preserves side-effect-only entrypoints as modules', async () => {
     const tempDir = await createTempDir()
     const srcDir = join(tempDir, 'src')
@@ -311,7 +311,7 @@ export const api = {
   })
 })
 
-describe('bun-plugin-dtsx', () => {
+describe('@dtsx/bun', () => {
   it('mirrors Bun output paths and completes declarations before build returns', async () => {
     const tempDir = await createTempDir()
     const srcDir = join(tempDir, 'src')

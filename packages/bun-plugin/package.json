@@ -1,5 +1,5 @@
 {
-  "name": "bun-plugin-dtsx",
+  "name": "@dtsx/bun",
   "type": "module",
   "sideEffects": false,
   "version": "0.11.38",
@@ -12,7 +12,7 @@
     "url": "git+https://github.com/stacksjs/dtsx.git"
   },
   "bugs": {
-    "url": "https://github.com/stacksjs/bun-plugin-dtsx/issues"
+    "url": "https://github.com/stacksjs/dtsx/issues"
   },
   "keywords": [
     "dts",

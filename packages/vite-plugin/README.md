@@ -1,13 +1,13 @@
-# @dtsx/vite-plugin
+# @dtsx/vite
 
 A Vite plugin for automatic TypeScript declaration file generation using dtsx.
 
 ## Installation
 
 ```bash
-bun add @dtsx/vite-plugin -d
+bun add @dtsx/vite -d
 # or
-npm install @dtsx/vite-plugin --save-dev
+npm install @dtsx/vite --save-dev
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ npm install @dtsx/vite-plugin --save-dev
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [
@@ -49,7 +49,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [dts()],
@@ -61,7 +61,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [
@@ -78,7 +78,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   build: {
@@ -100,7 +100,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [
@@ -124,7 +124,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [
@@ -141,7 +141,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default defineConfig({
   plugins: [

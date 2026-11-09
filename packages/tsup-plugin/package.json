@@ -1,5 +1,5 @@
 {
-  "name": "tsup-plugin-dtsx",
+  "name": "@dtsx/tsup",
   "type": "module",
   "version": "0.11.38",
   "description": "A tsup plugin that auto generates your DTS types extremely fast.",

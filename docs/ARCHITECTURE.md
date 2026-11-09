@@ -391,10 +391,10 @@ interface DtsGenerationConfig {
 
 ## Build Tool Integrations
 
-### Vite Plugin (`@dtsx/vite-plugin`)
+### Vite Plugin (`@dtsx/vite`)
 
 ```typescript
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default {
   plugins: [
@@ -406,10 +406,10 @@ export default {
 }
 ```
 
-### esbuild Plugin (`esbuild-plugin-dtsx`)
+### esbuild Plugin (`@dtsx/esbuild`)
 
 ```typescript
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 await build({
   plugins: [
@@ -420,10 +420,10 @@ await build({
 })
 ```
 
-### Bun Plugin (`bun-plugin-dtsx`)
+### Bun Plugin (`@dtsx/bun`)
 
 ```typescript
-import dts from 'bun-plugin-dtsx'
+import dts from '@dtsx/bun'
 
 await Bun.build({
   plugins: [dts()],

@@ -1,4 +1,4 @@
-import dtsx, { dtsxCheck, dtsxWatch, type DtsxEsbuildOptions } from 'esbuild-plugin-dtsx'
+import dtsx, { dtsxCheck, dtsxWatch, type DtsxEsbuildOptions } from '@dtsx/esbuild'
 import type { Plugin } from 'esbuild'
 const options: DtsxEsbuildOptions = { moduleSpecifierMode: 'node' }
 const plugin: Plugin = dtsx(options)

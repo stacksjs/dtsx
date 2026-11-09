@@ -1,20 +1,20 @@
-# esbuild-plugin-dtsx
+# @dtsx/esbuild
 
 An esbuild plugin for automatic TypeScript declaration file generation using dtsx.
 
 ## Installation
 
 ```bash
-bun add esbuild-plugin-dtsx -d
+bun add @dtsx/esbuild -d
 # or
-npm install esbuild-plugin-dtsx --save-dev
+npm install @dtsx/esbuild --save-dev
 ```
 
 ## Usage
 
 ```typescript
 import { build } from 'esbuild'
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 await build({
   entryPoints: ['src/index.ts'],
@@ -48,7 +48,7 @@ await build({
 
 ```typescript
 import { build } from 'esbuild'
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 await build({
   entryPoints: ['src/index.ts'],
@@ -61,7 +61,7 @@ await build({
 
 ```typescript
 import { build } from 'esbuild'
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 await build({
   entryPoints: ['src/index.ts'],
@@ -79,7 +79,7 @@ await build({
 
 ```typescript
 import { context } from 'esbuild'
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 const ctx = await context({
   entryPoints: ['src/index.ts'],
@@ -98,7 +98,7 @@ await ctx.watch()
 
 ```typescript
 import { build } from 'esbuild'
-import { dtsx } from 'esbuild-plugin-dtsx'
+import { dtsx } from '@dtsx/esbuild'
 
 await build({
   entryPoints: ['src/index.ts'],
@@ -124,7 +124,7 @@ await build({
 ### Type Checking Only
 
 ```typescript
-import { dtsxCheck } from 'esbuild-plugin-dtsx'
+import { dtsxCheck } from '@dtsx/esbuild'
 
 await build({
   plugins: [dtsxCheck()],
@@ -134,7 +134,7 @@ await build({
 ### Watch for Declaration Changes
 
 ```typescript
-import { dtsxWatch } from 'esbuild-plugin-dtsx'
+import { dtsxWatch } from '@dtsx/esbuild'
 
 await build({
   plugins: [

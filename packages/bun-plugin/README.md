@@ -1,20 +1,20 @@
-# bun-plugin-dtsx
+# @dtsx/bun
 
 A Bun Bundler plugin for automatic TypeScript declaration file generation using dtsx.
 
 ## Installation
 
 ```bash
-bun add bun-plugin-dtsx -d
+bun add @dtsx/bun -d
 # or
-npm install bun-plugin-dtsx --save-dev
+npm install @dtsx/bun --save-dev
 ```
 
 ## Usage
 
 ```typescript
 // build.ts
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],
@@ -45,7 +45,7 @@ await Bun.build({
 ### Basic Usage
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],
@@ -57,7 +57,7 @@ await Bun.build({
 ### With Bundled Declarations
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],
@@ -74,7 +74,7 @@ await Bun.build({
 ### Multiple Entry Points
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts', 'src/utils.ts'],
@@ -90,7 +90,7 @@ await Bun.build({
 ### With Callbacks
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],
@@ -114,7 +114,7 @@ await Bun.build({
 ### Filter Files
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],
@@ -131,7 +131,7 @@ await Bun.build({
 ### Custom Output Directory
 
 ```typescript
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   entrypoints: ['src/index.ts'],

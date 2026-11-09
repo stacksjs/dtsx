@@ -1,5 +1,5 @@
 {
-  "name": "esbuild-plugin-dtsx",
+  "name": "@dtsx/esbuild",
   "type": "module",
   "version": "0.11.38",
   "description": "An esbuild plugin that auto generates your DTS types extremely fast.",

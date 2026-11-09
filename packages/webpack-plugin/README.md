@@ -1,20 +1,20 @@
-# webpack-plugin-dtsx
+# @dtsx/webpack
 
 A webpack plugin for automatic TypeScript declaration file generation using dtsx.
 
 ## Installation
 
 ```bash
-bun add webpack-plugin-dtsx -d
+bun add @dtsx/webpack -d
 # or
-npm install webpack-plugin-dtsx --save-dev
+npm install @dtsx/webpack --save-dev
 ```
 
 ## Usage
 
 ```javascript
 // webpack.config.js
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   entry: './src/index.ts',
@@ -34,7 +34,7 @@ module.exports = {
 
 ```javascript
 // webpack.config.mjs
-import { DtsxWebpackPlugin } from 'webpack-plugin-dtsx'
+import { DtsxWebpackPlugin } from '@dtsx/webpack'
 
 export default {
   entry: './src/index.ts',
@@ -67,7 +67,7 @@ export default {
 ### Basic Usage
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -80,7 +80,7 @@ module.exports = {
 ### With Bundled Declarations
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -96,7 +96,7 @@ module.exports = {
 ### Custom Output Directory
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -111,7 +111,7 @@ module.exports = {
 ### Generate on Different Phases
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -129,7 +129,7 @@ module.exports = {
 ### With Callbacks
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -152,7 +152,7 @@ module.exports = {
 ### Filter Files
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -168,7 +168,7 @@ module.exports = {
 ### Process All TypeScript Files
 
 ```javascript
-const { DtsxWebpackPlugin } = require('webpack-plugin-dtsx')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   // ...
@@ -185,7 +185,7 @@ module.exports = {
 ### Type Checking Only
 
 ```javascript
-const { dtsxCheck } = require('webpack-plugin-dtsx')
+const { dtsxCheck } = require('@dtsx/webpack')
 
 module.exports = {
   plugins: [dtsxCheck()],
@@ -195,7 +195,7 @@ module.exports = {
 ### Watch for Declaration Changes
 
 ```javascript
-const { dtsxWatch } = require('webpack-plugin-dtsx')
+const { dtsxWatch } = require('@dtsx/webpack')
 
 module.exports = {
   plugins: [
@@ -213,7 +213,7 @@ module.exports = {
 You can also use the factory function:
 
 ```javascript
-const { dtsx } = require('webpack-plugin-dtsx')
+const { dtsx } = require('@dtsx/webpack')
 
 module.exports = {
   plugins: [

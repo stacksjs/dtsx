@@ -559,7 +559,7 @@ try {
     ownerToolVersions[tool] = manifest.version
   }
   const packed: Packed[] = []
-  for (const directory of ['dtsx', 'bun-plugin', 'vite-plugin', 'esbuild-plugin', 'webpack-plugin', 'tsup-plugin']) {
+  for (const directory of ['dtsx', 'bun-plugin', 'vite-plugin', 'esbuild-plugin', 'webpack-plugin', 'tsup-plugin', 'tsdown-plugin']) {
     await check(`normal pack ${directory}`, async () => {
       const archive = join(evidence, `${directory}.tgz`)
       const output = await run(`pack-${directory}`, [process.execPath, 'pm', 'pack', '--filename', archive], join(root, 'packages', directory), 60000)
@@ -586,7 +586,7 @@ try {
     if (item !== core && edge) assert(Bun.semver.satisfies(core.manifest.version, edge), `${item.manifest.name} packed core edge ${edge} does not admit the candidate version`)
     await audit(item)
   })
-  assert(packed.length === 6, 'All six normal candidate archives are required before registry installation')
+  assert(packed.length === 7, 'All seven normal candidate archives are required before registry installation')
   registry = await startRegistry(packed)
   for (const item of packed) {
     const passed = await check(`installed SDK ${item.directory}`, () => verifyConsumer(item.directory, [item], item, core, authoredTools, registry!, packed))

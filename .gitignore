@@ -28,3 +28,4 @@ benchmark/oxc-emit
 /packages/dtsx/.test-cli
 pantry
 /packages/vite-plugin/test/.vite-project-*/
+/packages/tsdown-plugin/test/.tsdown-project-*/

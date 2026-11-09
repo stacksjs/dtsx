@@ -17,11 +17,17 @@
       "@dtsx/dtsx/cache": [
         "./packages/dtsx/src/cache.ts"
       ],
-      "bun-plugin-dtsx": [
+      "@dtsx/bun": [
         "./packages/bun-plugin/src/index.ts"
       ],
-      "@dtsx/vite-plugin": [
+      "@dtsx/dtsx/tsdown": [
+        "./packages/dtsx/src/plugins/tsdown.ts"
+      ],
+      "@dtsx/vite": [
         "./packages/vite-plugin/src/index.ts"
+      ],
+      "@dtsx/tsdown": [
+        "./packages/tsdown-plugin/src/index.ts"
       ]
     },
     "resolveJsonModule": true,

@@ -1,4 +1,4 @@
-import dts, { dtsWatch, dtsCheck, clearCache, PluginErrorCodes, DtsxPluginError, type PluginConfig } from 'bun-plugin-dtsx'
+import dts, { dtsWatch, dtsCheck, clearCache, PluginErrorCodes, DtsxPluginError, type PluginConfig } from '@dtsx/bun'
 import type { BunPlugin } from 'bun'
 const options: PluginConfig = { moduleSpecifierMode: 'node', clean: false }
 const plugin: BunPlugin = dts(options)

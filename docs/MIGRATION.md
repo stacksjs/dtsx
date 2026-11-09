@@ -15,7 +15,7 @@ This guide helps you migrate from other TypeScript declaration generation tools 
 
 ## From @stacksjs/dtsx
 
-dtsx was published as `@stacksjs/dtsx` up to v0.11.36. From v0.11.37 it is published as `@dtsx/dtsx`, alongside the Vite plugin `@dtsx/vite-plugin`. Only the package name changed: the API, the `dtsx` CLI, the config file and every subpath export (`/vite`, `/esbuild`, `/tsup`, `/tsdown`, `/webpack`, `/plugins`, `/checker`) are the same.
+dtsx was published as `@stacksjs/dtsx` up to v0.11.36. From v0.11.37 it is published as `@dtsx/dtsx`. Only the package name changed: the API, the `dtsx` CLI, the config file and every subpath export (`/vite`, `/esbuild`, `/tsup`, `/tsdown`, `/webpack`, `/plugins`, `/checker`) are the same.
 
 1. Swap the dependency:
 
@@ -35,7 +35,27 @@ dtsx was published as `@stacksjs/dtsx` up to v0.11.36. From v0.11.37 it is publi
 
    A project-wide search and replace of `@stacksjs/dtsx` with `@dtsx/dtsx` covers it.
 
-The bundler plugins (`bun-plugin-dtsx`, `esbuild-plugin-dtsx`, `tsup-plugin-dtsx`, `webpack-plugin-dtsx`, `@dtsx/vite-plugin`) depend on `@dtsx/dtsx` from v0.11.37; update them to the same version.
+### Bundler plugins
+
+From v0.11.39 every bundler plugin is published in the dtsx npm org, named after its tool:
+
+| Tool | Until v0.11.38 | From v0.11.39 |
+|---|---|---|
+| Vite | `@dtsx/vite-plugin` | `@dtsx/vite` |
+| Bun | `bun-plugin-dtsx` | `@dtsx/bun` |
+| esbuild | `esbuild-plugin-dtsx` | `@dtsx/esbuild` |
+| tsup | `tsup-plugin-dtsx` | `@dtsx/tsup` |
+| webpack | `webpack-plugin-dtsx` | `@dtsx/webpack` |
+| tsdown | `@dtsx/dtsx/tsdown` | `@dtsx/tsdown` |
+
+Each plugin keeps its exports and options; swap the package and its import:
+
+```diff
+- import { dts } from '@dtsx/vite-plugin'
++ import { dts } from '@dtsx/vite'
+```
+
+The subpath plugins of `@dtsx/dtsx` (`@dtsx/dtsx/vite`, `@dtsx/dtsx/tsdown`, …) still work.
 
 ## From tsc --declaration
 
@@ -248,7 +268,7 @@ export default {
 
 ```typescript
 // vite.config.ts
-import { dts } from '@dtsx/vite-plugin'
+import { dts } from '@dtsx/vite'
 
 export default {
   build: {
@@ -276,7 +296,7 @@ export default {
 
 ### Migration Steps
 
-1. Install `@dtsx/vite-plugin`
+1. Install `@dtsx/vite`
 2. Update Vite/Rollup config
 3. Remove rollup-plugin-dts dependency
 
@@ -300,7 +320,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -319,7 +339,7 @@ Or use the helper:
 
 ```typescript
 // tsup.config.ts
-import { defineConfig } from 'tsup-plugin-dtsx'
+import { defineConfig } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -341,7 +361,7 @@ export default defineConfig({
 
 ### Migration Steps
 
-1. Install `tsup-plugin-dtsx`
+1. Install `@dtsx/tsup`
 2. Add plugin to config
 3. Set `dts: false` to disable tsup's built-in dts
 4. Configure dtsx options as needed

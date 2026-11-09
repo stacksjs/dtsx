@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 import { generate } from '../src/generator'
 
 const directories: string[] = []

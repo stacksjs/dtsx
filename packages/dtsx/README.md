@@ -25,11 +25,10 @@
 ## Install
 
 ```bash
-bun install -d @dtsx/dtsx
+npm install -D @dtsx/dtsx
+# or
+bun add -d @dtsx/dtsx
 ```
-
-> [!NOTE]
-> dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Install `@dtsx/dtsx` instead and change imports from `@stacksjs/dtsx` to `@dtsx/dtsx`; the API, CLI and config are unchanged. See [Migrating from @stacksjs/dtsx](https://github.com/stacksjs/dtsx/blob/main/docs/MIGRATION.md#from-stacksjsdtsx).
 
 > _@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
@@ -39,6 +38,9 @@ bun install -d @dtsx/dtsx
 brew install dtsx # wip
 pkgx install dtsx # wip
 ``` -->
+
+> [!NOTE]
+> dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Install `@dtsx/dtsx` instead and change imports from `@stacksjs/dtsx` to `@dtsx/dtsx`; the API, CLI and config are unchanged. See [Migrating from @stacksjs/dtsx](https://github.com/stacksjs/dtsx/blob/main/docs/MIGRATION.md#from-stacksjsdtsx).
 
 ## Get Started
 
@@ -307,13 +309,17 @@ To learn more, head over to the [documentation](https://dtsx.stacksjs.org/).
 
 ## Build Tool Integration
 
-dtsx provides plugins for popular build tools:
+dtsx has a plugin for each popular build tool, published in the dtsx npm org as `@dtsx/<tool>`:
+
+```bash
+npm install -D @dtsx/vite    # or @dtsx/bun, @dtsx/esbuild, @dtsx/tsup, @dtsx/tsdown, @dtsx/webpack
+```
 
 ### Vite
 
 ```ts
 // vite.config.ts
-import { dts } from '@dtsx/dtsx/vite'
+import { dts } from '@dtsx/vite'
 
 export default {
   plugins: [dts()],
@@ -324,7 +330,7 @@ export default {
 
 ```ts
 // build.ts
-import { dtsx } from '@dtsx/dtsx/esbuild'
+import { dtsx } from '@dtsx/esbuild'
 
 await esbuild.build({
   plugins: [dtsx()],
@@ -335,7 +341,7 @@ await esbuild.build({
 
 ```ts
 // webpack.config.js
-const { DtsxWebpackPlugin } = require('@dtsx/dtsx/webpack')
+const { DtsxWebpackPlugin } = require('@dtsx/webpack')
 
 module.exports = {
   plugins: [new DtsxWebpackPlugin()],
@@ -346,7 +352,7 @@ module.exports = {
 
 ```ts
 // tsdown.config.ts
-import { dts } from '@dtsx/dtsx/tsdown'
+import { dts } from '@dtsx/tsdown'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
@@ -355,7 +361,7 @@ export default defineConfig({
 })
 ```
 
-DTSX replaces tsdown's built-in declaration generator. It supports ESM/CJS output, named entries and watch rebuilds without requiring a TypeScript compiler at runtime. The bundled DTSX package has no required npm dependencies; tsdown is a development dependency of the consuming project. Bundled declaration maps are not supported.
+DTSX replaces tsdown's built-in declaration generator. It supports ESM/CJS output, named entries and watch rebuilds without requiring a TypeScript compiler at runtime. `@dtsx/tsdown` depends only on `@dtsx/dtsx`; tsdown is a development dependency of the consuming project. Bundled declaration maps are not supported.
 
 Run `bun run benchmark:tsdown --output tsdown-benchmark.json` from this repository for a comparison with tsdown's own declaration generator, including fresh output and strict type controls.
 
@@ -363,7 +369,7 @@ Run `bun run benchmark:tsdown --output tsdown-benchmark.json` from this reposito
 
 ```ts
 // tsup.config.ts
-import { dtsxPlugin } from '@dtsx/dtsx/tsup'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default {
   plugins: [dtsxPlugin()],
@@ -374,7 +380,7 @@ export default {
 
 ```ts
 // build.ts
-import { dts } from 'bun-plugin-dtsx'
+import { dts } from '@dtsx/bun'
 
 await Bun.build({
   plugins: [dts()],

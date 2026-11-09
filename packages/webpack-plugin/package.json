@@ -1,5 +1,5 @@
 {
-  "name": "webpack-plugin-dtsx",
+  "name": "@dtsx/webpack",
   "type": "module",
   "version": "0.11.38",
   "description": "A webpack plugin that auto generates your DTS types extremely fast.",

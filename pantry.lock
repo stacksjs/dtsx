@@ -5,6 +5,7 @@
     "": {
       "name": "@dtsx/dtsx",
       "devDependencies": {
+        "@dtsx/bun": "workspace:*",
         "@stacksjs/bumpx": "^0.2.32",
         "@stacksjs/bunpress": "^0.2.31",
         "@stacksjs/clapp": "^0.2.16",
@@ -13,7 +14,6 @@
         "@types/bun": "^1.4.4",
         "buddy-bot": "^0.10.5",
         "bun-git-hooks": "^0.3.3",
-        "bun-plugin-dtsx": "workspace:*",
         "mitata": "^1.0.34",
         "oxc-parser": "^0.157.0",
         "oxc-transform": "^0.157.0",
@@ -27,7 +27,7 @@
       }
     },
     "packages/bun-plugin": {
-      "name": "bun-plugin-dtsx",
+      "name": "@dtsx/bun",
       "version": "0.11.38",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
@@ -43,21 +43,28 @@
       }
     },
     "packages/esbuild-plugin": {
-      "name": "esbuild-plugin-dtsx",
+      "name": "@dtsx/esbuild",
+      "version": "0.11.38",
+      "dependencies": {
+        "@dtsx/dtsx": "workspace:*"
+      }
+    },
+    "packages/tsdown-plugin": {
+      "name": "@dtsx/tsdown",
       "version": "0.11.38",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/tsup-plugin": {
-      "name": "tsup-plugin-dtsx",
+      "name": "@dtsx/tsup",
       "version": "0.11.38",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/vite-plugin": {
-      "name": "@dtsx/vite-plugin",
+      "name": "@dtsx/vite",
       "version": "0.11.38",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
@@ -67,7 +74,7 @@
       }
     },
     "packages/webpack-plugin": {
-      "name": "webpack-plugin-dtsx",
+      "name": "@dtsx/webpack",
       "version": "0.11.38",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"

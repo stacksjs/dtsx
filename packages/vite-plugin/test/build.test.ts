@@ -40,7 +40,7 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
 })
 
-describe('vite build with @dtsx/vite-plugin', () => {
+describe('vite build with @dtsx/vite', () => {
   test('a library build keeps declarations next to the bundle', async () => {
     const dir = project({
       ...library,

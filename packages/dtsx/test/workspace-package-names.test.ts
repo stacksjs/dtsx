@@ -56,10 +56,18 @@ describe('published package names', () => {
     expect(mentions).toEqual([])
   })
 
-  // npm rejects `vite-plugin-dtsx` as too similar to `vite-plugin-dts`, so the
-  // Vite plugin publishes in the dtsx npm org.
-  test('the Vite plugin publishes in the dtsx npm org', () => {
-    expect(publishable.find(item => item.directory === 'vite-plugin')?.manifest.name).toBe('@dtsx/vite-plugin')
+  // Every bundler plugin publishes in the dtsx npm org, named after its tool
+  // (npm also rejects `vite-plugin-dtsx` as too similar to `vite-plugin-dts`).
+  test('every plugin publishes as @dtsx/<tool>', () => {
+    const plugins = Object.fromEntries(publishable.filter(item => item.directory.endsWith('-plugin')).map(item => [item.directory, item.manifest.name]))
+    expect(plugins).toEqual({
+      'bun-plugin': '@dtsx/bun',
+      'esbuild-plugin': '@dtsx/esbuild',
+      'tsdown-plugin': '@dtsx/tsdown',
+      'tsup-plugin': '@dtsx/tsup',
+      'vite-plugin': '@dtsx/vite',
+      'webpack-plugin': '@dtsx/webpack',
+    })
   })
 
   test.each(documents.map(path => [path.slice(repoRoot.length + 1), path]))('%s names only real workspace packages', (_label, path) => {
@@ -69,8 +77,8 @@ describe('published package names', () => {
 
   test('the matcher finds install and import names', () => {
     const text = [
-      'bun add @dtsx/vite-plugin -d',
-      'npm install --save-dev bun-plugin-dtsx',
+      'bun add @dtsx/vite -d',
+      'npm install --save-dev @dtsx/bun',
       'bun add vite',
       `import { dts } from 'vite-plugin-dtsx'`,
       `import { dts } from '@dtsx/vite'`,
@@ -82,6 +90,6 @@ describe('published package names', () => {
       `+ import { generate } from '@dtsx/dtsx/checker'`,
       '```',
     ].join('\n')
-    expect(namedPackages(text)).toEqual(['@dtsx/vite-plugin', 'bun-plugin-dtsx', 'vite-plugin-dtsx', '@dtsx/vite', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx'])
+    expect(namedPackages(text)).toEqual(['@dtsx/vite', '@dtsx/bun', 'vite-plugin-dtsx', '@dtsx/vite', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx'])
   })
 })

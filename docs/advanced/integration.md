@@ -8,7 +8,7 @@ This guide covers how to integrate dtsx with various build tools and development
 
 ```ts
 // tsdown.config.ts
-import { dts } from '@dtsx/dtsx/tsdown'
+import { dts } from '@dtsx/tsdown'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({

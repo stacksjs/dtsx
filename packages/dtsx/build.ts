@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import dts from 'bun-plugin-dtsx'
+import dts from '@dtsx/bun'
 
 console.log('Building...')
 

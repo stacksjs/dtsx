@@ -1,0 +1,25 @@
+import process from 'node:process'
+import dts from '@dtsx/bun'
+
+console.log('Building...')
+
+const result = await Bun.build({
+  entrypoints: ['src/index.ts'],
+  outdir: 'dist',
+  target: 'bun',
+  external: ['@dtsx/dtsx', 'tsdown'],
+  // minify: true,
+  plugins: [dts({ moduleSpecifierMode: 'node' })],
+})
+
+if (!result.success) {
+  console.error('Build failed')
+
+  for (const message of result.logs) {
+    console.error(message)
+  }
+
+  process.exit(1)
+}
+
+console.log('Build complete')

@@ -1,4 +1,4 @@
-# tsup-plugin-dtsx
+# @dtsx/tsup
 
 A tsup plugin for automatic TypeScript declaration file generation using dtsx.
 
@@ -13,9 +13,9 @@ The SWC peer supplies the types referenced by tsup 8.5.0's public declarations.
 ## Installation
 
 ```bash
-bun add tsup-plugin-dtsx -d
+bun add @dtsx/tsup -d
 # or
-npm install tsup-plugin-dtsx --save-dev
+npm install @dtsx/tsup --save-dev
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ npm install tsup-plugin-dtsx --save-dev
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -41,7 +41,7 @@ export default defineConfig({
 
 ```typescript
 // tsup.config.ts
-import { defineConfig } from 'tsup-plugin-dtsx'
+import { defineConfig } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -57,7 +57,7 @@ export default defineConfig({
 
 ```typescript
 // tsup.config.ts
-import { createTsupConfig } from 'tsup-plugin-dtsx'
+import { createTsupConfig } from '@dtsx/tsup'
 
 export default createTsupConfig('src/index.ts', {
   bundle: true,
@@ -85,7 +85,7 @@ export default createTsupConfig('src/index.ts', {
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -105,7 +105,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: {
@@ -128,7 +128,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -155,7 +155,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -174,7 +174,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -194,7 +194,7 @@ export default defineConfig({
 ```typescript
 // tsup.config.ts
 import { defineConfig } from 'tsup'
-import { dtsxPlugin } from 'tsup-plugin-dtsx'
+import { dtsxPlugin } from '@dtsx/tsup'
 
 export default defineConfig({
   entry: ['src/index.ts'],

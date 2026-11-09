@@ -1,4 +1,4 @@
-import dtsxPlugin, { createTsupConfig, defineConfig, type DtsxTsupOptions } from 'tsup-plugin-dtsx'
+import dtsxPlugin, { createTsupConfig, defineConfig, type DtsxTsupOptions } from '@dtsx/tsup'
 import type { Options } from 'tsup'
 const options: DtsxTsupOptions = { moduleSpecifierMode: 'node' }
 const config: Options = createTsupConfig(['src/index.ts'], options)

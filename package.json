@@ -74,7 +74,7 @@
     "@types/bun": "^1.4.4",
     "buddy-bot": "^0.10.5",
     "bun-git-hooks": "^0.3.3",
-    "bun-plugin-dtsx": "workspace:*",
+    "@dtsx/bun": "workspace:*",
     "mitata": "^1.0.34",
     "oxc-transform": "^0.157.0",
     "oxc-parser": "^0.157.0",

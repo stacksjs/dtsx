@@ -196,7 +196,7 @@ for `target: 'node'` and `preserve` for other targets. An explicit
 select Node mode. Incremental cache identity includes the effective mode.
 The Bun adapter uses the core declaration cache directly. `cacheDir` is relative
 to the project `cwd` and defaults to `.dtsx-cache`. `clearCache(cacheDir)` from
-`bun-plugin-dtsx` clears its manifest and preserves unrelated directory contents.
+`@dtsx/bun` clears its manifest and preserves unrelated directory contents.
 Its standalone `clearCache` resolves a relative path against the calling process's
 working directory. When building with a different project `cwd`, pass the absolute
 cache directory to `clearCache`.
