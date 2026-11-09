@@ -431,7 +431,7 @@ cli
         keepComments: options.keepComments ?? fileConfig.keepComments ?? defaultOptions.keepComments,
         clean: options.clean ?? fileConfig.clean ?? defaultOptions.clean,
         verbose: options.verbose ?? fileConfig.verbose ?? defaultOptions.verbose,
-        importOrder: options.importOrder || fileConfig.importOrder || defaultOptions.importOrder,
+        importOrder: normalizeListOption(options.importOrder) ?? fileConfig.importOrder ?? defaultOptions.importOrder,
         dryRun: options.dryRun ?? fileConfig.dryRun ?? defaultOptions.dryRun,
         stats: options.stats ?? fileConfig.stats ?? defaultOptions.stats,
         continueOnError: options.continueOnError ?? fileConfig.continueOnError ?? defaultOptions.continueOnError,
