@@ -1,7 +1,7 @@
 {
   "name": "@dtsx/vite-plugin",
   "type": "module",
-  "version": "0.11.37",
+  "version": "0.11.38",
   "description": "A modern, fast .d.ts generation tool, powered by Bun.",
   "author": "Chris Breuer <chris@stacksjs.org>",
   "license": "MIT",

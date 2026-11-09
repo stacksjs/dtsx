@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.37...v0.11.38)
+
+## 🐛 Bug Fixes
+
+- **cli**: use the native engine for a plain dtsx generate ([e60c775](https://github.com/stacksjs/dtsx/commit/e60c775)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.38 ([d34bdc4](https://github.com/stacksjs/dtsx/commit/d34bdc4)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.36...v0.11.37)
 
 ## ✨ Features
