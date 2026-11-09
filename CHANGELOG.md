@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.35...v0.11.36)
+
+## 🐛 Bug Fixes
+
+- **vite-plugin**: keep declarations through Vite's outDir emptying ([b585797](https://github.com/stacksjs/dtsx/commit/b585797)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.36 ([b2ffbe7](https://github.com/stacksjs/dtsx/commit/b2ffbe7)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.34...v0.11.35)
 
 ## 🐛 Bug Fixes
