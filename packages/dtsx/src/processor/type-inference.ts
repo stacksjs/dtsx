@@ -347,6 +347,12 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'unknown'
   }
 
+  // Unary operators with a fixed result type. `typeof x` is a string, but
+  // `typeof x === 'object' && ...` is a larger expression.
+  if (trimmed.startsWith('typeof ') && isUnaryOperand(trimmed.slice(7))) return 'string'
+  if (trimmed.startsWith('void ') && isUnaryOperand(trimmed.slice(5))) return 'undefined'
+  if (trimmed.startsWith('delete ') && isUnaryOperand(trimmed.slice(7))) return 'boolean'
+
   // BigInt literals (digits followed by 'n')
   if (trimmed.charCodeAt(trimmed.length - 1) === 110 /* n */ && trimmed.length > 1 && isBigIntDigits(trimmed)) {
     if (isConst) {
@@ -822,6 +828,78 @@ function joinReturnTypes(types: string[]): string {
   return types.map(type => types.length > 1 && findMainArrowIndex(type) !== -1 ? `(${type})` : type).join(' | ')
 }
 
+/** An expression without the comments before its first token and after its last. */
+function withoutEdgeComments(value: string): string {
+  let start = 0
+  while (start < value.length) {
+    const char = value.charCodeAt(start)
+    if (char <= 32) start++
+    else if (char === 47 && value.charCodeAt(start + 1) === 47) {
+      start += 2
+      while (start < value.length && value.charCodeAt(start) !== 10 && value.charCodeAt(start) !== 13) start++
+    }
+    else if (char === 47 && value.charCodeAt(start + 1) === 42) {
+      const close = value.indexOf('*/', start + 2)
+      start = close === -1 ? value.length : close + 2
+    }
+    else break
+  }
+  let codeEnd = start
+  let i = start
+  while (i < value.length) {
+    const char = value.charCodeAt(i)
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(value, i, char)
+      codeEnd = i
+      continue
+    }
+    if (char === 92) {
+      i = Math.min(i + 2, value.length)
+      codeEnd = i
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 47) {
+      while (i < value.length && value.charCodeAt(i) !== 10 && value.charCodeAt(i) !== 13) i++
+      continue
+    }
+    if (char === 47 && value.charCodeAt(i + 1) === 42) {
+      const close = value.indexOf('*/', i + 2)
+      i = close === -1 ? value.length : close + 2
+      continue
+    }
+    i++
+    if (char > 32) codeEnd = i
+  }
+  return value.slice(start, codeEnd)
+}
+
+/** Whether a unary operator's operand is the whole remaining expression. */
+function isUnaryOperand(value: string): boolean {
+  let depth = 0
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i]
+    if (char === '\'' || char === '"' || char === '`') {
+      let j = i + 1
+      while (j < value.length && value[j] !== char) {
+        if (value[j] === '\\') j++
+        j++
+      }
+      i = j
+      continue
+    }
+    if (char === '(' || char === '[' || char === '{') depth++
+    else if (char === ')' || char === ']' || char === '}') depth--
+    else if (depth !== 0) continue
+    else if (char === '?') { if (value[i + 1] !== '.') return false }
+    else if ('=!<>&|+-*/%,:'.includes(char)) return false
+    else if (char === ' ' || char === '\t' || char === '\n' || char === '\r') {
+      const rest = value.slice(i).trimStart()
+      if (rest && rest[0] !== '.' && rest[0] !== '?' && rest[0] !== '(' && rest[0] !== '[') return false
+    }
+  }
+  return true
+}
+
 /** Recognize a complete function value without consuming an outer conditional. */
 function isFunctionExpression(value: string): boolean {
   if (value.startsWith('function') && isWordBoundary(value, 0, 8)) return true
@@ -860,11 +938,26 @@ function splitTopLevelConditional(value: string): { whenTrue: string, whenFalse:
   let question = -1
   for (let i = 0; i < value.length; i++) {
     const char = value.charCodeAt(i)
+    // Literal text and comments cannot hold the operator: `ok ? 'a:b' : 'c'`.
+    if (char === 34 || char === 39 || char === 96) {
+      i = skipQuotedValue(value, i, char) - 1
+      continue
+    }
+    if (char === 47 && (value.charCodeAt(i + 1) === 47 || value.charCodeAt(i + 1) === 42)) {
+      if (value.charCodeAt(i + 1) === 47) {
+        while (i + 1 < value.length && value.charCodeAt(i + 1) !== 10 && value.charCodeAt(i + 1) !== 13) i++
+      }
+      else {
+        const close = value.indexOf('*/', i + 2)
+        i = close === -1 ? value.length : close + 1
+      }
+      continue
+    }
     if (char === 40 || char === 91 || char === 123) depth++
     else if (char === 41 || char === 93 || char === 125) depth--
     else if (char === 63 && depth === 0 && value.charCodeAt(i + 1) !== 63) question = i
     else if (char === 58 && depth === 0 && question !== -1) {
-      return { whenTrue: value.slice(question + 1, i), whenFalse: value.slice(i + 1) }
+      return { whenTrue: withoutEdgeComments(value.slice(question + 1, i)), whenFalse: withoutEdgeComments(value.slice(i + 1)) }
     }
   }
   return null
@@ -2809,13 +2902,9 @@ export function inferFunctionType(value: string, inUnion: boolean = false, _dept
       }
     }
     else {
-      // Expression body - try to infer, but be conservative in union contexts
-      if (inUnion) {
-        returnType = 'unknown'
-      }
-      else {
-        returnType = inferBodyExpressionType(body, collectParameterTypes(signature.params))
-      }
+      // An expression body returns its value, in a union as anywhere else:
+      // `[() => 'a']` is `(() => string)[]`, as its `@defaultValue` shows.
+      returnType = inferBodyExpressionType(body, collectParameterTypes(signature.params))
     }
 
     const funcType = `${generics}${params} => ${returnType}`

@@ -43,7 +43,9 @@ describeIf('Zig inference parity round five', () => {
     ['1 * 2', 'number'],
     ['1 / 2', 'number'],
     ['1 % 2', 'number'],
-    ['"left" + "right"', 'string'],
+    // Joined string literals narrow to the joined literal, as in the TS engine.
+    ['"left" + "right"', "'leftright'"],
+    ['"left" + right', 'string'],
     ['1n + 2n', 'bigint'],
   ])('infers arithmetic expression %s as %s', (expression, expected) => {
     expect(dts(`export const value = ${expression}`)).toContain(`value: ${expected}`)

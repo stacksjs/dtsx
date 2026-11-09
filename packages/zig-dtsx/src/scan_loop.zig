@@ -376,7 +376,9 @@ fn extractDefaultExpression(s: *Scanner, stmt_start: usize, expression_start: us
     while (std.mem.indexOf(u8, s.source, helper_name) != null) : (suffix += 1) {
         helper_name = try std.fmt.allocPrint(s.allocator, "__dtsx_default_export_{d}__", .{suffix});
     }
-    const inferred = try type_inf.inferNarrowType(s.allocator, expression, false, false, 0);
+    // An asserted expression declares its contract: `hcl() as (t: number) => string`.
+    // A dotted name is queried as written: `typeof namespace.value`.
+    const inferred = ext.extractAssertion(expression) orelse if (isEntityName(expression)) "unknown" else try type_inf.inferNarrowType(s.allocator, expression, false, false, 0);
     const inferred_type = if (std.mem.eql(u8, inferred, "unknown") and isEntityName(expression))
         try std.fmt.allocPrint(s.allocator, "typeof {s}", .{expression})
     else

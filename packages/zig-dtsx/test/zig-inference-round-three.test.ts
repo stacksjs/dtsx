@@ -63,24 +63,18 @@ describeIf('Zig inference parity round three', () => {
     expect(dts('export const matcher = /[a-z\\/]+/gi')).toContain('matcher: RegExp')
   })
 
-  test('models optional property access', () => {
-    const output = dts('const user = { name: "Ada" }; export const name = user?.name')
-    expect(output).toContain('NonNullable<typeof user>["name"] | undefined')
-  })
-
-  test('models direct property access', () => {
-    const output = dts('const user = { name: "Ada" }; export const name = user.name')
-    expect(output).toContain('(typeof user)["name"]')
-  })
-
-  test('models literal element access', () => {
-    const output = dts('const values = [1, 2] as const; export const first = values[0]')
-    expect(output).toContain('(typeof values)[0]')
-  })
-
-  test('models identifier element access', () => {
-    const output = dts('const values = { first: 1 }; const key = "first" as const; export const selected = values[key]')
-    expect(output).toContain('(typeof values)[typeof key]')
+  // Member and element reads are not queried, as in the TypeScript engine:
+  // the object may be an undeclared global the declaration cannot name.
+  test.each([
+    ['optional property access', 'const user = { name: "Ada" }; export const name = user?.name', 'name'],
+    ['direct property access', 'const user = { name: "Ada" }; export const name = user.name', 'name'],
+    ['literal element access', 'const values = [1, 2] as const; export const first = values[0]', 'first'],
+    ['identifier element access', 'const values = { first: 1 }; const key = "first" as const; export const selected = values[key]', 'selected'],
+    ['undeclared global element access', 'export const metadata = $props[\'metadata\'] || {}', 'metadata'],
+  ])('leaves %s unknown', (_label, source, name) => {
+    const output = dts(source)
+    expect(output).toContain(`export declare const ${name}: unknown;`)
+    expect(output).not.toContain('(typeof ')
   })
 
   test('models member calls with ReturnType', () => {

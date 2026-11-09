@@ -273,12 +273,8 @@ fn inferAccessType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]co
             return try std.fmt.allocPrint(alloc, "NonNullable<typeof {s}>[\"{s}\"] | undefined", .{ base, property });
     }
 
-    if (std.mem.lastIndexOfScalar(u8, value, '.')) |dot| {
-        const base = trim(value[0..dot]);
-        const property = trim(value[dot + 1 ..]);
-        if (isIdentifierName(base) and isIdentifierName(property))
-            return try std.fmt.allocPrint(alloc, "(typeof {s})[\"{s}\"]", .{ base, property });
-    }
+    // A dotted name is left to the caller, which queries it whole
+    // (`typeof console.log`) where a reference is expected.
     return null;
 }
 
@@ -340,16 +336,15 @@ fn inferBodyCallType(alloc: std.mem.Allocator, value: []const u8, parameters: []
     };
     if (dot == null) return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{root_type});
 
-    var callable_type = std.array_list.Managed(u8).init(alloc);
-    try callable_type.appendSlice(root_type);
+    // Each member access wraps its object, as the TypeScript emitter's query
+    // substitution does: `(Date)["toISOString"]`.
+    var callable_type: []const u8 = root_type;
     var properties = std.mem.splitScalar(u8, callee[dot.? + 1 ..], '.');
     while (properties.next()) |property| {
         if (!isIdentifierName(property)) return "unknown";
-        try callable_type.appendSlice("[\"");
-        try callable_type.appendSlice(property);
-        try callable_type.appendSlice("\"]");
+        callable_type = try std.fmt.allocPrint(alloc, "({s})[\"{s}\"]", .{ callable_type, property });
     }
-    return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{callable_type.items});
+    return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{callable_type});
 }
 
 /// Parse array elements handling nested structures.
@@ -537,15 +532,21 @@ fn stripAsyncKeyword(alloc: std.mem.Allocator, input: []const u8) InferError![]c
 /// Input: key = method name (may include generics), value = "(params): ReturnType { body }"
 /// Output: "generics(params) => ReturnType"
 fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method_def: []const u8) InferError![]const u8 {
-    var cleaned = method_def;
-    // Remove leading async (6 chars including the trailing space)
-    if (ch.startsWith(cleaned, "async ")) {
-        cleaned = trim(cleaned[6..]);
+    _ = key; // key is already clean, generics are at start of value if present
+    var cleaned = trim(method_def);
+    var is_async = false;
+    var is_generator = false;
+    if (ch.startsWith(cleaned, "async") and cleaned.len > 5 and (cleaned[5] == ' ' or cleaned[5] == '\t')) {
+        is_async = true;
+        cleaned = trim(cleaned[5..]);
+    }
+    if (ch.startsWith(cleaned, "*")) {
+        is_generator = true;
+        cleaned = trim(cleaned[1..]);
     }
 
-    // Extract generics from key (e.g., "onSuccess<T>" -> generics = "<T>")
+    // Extract generics (e.g., "<T>(value: T)" -> generics = "<T>")
     var generics: []const u8 = "";
-    _ = key; // key is already clean, generics are at start of value if present
     if (cleaned.len > 0 and cleaned[0] == '<') {
         if (findMatchingBracket(cleaned, 0, '<', '>')) |gen_end| {
             generics = cleaned[0 .. gen_end + 1];
@@ -565,7 +566,6 @@ fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method
         // Find return type - everything up to '{' or end
         const type_start: usize = 1; // skip ':'
         var type_end: usize = after_params.len;
-        // Look for opening brace (function body)
         var j: usize = type_start;
         var d: i32 = 0;
         while (j < after_params.len) : (j += 1) {
@@ -577,8 +577,27 @@ fn convertMethodToFunctionType(alloc: std.mem.Allocator, key: []const u8, method
         }
         const rt = trim(after_params[type_start..type_end]);
         if (rt.len > 0) return_type = rt;
-    } else if (after_params.len > 0 and after_params[0] == '{') {
-        return_type = try inferFunctionBodyReturnType(alloc, after_params, params, 0);
+    } else if (!is_generator and after_params.len > 0 and after_params[0] == '{') {
+        // No annotation: what the body returns, as for a function.
+        const inferred = try inferFunctionBodyReturnType(alloc, after_params, params, 0);
+        if (!std.mem.eql(u8, inferred, "unknown") and !std.mem.eql(u8, inferred, "Promise<unknown>")) {
+            return_type = if (is_async and ch.startsWith(inferred, "Promise<") and inferred[inferred.len - 1] == '>') inferred[8 .. inferred.len - 1] else inferred;
+        } else if (is_async) {
+            return_type = "Promise<unknown>";
+        }
+    }
+
+    // Apply async/generator defaults when no explicit return type was provided
+    if (std.mem.eql(u8, return_type, "unknown")) {
+        if (is_async and is_generator) {
+            return_type = "AsyncGenerator<unknown, void, unknown>";
+        } else if (is_generator) {
+            return_type = "Generator<unknown, void, unknown>";
+        } else if (is_async) {
+            return_type = "Promise<void>";
+        }
+    } else if (is_async and !ch.startsWith(return_type, "Promise<") and !ch.startsWith(return_type, "AsyncGenerator<")) {
+        return_type = try std.fmt.allocPrint(alloc, "Promise<{s}>", .{return_type});
     }
 
     // Clean parameter defaults
@@ -845,13 +864,61 @@ fn splitPropertyComments(alloc: std.mem.Allocator, raw: []const u8) InferError!s
     return .{ .comments = comments, .key = trim(text[pos..]) };
 }
 
+/// A value without its line comments, as the TypeScript emitter's property
+/// parser collects it: the comment and the blanks before it go, the newline stays.
+fn withoutLineComments(alloc: std.mem.Allocator, value: []const u8) InferError![]const u8 {
+    if (ch.indexOf(value, "//", 0) == null) return value;
+    var out = std.array_list.Managed(u8).init(alloc);
+    var changed = false;
+    var i: usize = 0;
+    while (i < value.len) {
+        const c = value[i];
+        if (c == '"' or c == '\'' or c == '`') {
+            var j = i + 1;
+            while (j < value.len and value[j] != c) : (j += 1) {
+                if (value[j] == '\\') j += 1;
+            }
+            const end = @min(j + 1, value.len);
+            try out.appendSlice(value[i..end]);
+            i = end;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '*') {
+            const end = if (ch.indexOf(value, "*/", i + 2)) |close| close + 2 else value.len;
+            try out.appendSlice(value[i..end]);
+            i = end;
+            continue;
+        }
+        if (c == '/' and i + 1 < value.len and value[i + 1] == '/') {
+            while (out.items.len > 0 and (out.items[out.items.len - 1] == ' ' or out.items[out.items.len - 1] == '\t')) _ = out.pop();
+            i = ch.indexOfChar(value, '\n', i + 2) orelse value.len;
+            changed = true;
+            continue;
+        }
+        try out.append(c);
+        i += 1;
+    }
+    return if (changed) trim(out.items) else value;
+}
+
 /// Move a shorthand method's type parameters from its key to its callable type.
 fn objectProperty(alloc: std.mem.Allocator, raw_key: []const u8, raw_value: []const u8, is_method: bool) InferError!ObjectProperty {
     const split = try splitPropertyComments(alloc, raw_key);
     var key = split.key;
-    var value = trim(raw_value);
+    // Line comments are not part of a value: a comment ending a line in a
+    // multi-line parameter type would otherwise swallow the next member.
+    var value = try withoutLineComments(alloc, trim(raw_value));
     if (is_method) {
-        if (ch.startsWith(key, "async ")) key = trim(key[6..]);
+        // `async` and `*` stay with the method: they decide its return type.
+        var modifiers: []const u8 = "";
+        if (ch.startsWith(key, "async") and key.len > 5 and ch.isWhitespace(key[5])) {
+            key = trim(key[6..]);
+            modifiers = "async ";
+        }
+        if (ch.startsWith(key, "*")) {
+            key = trim(key[1..]);
+            modifiers = if (modifiers.len > 0) "async *" else "*";
+        }
         if (findTopLevelToken(key, "<", 0)) |start| {
             if (findMatchingBracket(key, start, '<', '>')) |end| {
                 if (end == key.len - 1) {
@@ -860,6 +927,7 @@ fn objectProperty(alloc: std.mem.Allocator, raw_key: []const u8, raw_value: []co
                 }
             }
         }
+        if (modifiers.len > 0) value = try std.fmt.allocPrint(alloc, "{s}{s}", .{ modifiers, value });
         value = try convertMethodToFunctionType(alloc, key, value);
     }
     return .{ .key = key, .value = value, .is_method = is_method, .comments = split.comments };
@@ -1455,6 +1523,7 @@ pub fn inferFunctionBodyReturnTypeGeneric(alloc: std.mem.Allocator, body: []cons
     var return_scope = return_scopes.Scope.init(alloc, class_scope, content, generics);
     defer return_scope.deinit();
     var return_types = std.array_list.Managed([]const u8).init(alloc);
+    var has_bare_return = false;
     var i: usize = 0;
     while (i < content.len) {
         if (content[i] == '"' or content[i] == '\'' or content[i] == '`') {
@@ -1506,38 +1575,94 @@ pub fn inferFunctionBodyReturnTypeGeneric(alloc: std.mem.Allocator, body: []cons
             if (content[i] == '\n' or content[i] == '\r') saw_line_break = true;
         }
         if (saw_line_break or i >= content.len or content[i] == ';' or content[i] == '}') {
-            if (!containsType(return_types.items, "undefined")) try return_types.append("undefined");
+            has_bare_return = true;
             continue;
         }
 
+        // The TypeScript emitter's expression scan: strings and comments do
+        // not count toward nesting, and a comment after the expression ends it.
         const expression_start = i;
-        var expression_depth: i32 = 0;
-        while (i < content.len) : (i += 1) {
+        var paren_depth: i32 = 0;
+        var bracket_depth: i32 = 0;
+        var brace_depth: i32 = 0;
+        while (i < content.len) {
             const c = content[i];
-            if (c == '(' or c == '[' or c == '{') expression_depth += 1 else if (c == ')' or c == ']' or c == '}') {
-                if (expression_depth == 0) break;
-                expression_depth -= 1;
-            } else if (c == ';' and expression_depth == 0) break;
-            if ((c == '\n' or c == '\r') and expression_depth == 0) {
+            if (c == '"' or c == '\'' or c == '`') {
+                i = skipQuotedValue(content, i, c);
+                continue;
+            }
+            if (c == '/' and i + 1 < content.len and content[i + 1] == '/') {
+                if (paren_depth == 0 and bracket_depth == 0 and brace_depth == 0) break;
+                i = ch.lineCommentEnd(content, i + 2);
+                continue;
+            }
+            if (c == '/' and i + 1 < content.len and content[i + 1] == '*') {
+                i = if (ch.indexOf(content, "*/", i + 2)) |end| end + 2 else content.len;
+                continue;
+            }
+            if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') {
+                if (brace_depth == 0 and paren_depth == 0 and bracket_depth == 0) break;
+                brace_depth -= 1;
+            } else if (c == ';' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0) break else if ((c == '\n' or c == '\r') and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0) {
                 var next = i + 1;
                 while (next < content.len and ch.isWhitespace(content[next])) next += 1;
                 if (ch.startsWith(content[next..], "return") and (next + 6 >= content.len or !ch.isIdentChar(content[next + 6]))) break;
             }
+            i += 1;
         }
         const expression = trim(content[expression_start..i]);
-        const inferred = try inferBodyExpressionTypeScoped(alloc, expression, parameters, depth + 1, class_scope, &return_scope);
+        // No comments in a return type: a returned literal's properties are
+        // not defaults, and an inferred type is embedded in other JSDoc
+        // (`@defaultValue`), where a nested `*/` ends the comment early.
+        const inferred = try withoutComments(alloc, try inferBodyExpressionTypeScoped(alloc, expression, parameters, depth + 1, class_scope, &return_scope));
         if (!containsType(return_types.items, inferred)) try return_types.append(inferred);
     }
 
+    if (has_bare_return and !containsType(return_types.items, "undefined")) try return_types.append("undefined");
     if (return_types.items.len == 0) return "void";
     if (containsType(return_types.items, "unknown")) return return_scope.finish("unknown");
     if (return_types.items.len == 1) return return_scope.finish(return_types.items[0]);
     var result = std.array_list.Managed(u8).init(alloc);
     for (return_types.items, 0..) |return_type, index| {
         if (index > 0) try result.appendSlice(" | ");
+        // A callback beside other results needs parentheses: `(() => void) | undefined`.
+        const callable = findArrowOutsideParens(return_type) != null;
+        if (callable) try result.append('(');
         try result.appendSlice(return_type);
+        if (callable) try result.append(')');
     }
     return return_scope.finish(try result.toOwnedSlice());
+}
+
+/// A type without block comments or the blank lines they leave behind.
+fn withoutComments(alloc: std.mem.Allocator, value: []const u8) InferError![]const u8 {
+    if (ch.indexOf(value, "/*", 0) == null) return value;
+    var stripped = std.array_list.Managed(u8).init(alloc);
+    var i: usize = 0;
+    while (i < value.len) {
+        if (value[i] == '/' and i + 1 < value.len and value[i + 1] == '*') {
+            i = if (ch.indexOf(value, "*/", i + 2)) |end| end + 2 else value.len;
+            continue;
+        }
+        try stripped.append(value[i]);
+        i += 1;
+    }
+    // Drop lines left empty (`\n<blank>` before another newline).
+    var out = std.array_list.Managed(u8).init(alloc);
+    var line_start: usize = 0;
+    const text = stripped.items;
+    while (line_start <= text.len) {
+        const nl = ch.indexOfChar(text, '\n', line_start) orelse text.len;
+        const line = text[line_start..nl];
+        const blank = std.mem.trim(u8, line, " \t").len == 0;
+        if (!(blank and line_start > 0 and nl < text.len)) {
+            if (line_start > 0) try out.append('\n');
+            try out.appendSlice(line);
+        }
+        if (nl >= text.len) break;
+        line_start = nl + 1;
+    }
+    return trim(out.items);
 }
 
 fn inferBodyExpressionType(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize) InferError![]const u8 {
@@ -1563,10 +1688,10 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         }
     }
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
-    if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
     // The checks below follow the TypeScript emitter's order.
     if (value.len > 0 and value[0] == '!') return "boolean";
     if (ch.startsWith(value, "fetch(")) return "Promise<Response>";
+    if (try inferBodyCallType(alloc, value, parameters)) |call_type| return call_type;
     // A callback's signature and body belong to that value, not to the
     // enclosing expression's comparison/conditional operators.
     if (isFunctionExpression(value)) return inferNarrowType(alloc, value, false, false, depth + 1);
@@ -1693,7 +1818,7 @@ fn splitTopLevelConditional(value: []const u8) ?struct { when_true: []const u8, 
             continue;
         }
         if (c == '/' and i + 1 < value.len and (value[i + 1] == '/' or value[i + 1] == '*')) {
-            i = if (value[i + 1] == '/') (std.mem.indexOfScalarPos(u8, value, i + 2, '\n') orelse value.len) - 1 else (if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 1 else value.len - 1);
+            i = if (value[i + 1] == '/') ch.lineCommentEnd(value, i + 2) - 1 else (if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 1 else value.len - 1);
             continue;
         }
         if (c == '(' or c == '[' or c == '{') {
@@ -1703,10 +1828,25 @@ fn splitTopLevelConditional(value: []const u8) ?struct { when_true: []const u8, 
         } else if (c == '?' and depth == 0 and !(i + 1 < value.len and value[i + 1] == '?')) {
             question = i;
         } else if (c == ':' and depth == 0) {
-            if (question) |q| return .{ .when_true = value[q + 1 .. i], .when_false = value[i + 1 ..] };
+            if (question) |q| return .{ .when_true = withoutEdgeComments(value[q + 1 .. i]), .when_false = withoutEdgeComments(value[i + 1 ..]) };
         }
     }
     return null;
+}
+
+/// An expression without the comments before its first token and after its last.
+fn withoutEdgeComments(value: []const u8) []const u8 {
+    var start: usize = 0;
+    while (start < value.len) {
+        if (ch.isWhitespace(value[start])) {
+            start += 1;
+        } else if (start + 1 < value.len and value[start] == '/' and value[start + 1] == '/') {
+            start = ch.lineCommentEnd(value, start + 2);
+        } else if (start + 1 < value.len and value[start] == '/' and value[start + 1] == '*') {
+            start = if (ch.indexOf(value, "*/", start + 2)) |close| close + 2 else value.len;
+        } else break;
+    }
+    return trim(@import("extractors.zig").withoutTrailingComments(value[start..]));
 }
 
 /// A complete function value: `function ...`, or an arrow whose header is a
@@ -1959,10 +2099,15 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
         return trimmed;
     }
 
-    // String literals
-    if (isQuotedLiteral(trimmed, '"') or isQuotedLiteral(trimmed, '\'')) {
-        if (!is_const) return "string";
-        return trimmed;
+    // String literals — exactly one literal, or a concatenation of literals
+    // (the joined literal for const, string otherwise); a `+` with any string
+    // literal operand is a string. Other quoted expressions (`'x' as const`,
+    // `'x'.repeat(3)`) fall through to the handling below.
+    if (trimmed[0] == '\'' or trimmed[0] == '"') {
+        if (@import("extractors.zig").classifyStringExpression(alloc, trimmed)) |string_type| {
+            if (!is_const or std.mem.eql(u8, string_type, "string")) return "string";
+            return string_type;
+        }
     }
 
     // Number literals
@@ -2046,7 +2191,9 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     if (ch.startsWith(trimmed, "Symbol(") or std.mem.eql(u8, trimmed, "Symbol.for")) return "symbol";
 
     if (try inferCallType(alloc, trimmed)) |call_type| return call_type;
-    if (try inferAccessType(alloc, trimmed)) |access_type| return access_type;
+    // Element and member reads stay unknown, as in the TypeScript emitter: the
+    // object may be an undeclared global (`$props['metadata']`), and a
+    // declaration cannot query it.
 
     // Conditional expressions become the union of their possible result types.
     if (findTopLevelToken(trimmed, "?", 0)) |question| {
@@ -2203,11 +2350,16 @@ pub fn inferArrayTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u
         _clean_default_result = null;
         if (ch.startsWith(trimmed_el, "...") and trimmed_el.len > 3) {
             const spread_value = trim(trimmed_el[3..]);
-            const spread_type = try inferNarrowTypeWithKeyConstants(alloc, spread_value, false, false, depth + 1, key_constants);
+            const spread_type = try inferNarrowTypeWithKeyConstants(alloc, spread_value, is_const, false, depth + 1, key_constants);
             if (is_const and isEntityName(spread_value)) {
                 try element_types.append(try std.fmt.allocPrint(alloc, "...typeof {s}", .{spread_value}));
-            } else if (is_const and ch.startsWith(spread_type, "readonly [")) {
-                try element_types.append(try std.fmt.allocPrint(alloc, "...{s}", .{spread_type}));
+            } else if (is_const) {
+                // A tuple spread keeps order and variadic length: it is never
+                // one element of the tuple (`readonly [unknown]`).
+                if (ch.startsWith(spread_type, "readonly [") or ch.endsWith(spread_type, "[]"))
+                    try element_types.append(try std.fmt.allocPrint(alloc, "...{s}", .{spread_type}))
+                else
+                    try element_types.append("...unknown[]");
             } else if (try spreadElementType(alloc, spread_type, is_const)) |element| {
                 try element_types.append(element);
             } else if (isIdentifierName(spread_value)) {
@@ -3420,10 +3572,10 @@ test "access and call expressions use type queries" {
     try std.testing.expectEqualStrings("RegExp", try inferNarrowType(alloc, "/[a-z\\/]+/gi", false, false, 0));
     try std.testing.expectEqualStrings("unknown", try inferNarrowType(alloc, "createValue()", false, false, 0));
     try std.testing.expectEqualStrings("ReturnType<typeof Math.max>", try inferNarrowType(alloc, "Math.max(1, 2)", false, false, 0));
-    try std.testing.expectEqualStrings("(typeof values)[0]", try inferNarrowType(alloc, "values[0]", false, false, 0));
-    try std.testing.expectEqualStrings("(typeof values)[typeof index]", try inferNarrowType(alloc, "values[index]", false, false, 0));
-    try std.testing.expectEqualStrings("(typeof user)[\"name\"]", try inferNarrowType(alloc, "user.name", false, false, 0));
-    try std.testing.expectEqualStrings("NonNullable<typeof user>[\"name\"] | undefined", try inferNarrowType(alloc, "user?.name", false, false, 0));
+    // Element and member reads are not queried; a dotted name is the
+    // caller's to query whole (`typeof user.name`).
+    inline for (.{ "values[0]", "values[index]", "user.name", "user?.name", "$props['metadata']" }) |expression|
+        try std.testing.expectEqualStrings("unknown", try inferNarrowType(alloc, expression, false, false, 0));
 }
 
 test "parameter and relational expressions infer through arrows" {
@@ -3507,7 +3659,9 @@ test "arithmetic and update expressions emit valid result types" {
     const alloc = arena.allocator();
     inline for (.{ "1 + 2", "1 - 2", "1 * 2", "1 / 2", "1 % 2" }) |expression|
         try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, expression, true, false, 0));
-    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'left' + 'right'", true, false, 0));
+    try std.testing.expectEqualStrings("'leftright'", try inferNarrowType(alloc, "'left' + 'right'", true, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'left' + 'right'", false, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'left' + right", true, false, 0));
     try std.testing.expectEqualStrings("bigint", try inferNarrowType(alloc, "1n + 2n", true, false, 0));
     try std.testing.expectEqualStrings("typeof counter", try inferNarrowType(alloc, "counter++", false, false, 0));
     try std.testing.expectEqualStrings("typeof state.count", try inferNarrowType(alloc, "--state.count", false, false, 0));
@@ -3579,5 +3733,58 @@ test "callable returns exclude nested implementation signatures and infer built-
     try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(allocator, "{ const callback = () => { return 'text' }; return 7 }", "()", 0));
     try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(allocator, "{ class Hidden { method() { return 'text' } }; return 7 }", "()", 0));
     try std.testing.expectEqualStrings("Promise<number>", try inferFunctionBodyReturnType(allocator, "{ return Promise.resolve(7) }", "()", 0));
-    try std.testing.expectEqualStrings("ReturnType<{ resolve: (value: number) => string }[\"resolve\"]>", try inferFunctionBodyReturnType(allocator, "{ return Promise.resolve(7) }", "(Promise: { resolve: (value: number) => string })", 0));
+    try std.testing.expectEqualStrings("ReturnType<({ resolve: (value: number) => string })[\"resolve\"]>", try inferFunctionBodyReturnType(allocator, "{ return Promise.resolve(7) }", "(Promise: { resolve: (value: number) => string })", 0));
+}
+
+test "return types drop comments and parenthesize callbacks beside other results" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("{\n  answer: number\n}", try withoutComments(alloc, "{\n  /** @defaultValue 42 */\n  answer: number\n}"));
+    try std.testing.expectEqualStrings("(() => boolean) | undefined", try inferFunctionBodyReturnType(alloc, "{ if (!flag) return\n return () => true }", "(flag: boolean)", 0));
+    try std.testing.expectEqualStrings("number", try inferFunctionBodyReturnType(alloc, "{ return 1 // trailing\n}", "()", 0));
+}
+
+test "object values drop line comments but keep their line breaks" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("{\n  id?: string\n  column?: string\n}", try withoutLineComments(alloc, "{\n  id?: string // payee\n  column?: string\n}"));
+    try std.testing.expectEqualStrings("'a // b'", try withoutLineComments(alloc, "'a // b'"));
+}
+
+test "object methods keep async and generator return types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("(amount: number) => Promise<number>", try convertMethodToFunctionType(alloc, "total", "async (amount: number) { return amount * 2 }"));
+    try std.testing.expectEqualStrings("() => Generator<unknown, void, unknown>", try convertMethodToFunctionType(alloc, "ids", "*() { yield 1 }"));
+    try std.testing.expectEqualStrings("() => Promise<void>", try convertMethodToFunctionType(alloc, "run", "async () { await go() }"));
+}
+
+test "string concatenations and unary operators" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("'ab'", try inferNarrowType(alloc, "'a' + \"b\"", true, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "'a' + String(1)", true, false, 0));
+    try std.testing.expectEqualStrings("string", try inferNarrowType(alloc, "typeof value", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "typeof value === 'string'", false, false, 0));
+}
+
+test "conditional splitting ignores operators inside literals and comments" {
+    const split = splitTopLevelConditional("ok ? 'a:b' /* x ? y : z */ : 'c?d'").?;
+    try std.testing.expectEqualStrings("'a:b'", split.when_true);
+    try std.testing.expectEqualStrings("'c?d'", split.when_false);
+    const commented = splitTopLevelConditional("ok ? /* yes */ 1 : // no\n 2").?;
+    try std.testing.expectEqualStrings("1", commented.when_true);
+    try std.testing.expectEqualStrings("2", commented.when_false);
+}
+
+test "const tuple spreads keep variadic length" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("readonly [...unknown[]]", try inferNarrowType(alloc, "[...(flag ? a : b)] as const", false, false, 0));
+    try std.testing.expectEqualStrings("readonly [...readonly [1, 2], 3]", try inferNarrowType(alloc, "[...[1, 2], 3] as const", false, false, 0));
 }

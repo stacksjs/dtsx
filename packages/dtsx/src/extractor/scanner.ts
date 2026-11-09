@@ -254,6 +254,38 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
   }
 
+  /** An expression without the comments that follow its last token. */
+  function withoutTrailingComments(text: string): string {
+    if (text.indexOf('//') === -1 && text.indexOf('/*') === -1) return text
+    let codeEnd = 0
+    let i = 0
+    while (i < text.length) {
+      const c = text.charCodeAt(i)
+      if (c === CH_SQUOTE || c === CH_DQUOTE || c === CH_BACKTICK) {
+        i = findQuotedValueEnd(text, i, c)
+        codeEnd = i
+        continue
+      }
+      if (c === CH_BACKSLASH) {
+        i += 2
+        codeEnd = Math.min(i, text.length)
+        continue
+      }
+      if (c === CH_SLASH && text.charCodeAt(i + 1) === CH_SLASH) {
+        while (i < text.length && text.charCodeAt(i) !== CH_LF && text.charCodeAt(i) !== CH_CR) i++
+        continue
+      }
+      if (c === CH_SLASH && text.charCodeAt(i + 1) === CH_STAR) {
+        const close = text.indexOf('*/', i + 2)
+        i = close === -1 ? text.length : close + 2
+        continue
+      }
+      i++
+      if (c > 32) codeEnd = i
+    }
+    return codeEnd < text.length ? text.slice(0, codeEnd).trimEnd() : text
+  }
+
   /** Strip trailing comments from a line, preserving leading whitespace */
   function stripTrailingComment(line: string): string {
     const lineLen = line.length
@@ -2344,7 +2376,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             }
             break
           }
-          initializerText = sliceTrimmed(initStart, pos)
+          // A comment after the value (`= 1 // note`) is not part of it.
+          initializerText = withoutTrailingComments(sliceTrimmed(initStart, pos))
           if (initializerText.endsWith(' as const') || initializerText === 'const') {
             isAsConst = true
             if (!typeAnnotation) {

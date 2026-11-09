@@ -547,6 +547,15 @@ fn isSingleStringLiteral(value: []const u8) bool {
     return value.len >= 2 and (value[0] == '\'' or value[0] == '"') and quotedValueEnd(value, 0, value[0]) == value.len;
 }
 
+/// Classify an expression that starts with a string literal: exactly one
+/// literal, a concatenation of literals (evaluated to the joined literal), or
+/// a `+` with at least one string operand (`string`). Null otherwise.
+pub fn classifyStringExpression(alloc: std.mem.Allocator, v: []const u8) ?[]const u8 {
+    if (isSingleStringLiteral(v)) return v;
+    const classified = literalExpressionType(alloc, v) orelse return null;
+    return if (std.mem.eql(u8, classified, "number")) null else classified;
+}
+
 fn literalExpressionType(alloc: std.mem.Allocator, v: []const u8) ?[]const u8 {
     if (v.len == 0) return null;
     if (isSingleStringLiteral(v)) return v;
@@ -633,6 +642,45 @@ fn literalExpressionType(alloc: std.mem.Allocator, v: []const u8) ?[]const u8 {
         }
     }
     return if (has_digit and has_operator) "number" else null;
+}
+
+/// An expression without the comments that follow its last token.
+pub fn withoutTrailingComments(text: []const u8) []const u8 {
+    if (ch.indexOf(text, "//", 0) == null and ch.indexOf(text, "/*", 0) == null) return text;
+    var code_end: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) {
+        const c = text[i];
+        if (c == '\'' or c == '"' or c == '`') {
+            i = quotedValueEnd(text, i, c);
+            code_end = i;
+            continue;
+        }
+        if (c == '\\') {
+            i = @min(i + 2, text.len);
+            code_end = i;
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            i = ch.lineCommentEnd(text, i + 2);
+            continue;
+        }
+        if (c == '/' and i + 1 < text.len and text[i + 1] == '*') {
+            i = if (ch.indexOf(text, "*/", i + 2)) |close| close + 2 else text.len;
+            continue;
+        }
+        i += 1;
+        if (c > 32) code_end = i;
+    }
+    return if (code_end < text.len) std.mem.trimEnd(u8, text[0..code_end], " \t\r\n") else text;
+}
+
+test "withoutTrailingComments keeps literals and drops trailing comments" {
+    try std.testing.expectEqualStrings("1", withoutTrailingComments("1 // note"));
+    try std.testing.expectEqualStrings("'http://example.com'", withoutTrailingComments("'http://example.com' // site"));
+    try std.testing.expectEqualStrings("[1, 2]", withoutTrailingComments("[1, 2] /* x */ // y"));
+    try std.testing.expectEqualStrings("a /* inner */ + b", withoutTrailingComments("a /* inner */ + b"));
+    try std.testing.expectEqualStrings("1", withoutTrailingComments("1 // note\r"));
 }
 
 /// Extract type from `as Type` assertion in initializer
@@ -1550,7 +1598,8 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                     }
                     s.pos += 1;
                 }
-                initializer_text = if (skip_isolated_initializer) "" else s.sliceTrimmed(init_start, s.pos);
+                // A comment after the value (`= 1 // note`) is not part of it.
+                initializer_text = if (skip_isolated_initializer) "" else withoutTrailingComments(s.sliceTrimmed(init_start, s.pos));
                 if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
                     is_as_const = true;
                     if (type_annotation.len == 0) {
@@ -1564,7 +1613,8 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                         }
                     }
                 } else if (type_annotation.len == 0) {
-                    const as_type = extractAssertion(initializer_text);
+                    // `x as const satisfies T` is a `T`, as in the TypeScript emitter.
+                    const as_type = (if (ch.contains(initializer_text, "satisfies")) type_inf.extractSatisfiesType(initializer_text) else null) orelse extractAssertion(initializer_text);
                     if (as_type) |t| type_annotation = t;
                 }
             }
@@ -2188,6 +2238,8 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
             if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
                 const body_start = s.pos;
                 _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
+                // Isolated mode leaves an unannotated getter unknown, as the
+                // TypeScript emitter does; only semantic mode reads its body.
                 if (!s.isolated_declarations and ret_type_raw.len == 0) {
                     ret_type = (try @import("semantic_context.zig").deferReturn(s, s.source[body_start..s.pos], "()", "", false)) orelse type_inf.inferFunctionBodyReturnTypeScoped(s.allocator, s.source[body_start..s.pos], "()", 0, s) catch |err| {
                         s.pending_error = err;
@@ -2363,8 +2415,10 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
         if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) {
             const body_start = s.pos;
             _ = s.findMatchingClose(ch.CH_LBRACE, ch.CH_RBRACE);
-            if (!s.isolated_declarations and !has_explicit_return_type and !is_generator) {
-                if (try @import("semantic_context.zig").deferReturn(s, s.source[body_start..s.pos], raw_params, generics, is_async)) |marker| {
+            // Isolated mode reads an unannotated method's body too, as it does a function's.
+            if (!has_explicit_return_type and !is_generator) {
+                const deferred = if (s.isolated_declarations) null else try @import("semantic_context.zig").deferReturn(s, s.source[body_start..s.pos], raw_params, generics, is_async);
+                if (deferred) |marker| {
                     ret_type = marker;
                 } else {
                     const inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics);
