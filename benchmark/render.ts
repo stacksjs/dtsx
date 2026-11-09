@@ -150,7 +150,7 @@ ${project}
 
 ${h2} JavaScript SDK
 
-_The \`@stacksjs/dtsx\` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK._
+_The \`@stacksjs/dtsx\` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK. It ships the native engine for each platform and runs it in-process through Bun FFI, falling back to its TypeScript engine where no native library applies._
 
 ${h3} JS SDK: in-process, no cache
 

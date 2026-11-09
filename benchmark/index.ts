@@ -32,6 +32,7 @@ import { isolatedDeclarationSync } from 'oxc-transform'
 import { clearSourceFileCache } from '../packages/dtsx/src/extractor'
 import { clearDeclarationCache } from '../packages/dtsx/src/extractor/extract'
 import { clearResultCache, processSource } from '../packages/dtsx/src/generator'
+import { nativeEngineAvailable } from '../packages/dtsx/src/native-engine'
 import { clearProcessorCaches } from '../packages/dtsx/src/processor'
 import { processSource as zigProcessSource } from '../packages/zig-dtsx/src/index'
 import { machineInfo, oxcCliEnv, oxcExe, tscExe, zigDtsxExe } from './tools'
@@ -99,6 +100,11 @@ const inputs: Input[] = [
 // ---------------------------------------------------------------------------
 // In-process helpers
 // ---------------------------------------------------------------------------
+
+// The SDK emits through its in-process native engine; timing its TypeScript
+// fallback instead would misreport what users of a supported platform run.
+if (!nativeEngineAvailable())
+  throw new Error('The @stacksjs/dtsx native engine did not load; build packages/zig-dtsx (zig build lib) first')
 
 function dtsxNoCache(source: string, filename: string): string {
   clearResultCache()
