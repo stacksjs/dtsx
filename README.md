@@ -1,6 +1,6 @@
 <p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
 
-[![npm version](https://img.shields.io/npm/v/@stacksjs/dtsx?style=flat-square)](https://npmjs.com/package/@stacksjs/dtsx)
+[![npm version](https://img.shields.io/npm/v/@dtsx/dtsx?style=flat-square)](https://npmjs.com/package/@dtsx/dtsx)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/stacksjs/dtsx/ci.yml?style=flat-square&branch=main)](https://github.com/stacksjs/dtsx/actions?query=workflow%3Aci)
 [![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 <!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
@@ -29,8 +29,11 @@
 ## Install
 
 ```bash
-bun install -d @stacksjs/dtsx
+bun install -d @dtsx/dtsx
 ```
+
+> [!NOTE]
+> dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Install `@dtsx/dtsx` instead and change imports from `@stacksjs/dtsx` to `@dtsx/dtsx`; the API, CLI and config are unchanged. See [Migrating from @stacksjs/dtsx](https://github.com/stacksjs/dtsx/blob/main/docs/MIGRATION.md#from-stacksjsdtsx).
 
 > _@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
@@ -48,8 +51,8 @@ There are two ways to use dtsx: _as a library or as a CLI._ Both work out of the
 ### Library
 
 ```ts
-import type { DtsGenerationOptions } from '@stacksjs/dtsx'
-import { generate, processSource } from '@stacksjs/dtsx'
+import type { DtsGenerationOptions } from '@dtsx/dtsx'
+import { generate, processSource } from '@dtsx/dtsx'
 
 const options: DtsGenerationOptions = {
   cwd: './', // default: process.cwd()
@@ -474,7 +477,7 @@ _A whole directory of generated modules. dtsx and tsc use multiple threads; the 
 
 ### JavaScript SDK
 
-_The `@stacksjs/dtsx` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK. It ships the native engine for each platform and runs it in-process through Bun FFI, falling back to its TypeScript engine where no native library applies._
+_The `@dtsx/dtsx` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK. It ships the native engine for each platform and runs it in-process through Bun FFI, falling back to its TypeScript engine where no native library applies._
 
 #### JS SDK: in-process, no cache
 

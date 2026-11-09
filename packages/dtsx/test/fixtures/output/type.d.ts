@@ -1,4 +1,4 @@
-import type { DtsGenerationOption } from '@stacksjs/dtsx';
+import type { DtsGenerationOption } from '@dtsx/dtsx';
 export type { DtsGenerationOption };
 export type AuthStatus = 'authenticated' | 'unauthenticated';
 // Intersection and Union Types

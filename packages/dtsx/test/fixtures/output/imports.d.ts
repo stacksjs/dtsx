@@ -1,5 +1,5 @@
 import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, type ParsedPath, relative, resolve, sep, toNamespacedPath } from 'node:path';
-import { generate } from '@stacksjs/dtsx';
+import { generate } from '@dtsx/dtsx';
 import { something as dts } from './generate';
 import forge, { pki, tls } from 'node-forge';
 /**

@@ -2,7 +2,7 @@ import os from 'node:os'
 import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, type ParsedPath, relative, resolve, sep, toNamespacedPath } from 'node:path'
 import process from 'node:process'
 import { someUnusedImport, something as dts } from './generate';
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 import forge, { pki, tls } from 'node-forge'
 import { runCommandSync } from '@stacksjs/cli'
 import { log } from '@stacksjs/logging'

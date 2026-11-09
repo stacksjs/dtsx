@@ -1,4 +1,4 @@
-import type { NativeGenerationResult } from '@stacksjs/dtsx/native-generation'
+import type { NativeGenerationResult } from '@dtsx/dtsx/native-generation'
 declare const result: NativeGenerationResult
 const invalid: string = result.filesGenerated
 void invalid

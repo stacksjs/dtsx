@@ -1,6 +1,6 @@
 <p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
 
-[![npm version](https://img.shields.io/npm/v/@stacksjs/dtsx?style=flat-square)](https://npmjs.com/package/@stacksjs/dtsx)
+[![npm version](https://img.shields.io/npm/v/@dtsx/dtsx?style=flat-square)](https://npmjs.com/package/@dtsx/dtsx)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/stacksjs/dtsx/ci.yml?style=flat-square&branch=main)](https://github.com/stacksjs/dtsx/actions?query=workflow%3Aci)
 [![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 <!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
@@ -25,8 +25,11 @@
 ## Install
 
 ```bash
-bun install -d @stacksjs/dtsx
+bun install -d @dtsx/dtsx
 ```
+
+> [!NOTE]
+> dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Install `@dtsx/dtsx` instead and change imports from `@stacksjs/dtsx` to `@dtsx/dtsx`; the API, CLI and config are unchanged. See [Migrating from @stacksjs/dtsx](https://github.com/stacksjs/dtsx/blob/main/docs/MIGRATION.md#from-stacksjsdtsx).
 
 > _@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
@@ -58,8 +61,8 @@ Given the npm package is installed, you can use the `generate` function to gener
 ### Usage
 
 ```ts
-import type { DtsGenerationOptions } from '@stacksjs/dtsx'
-import { generate } from '@stacksjs/dtsx'
+import type { DtsGenerationOptions } from '@dtsx/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 const options: DtsGenerationOptions = {
   cwd: './', // default: process.cwd()
@@ -87,7 +90,7 @@ Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js
 
 ```ts
 // dts.config.ts (or dts.config.js)
-import { defineConfig } from '@stacksjs/dtsx'
+import { defineConfig } from '@dtsx/dtsx'
 
 export default defineConfig({
   cwd: './',
@@ -310,7 +313,7 @@ dtsx provides plugins for popular build tools:
 
 ```ts
 // vite.config.ts
-import { dts } from '@stacksjs/dtsx/vite'
+import { dts } from '@dtsx/dtsx/vite'
 
 export default {
   plugins: [dts()],
@@ -321,7 +324,7 @@ export default {
 
 ```ts
 // build.ts
-import { dtsx } from '@stacksjs/dtsx/esbuild'
+import { dtsx } from '@dtsx/dtsx/esbuild'
 
 await esbuild.build({
   plugins: [dtsx()],
@@ -332,7 +335,7 @@ await esbuild.build({
 
 ```ts
 // webpack.config.js
-const { DtsxWebpackPlugin } = require('@stacksjs/dtsx/webpack')
+const { DtsxWebpackPlugin } = require('@dtsx/dtsx/webpack')
 
 module.exports = {
   plugins: [new DtsxWebpackPlugin()],
@@ -343,7 +346,7 @@ module.exports = {
 
 ```ts
 // tsdown.config.ts
-import { dts } from '@stacksjs/dtsx/tsdown'
+import { dts } from '@dtsx/dtsx/tsdown'
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
@@ -360,7 +363,7 @@ Run `bun run benchmark:tsdown --output tsdown-benchmark.json` from this reposito
 
 ```ts
 // tsup.config.ts
-import { dtsxPlugin } from '@stacksjs/dtsx/tsup'
+import { dtsxPlugin } from '@dtsx/dtsx/tsup'
 
 export default {
   plugins: [dtsxPlugin()],

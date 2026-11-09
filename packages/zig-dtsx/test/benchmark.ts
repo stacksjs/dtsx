@@ -4,7 +4,7 @@
  * Three runners:
  *   1. Zig CLI  — spawns zig-out/bin/zig-dtsx, pipes via stdin
  *   2. Zig FFI  — calls the shared library in-process via Bun FFI
- *   3. TS       — calls processSource() from @stacksjs/dtsx in-process
+ *   3. TS       — calls processSource() from @dtsx/dtsx in-process
  *
  * Two benchmark modes:
  *   A. Single-file — each fixture processed individually
@@ -53,17 +53,17 @@ async function loadRunners(): Promise<void> {
 
   // TS
   try {
-    const mod = await import('@stacksjs/dtsx')
+    const mod = await import('@dtsx/dtsx')
     const fn = (mod as any).processSource ?? (mod as any).default?.processSource
     if (fn) {
       tsProcess = (source: string) => fn(source, 'bench.ts', true)
     }
     else {
-      console.log('  TS: processSource not found in @stacksjs/dtsx')
+      console.log('  TS: processSource not found in @dtsx/dtsx')
     }
   }
   catch {
-    console.log('  TS: could not import @stacksjs/dtsx')
+    console.log('  TS: could not import @dtsx/dtsx')
   }
 }
 

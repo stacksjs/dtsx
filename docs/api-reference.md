@@ -19,7 +19,7 @@ function generate(options?: Partial<DtsGenerationConfig>): Promise<void>
 #### Example
 
 ```typescript
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 await generate({
   root: './src',
@@ -46,7 +46,7 @@ function extractDeclarations(sourceCode: string, filePath: string, keepComments?
 #### Example
 
 ```typescript
-import { extractDeclarations } from '@stacksjs/dtsx'
+import { extractDeclarations } from '@dtsx/dtsx'
 
 const sourceCode = 'export interface User { name: string }'
 const declarations = extractDeclarations(sourceCode, './types.ts', true)

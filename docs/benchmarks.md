@@ -53,7 +53,7 @@ _A whole directory of generated modules. dtsx and tsc use multiple threads; the 
 
 ## JavaScript SDK
 
-_The `@stacksjs/dtsx` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK. It ships the native engine for each platform and runs it in-process through Bun FFI, falling back to its TypeScript engine where no native library applies._
+_The `@dtsx/dtsx` SDK, which powers the bundler and build-tool plugins, called in-process like any other JavaScript SDK. It ships the native engine for each platform and runs it in-process through Bun FFI, falling back to its TypeScript engine where no native library applies._
 
 ### JS SDK: in-process, no cache
 

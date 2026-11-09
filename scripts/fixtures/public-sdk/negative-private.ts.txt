@@ -1,2 +1,2 @@
-import { __brand } from '@stacksjs/dtsx/branded-types'
+import { __brand } from '@dtsx/dtsx/branded-types'
 void __brand

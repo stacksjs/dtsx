@@ -1,9 +1,9 @@
-import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { DtsGenerationOption, GenerationStats } from '@dtsx/dtsx'
 import type { BunPlugin } from 'bun'
 import process from 'node:process'
 import { dirname, relative, resolve, sep } from 'node:path'
-import { clearBuildCache } from '@stacksjs/dtsx/cache'
-import { generate } from '@stacksjs/dtsx/generator'
+import { clearBuildCache } from '@dtsx/dtsx/cache'
+import { generate } from '@dtsx/dtsx/generator'
 
 /**
  * Error codes for categorizing plugin errors

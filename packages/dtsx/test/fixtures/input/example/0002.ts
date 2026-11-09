@@ -1,7 +1,7 @@
-import type { DtsGenerationOption } from '@stacksjs/dtsx'
+import type { DtsGenerationOption } from '@dtsx/dtsx'
 import type { BunPlugin } from 'bun'
 import process from 'node:process'
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 export function dts(options?: DtsGenerationOption): BunPlugin {
   return {

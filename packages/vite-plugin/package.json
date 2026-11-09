@@ -46,7 +46,7 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "@stacksjs/dtsx": "workspace:*"
+    "@dtsx/dtsx": "workspace:*"
   },
   "devDependencies": {
     "vite": "^8.3.6"

@@ -9,46 +9,50 @@ Choose your package manager of choice:
 ::: code-group
 
 ```sh [npm]
-npm install --save-dev @stacksjs/dtsx
-# npm i -d @stacksjs/dtsx
+npm install --save-dev @dtsx/dtsx
+# npm i -d @dtsx/dtsx
 
 # or, install globally via
-npm i -g @stacksjs/dtsx
+npm i -g @dtsx/dtsx
 ```
 
 ```sh [bun]
-bun install --dev @stacksjs/dtsx
-# bun add --dev @stacksjs/dtsx
-# bun i -d @stacksjs/dtsx
+bun install --dev @dtsx/dtsx
+# bun add --dev @dtsx/dtsx
+# bun i -d @dtsx/dtsx
 
 # or, install globally via
-bun add --global @stacksjs/dtsx
+bun add --global @dtsx/dtsx
 ```
 
 ```sh [pnpm]
-pnpm add --save-dev @stacksjs/dtsx
-# pnpm i -d @stacksjs/dtsx
+pnpm add --save-dev @dtsx/dtsx
+# pnpm i -d @dtsx/dtsx
 
 # or, install globally via
-pnpm add --global @stacksjs/dtsx
+pnpm add --global @dtsx/dtsx
 ```
 
 ```sh [yarn]
-yarn add --dev @stacksjs/dtsx
-# yarn i -d @stacksjs/dtsx
+yarn add --dev @dtsx/dtsx
+# yarn i -d @dtsx/dtsx
 
 # or, install globally via
-yarn global add @stacksjs/dtsx
+yarn global add @dtsx/dtsx
 ```
 
 ```sh [brew]
-brew install @stacksjs/dtsx # coming soon
+brew install dtsx # coming soon
 ```
 
 ```sh [pkgx]
-pkgx @stacksjs/dtsx # coming soon
+pkgx dtsx # coming soon
 ```
 
+:::
+
+::: tip Coming from `@stacksjs/dtsx`?
+dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Swap the package for `@dtsx/dtsx` and update your imports — see [Migrating from @stacksjs/dtsx](./MIGRATION.md#from-stacksjsdtsx).
 :::
 
 Read more about how to use it in the Usage section of the documentation.

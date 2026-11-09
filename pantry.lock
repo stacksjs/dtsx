@@ -3,7 +3,7 @@
   "lockfileVersion": 2,
   "workspaces": {
     "": {
-      "name": "@stacksjs/dtsx",
+      "name": "@dtsx/dtsx",
       "devDependencies": {
         "@stacksjs/bumpx": "^0.2.32",
         "@stacksjs/bunpress": "^0.2.31",
@@ -30,11 +30,11 @@
       "name": "bun-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/dtsx": {
-      "name": "@stacksjs/dtsx",
+      "name": "@dtsx/dtsx",
       "version": "0.11.36",
       "devDependencies": {
         "@stacksjs/clapp": "^0.2.16",
@@ -46,21 +46,21 @@
       "name": "esbuild-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/tsup-plugin": {
       "name": "tsup-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/vite-plugin": {
       "name": "@dtsx/vite-plugin",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       },
       "devDependencies": {
         "vite": "^8.3.6"
@@ -70,14 +70,14 @@
       "name": "webpack-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/zig-dtsx": {
       "name": "zig-dtsx",
       "version": "0.11.36",
       "devDependencies": {
-        "@stacksjs/dtsx": "workspace:*"
+        "@dtsx/dtsx": "workspace:*"
       }
     }
   },

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import process from 'node:process'
-import type { DtsGenerationConfig } from '@stacksjs/dtsx'
+import type { DtsGenerationConfig } from '@dtsx/dtsx'
 
 /**
  * Example of const declaration

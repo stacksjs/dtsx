@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@stacksjs/dtsx",
+      "name": "@dtsx/dtsx",
       "devDependencies": {
         "@stacksjs/bumpx": "^0.2.32",
         "@stacksjs/bunpress": "^0.2.31",
@@ -26,11 +26,11 @@
       "name": "bun-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
     },
     "packages/dtsx": {
-      "name": "@stacksjs/dtsx",
+      "name": "@dtsx/dtsx",
       "version": "0.11.36",
       "bin": {
         "dtsx": "./dist/bin/cli.js",
@@ -51,7 +51,7 @@
       "name": "esbuild-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
       "peerDependencies": {
         "esbuild": ">=0.28.2",
@@ -61,7 +61,7 @@
       "name": "tsup-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
       "peerDependencies": {
         "@swc/core": "^1.16.22",
@@ -72,7 +72,7 @@
       "name": "@dtsx/vite-plugin",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
       "devDependencies": {
         "vite": "^8.3.6",
@@ -85,7 +85,7 @@
       "name": "webpack-plugin-dtsx",
       "version": "0.11.36",
       "dependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
       "peerDependencies": {
         "webpack": "^5.112.2",
@@ -95,7 +95,7 @@
       "name": "zig-dtsx",
       "version": "0.11.36",
       "devDependencies": {
-        "@stacksjs/dtsx": "workspace:*",
+        "@dtsx/dtsx": "workspace:*",
       },
     },
   },
@@ -353,7 +353,7 @@
 
     "@stacksjs/desktop": ["@stacksjs/desktop@0.2.818", "", { "dependencies": { "craft-native": ">=0.0.442" } }, "sha512-ih6gRCSL1T17CBsa8nEt0wLUJfLkFA9xsjEA0WTRB/X52VGmg+ynpO9eGJmBBPIrAkYOlsbw+bDWXyezytXKWQ=="],
 
-    "@stacksjs/dtsx": ["@stacksjs/dtsx@workspace:packages/dtsx"],
+    "@dtsx/dtsx": ["@dtsx/dtsx@workspace:packages/dtsx"],
 
     "@stacksjs/env": ["@stacksjs/env@0.75.495", "", { "dependencies": { "@stacksjs/path": "0.75.495", "@stacksjs/ts-validation": "^0.5.7" } }, "sha512-j7//ymb7SEK1ZY0ZykHjYuyDnd3AYgefOveW85DfXzBFQs4Jv6UhHELimD3A0RUBw8HMTFFiXAh2J1ObjLIbtw=="],
 

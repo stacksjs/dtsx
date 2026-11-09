@@ -6,7 +6,7 @@ import { build } from 'vite'
 const pluginEntry = join(import.meta.dir, '..', 'src', 'index.ts')
 const projects: string[] = []
 
-/** A throwaway Vite project. It sits in this package so `@stacksjs/dtsx` resolves. */
+/** A throwaway Vite project. It sits in this package so `@dtsx/dtsx` resolves. */
 function project(files: Record<string, string>): string {
   const dir = mkdtempSync(join(import.meta.dir, '.vite-project-'))
   projects.push(dir)

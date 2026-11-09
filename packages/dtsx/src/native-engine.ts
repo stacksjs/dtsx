@@ -1,7 +1,7 @@
 /**
  * The native declaration engine, loaded in-process through Bun FFI.
  *
- * `@stacksjs/dtsx` ships the native library for each platform under
+ * `@dtsx/dtsx` ships the native library for each platform under
  * `native/<platform>/`. When it loads, declaration emission runs natively;
  * otherwise (unsupported platform, non-Bun runtime, `DTSX_ENGINE=typescript`)
  * callers use the TypeScript engine. Any native failure also returns `null`,

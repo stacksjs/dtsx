@@ -5,7 +5,7 @@ import { processSource, ZIG_AVAILABLE } from '../src/index'
 const describeIf = ZIG_AVAILABLE ? describe : describe.skip
 
 /**
- * The native engine is held to the TypeScript engine: `@stacksjs/dtsx` emits
+ * The native engine is held to the TypeScript engine: `@dtsx/dtsx` emits
  * through native when it loads and falls back to TypeScript otherwise, so both
  * must produce the same declarations. Each case pins the shared output.
  *

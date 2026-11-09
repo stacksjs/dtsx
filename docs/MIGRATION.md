@@ -4,6 +4,7 @@ This guide helps you migrate from other TypeScript declaration generation tools 
 
 ## Table of Contents
 
+- [From @stacksjs/dtsx](#from-stacksjsdtsx)
 - [From tsc --declaration](#from-tsc---declaration)
 - [From dts-bundle-generator](#from-dts-bundle-generator)
 - [From api-extractor](#from-api-extractor)
@@ -11,6 +12,30 @@ This guide helps you migrate from other TypeScript declaration generation tools 
 - [From tsup (built-in dts)](#from-tsup-built-in-dts)
 - [Common Migration Tasks](#common-migration-tasks)
 - [Feature Comparison](#feature-comparison)
+
+## From @stacksjs/dtsx
+
+dtsx was published as `@stacksjs/dtsx` up to v0.11.36. From v0.11.37 it is published as `@dtsx/dtsx`, alongside the Vite plugin `@dtsx/vite-plugin`. Only the package name changed: the API, the `dtsx` CLI, the config file and every subpath export (`/vite`, `/esbuild`, `/tsup`, `/tsdown`, `/webpack`, `/plugins`, `/checker`) are the same.
+
+1. Swap the dependency:
+
+   ```bash
+   bun remove @stacksjs/dtsx
+   bun add -d @dtsx/dtsx
+   ```
+
+2. Update imports:
+
+   ```diff
+   - import { defineConfig, generate } from '@stacksjs/dtsx'
+   + import { defineConfig, generate } from '@dtsx/dtsx'
+   - import { dts } from '@stacksjs/dtsx/tsdown'
+   + import { dts } from '@dtsx/dtsx/tsdown'
+   ```
+
+   A project-wide search and replace of `@stacksjs/dtsx` with `@dtsx/dtsx` covers it.
+
+The bundler plugins (`bun-plugin-dtsx`, `esbuild-plugin-dtsx`, `tsup-plugin-dtsx`, `webpack-plugin-dtsx`, `@dtsx/vite-plugin`) depend on `@dtsx/dtsx` from v0.11.37; update them to the same version.
 
 ## From tsc --declaration
 
@@ -40,7 +65,7 @@ This guide helps you migrate from other TypeScript declaration generation tools 
 
 ```bash
 # Install
-bun add @stacksjs/dtsx -d
+bun add @dtsx/dtsx -d
 ```
 
 ```json
@@ -54,7 +79,7 @@ bun add @stacksjs/dtsx -d
 
 ```typescript
 // dtsx.config.ts
-import { defineConfig } from '@stacksjs/dtsx'
+import { defineConfig } from '@dtsx/dtsx'
 
 export default defineConfig({
   entrypoints: ['src/index.ts'],
@@ -75,7 +100,7 @@ export default defineConfig({
 
 ### Migration Steps
 
-1. Install dtsx: `bun add @stacksjs/dtsx -d`
+1. Install dtsx: `bun add @dtsx/dtsx -d`
 2. Create `dtsx.config.ts`
 3. Update build script in `package.json`
 4. Remove `declaration` options from tsconfig (optional)
@@ -98,7 +123,7 @@ export default defineConfig({
 
 ```typescript
 // dtsx.config.ts
-import { defineConfig } from '@stacksjs/dtsx'
+import { defineConfig } from '@dtsx/dtsx'
 
 export default defineConfig({
   entrypoints: ['src/index.ts'],
@@ -154,7 +179,7 @@ export default defineConfig({
 
 ```typescript
 // dtsx.config.ts
-import { defineConfig } from '@stacksjs/dtsx'
+import { defineConfig } from '@dtsx/dtsx'
 
 export default defineConfig({
   entrypoints: ['src/index.ts'],
@@ -192,7 +217,7 @@ export default defineConfig({
 ### Preserving @internal Behavior
 
 ```typescript
-import { defineConfig, stripInternalPlugin } from '@stacksjs/dtsx'
+import { defineConfig, stripInternalPlugin } from '@dtsx/dtsx'
 
 export default defineConfig({
   plugins: [

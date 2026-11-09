@@ -91,7 +91,7 @@ jobs:
             tar -czf "../dtsx/bin/zig-dtsx-lib-${plat}.tar.gz" -C "zig-out/${lib_dir}" "${lib_file}"
             mkdir -p "prebuilt/${plat}"
             cp "zig-out/${lib_dir}/${lib_file}" "prebuilt/${plat}/"
-            # @stacksjs/dtsx ships the native engine for every platform; the SDK
+            # @dtsx/dtsx ships the native engine for every platform; the SDK
             # loads native/<platform>/ in-process and falls back to its
             # TypeScript engine where none applies.
             mkdir -p "../dtsx/native/${plat}"

@@ -1,4 +1,4 @@
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 import { build } from 'esbuild'
 
 console.log('Building...')
@@ -9,7 +9,7 @@ await build({
   bundle: true,
   format: 'esm',
   platform: 'node',
-  external: ['@stacksjs/dtsx', 'esbuild'],
+  external: ['@dtsx/dtsx', 'esbuild'],
   target: 'node18',
 })
 

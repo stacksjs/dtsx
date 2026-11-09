@@ -516,15 +516,15 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   else results.push({ name: `${name}: negatives blocked by failed positive`, ok: false })
 
   const runtimeEntries = entries.filter(entry => !entry.typeOnly).map(entry => entry.specifier)
-  let runtime = `import assert from 'node:assert/strict'\nfor (const entry of ${JSON.stringify(runtimeEntries)}) { await import(entry) }\n${primary.directory === 'dtsx' ? "const { processSource } = await import('@stacksjs/dtsx'); assert.equal(typeof processSource('export const marker: number = 1', 'sdk.ts'), 'string')\n" : ''}`
+  let runtime = `import assert from 'node:assert/strict'\nfor (const entry of ${JSON.stringify(runtimeEntries)}) { await import(entry) }\n${primary.directory === 'dtsx' ? "const { processSource } = await import('@dtsx/dtsx'); assert.equal(typeof processSource('export const marker: number = 1', 'sdk.ts'), 'string')\n" : ''}`
   if (name === 'dtsx') runtime += `
-const { formatDts } = await import('@stacksjs/dtsx/formatter')
+const { formatDts } = await import('@dtsx/dtsx/formatter')
 const formatted = await formatDts('export interface Example{value:string}', { usePrettier: true })
 assert.equal(formatted.usedPrettier, false)
 assert.deepEqual(formatted.warnings, ['Prettier requested but not available. Using built-in formatter.'])
 `
   if (name === 'optional-prettier') runtime += `
-const { formatDts } = await import('@stacksjs/dtsx/formatter')
+const { formatDts } = await import('@dtsx/dtsx/formatter')
 const { format } = await import('prettier')
 const input = 'export interface Example{value:string}'
 const formatted = await formatDts(input, { usePrettier: true, prettierOptions: { semi: true } })
@@ -533,7 +533,7 @@ assert.equal(formatted.content, await format(input, { parser: 'typescript', semi
 `
   if (name === 'tsdown') runtime += `
 const { build } = await import('tsdown')
-const { dts } = await import('@stacksjs/dtsx/tsdown')
+const { dts } = await import('@dtsx/dtsx/tsdown')
 const { writeFile, readFile } = await import('node:fs/promises')
 await writeFile('entry.ts', 'export class Calculate { #hidden = () => ({ value: 2 }); value(): number { return this.#hidden().value } }')
 await build({ config: false, entry: ['entry.ts'], outDir: 'output', plugins: [dts()], logLevel: 'silent', report: false })

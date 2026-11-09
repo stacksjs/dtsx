@@ -20,15 +20,42 @@ const documents = [
   ...publishable.map(item => join(packagesDir, item.directory, 'README.md')),
 ].filter(path => existsSync(path))
 
+/** Lines a ```diff block removes: what a migration tells readers to replace. */
+function withoutRemovedLines(text: string): string {
+  return text.replace(/```diff\n[\s\S]*?```/g, block => block.split('\n').filter(line => !/^\s*-/.test(line)).join('\n'))
+}
+
 /** Package names a document tells readers to install or import. */
-function namedPackages(text: string): string[] {
+function namedPackages(markdown: string): string[] {
+  const text = withoutRemovedLines(markdown)
   // A package name: `name` or `@scope/name`, where dtsx is the scope or in the name.
   const installed = [...text.matchAll(/(?:bun add|npm install|npm i|pnpm add|yarn add)(?:\s+-[-\w]+)*\s+((?:@[\w.-]+\/)?[\w.-]+)/g)].map(match => match[1])
-  const imported = [...text.matchAll(/from '((?:@[\w.-]+\/)?[\w.-]+)'/g)].map(match => match[1])
+  const imported = [...text.matchAll(/(?:from |require\()'((?:@[\w.-]+\/)?[\w.-]+)(?:\/[\w./-]+)?'/g)].map(match => match[1])
   return [...installed, ...imported].filter(name => name.startsWith('@dtsx/') || /(?:^|[-/])dtsx(?:$|-)/.test(name))
 }
 
+const tracked = Bun.spawnSync(['git', 'ls-files'], { cwd: repoRoot }).stdout.toString().trim().split('\n')
+
 describe('published package names', () => {
+  // `@stacksjs/dtsx` was renamed to `@dtsx/dtsx` after v0.11.36.
+  test('the SDK publishes as @dtsx/dtsx', () => {
+    expect(publishable.find(item => item.directory === 'dtsx')?.manifest.name).toBe('@dtsx/dtsx')
+  })
+
+  test('every plugin depends on @dtsx/dtsx', () => {
+    for (const { directory, manifest } of publishable.filter(item => item.directory.endsWith('-plugin'))) {
+      const dependencies = (manifest as { dependencies?: Record<string, string> }).dependencies ?? {}
+      expect({ directory, sdk: dependencies['@dtsx/dtsx'] }).toEqual({ directory, sdk: 'workspace:*' })
+    }
+  })
+
+  test('the former name appears only in migration notes', () => {
+    const migrationNotes = new Set(['README.md', 'packages/dtsx/README.md', 'docs/install.md', 'docs/MIGRATION.md', 'CHANGELOG.md', 'packages/dtsx/test/workspace-package-names.test.ts'])
+    const formerName = ['@stacksjs', 'dtsx'].join('/')
+    const mentions = tracked.filter(file => !migrationNotes.has(file) && existsSync(join(repoRoot, file)) && readFileSync(join(repoRoot, file), 'utf8').includes(formerName))
+    expect(mentions).toEqual([])
+  })
+
   // npm rejects `vite-plugin-dtsx` as too similar to `vite-plugin-dts`, so the
   // Vite plugin publishes in the dtsx npm org.
   test('the Vite plugin publishes in the dtsx npm org', () => {
@@ -47,9 +74,14 @@ describe('published package names', () => {
       'bun add vite',
       `import { dts } from 'vite-plugin-dtsx'`,
       `import { dts } from '@dtsx/vite'`,
-      `import { generate } from '@stacksjs/dtsx'`,
-      `import { dts } from '@stacksjs/dtsx/vite'`,
+      `import { generate } from '@dtsx/dtsx'`,
+      `import { dts } from '@dtsx/dtsx/vite'`,
+      `const { DtsxWebpackPlugin } = require('@dtsx/dtsx/webpack')`,
+      '```diff',
+      `- import { generate } from '@stacksjs/dtsx'`,
+      `+ import { generate } from '@dtsx/dtsx/checker'`,
+      '```',
     ].join('\n')
-    expect(namedPackages(text)).toEqual(['@dtsx/vite-plugin', 'bun-plugin-dtsx', 'vite-plugin-dtsx', '@dtsx/vite', '@stacksjs/dtsx'])
+    expect(namedPackages(text)).toEqual(['@dtsx/vite-plugin', 'bun-plugin-dtsx', 'vite-plugin-dtsx', '@dtsx/vite', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx', '@dtsx/dtsx'])
   })
 })

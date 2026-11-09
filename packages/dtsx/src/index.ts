@@ -1,5 +1,5 @@
 /**
- * @stacksjs/dtsx - A modern, fast .d.ts generation tool
+ * @dtsx/dtsx - A modern, fast .d.ts generation tool
  *
  * This module exports the full API. For minimal bundle size when only
  * using the core generator, import directly from './generator'.

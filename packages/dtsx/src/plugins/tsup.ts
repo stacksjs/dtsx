@@ -48,7 +48,7 @@ interface TsupPlugin {
  * @example
  * ```ts
  * // tsup.config.ts
- * import { dtsxPlugin } from '@stacksjs/dtsx/plugins/tsup'
+ * import { dtsxPlugin } from '@dtsx/dtsx/plugins/tsup'
  * import { defineConfig } from 'tsup'
  *
  * export default defineConfig({

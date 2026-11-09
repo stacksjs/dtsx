@@ -104,7 +104,7 @@ const inputs: Input[] = [
 // The SDK emits through its in-process native engine; timing its TypeScript
 // fallback instead would misreport what users of a supported platform run.
 if (!nativeEngineAvailable())
-  throw new Error('The @stacksjs/dtsx native engine did not load; build packages/zig-dtsx (zig build lib) first')
+  throw new Error('The @dtsx/dtsx native engine did not load; build packages/zig-dtsx (zig build lib) first')
 
 function dtsxNoCache(source: string, filename: string): string {
   clearResultCache()

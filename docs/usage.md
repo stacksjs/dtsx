@@ -19,8 +19,8 @@ Given the npm package is installed, you can use the `generate` function to gener
 ### Usage
 
 ```ts
-import type { DtsGenerationConfig } from '@stacksjs/dtsx'
-import { generate } from '@stacksjs/dtsx'
+import type { DtsGenerationConfig } from '@dtsx/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 const config: DtsGenerationConfig = {
   cwd: './', // default: process.cwd()
@@ -42,7 +42,7 @@ await generate(config)
 You can also provide partial configuration, and defaults will be used for missing options:
 
 ```ts
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 // Minimal configuration
 await generate({
@@ -64,7 +64,7 @@ Library usage can also be configured using a `dts.config.ts` _(or `dts.config.js
 
 ```ts
 // dts.config.ts (or dts.config.js)
-import type { DtsGenerationConfig } from '@stacksjs/dtsx'
+import type { DtsGenerationConfig } from '@dtsx/dtsx'
 
 const config: DtsGenerationConfig = {
   cwd: './',
@@ -238,7 +238,7 @@ When `keepComments` is enabled, the following are preserved:
 ### Error Handling
 
 ```ts
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 try {
   await generate({

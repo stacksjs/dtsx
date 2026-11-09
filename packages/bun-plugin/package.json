@@ -52,6 +52,6 @@
     "lint:fix": "bun x --bun pickier . --fix"
   },
   "dependencies": {
-    "@stacksjs/dtsx": "workspace:*"
+    "@dtsx/dtsx": "workspace:*"
   }
 }

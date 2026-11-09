@@ -5,7 +5,7 @@ import { join } from 'node:path'
 const packageDir = join(import.meta.dir, '..')
 const manifest: { files: string[] } = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
 
-describe('@stacksjs/dtsx package files', () => {
+describe('@dtsx/dtsx package files', () => {
   // Packing fails on a missing `files` entry, and commit builds publish
   // without the native libraries a release adds under native/<platform>/.
   test('every packed path other than the build output exists in the source tree', () => {

@@ -59,7 +59,7 @@ interface EsbuildBuild {
  * @example
  * ```ts
  * // build.ts
- * import { dtsx } from '@stacksjs/dtsx/plugins/esbuild'
+ * import { dtsx } from '@dtsx/dtsx/plugins/esbuild'
  * import * as esbuild from 'esbuild'
  *
  * await esbuild.build({

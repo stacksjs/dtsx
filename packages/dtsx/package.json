@@ -1,5 +1,5 @@
 {
-  "name": "@stacksjs/dtsx",
+  "name": "@dtsx/dtsx",
   "type": "module",
   "sideEffects": false,
   "version": "0.11.36",

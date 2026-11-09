@@ -7,7 +7,7 @@ const result = await Bun.build({
   entrypoints: ['src/index.ts'],
   outdir: 'dist',
   target: 'bun',
-  external: ['@stacksjs/dtsx'],
+  external: ['@dtsx/dtsx'],
   // minify: true,
   plugins: [dts({ moduleSpecifierMode: 'node' })],
 })

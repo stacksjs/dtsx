@@ -30,15 +30,15 @@ try {
   await command(['pm', 'pack', '--filename', archive], core)
   const consumer = join(directory, 'consumer')
   await mkdir(join(consumer, 'src'), { recursive: true })
-  await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies: { '@stacksjs/dtsx': `file:${archive}` } }))
+  await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies: { '@dtsx/dtsx': `file:${archive}` } }))
   await writeFile(join(consumer, 'bunfig.toml'), `[install]\nregistry = "${registry.url}"\n`)
   await command(['install'], consumer)
   await command(['install', '--frozen-lockfile'], consumer)
   assert(requests.length === 0, `Standalone installation contacted a registry: ${requests.join(', ')}`)
   await writeFile(join(consumer, 'src/index.ts'), 'export class Calculate { #hidden = () => ({ value: 2 }); value(): number { return this.#hidden().value } }')
   await writeFile(join(consumer, 'verify.ts'), `
-    import { generate, getConfig, processSource } from '@stacksjs/dtsx'
-    import { dts } from '@stacksjs/dtsx/tsdown'
+    import { generate, getConfig, processSource } from '@dtsx/dtsx'
+    import { dts } from '@dtsx/dtsx/tsdown'
     import { readFile } from 'node:fs/promises'
     for (const provider of ['tsup', 'tsdown', 'typescript', '@stacksjs/clapp', 'bunfig', 'prettier']) {
       let installed = false
@@ -53,7 +53,7 @@ try {
     if (stats.filesGenerated !== 1 || !(await readFile('dist/index.d.ts', 'utf8')).includes('value(): number')) throw new Error('Standalone generation failed')
   `)
   await command(['verify.ts'], consumer)
-  const cli = join(consumer, 'node_modules/@stacksjs/dtsx/dist/bin/cli.js')
+  const cli = join(consumer, 'node_modules/@dtsx/dtsx/dist/bin/cli.js')
   await command([cli, '--help'], consumer)
   await command([cli, 'generate', '--cwd', consumer, '--root', 'src', '--entrypoints', 'index.ts', '--outdir', 'cli-dist'], consumer)
   assert((await readFile(join(consumer, 'cli-dist/index.d.ts'), 'utf8')).includes('value(): number'), 'Standalone CLI failed to generate the private-arrow class')

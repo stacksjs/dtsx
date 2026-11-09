@@ -77,7 +77,7 @@ touch dtsx.config.ts
 
 ```typescript
 // dtsx.config.ts
-import { defineConfig } from '@stacksjs/dtsx'
+import { defineConfig } from '@dtsx/dtsx'
 
 export default defineConfig({
   // Valid options:
@@ -232,7 +232,7 @@ export * from './types'
 **Solution**: Use the merger:
 
 ```typescript
-import { mergeDeclarations } from '@stacksjs/dtsx'
+import { mergeDeclarations } from '@dtsx/dtsx'
 
 // Or enable in config
 export default defineConfig({
@@ -378,7 +378,7 @@ NODE_OPTIONS="--max-old-space-size=4096" dtsx generate
 2. Use streaming for large files:
 
 ```typescript
-import { StreamingProcessor } from '@stacksjs/dtsx'
+import { StreamingProcessor } from '@dtsx/dtsx'
 
 const processor = new StreamingProcessor({
   maxMemoryMB: 512,
@@ -596,7 +596,7 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 1. Install globally:
 
 ```bash
-bun add -g @stacksjs/dtsx
+bun add -g @dtsx/dtsx
 ```
 
 2. Or use npx/bunx:

@@ -1,8 +1,8 @@
-import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { DtsGenerationOption, GenerationStats } from '@dtsx/dtsx'
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite'
 import { watch as fsWatch } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 /**
  * Configuration interface extending DtsGenerationOption with Vite-specific properties

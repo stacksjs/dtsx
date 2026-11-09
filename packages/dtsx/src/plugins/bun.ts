@@ -66,7 +66,7 @@ interface BunBuild {
  * @example
  * ```ts
  * // build.ts
- * import { dts } from '@stacksjs/dtsx/plugins/bun'
+ * import { dts } from '@dtsx/dtsx/plugins/bun'
  *
  * await Bun.build({
  *   entrypoints: ['./src/index.ts'],

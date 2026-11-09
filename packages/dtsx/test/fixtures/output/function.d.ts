@@ -1,5 +1,5 @@
 import type { BunPlugin } from 'bun';
-import type { DtsGenerationOption } from '@stacksjs/dtsx';
+import type { DtsGenerationOption } from '@dtsx/dtsx';
 /**
  * Example of function declaration
  *

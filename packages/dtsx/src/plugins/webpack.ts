@@ -62,7 +62,7 @@ interface WebpackCompiler {
  * @example
  * ```ts
  * // webpack.config.js
- * const { DtsxWebpackPlugin } = require('@stacksjs/dtsx/plugins/webpack')
+ * const { DtsxWebpackPlugin } = require('@dtsx/dtsx/plugins/webpack')
  *
  * module.exports = {
  *   entry: './src/index.ts',

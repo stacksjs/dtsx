@@ -8,13 +8,13 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "paths": {
-      "@stacksjs/dtsx": [
+      "@dtsx/dtsx": [
         "./packages/dtsx/src/index.ts"
       ],
-      "@stacksjs/dtsx/generator": [
+      "@dtsx/dtsx/generator": [
         "./packages/dtsx/src/generator.ts"
       ],
-      "@stacksjs/dtsx/cache": [
+      "@dtsx/dtsx/cache": [
         "./packages/dtsx/src/cache.ts"
       ],
       "bun-plugin-dtsx": [

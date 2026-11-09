@@ -61,7 +61,7 @@ interface VitePlugin {
  * @example
  * ```ts
  * // vite.config.ts
- * import { dts } from '@stacksjs/dtsx/plugins/vite'
+ * import { dts } from '@dtsx/dtsx/plugins/vite'
  *
  * export default {
  *   plugins: [

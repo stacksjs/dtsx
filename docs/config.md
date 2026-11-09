@@ -4,7 +4,7 @@
 
 ```typescript
 // dts.config.ts (or dts.config.js)
-import type { DtsGenerationConfig } from '@stacksjs/dtsx'
+import type { DtsGenerationConfig } from '@dtsx/dtsx'
 
 const config: DtsGenerationConfig = {
   /**
@@ -124,7 +124,7 @@ Create a `dts.config.ts` (or `dts.config.js`) file in your project root:
 
 ```typescript
 // dts.config.ts
-import type { DtsGenerationConfig } from '@stacksjs/dtsx'
+import type { DtsGenerationConfig } from '@dtsx/dtsx'
 
 const config: DtsGenerationConfig = {
   root: './lib',
@@ -142,7 +142,7 @@ export default config
 Pass options directly to the `generate` function:
 
 ```typescript
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 await generate({
   root: './src',
@@ -213,7 +213,7 @@ Use the Bun API with an actual `zig-dtsx` executable supporting project protocol
 v1 to plan sources, emit a native batch, and publish the declarations together:
 
 ```ts
-import { generateNativeDeclarationProject } from '@stacksjs/dtsx'
+import { generateNativeDeclarationProject } from '@dtsx/dtsx'
 
 const result = await generateNativeDeclarationProject('/path/to/zig-dtsx', {
   root: './src',

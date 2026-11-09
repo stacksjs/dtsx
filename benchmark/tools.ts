@@ -106,7 +106,7 @@ export function machineInfo(): MachineInfo {
     arch: arch(),
     bun: Bun.version,
     versions: {
-      'dtsx': pkgVersion('@stacksjs/dtsx'),
+      'dtsx': pkgVersion('@dtsx/dtsx'),
       'zig': zig || 'unknown',
       'oxc-transform': pkgVersion('oxc-transform'),
       'typescript': pkgVersion('typescript'),

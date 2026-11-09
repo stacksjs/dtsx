@@ -2,11 +2,11 @@
  * esbuild plugin for dtsx - TypeScript declaration file generation
  * Integrates with esbuild's build pipeline for seamless .d.ts generation
  */
-import type { DtsGenerationOption, GenerationStats } from '@stacksjs/dtsx'
+import type { DtsGenerationOption, GenerationStats } from '@dtsx/dtsx'
 import type { BuildOptions, BuildResult, Plugin } from 'esbuild'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 /**
  * Plugin configuration options

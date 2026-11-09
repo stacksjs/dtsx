@@ -1,6 +1,6 @@
 # zig-dtsx
 
-A high-performance TypeScript declaration file (.d.ts) emitter written in Zig. This is the native companion to the TypeScript-based `@stacksjs/dtsx`, providing the same output with significantly faster execution.
+A high-performance TypeScript declaration file (.d.ts) emitter written in Zig. This is the native companion to the TypeScript-based `@dtsx/dtsx`, providing the same output with significantly faster execution.
 
 ## Overview
 
@@ -74,7 +74,7 @@ The executable also accepts `--context FILE` for a single source and `--batch`
 for a resolved project request on stdin. Project protocol v1 returns JSON with
 source/output identities, source hashes and emitted contents. It writes no
 declaration files; a nonzero exit status invalidates the complete response.
-The `generateNativeDeclarationProject` Bun API in `@stacksjs/dtsx` owns graph
+The `generateNativeDeclarationProject` Bun API in `@dtsx/dtsx` owns graph
 planning and transactional publication for this protocol. The older `--project`
 directory mode retains direct per-file publication.
 

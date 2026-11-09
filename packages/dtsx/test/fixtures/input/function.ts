@@ -1,7 +1,7 @@
 import type { BunPlugin } from 'bun'
 import process from 'node:process'
-import { generate, deepMerge } from '@stacksjs/dtsx'
-import type { DtsGenerationOption } from '@stacksjs/dtsx'
+import { generate, deepMerge } from '@dtsx/dtsx'
+import type { DtsGenerationOption } from '@dtsx/dtsx'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 

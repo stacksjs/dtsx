@@ -34,7 +34,7 @@ dtsx is designed as a modular, pipeline-based system that processes TypeScript s
 The main entry point that orchestrates the entire generation process.
 
 ```typescript
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 await generate({
   cwd: process.cwd(),
@@ -114,7 +114,7 @@ Applies transformations to declarations.
 - `removeUnusedImports` - Dead code elimination
 
 ```typescript
-import { createTransformerPipeline } from '@stacksjs/dtsx'
+import { createTransformerPipeline } from '@dtsx/dtsx'
 
 const pipeline = createTransformerPipeline([
   removePrivateMembers(),
@@ -233,7 +233,7 @@ Memory optimization utilities.
 Worker thread parallelization.
 
 ```typescript
-import { WorkerPool, parallelProcess } from '@stacksjs/dtsx'
+import { WorkerPool, parallelProcess } from '@dtsx/dtsx'
 
 const pool = new WorkerPool({ maxWorkers: 4 })
 await pool.init()

@@ -1,2 +1,2 @@
-import { generateNativeDeclarationProject } from '@stacksjs/dtsx/native-generation'
+import { generateNativeDeclarationProject } from '@dtsx/dtsx/native-generation'
 void generateNativeDeclarationProject('zig-dtsx', { moduleSpecifierMode: 'unsupported' })

@@ -1,4 +1,4 @@
-import { generate } from '@stacksjs/dtsx'
+import { generate } from '@dtsx/dtsx'
 
 console.log('Building...')
 
@@ -6,7 +6,7 @@ const result = await Bun.build({
   entrypoints: ['src/index.ts'],
   outdir: 'dist',
   target: 'node',
-  external: ['@stacksjs/dtsx', 'tsup'],
+  external: ['@dtsx/dtsx', 'tsup'],
   format: 'esm',
 })
 
