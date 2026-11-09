@@ -57,7 +57,7 @@
       }
     },
     "packages/vite-plugin": {
-      "name": "vite-plugin-dtsx",
+      "name": "@dtsx/vite-plugin",
       "version": "0.11.34",
       "dependencies": {
         "@stacksjs/dtsx": "workspace:*"

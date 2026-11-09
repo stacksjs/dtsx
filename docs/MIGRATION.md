@@ -223,7 +223,7 @@ export default {
 
 ```typescript
 // vite.config.ts
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default {
   build: {
@@ -251,7 +251,7 @@ export default {
 
 ### Migration Steps
 
-1. Install `vite-plugin-dtsx`
+1. Install `@dtsx/vite-plugin`
 2. Update Vite/Rollup config
 3. Remove rollup-plugin-dts dependency
 

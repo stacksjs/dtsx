@@ -1,4 +1,4 @@
-import dts, { dtsCheck, dtsBundled, type DtsPluginOptions } from 'vite-plugin-dtsx'
+import dts, { dtsCheck, dtsBundled, type DtsPluginOptions } from '@dtsx/vite-plugin'
 import type { Plugin } from 'vite'
 const options: DtsPluginOptions = { moduleSpecifierMode: 'node' }
 const plugin: Plugin = dts(options)

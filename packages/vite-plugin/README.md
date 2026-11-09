@@ -1,13 +1,13 @@
-# vite-plugin-dtsx
+# @dtsx/vite-plugin
 
 A Vite plugin for automatic TypeScript declaration file generation using dtsx.
 
 ## Installation
 
 ```bash
-bun add vite-plugin-dtsx -d
+bun add @dtsx/vite-plugin -d
 # or
-npm install vite-plugin-dtsx --save-dev
+npm install @dtsx/vite-plugin --save-dev
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ npm install vite-plugin-dtsx --save-dev
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [
@@ -46,7 +46,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [dts()],
@@ -58,7 +58,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [
@@ -75,7 +75,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   build: {
@@ -97,7 +97,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [
@@ -121,7 +121,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [
@@ -138,7 +138,7 @@ export default defineConfig({
 ```typescript
 // vite.config.ts
 import { defineConfig } from 'vite'
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default defineConfig({
   plugins: [

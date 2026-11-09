@@ -1,5 +1,5 @@
 {
-  "name": "vite-plugin-dtsx",
+  "name": "@dtsx/vite-plugin",
   "type": "module",
   "version": "0.11.34",
   "description": "A modern, fast .d.ts generation tool, powered by Bun.",

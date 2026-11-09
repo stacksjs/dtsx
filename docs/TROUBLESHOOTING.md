@@ -422,7 +422,7 @@ dtsx generate --clear-cache
 
 ### Vite Plugin Not Running
 
-**Problem**: vite-plugin-dtsx doesn't generate files
+**Problem**: @dtsx/vite-plugin doesn't generate files
 
 **Solutions**:
 

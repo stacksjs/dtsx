@@ -391,10 +391,10 @@ interface DtsGenerationConfig {
 
 ## Build Tool Integrations
 
-### Vite Plugin (`vite-plugin-dtsx`)
+### Vite Plugin (`@dtsx/vite-plugin`)
 
 ```typescript
-import { dts } from 'vite-plugin-dtsx'
+import { dts } from '@dtsx/vite-plugin'
 
 export default {
   plugins: [

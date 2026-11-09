@@ -20,7 +20,7 @@
       "bun-plugin-dtsx": [
         "./packages/bun-plugin/src/index.ts"
       ],
-      "vite-plugin-dtsx": [
+      "@dtsx/vite-plugin": [
         "./packages/vite-plugin/src/index.ts"
       ]
     },
