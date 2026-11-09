@@ -1,5 +1,48 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.33...v0.11.34)
+
+## ✨ Features
+
+- **dtsx**: run the SDK on the in-process native engine ([1037c64](https://github.com/stacksjs/dtsx/commit/1037c64)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **benchmark**: median of repeated runs, recorded load, no self-wrapped SDK ([0eccc51](https://github.com/stacksjs/dtsx/commit/0eccc51)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🐛 Bug Fixes
+
+- **dtsx**: keep the packed native directory present outside releases ([43552df](https://github.com/stacksjs/dtsx/commit/43552df)) _(by Chris Breuer <chris@stacksjs.com>)_
+- hold the native and TypeScript engines to the same declarations ([6946b25](https://github.com/stacksjs/dtsx/commit/6946b25)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: regexes after control headers, commented modifier names, CR line endings ([a1a438c](https://github.com/stacksjs/dtsx/commit/a1a438c)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: only build indexed access types from type-valid indexes ([57bc133](https://github.com/stacksjs/dtsx/commit/57bc133)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: follow the TS emitter's body expression inference order ([e75827d](https://github.com/stacksjs/dtsx/commit/e75827d)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: type properties that name another binding as typeof that binding ([4d5117d](https://github.com/stacksjs/dtsx/commit/4d5117d)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: ignore comments when scanning for top-level tokens and commas ([c931479](https://github.com/stacksjs/dtsx/commit/c931479)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: top-level satisfies and assertions, modifier-named params, spread unions ([a6e3026](https://github.com/stacksjs/dtsx/commit/a6e3026)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: infer literal and call types for namespace members and fields like the TS emitter ([50f7ff1](https://github.com/stacksjs/dtsx/commit/50f7ff1)) _(by Chris Breuer <chris@stacksjs.com>)_
+- treat comments as trivia in array elements and object property keys ([398131e](https://github.com/stacksjs/dtsx/commit/398131e)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: treat arrows in object arguments as inline functions for call types ([13bc33e](https://github.com/stacksjs/dtsx/commit/13bc33e)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **dtsx**: keep the worker module inert outside a worker thread ([f4342bd](https://github.com/stacksjs/dtsx/commit/f4342bd)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **dtsx**: embed the worker module in compiled CLIs ([7a59f53](https://github.com/stacksjs/dtsx/commit/7a59f53)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **zig-dtsx**: match the TypeScript emitter on inference, regexes and modules ([2416bf6](https://github.com/stacksjs/dtsx/commit/2416bf6)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ⚡ Performance Improvements
+
+- **zig-dtsx**: 32-bit token offsets and a tokenizer-free identifier check ([de95ad0](https://github.com/stacksjs/dtsx/commit/de95ad0)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 📝 Documentation
+
+- publish benchmark results with the measured commit and load ([e60c2b9](https://github.com/stacksjs/dtsx/commit/e60c2b9)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **benchmark**: present one dtsx and compare its JS SDK in-process ([bb23814](https://github.com/stacksjs/dtsx/commit/bb23814)) _(by Chris Breuer <chris@stacksjs.com>)_
+- publish v0.11.33 benchmark results ([a757b9c](https://github.com/stacksjs/dtsx/commit/a757b9c)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.34 ([e5a7313](https://github.com/stacksjs/dtsx/commit/e5a7313)) _(by Chris Breuer <chris@stacksjs.com>)_
+- **benchmark**: time the SDK on its native engine and say so ([128fdd3](https://github.com/stacksjs/dtsx/commit/128fdd3)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.32...v0.11.33)
 
 ## 🐛 Bug Fixes
