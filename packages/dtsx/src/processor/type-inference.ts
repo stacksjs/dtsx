@@ -1018,6 +1018,10 @@ function topLevelLogicalOperator(value: string, operator: string): number {
 
 /** Conditional types retain the operand's nullability and truthiness bounds. */
 function logicalBodyType(left: string, right: string, operator: string): string {
+  // The conditionals below are already decided for an `unknown` left operand:
+  // `??` and `||` yield its non-nullish values (`{}`) or the right operand,
+  // and `&&` yields `unknown`. Print that result instead of the conditional.
+  if (left.trim() === 'unknown') return operator === '&&' || right.trim() === 'unknown' ? 'unknown' : `{} | ${right}`
   const falsy = "false | 0 | 0n | '' | null | undefined"
   if (operator === '??') return `([${left}] extends [NonNullable<${left}>] ? ${left} : NonNullable<${left}> | ${right})`
   if (operator === '||') return `([${left}] extends [object] ? ${left} : [Exclude<${left}, object> & (${falsy})] extends [never] ? ${left} : Exclude<NonNullable<${left}>, ${falsy}> | ${right})`

@@ -86,3 +86,20 @@ for (const mode of ['native', 'core'] as const) {
     }
   })
 }
+
+// The conditional types for logical operators are already decided when the
+// left operand is `unknown`, so both engines print the decided type.
+const testIfNative = ZIG_AVAILABLE ? test : test.skip
+testIfNative.each([
+  ['??', `some.object ?? 'default'`, '{} | string'],
+  ['||', `some.object || 'default'`, '{} | string'],
+  ['&&', `some.object && 'default'`, 'unknown'],
+  ['?? with an unknown fallback', `some.object ?? other.value`, 'unknown'],
+])('an unknown left operand of %s is printed without a conditional type', (_operator, expression, expected) => {
+  const input = `export const config = {\n  read: () => {\n    return ${expression}\n  },\n}\nexport function read() { return ${expression} }\n`
+  for (const output of [processSource(input, true), processSourceWithTypeScriptEngine(input, 'config.ts')]) {
+    expect(output).toContain(`read: () => ${expected}\n`)
+    expect(output).toContain(`export declare function read(): ${expected};`)
+    expect(output).not.toContain('extends')
+  }
+})

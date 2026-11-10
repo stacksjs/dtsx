@@ -1861,6 +1861,13 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
 }
 
 fn logicalBodyType(alloc: std.mem.Allocator, left: []const u8, right: []const u8, operator: []const u8) InferError![]const u8 {
+    // The conditionals below are already decided for an `unknown` left
+    // operand: `??` and `||` yield its non-nullish values (`{}`) or the right
+    // operand, and `&&` yields `unknown`. Print that result instead.
+    if (std.mem.eql(u8, trim(left), "unknown")) {
+        if (std.mem.eql(u8, operator, "&&") or std.mem.eql(u8, trim(right), "unknown")) return "unknown";
+        return std.fmt.allocPrint(alloc, "{{}} | {s}", .{right});
+    }
     const falsy = "false | 0 | 0n | '' | null | undefined";
     if (std.mem.eql(u8, operator, "??"))
         return std.fmt.allocPrint(alloc, "([{s}] extends [NonNullable<{s}>] ? {s} : NonNullable<{s}> | {s})", .{ left, left, left, left, right });
