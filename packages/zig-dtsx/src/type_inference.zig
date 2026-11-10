@@ -1806,6 +1806,15 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         const right = if (findMainArrowIndex(when_false) != null) try std.fmt.allocPrint(alloc, "({s})", .{when_false}) else when_false;
         return std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
     }
+    // Assertions bind more tightly than logical expressions. Resolve each
+    // operand in its scope before combining their public value types.
+    inline for (.{ "??", "||", "&&" }) |operator| {
+        if (findTopLevelToken(value, operator, 0)) |index| {
+            const left = try inferBodyExpressionTypeScoped(alloc, value[0..index], parameters, depth + 1, class_scope, return_scope);
+            const right = try inferBodyExpressionTypeScoped(alloc, value[index + operator.len ..], parameters, depth + 1, class_scope, return_scope);
+            return logicalBodyType(alloc, left, right, operator);
+        }
+    }
     if (return_scope) |scope| {
         if (try return_scopes.assertion(alloc, value)) |asserted| {
             if (try scope.resolve(asserted)) |resolved| return resolved;
@@ -1832,7 +1841,7 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         for (elements) |element| {
             const item = trim(element);
             const spread = ch.startsWith(item, "...");
-            const inferred_item = try inferBodyExpressionTypeScoped(alloc, if (spread) trim(item[3..]) else item, parameters, depth + 1, class_scope, return_scope);
+            const inferred_item = if (item.len == 0) "undefined" else try inferBodyExpressionTypeScoped(alloc, if (spread) trim(item[3..]) else item, parameters, depth + 1, class_scope, return_scope);
             // A source-valid spread supplies an iterable, potentially narrowed
             // by its enclosing branch. Its iteration value, not a readonly
             // tuple or an optional indexed access, is the new array's element.
@@ -1849,6 +1858,24 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     else
         try inferNarrowType(alloc, value, false, false, depth + 1);
     return substituteBodyQueries(alloc, inferred, parameters);
+}
+
+fn logicalBodyType(alloc: std.mem.Allocator, left: []const u8, right: []const u8, operator: []const u8) InferError![]const u8 {
+    const falsy = "false | 0 | 0n | '' | null | undefined";
+    if (std.mem.eql(u8, operator, "??"))
+        return std.fmt.allocPrint(alloc, "([{s}] extends [NonNullable<{s}>] ? {s} : NonNullable<{s}> | {s})", .{ left, left, left, left, right });
+    if (std.mem.eql(u8, operator, "||"))
+        return std.fmt.allocPrint(alloc, "([{s}] extends [object] ? {s} : [Exclude<{s}, object> & ({s})] extends [never] ? {s} : Exclude<NonNullable<{s}>, {s}> | {s})", .{ left, left, left, falsy, left, left, falsy, right });
+    return std.fmt.allocPrint(alloc, "([{s}] extends [object] ? {s} : [{s}] extends [{s}] ? {s} : unknown extends ({s}) ? {s} : (Exclude<{s}, object> & ({s})) | {s})", .{ left, right, left, falsy, left, left, left, left, falsy, right });
+}
+
+/// A nullable object spread makes its copied fields optional and writable.
+/// Bind the input before introducing mapped-type names so authored generics
+/// cannot be captured by the generated iterator names.
+fn nullableSpreadType(alloc: std.mem.Allocator, left: []const u8) InferError![]const u8 {
+    const mutable = try std.fmt.allocPrint(alloc, "(NonNullable<{s}> extends infer __dtsx_spread_value ? {{ -readonly [__dtsx_spread_key in keyof __dtsx_spread_value]: __dtsx_spread_value[__dtsx_spread_key] }} : never)", .{left});
+    const optional = try std.fmt.allocPrint(alloc, "(NonNullable<{s}> extends infer __dtsx_spread_value ? {{ -readonly [__dtsx_spread_key in keyof __dtsx_spread_value]?: __dtsx_spread_value[__dtsx_spread_key] }} : never)", .{left});
+    return std.fmt.allocPrint(alloc, "([{s}] extends [null | undefined] ? {{}} : [{s}] extends [NonNullable<{s}>] ? {s} : {s})", .{ left, left, left, mutable, optional });
 }
 
 /// Body locals are not visible in a declaration: `typeof p.a.b` for a
@@ -3163,6 +3190,10 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
 fn inferBodySpreadType(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, return_scope: ?*return_scopes.Scope) InferError![]const u8 {
     var value = trim(expression);
     while (value.len >= 2 and value[0] == '(' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) value = trim(value[1 .. value.len - 1]);
+    if (findTopLevelToken(value, "??", 0)) |index| {
+        if (std.mem.eql(u8, trim(value[index + 2 ..]), "{}"))
+            return nullableSpreadType(alloc, try inferBodyExpressionTypeScoped(alloc, value[0..index], parameters, depth + 1, class_scope, return_scope));
+    }
     if (splitTopLevelConditional(value)) |conditional| {
         const nonempty = if (std.mem.eql(u8, trim(conditional.when_false), "{}")) conditional.when_true else if (std.mem.eql(u8, trim(conditional.when_true), "{}")) conditional.when_false else null;
         if (nonempty) |branch| return std.fmt.allocPrint(alloc, "Partial<{s}>", .{try inferBodyExpressionTypeScoped(alloc, branch, parameters, depth + 1, class_scope, return_scope)});

@@ -854,11 +854,13 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     return awaited.startsWith('Promise<') && awaited.endsWith('>') ? awaited.slice(8, -1) : awaited
   }
   if (parameterTypes.has(value)) return parameterTypes.get(value)!
-  const member = /^([\w$]+)\.([\w$]+)$/.exec(value)
+  const member = /^([\w$]+)\.([\w$]+(?:\.[\w$]+)*)$/.exec(value)
+  let memberQuery: string | undefined
   if (member) {
     const type = parameterTypes.get(member[1])
     const property = type && objectMemberType(type, member[2])
     if (property) return property
+    if (type) memberQuery = `typeof ${value}`
   }
   if (value.startsWith('!')) return 'boolean'
   if (value.startsWith('fetch(')) return 'Promise<Response>'
@@ -872,6 +874,17 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     const whenTrue = inferBodyExpressionType(conditional.whenTrue, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
     const whenFalse = inferBodyExpressionType(conditional.whenFalse, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
     return whenTrue === whenFalse ? whenTrue : joinReturnTypes([whenTrue, whenFalse])
+  }
+
+  // A cast belongs to its operand, rather than swallowing a following
+  // runtime logical expression into a declaration's type text.
+  for (const operator of ['??', '||', '&&']) {
+    const index = topLevelLogicalOperator(value, operator)
+    if (index !== -1) {
+      const left = inferBodyExpressionType(value.slice(0, index), parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
+      const right = inferBodyExpressionType(value.slice(index + operator.length), parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
+      return logicalBodyType(left, right, operator)
+    }
   }
 
   const assertion = wholeReturnAssertion(value)
@@ -893,9 +906,23 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     }
   }
 
-  const inferred = value.startsWith('{') && value.endsWith('}')
+  if (value.startsWith('[') && value.endsWith(']')) {
+    const elements = parseArrayElements(value.slice(1, -1))
+    if (elements.some(element => element.trim().startsWith('...'))) {
+      const types = elements.map((element) => {
+        const item = element.trim()
+        if (!item) return 'undefined'
+        const spread = item.startsWith('...')
+        const type = inferBodyExpressionType(spread ? item.slice(3) : item, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1)
+        return spread ? `(NonNullable<${type}> extends Iterable<infer Element> ? Element : never)` : type
+      })
+      return `(${[...new Set(types)].join(' | ') || 'never'})[]`
+    }
+  }
+
+  const inferred = memberQuery ?? (value.startsWith('{') && value.endsWith('}')
     ? inferObjectType(value, false, inferenceDepth + 1, undefined, item => inferBodyExpressionType(item, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1))
-    : inferNarrowType(value, false)
+    : inferNarrowType(value, false))
   const tokens = tokenizeDeclarationSyntax(inferred)
   let result = ''
   let cursor = 0
@@ -968,11 +995,53 @@ function wholeReturnAssertion(value: string): string | undefined {
   for (const token of tokens.slice(assertion + 1)) {
     if (token.kind !== 'punctuation') continue
     const text = value.slice(token.start, token.end)
+    if (!depth && ['??', '||', '&&'].some(operator => value.startsWith(operator, token.start))) return undefined
     if (['(', '[', '{', '<'].includes(text)) depth++
     else if ([')', ']', '}', '>'].includes(text)) depth--
     else if (!depth && ['+', '-', '*', '/', '%', '=', '!', ';'].includes(text)) return undefined
   }
   return type
+}
+
+/** Locate a logical value operator, excluding strings and nested expressions. */
+function topLevelLogicalOperator(value: string, operator: string): number {
+  let depth = 0
+  for (const token of tokenizeDeclarationSyntax(value)) {
+    if (token.kind !== 'punctuation') continue
+    const text = value.slice(token.start, token.end)
+    if (['(', '[', '{'].includes(text)) depth++
+    else if ([')', ']', '}'].includes(text)) depth--
+    if (!depth && value.startsWith(operator, token.start)) return token.start
+  }
+  return -1
+}
+
+/** Conditional types retain the operand's nullability and truthiness bounds. */
+function logicalBodyType(left: string, right: string, operator: string): string {
+  const falsy = "false | 0 | 0n | '' | null | undefined"
+  if (operator === '??') return `([${left}] extends [NonNullable<${left}>] ? ${left} : NonNullable<${left}> | ${right})`
+  if (operator === '||') return `([${left}] extends [object] ? ${left} : [Exclude<${left}, object> & (${falsy})] extends [never] ? ${left} : Exclude<NonNullable<${left}>, ${falsy}> | ${right})`
+  return `([${left}] extends [object] ? ${right} : [${left}] extends [${falsy}] ? ${left} : unknown extends (${left}) ? ${left} : (Exclude<${left}, object> & (${falsy})) | ${right})`
+}
+
+/** Copied nullable fields become optional and lose their source readonly flag. */
+function nullableSpreadType(left: string): string {
+  const mutable = `(NonNullable<${left}> extends infer __dtsx_spread_value ? { -readonly [__dtsx_spread_key in keyof __dtsx_spread_value]: __dtsx_spread_value[__dtsx_spread_key] } : never)`
+  const optional = `(NonNullable<${left}> extends infer __dtsx_spread_value ? { -readonly [__dtsx_spread_key in keyof __dtsx_spread_value]?: __dtsx_spread_value[__dtsx_spread_key] } : never)`
+  return `([${left}] extends [null | undefined] ? {} : [${left}] extends [NonNullable<${left}>] ? ${mutable} : ${optional})`
+}
+
+function inferBodySpreadType(expression: string, resolve: (value: string) => string): string {
+  let value = expression.trim()
+  while (hasBalancedOuterParentheses(value)) value = value.slice(1, -1).trim()
+  const index = topLevelLogicalOperator(value, '??')
+  if (index !== -1 && value.slice(index + 2).trim() === '{}') return nullableSpreadType(resolve(value.slice(0, index)))
+  const conditional = splitTopLevelConditional(value)
+  if (conditional) {
+    if (conditional.whenFalse.trim() === '{}') return `Partial<${resolve(conditional.whenTrue)}>`
+    if (conditional.whenTrue.trim() === '{}') return `Partial<${resolve(conditional.whenFalse)}>`
+  }
+  return resolve(value)
 }
 
 /** Function members need parentheses at a union boundary. */
@@ -1764,7 +1833,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
 
     if (propertyKey === '...') {
       const spreadValue = val.trim()
-      const spreadType = isEntityName(spreadValue)
+      const spreadType = resolve ? inferBodySpreadType(spreadValue, resolve) : isEntityName(spreadValue)
         ? `typeof ${spreadValue}`
         : inferNarrowType(spreadValue, isConst, false, _depth + 1, keyConstants)
       if (spreadType !== 'unknown') spreadTypes.push(spreadType)
@@ -2456,7 +2525,16 @@ function parseObjectProperties(content: string): Array<[string, string]> {
       current += char
     }
     else if (!inString && !inComment) {
-      if (cc === 40 /* ( */ && depth === 0 && inKey && typeArgumentDepth === 0) {
+      if (cc === 46 /* . */ && nextCode === 46 && content.charCodeAt(i + 2) === 46 && depth === 0 && inKey) {
+        // Spread operands are expressions, including parenthesized casts and
+        // calls, rather than shorthand method parameter lists.
+        currentKey = `${current.trim()}...`
+        current = ''
+        inKey = false
+        inMethodShorthand = false
+        i += 2
+      }
+      else if (cc === 40 /* ( */ && depth === 0 && inKey && typeArgumentDepth === 0) {
         // Method definition like: methodName(params) or async methodName<T>(params).
         // Must be checked BEFORE general bracket tracking so ( isn't swallowed.
         currentKey = current.trim()

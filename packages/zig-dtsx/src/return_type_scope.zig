@@ -377,6 +377,7 @@ pub fn assertion(allocator: std.mem.Allocator, value: []const u8) Error!?[]const
     for (tokens[index + 1 ..]) |token| {
         if (token.kind != .punctuation) continue;
         const text = value[token.start..token.end];
+        if (depth == 0 and (std.mem.startsWith(u8, value[token.start..], "??") or std.mem.startsWith(u8, value[token.start..], "||") or std.mem.startsWith(u8, value[token.start..], "&&"))) return null;
         if (std.mem.indexOf(u8, "([{<", text) != null) depth += 1 else if (std.mem.indexOf(u8, ")]}>", text) != null) depth -= 1 else if (depth == 0 and std.mem.indexOf(u8, "+-*/%=!;", text) != null) return null;
     }
     return result;

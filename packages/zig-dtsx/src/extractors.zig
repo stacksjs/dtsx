@@ -1803,9 +1803,19 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
 
     const type_start = s.pos;
     var depth: isize = 0;
+    var last_code_end = type_start;
     while (s.pos < s.len) {
-        if (s.skipNonCode()) continue;
+        const before = s.pos;
+        if (s.skipNonCode()) {
+            // Literal types end an operand; comments do not replace the last
+            // significant token when deciding whether a newline ends a type.
+            if (s.source[before] == '\'' or s.source[before] == '"' or s.source[before] == '`') {
+                last_code_end = s.pos;
+            } else if (depth == 0 and (std.mem.indexOfScalar(u8, s.source[before..s.pos], '\n') != null or std.mem.indexOfScalar(u8, s.source[before..s.pos], '\r') != null) and typeAliasLineBoundary(s, last_code_end)) break;
+            continue;
+        }
         const c = s.source[s.pos];
+        if (depth == 0 and c == ch.CH_RBRACE) break;
         if (c == ch.CH_LPAREN or c == ch.CH_LBRACE or c == ch.CH_LBRACKET or c == ch.CH_LANGLE) {
             depth += 1;
         } else if (c == ch.CH_RPAREN or c == ch.CH_RBRACE or c == ch.CH_RBRACKET or (c == ch.CH_RANGLE and !s.isArrowGT())) {
@@ -1813,7 +1823,8 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
         } else if (depth == 0 and c == ch.CH_SEMI) {
             break;
         }
-        if (depth == 0 and s.checkASITopLevel()) break;
+        if (depth == 0 and (c == '\n' or c == '\r') and typeAliasLineBoundary(s, last_code_end)) break;
+        if (!ch.isWhitespace(c)) last_code_end = s.pos + 1;
         s.pos += 1;
     }
     const type_body = s.sliceTrimmed(type_start, s.pos);
@@ -1854,6 +1865,30 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
         .start = decl_start,
         .end = s.pos,
     };
+}
+
+/// Function-local types can precede runtime statements as well as declarations.
+/// Respect ASI without absorbing a following return into the published alias,
+/// while keeping multiline unions, queries and conditional types together.
+fn typeAliasLineBoundary(s: *Scanner, last_code_end: usize) bool {
+    if (last_code_end == 0) return false;
+    const last = s.source[last_code_end - 1];
+    if (std.mem.indexOfScalar(u8, ".|&<,=?:([", last) != null) return false;
+    if (last == '>' and last_code_end > 1 and s.source[last_code_end - 2] == '=') return false;
+    if (ch.isIdentChar(last)) {
+        var start = last_code_end;
+        while (start > 0 and ch.isIdentChar(s.source[start - 1])) start -= 1;
+        const word = s.source[start..last_code_end];
+        inline for (.{ "typeof", "keyof", "infer", "readonly", "unique", "new", "abstract", "asserts", "is", "extends", "in", "import" }) |prefix| {
+            if (std.mem.eql(u8, word, prefix)) return false;
+        }
+    }
+    var next = s.*;
+    next.skipWhitespaceAndComments();
+    if (next.pos >= next.len) return true;
+    if (std.mem.indexOfScalar(u8, "|&[.<?:", next.source[next.pos]) != null) return false;
+    if (next.matchWord("extends") or next.matchWord("is") or std.mem.startsWith(u8, next.source[next.pos..], "=>")) return false;
+    return true;
 }
 
 // ========================================================================
@@ -3731,4 +3766,35 @@ fn checkExpandedDefaultParameter(backing: Allocator) !void {
 test "inferred call defaults can expand beyond source parameter length without overrunning allocation" {
     try checkExpandedDefaultParameter(std.testing.allocator);
     try std.testing.checkAllAllocationFailures(std.testing.allocator, checkExpandedDefaultParameter, .{});
+}
+
+test "type alias ASI preserves multiline operands and stops before runtime statements" {
+    const bodies = [_][]const u8{
+        "T | undefined",
+        "T\n | undefined",
+        "T |\n undefined",
+        "T\n extends object\n ? T\n : never",
+        "keyof\n T",
+        "typeof\n value",
+        "readonly\n T[]",
+        "import\n ('module').Value",
+        "()\n => T",
+        "T\n ['key']",
+        "Record\n <string, T>",
+        "'literal' // comment",
+        "T /* comment\n */",
+        "T /* comment\n */ | undefined",
+    };
+    for (bodies) |body| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const source = try std.fmt.allocPrint(arena.allocator(), "type Maybe = {s}\nreturn value", .{body});
+        var state = Scanner.init(arena.allocator(), source, false, false);
+        defer state.deinit();
+        const declaration = extractTypeAlias(&state, 0, false);
+        const expected = try std.fmt.allocPrint(arena.allocator(), "type Maybe = {s}", .{body});
+        try std.testing.expectEqualStrings(expected, declaration.text);
+        state.skipWhitespaceAndComments();
+        try std.testing.expect(state.matchWord("return"));
+    }
 }
