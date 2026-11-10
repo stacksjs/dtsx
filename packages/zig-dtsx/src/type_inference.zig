@@ -294,9 +294,27 @@ fn inferUpdateType(alloc: std.mem.Allocator, operand_value: []const u8) InferErr
     return "number";
 }
 
+/// Find the value-call argument list, skipping parentheses inside type arguments.
+/// An unbalanced `<` remains a comparison operator rather than a generic list.
+fn findCallParenIndex(value: []const u8) ?usize {
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const c = value[i];
+        if (c == '\'' or c == '"' or c == '`') {
+            i = skipQuotedValue(value, i, c) - 1;
+            continue;
+        }
+        if (c == '(') return i;
+        if (c == '<') {
+            if (findMatchingBracket(value, i, '<', '>')) |end| i = end;
+        }
+    }
+    return null;
+}
+
 pub fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
     if (value.len < 3 or value[value.len - 1] != ')') return null;
-    const open = std.mem.indexOfScalar(u8, value, '(') orelse return null;
+    const open = findCallParenIndex(value) orelse return null;
     if (findMatchingBracket(value, open, '(', ')') != value.len - 1) return null;
     var callee = trim(value[0..open]);
     var is_optional = false;
@@ -3905,6 +3923,18 @@ test "generic and optional calls retain callable types" {
     try std.testing.expectEqualStrings("ReturnType<typeof api.factory<number>>", try inferNarrowType(alloc, "api.factory<number>()", false, false, 0));
     try std.testing.expectEqualStrings("ReturnType<typeof factory> | undefined", try inferNarrowType(alloc, "factory?.()", false, false, 0));
     try std.testing.expectEqualStrings("ReturnType<typeof api.factory> | undefined", try inferNarrowType(alloc, "api.factory?.(1)", false, false, 0));
+    inline for (.{
+        "typeof import('./model.js').default",
+        "ReturnType<typeof import('./model.js').factory>",
+        "{ run: (value: string) => number }",
+        "(value: string) => number",
+    }) |argument| {
+        const expression = try std.fmt.allocPrint(alloc, "factory<{s}>('model')", .{argument});
+        const expected = try std.fmt.allocPrint(alloc, "ReturnType<typeof factory<{s}>>", .{argument});
+        try std.testing.expectEqualStrings(expected, try inferNarrowType(alloc, expression, false, false, 0));
+    }
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "value < factory(1)", false, false, 0));
+    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "factory(1) > value", false, false, 0));
 }
 
 test "numeric operators distinguish number and bigint" {
