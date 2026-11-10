@@ -178,54 +178,10 @@ fn extractAllImportedItems(decl: Declaration) []const []const u8 {
     return &.{};
 }
 
-/// Process a variable declaration for DTS output
-pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
-    if (decl.inference_error == .unsupported_value_flow) return error.UnsupportedValueFlow;
-    const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
-    if (decl.type_annotation.len == 0 and decl.inferred_type.len > 0) {
-        if (comments.len == 0) return decl.text;
-        const output = try alloc.alloc(u8, comments.len + decl.text.len);
-        @memcpy(output[0..comments.len], comments);
-        @memcpy(output[comments.len..], decl.text);
-        return output;
-    }
-
-    // Fast path: if we have type annotation and no value needing special inference
-    if (decl.type_annotation.len > 0 and decl.value.len == 0) {
-        if (comments.len == 0) return decl.text;
-        const buf = try alloc.alloc(u8, comments.len + decl.text.len);
-        @memcpy(buf[0..comments.len], comments);
-        @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
-        return buf;
-    }
-
-    // Fast path: type annotation set + value exists but doesn't need special handling.
-    // The scanner already built the correct DTS text using the type annotation,
-    // so we can return it directly without type inference or value processing.
-    if (decl.type_annotation.len > 0 and decl.value.len > 0) {
-        // Cheaper "ends with as const" check that skips the trim allocation.
-        // We just need to ignore trailing whitespace.
-        var ve: usize = decl.value.len;
-        while (ve > 0 and (decl.value[ve - 1] == ' ' or decl.value[ve - 1] == '\t' or
-            decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1)
-        {}
-        const ends_as_const = ve >= 8 and std.mem.eql(u8, decl.value[ve - 8 .. ve], "as const");
-        // An explicit annotation stays the public type even with `satisfies`.
-        if (!ends_as_const) {
-            const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
-            if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
-                if (comments.len == 0) return decl.text;
-                const buf = try alloc.alloc(u8, comments.len + decl.text.len);
-                @memcpy(buf[0..comments.len], comments);
-                @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
-                return buf;
-            }
-        }
-    }
-
-    // Variable kind from modifiers
-    const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
-
+/// Infer a variable's declared type and generated default from its initializer.
+fn inferVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, kind: []const u8) !VariableInference {
+    var default_val: ?[]const u8 = null;
+    var documents_container = false;
     // Determine type annotation
     var type_annotation: []const u8 = decl.type_annotation;
 
@@ -272,8 +228,6 @@ pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, k
     const has_as_const = ch.endsWith(val_trimmed_for_check, "as const");
     const has_broad_annotation = decl.preserve_type_annotation and decl.type_annotation.len > 0 and type_inf.isGenericType(decl.type_annotation);
     if (decl.value.len > 0 and (decl.type_annotation.len == 0 or has_broad_annotation) and (!has_as_const or has_broad_annotation)) {
-        var default_val: ?[]const u8 = null;
-        var is_container = false;
         const trimmed_val = val_trimmed_for_check;
 
         if (!std.mem.eql(u8, kind, "const")) {
@@ -290,8 +244,82 @@ pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, k
             }
         } else if (trimmed_val.len > 0 and (trimmed_val[0] == '{' or trimmed_val[0] == '[')) {
             default_val = type_inf.consumeCleanDefault();
-            is_container = true;
+            documents_container = true;
         }
+    }
+    return .{ .type_annotation = type_annotation, .default_val = default_val, .is_container = documents_container };
+}
+
+/// Process a variable declaration for DTS output
+pub fn processVariableDeclaration(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool) ![]const u8 {
+    var inference: ?VariableInference = null;
+    return processVariableDeclarationCached(alloc, decl, keep_comments, &inference);
+}
+
+/// What a variable's initializer contributes to its declaration. It does not
+/// depend on the declaration's comments, so one inference serves both the
+/// comment-free text used to find referenced imports and the emitted text.
+pub const VariableInference = struct {
+    type_annotation: []const u8,
+    /// The generated `@defaultValue` content, before a comment can veto it.
+    default_val: ?[]const u8,
+    is_container: bool,
+};
+
+/// `processVariableDeclaration` that infers the initializer at most once per
+/// `inference` slot: a filled slot is reused instead of inferring again.
+pub fn processVariableDeclarationCached(alloc: std.mem.Allocator, decl: Declaration, keep_comments: bool, inference: *?VariableInference) ![]const u8 {
+    if (decl.inference_error == .unsupported_value_flow) return error.UnsupportedValueFlow;
+    const comments = try formatComments(alloc, decl.leading_comments, keep_comments);
+    if (decl.type_annotation.len == 0 and decl.inferred_type.len > 0) {
+        if (comments.len == 0) return decl.text;
+        const output = try alloc.alloc(u8, comments.len + decl.text.len);
+        @memcpy(output[0..comments.len], comments);
+        @memcpy(output[comments.len..], decl.text);
+        return output;
+    }
+
+    // Fast path: if we have type annotation and no value needing special inference
+    if (decl.type_annotation.len > 0 and decl.value.len == 0) {
+        if (comments.len == 0) return decl.text;
+        const buf = try alloc.alloc(u8, comments.len + decl.text.len);
+        @memcpy(buf[0..comments.len], comments);
+        @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
+        return buf;
+    }
+
+    // Fast path: type annotation set + value exists but doesn't need special handling.
+    // The scanner already built the correct DTS text using the type annotation,
+    // so we can return it directly without type inference or value processing.
+    if (decl.type_annotation.len > 0 and decl.value.len > 0) {
+        // Cheaper "ends with as const" check that skips the trim allocation.
+        // We just need to ignore trailing whitespace.
+        var ve: usize = decl.value.len;
+        while (ve > 0 and (decl.value[ve - 1] == ' ' or decl.value[ve - 1] == '\t' or
+            decl.value[ve - 1] == '\n' or decl.value[ve - 1] == '\r')) : (ve -= 1)
+        {}
+        const ends_as_const = ve >= 8 and std.mem.eql(u8, decl.value[ve - 8 .. ve], "as const");
+        // An explicit annotation stays the public type even with `satisfies`.
+        if (!ends_as_const) {
+            const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
+            if (!std.mem.eql(u8, kind, "const") or !type_inf.isGenericType(decl.type_annotation)) {
+                if (comments.len == 0) return decl.text;
+                const buf = try alloc.alloc(u8, comments.len + decl.text.len);
+                @memcpy(buf[0..comments.len], comments);
+                @memcpy(buf[comments.len..][0..decl.text.len], decl.text);
+                return buf;
+            }
+        }
+    }
+
+    // Variable kind from modifiers
+    const kind: []const u8 = if (decl.modifiers) |mods| (if (mods.len > 0) mods[0] else "const") else "const";
+
+    if (inference.* == null) inference.* = try inferVariableDeclaration(alloc, decl, kind);
+    const type_annotation = inference.*.?.type_annotation;
+    const is_container = inference.*.?.is_container;
+    {
+        var default_val = inference.*.?.default_val;
 
         // Skip generated @defaultValue if user already has one
         if (std.mem.indexOf(u8, comments, "@defaultValue") != null) {
@@ -924,6 +952,9 @@ fn processDeclarationsInternal(
     // For import-free code (e.g. synthetic benchmarks), this avoids O(n) word
     // extraction across all declarations — a significant saving on large inputs.
     var processed_imports = std.array_list.Managed([]const u8).init(alloc);
+    // Variable initializers inferred while collecting import references, by
+    // declaration index, so emission does not infer them a second time.
+    var variable_inferences: []?VariableInference = &.{};
 
     if (imports_idx.len > 0) {
         // Build import-item-to-declaration map (only when imports exist)
@@ -942,7 +973,9 @@ fn processDeclarationsInternal(
         // Single pass over all declarations instead of 7 separate loops per group.
         var combined_words = std.StringHashMap(void).init(alloc);
         try combined_words.ensureTotalCapacity(@intCast(@max(declarations.len * 4, 128)));
-        for (declarations) |d| {
+        variable_inferences = try alloc.alloc(?VariableInference, declarations.len);
+        @memset(variable_inferences, null);
+        for (declarations, 0..) |d, declaration_index| {
             switch (d.kind) {
                 .function_decl => {
                     extractWords(&combined_words, d.text);
@@ -952,7 +985,7 @@ fn processDeclarationsInternal(
                     if (d.type_annotation.len > 0) {
                         extractWords(&combined_words, d.type_annotation);
                     } else if (d.value.len > 0) {
-                        extractWords(&combined_words, try processVariableDeclaration(alloc, d, false));
+                        extractWords(&combined_words, try processVariableDeclarationCached(alloc, d, false, &variable_inferences[declaration_index]));
                     }
                 },
                 .interface_decl, .type_decl, .class_decl, .enum_decl, .module_decl, .namespace_decl, .export_decl => {
@@ -1201,7 +1234,8 @@ fn processDeclarationsInternal(
                     try result.appendSlice(decl.text);
                 },
                 .variable_decl => {
-                    const processed = try processVariableDeclaration(alloc, decl, keep_comments);
+                    var uncached: ?VariableInference = null;
+                    const processed = try processVariableDeclarationCached(alloc, decl, keep_comments, if (didx < variable_inferences.len) &variable_inferences[didx] else &uncached);
                     if (processed.len > 0) {
                         if (result.items.len > 0) try result.append('\n');
                         try result.appendSlice(processed);

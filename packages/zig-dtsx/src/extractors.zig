@@ -827,27 +827,22 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             }
         }
         if (can_passthrough and colons >= commas + 1) {
-            // Check for parameter modifiers. First-byte fast-fail: param
-            // modifiers start with one of `p`, `r`, or `o`. If `inner` doesn't
-            // even contain any of those bytes, skip the per-modifier loop
-            // entirely — saves ~5 full string scans on every parameter list
-            // that lacks modifiers (the common case).
-            const has_p = ch.indexOfChar(inner, 'p', 0) != null;
-            const has_r = ch.indexOfChar(inner, 'r', 0) != null;
-            const has_o = ch.indexOfChar(inner, 'o', 0) != null;
-            if (!has_p and !has_r and !has_o) return raw_params;
-
+            // Check for parameter modifiers in one pass: a modifier is a whole
+            // word, and all five start with `p`, `r` or `o`, so only those
+            // word starts are compared against the list.
             var has_modifier = false;
-            for (types.PARAM_MODIFIERS) |mod| {
-                if (ch.indexOf(inner, mod, 0)) |mod_idx| {
-                    const after_idx = mod_idx + mod.len;
-                    const before_ok = mod_idx == 0 or !ch.isIdentChar(inner[mod_idx - 1]);
-                    const after_ok = after_idx >= inner.len or !ch.isIdentChar(inner[after_idx]);
-                    if (before_ok and after_ok) {
-                        has_modifier = true;
-                        break;
+            var after_ident = false;
+            scan: for (inner, 0..) |c, word_start| {
+                if (!after_ident and (c == 'p' or c == 'r' or c == 'o')) {
+                    for (types.PARAM_MODIFIERS) |mod| {
+                        const word_end = word_start + mod.len;
+                        if (ch.startsWith(inner[word_start..], mod) and (word_end >= inner.len or !ch.isIdentChar(inner[word_end]))) {
+                            has_modifier = true;
+                            break :scan;
+                        }
                     }
                 }
+                after_ident = ch.isIdentChar(c);
             }
             if (!has_modifier) return raw_params;
         }

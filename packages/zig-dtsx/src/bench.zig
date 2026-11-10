@@ -11,12 +11,13 @@ extern "c" fn fclose(stream: *anyopaque) c_int;
 extern "c" fn printf(fmt: [*:0]const u8, ...) c_int;
 extern "c" fn clock_gettime(clk: c_int, ts: *[2]c_long) c_int;
 
-/// CLOCK_MONOTONIC: 6 on Darwin, 1 on Linux and most other POSIX libcs.
-const monotonic_clock: c_int = if (@import("builtin").os.tag.isDarwin()) 6 else 1;
+/// CLOCK_PROCESS_CPUTIME_ID: 12 on Darwin, 2 on Linux. CPU time, not wall
+/// time, so a busy machine does not distort the per-iteration figure.
+const cpu_clock: c_int = if (@import("builtin").os.tag.isDarwin()) 12 else 2;
 
 fn nowNs() u64 {
     var ts: [2]c_long = undefined;
-    _ = clock_gettime(monotonic_clock, &ts);
+    _ = clock_gettime(cpu_clock, &ts);
     return @as(u64, @intCast(ts[0])) * 1_000_000_000 + @as(u64, @intCast(ts[1]));
 }
 
