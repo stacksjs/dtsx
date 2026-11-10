@@ -1,5 +1,23 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.40...v0.11.41)
+
+## 🐛 Bug Fixes
+
+- respect assertion boundaries in inferred returns ([610e326](https://github.com/stacksjs/dtsx/commit/610e326)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3173](https://github.com/stacksjs/dtsx/issues/3173), [stacksjs/stacks#3247](https://github.com/stacksjs/stacks/issues/3247))
+
+## ⚡ Performance Improvements
+
+- read project sources in parallel and recycle worker memory ([be3a435](https://github.com/stacksjs/dtsx/commit/be3a435)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.41 ([5413ffd](https://github.com/stacksjs/dtsx/commit/5413ffd)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.39...v0.11.40)
 
 ## 🐛 Bug Fixes
