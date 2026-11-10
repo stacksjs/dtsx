@@ -1,5 +1,28 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.39...v0.11.40)
+
+## 🐛 Bug Fixes
+
+- **native**: preserve conditional object spread declarations ([7025aa6](https://github.com/stacksjs/dtsx/commit/7025aa6)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3172](https://github.com/stacksjs/dtsx/issues/3172), [stacksjs/stacks#3247](https://github.com/stacksjs/stacks/issues/3247))
+
+## ⚡ Performance Improvements
+
+- probe initializers for operators only when the token occurs ([3cbac28](https://github.com/stacksjs/dtsx/commit/3cbac28)) _(by Chris Breuer <chris@stacksjs.com>)_
+- infer each variable once and find parameter modifiers in one pass ([63174b5](https://github.com/stacksjs/dtsx/commit/63174b5)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 💚 Continuous Integration
+
+- build the SDK before the unit tests ([5f68100](https://github.com/stacksjs/dtsx/commit/5f68100)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.40 ([915d1ee](https://github.com/stacksjs/dtsx/commit/915d1ee)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.38...v0.11.39)
 
 ## ✨ Features
