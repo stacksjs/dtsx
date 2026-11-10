@@ -5,7 +5,7 @@
 import type { KeyConstants } from '../computed-keys'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
 import { tokenizeDeclarationSyntax } from '../module-references'
-import { normalizeDefaultParameterOrder } from '../parameters'
+import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { escapeJsdocContent } from './comments'
 
 /**
@@ -726,6 +726,12 @@ function collectParameterTypes(parameters: string, resolve?: (value: string) => 
       else if ([')', ']', '}'].includes(text) || text === '>' && part[token.start - 1] !== '=') depth--
     }
     const name = part.slice(0, colon !== -1 ? colon : equal !== -1 ? equal : undefined).trim().replace(/^\.\.\./, '').replace(/\?$/, '')
+    // `{ ssl = true } = {}` binds each name to its own default's type.
+    const binding = colon === -1 && equal !== -1 && !part.trim().startsWith('...') ? defaultedObjectBinding(name, part.slice(equal + 1)) : null
+    if (binding) {
+      for (const element of binding) types.set(element.alias, resolve?.(element.value) ?? inferNarrowType(element.value, false))
+      continue
+    }
     if (!isIdentifierName(name)) continue
     let type = colon !== -1 ? part.slice(colon + 1, equal !== -1 ? equal : undefined).trim() : ''
     if (!type && equal !== -1) {
@@ -2216,6 +2222,8 @@ function cleanSingleParam(param: string): string {
   else if (equalIdx !== -1) {
     // No type annotation, just name = default
     const name = param.slice(0, equalIdx).trim()
+    const binding = defaultedObjectBinding(name, param.slice(equalIdx + 1))
+    if (binding) return defaultedObjectBindingParameter(binding, simpleDefaultType)
     const optionalMarker = !name.endsWith('?') ? '?' : ''
     return `${name}${optionalMarker}: ${simpleDefaultType(param.slice(equalIdx + 1))}`
   }

@@ -58,3 +58,104 @@ export function normalizeDefaultParameterOrder(parameters: string): string {
   chunks.push(parameters.slice(cursor))
   return chunks.join('')
 }
+
+/** One `key = value` or `key: alias = value` element of a defaulted object binding. */
+export interface DefaultedBindingElement {
+  key: string
+  alias: string
+  value: string
+}
+
+function isAsciiIdentifierStart(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95 || code === 36
+}
+
+function asciiIdentifierEnd(text: string, start: number): number {
+  if (start >= text.length || !isAsciiIdentifierStart(text.charCodeAt(start))) return start
+  let end = start + 1
+  while (end < text.length && (isAsciiIdentifierStart(text.charCodeAt(end)) || (text.charCodeAt(end) >= 48 && text.charCodeAt(end) <= 57))) end++
+  return end
+}
+
+function skipSpaces(text: string, start: number): number {
+  let index = start
+  while (index < text.length && text.charCodeAt(index) <= 32) index++
+  return index
+}
+
+/**
+ * An object binding parameter defaulted to `{}` whose elements are all
+ * `name = value` or `key: alias = value`: `{ ssl = true } = {}`. Any other
+ * shape (an element without a default, a nested pattern, a rest element, a
+ * comment, or another initializer) is null. Mirrored by the native engine.
+ */
+export function defaultedObjectBinding(pattern: string, initializer: string): DefaultedBindingElement[] | null {
+  if (initializer.trim() !== '{}') return null
+  const source = pattern.trim()
+  if (source.length < 2 || source[0] !== '{' || source[source.length - 1] !== '}') return null
+  const inner = source.slice(1, -1)
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < inner.length; index++) {
+    const code = inner.charCodeAt(index)
+    if (code === 34 || code === 39 || code === 96) {
+      index++
+      while (index < inner.length && inner.charCodeAt(index) !== code) {
+        if (inner.charCodeAt(index) === 92) index++
+        index++
+      }
+      if (index >= inner.length) return null
+      continue
+    }
+    if (code === 47 && (inner.charCodeAt(index + 1) === 47 || inner.charCodeAt(index + 1) === 42)) return null
+    if (code === 40 || code === 91 || code === 123) {
+      depth++
+    }
+    else if (code === 41 || code === 93 || code === 125) {
+      if (--depth < 0) return null
+    }
+    else if (code === 44 && depth === 0) {
+      parts.push(inner.slice(start, index))
+      start = index + 1
+    }
+  }
+  if (depth !== 0) return null
+  // A trailing comma leaves an empty final element.
+  if (inner.slice(start).trim() || parts.length === 0) parts.push(inner.slice(start))
+  const elements: DefaultedBindingElement[] = []
+  for (const part of parts) {
+    const text = part.trim()
+    const keyEnd = asciiIdentifierEnd(text, 0)
+    if (keyEnd === 0) return null
+    const key = text.slice(0, keyEnd)
+    let alias = key
+    let cursor = skipSpaces(text, keyEnd)
+    if (text.charCodeAt(cursor) === 58 /* : */) {
+      const aliasStart = skipSpaces(text, cursor + 1)
+      const aliasEnd = asciiIdentifierEnd(text, aliasStart)
+      if (aliasEnd === aliasStart) return null
+      alias = text.slice(aliasStart, aliasEnd)
+      cursor = skipSpaces(text, aliasEnd)
+    }
+    if (text.charCodeAt(cursor) !== 61 /* = */ || text.charCodeAt(cursor + 1) === 61 || text.charCodeAt(cursor + 1) === 62) return null
+    const value = text.slice(cursor + 1).trim()
+    if (!value) return null
+    elements.push({ key, alias, value })
+  }
+  return elements
+}
+
+/**
+ * The declaration of a defaulted object binding, as tsc writes it:
+ * `{ ssl, poolSize }?: { ssl?: boolean | undefined; poolSize?: number | undefined }`.
+ */
+export function defaultedObjectBindingParameter(elements: readonly DefaultedBindingElement[], typeOf: (value: string) => string): string {
+  const names = elements.map(element => element.key === element.alias ? element.key : `${element.key}: ${element.alias}`).join(', ')
+  const members = elements.map((element) => {
+    const type = typeOf(element.value)
+    const optional = type === 'unknown' || type === 'any' ? type : `${type.includes('=>') ? `(${type})` : type} | undefined`
+    return `${element.key}?: ${optional}`
+  }).join('; ')
+  return `{ ${names} }?: { ${members} }`
+}

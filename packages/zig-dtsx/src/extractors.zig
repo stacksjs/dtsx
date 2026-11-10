@@ -965,6 +965,24 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
     return result;
 }
 
+/// The declaration of an object binding defaulted to `{}` whose elements all
+/// have defaults, or null for any other parameter.
+fn defaultedBindingParam(s: *Scanner, pattern: []const u8, initializer: []const u8) ?[]const u8 {
+    const elements = (parameter_order.defaultedObjectBinding(s.allocator, pattern, initializer) catch |err| {
+        s.pending_error = err;
+        return null;
+    }) orelse return null;
+    const element_types = s.allocator.alloc([]const u8, elements.len) catch |err| {
+        s.pending_error = err;
+        return null;
+    };
+    for (elements, 0..) |element, index| element_types[index] = inferTypeFromDefault(s, element.value);
+    return parameter_order.defaultedObjectBindingParameter(s.allocator, elements, element_types) catch |err| {
+        s.pending_error = err;
+        return null;
+    };
+}
+
 /// Build a single DTS parameter from raw source text
 pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     var p = std.mem.trim(u8, raw, " \t\r\n");
@@ -1100,6 +1118,11 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     } else {
         name = p;
         param_type = "unknown";
+    }
+
+    // `{ ssl = true } = {}` declares each element's type, as tsc does.
+    if (!is_rest and equal_idx != null and (colon_idx == null or colon_idx.? > equal_idx.?)) {
+        if (defaultedBindingParam(s, name, p[equal_idx.? + 1 ..])) |declared| return declared;
     }
 
     // Clean destructured patterns: strip defaults and rest operators

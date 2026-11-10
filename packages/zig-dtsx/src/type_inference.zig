@@ -790,6 +790,11 @@ fn cleanSingleParam(alloc: std.mem.Allocator, param: []const u8) InferError![]co
     }
     if (equal_idx) |eq| {
         const name = trim(param[0..eq]);
+        if (try parameter_order.defaultedObjectBinding(alloc, name, param[eq + 1 ..])) |elements| {
+            const element_types = try alloc.alloc([]const u8, elements.len);
+            for (elements, 0..) |element, index| element_types[index] = simpleDefaultType(element.value);
+            return parameter_order.defaultedObjectBindingParameter(alloc, elements, element_types);
+        }
         const marker: []const u8 = if (!ch.endsWith(name, "?")) "?" else "";
         return std.fmt.allocPrint(alloc, "{s}{s}: {s}", .{ name, marker, simpleDefaultType(param[eq + 1 ..]) });
     }
@@ -1988,8 +1993,19 @@ pub fn bodyParameters(alloc: std.mem.Allocator, raw: []const u8, scope: ?*ClassS
                 var name = trim(part[0 .. colon orelse equal orelse part.len]);
                 const optional = ch.endsWith(name, "?");
                 if (optional) name = name[0 .. name.len - 1];
-                if (ch.startsWith(name, "...")) name = name[3..];
-                if (isIdentifierName(name)) {
+                const is_rest = ch.startsWith(name, "...");
+                if (is_rest) name = name[3..];
+                // `{ ssl = true } = {}` binds each name to its own default's type.
+                const binding = if (colon == null and !is_rest) if (equal) |at| try parameter_order.defaultedObjectBinding(alloc, name, part[at + 1 ..]) else null else null;
+                if (binding) |elements| {
+                    for (elements) |element| {
+                        const inferred = if (scope) |root| @import("extractors.zig").inferTypeFromDefault(root, element.value) else try inferNarrowType(alloc, element.value, false, false, 0);
+                        if (result.items.len > 0) try result.appendSlice(", ");
+                        try result.appendSlice(element.alias);
+                        try result.appendSlice(": ");
+                        try result.appendSlice(inferred);
+                    }
+                } else if (isIdentifierName(name)) {
                     const inferred = if (colon) |at| trim(part[at + 1 .. equal orelse part.len]) else if (equal) |at| if (scope) |root| @import("extractors.zig").inferTypeFromDefault(root, trim(part[at + 1 ..])) else try inferNarrowType(alloc, trim(part[at + 1 ..]), false, false, 0) else "unknown";
                     if (result.items.len > 0) try result.appendSlice(", ");
                     try result.appendSlice(name);
@@ -3885,12 +3901,21 @@ test "primitive receivers resolve fixed method results" {
     try std.testing.expectEqualStrings("string", primitiveMethodReturnType("boolean", "toString").?);
     try std.testing.expect(primitiveMethodReturnType("string", "custom") == null);
     try std.testing.expect(primitiveMethodReturnType("Date", "toString") == null);
+
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     try std.testing.expectEqualStrings("string", try inferFunctionBodyReturnType(alloc, "{ return value.toFixed(2) }", "(value: number)", 0));
     try std.testing.expectEqualStrings("(string | undefined)[]", try inferFunctionBodyReturnType(alloc, "{ return [s.at(0)] }", "(s: string)", 0));
     try std.testing.expectEqualStrings("ReturnType<(string)[\"custom\"]>", try inferFunctionBodyReturnType(alloc, "{ return s.custom() }", "(s: string)", 0));
+}
+
+test "defaulted object bindings are visible to body inference" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("{\n  ssl: boolean;\n  ms: number\n}", try inferFunctionBodyReturnType(alloc, "{ return { ssl, ms } }", "({ ssl = true, timeout: ms = 10 } = {})", 0));
+    try std.testing.expectEqualStrings("({ a }?: { a?: number | undefined })", try cleanParameterDefaults(alloc, "({ a = 1 } = {})"));
 }
 
 test "numeric literal types drop separators" {

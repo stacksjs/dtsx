@@ -74,6 +74,23 @@ describe('TypeScript engine inference', () => {
     expect(output).toContain('export declare function maybe(s?: string): ReturnType<((string) | undefined)["trim"]>;')
   })
 
+  test('an object binding defaulted to {} declares each element like tsc', () => {
+    const output = emit([
+      `export function connect(host = 'localhost', { ssl = true, timeout: ms = 10, } = {}) { return { host, ssl, ms } }`,
+      'export const arrow = ({ a = 1 } = {}) => a',
+      'export function partial({ a, b = 1 } = {}) { return b }',
+      'export function nested({ a: { b = 1 } = {} } = {}) { return 1 }',
+      'export function seeded({ a = 1 } = { a: 2 }) { return a }',
+    ].join('\n'))
+    expect(output).toContain('export declare function connect(host?: string, { ssl, timeout: ms }?: { ssl?: boolean | undefined; timeout?: number | undefined }): {')
+    expect(output).toContain('  ssl: boolean;\n  ms: number\n};')
+    expect(output).toContain('export declare const arrow: ({ a }?: { a?: number | undefined }) => number;')
+    // Other shapes keep the opaque record.
+    expect(output).toContain('export declare function partial({ a, b}?: Record<string, unknown>): unknown;')
+    expect(output).toContain('export declare function nested({ a: { b}}?: Record<string, unknown>): number;')
+    expect(output).toContain('export declare function seeded({ a}?: Record<string, unknown>): unknown;')
+  })
+
   test('numeric separators are not part of a literal type', () => {
     const output = emit([
       'export const timeout = 5_000',

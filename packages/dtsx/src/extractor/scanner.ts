@@ -12,8 +12,8 @@ import { attachEnumBodies } from '../enum-declarations'
 import { attachFunctionProperties } from '../function-properties'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
-import { normalizeDefaultParameterOrder } from '../parameters'
 import { extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, numericLiteralType } from '../processor/type-inference'
+import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -1836,6 +1836,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     }
     else if (equalIdx !== -1) {
       name = p.slice(0, equalIdx).trim()
+      const binding = isRest ? null : defaultedObjectBinding(name, p.slice(equalIdx + 1))
+      if (binding)
+        return defaultedObjectBindingParameter(binding, inferTypeFromDefault)
       type = inferTypeFromDefault(p.slice(equalIdx + 1).trim())
     }
     else {
