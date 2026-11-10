@@ -1,5 +1,29 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.41...v0.11.42)
+
+## 🐛 Bug Fixes
+
+- **native**: locate call arguments after generic type expressions ([398a9bf](https://github.com/stacksjs/dtsx/commit/398a9bf)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3174](https://github.com/stacksjs/dtsx/issues/3174))
+- print the decided type when a logical operator's left side is unknown ([68b323e](https://github.com/stacksjs/dtsx/commit/68b323e)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ⚡ Performance Improvements
+
+- overwrite declaration files in place instead of truncating them ([debe0dc](https://github.com/stacksjs/dtsx/commit/debe0dc)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ✅ Tests
+
+- verify generic call inference through the public SDK ([84a2db0](https://github.com/stacksjs/dtsx/commit/84a2db0)) _(by Chris Breuer <chris@stacksjs.com>)_
+- qualify logical return inference fixtures ([d7c3b44](https://github.com/stacksjs/dtsx/commit/d7c3b44)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3173](https://github.com/stacksjs/dtsx/issues/3173))
+
+## 🔧 Chores
+
+- release v0.11.42 ([c19cf49](https://github.com/stacksjs/dtsx/commit/c19cf49)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.40...v0.11.41)
 
 ## 🐛 Bug Fixes
