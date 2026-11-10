@@ -149,6 +149,11 @@ jobs:
         working-directory: packages/zig-dtsx
         run: zig build
 
+      # The Vite plugin tests run real builds whose config Vite loads itself,
+      # so `@dtsx/dtsx` must resolve to its built entry point.
+      - name: Build core library and CLI
+        run: bun run build
+
       - name: Unit Test
         id: unit-tests
         run: bun run test

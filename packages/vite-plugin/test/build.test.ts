@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path'
 import { build } from 'vite'
 
 const pluginEntry = join(import.meta.dir, '..', 'src', 'index.ts')
+// Vite loads each project's config itself and resolves `@dtsx/dtsx` through
+// its package entry point, which exists only once the SDK is built.
+const sdkEntry = join(import.meta.dir, '..', '..', 'dtsx', 'dist', 'src', 'index.js')
+if (!existsSync(sdkEntry))
+  throw new Error(`Build @dtsx/dtsx before these tests (bun run build): ${sdkEntry} is missing`)
 const projects: string[] = []
 
 /** A throwaway Vite project. It sits in this package so `@dtsx/dtsx` resolves. */
