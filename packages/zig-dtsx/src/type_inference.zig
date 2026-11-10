@@ -1059,7 +1059,16 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
         }
 
         if (!in_string) {
-            if (c == '(' and depth == 0 and in_key and type_argument_depth == 0) {
+            if (c == '.' and next == '.' and i + 2 < content.len and content[i + 2] == '.' and depth == 0 and in_key) {
+                // A spread has an expression operand, not a method key. Enter
+                // value mode before its parentheses or conditional colon.
+                key_start = current_start;
+                key_end = i + 3;
+                current_start = i + 3;
+                in_key = false;
+                is_method = false;
+                i += 2;
+            } else if (c == '(' and depth == 0 and in_key and type_argument_depth == 0) {
                 // Method definition — must check BEFORE general bracket tracking
                 key_start = current_start;
                 key_end = i;
@@ -1133,6 +1142,24 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
 
     // toOwnedSlice() trims unused capacity — important for non-arena callers.
     return properties.toOwnedSlice();
+}
+
+test "object spread operands are expressions rather than method declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const properties = try parseObjectProperties(
+        arena.allocator(),
+        "before: 1, /* optional */ ...(enabled ? { values: [...items] } : {}), ...factory(1, 2), after() { return true }",
+    );
+    try std.testing.expectEqual(@as(usize, 4), properties.len);
+    try std.testing.expectEqualStrings("...", properties[1].key);
+    try std.testing.expectEqualStrings("(enabled ? { values: [...items] } : {})", properties[1].value);
+    try std.testing.expect(!properties[1].is_method);
+    try std.testing.expectEqualStrings("...", properties[2].key);
+    try std.testing.expectEqualStrings("factory(1, 2)", properties[2].value);
+    try std.testing.expect(!properties[2].is_method);
+    try std.testing.expectEqualStrings("after", properties[3].key);
+    try std.testing.expect(properties[3].is_method);
 }
 
 /// Find matching bracket (open/close) starting from `start`, skipping strings and comments.
@@ -1759,6 +1786,7 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     if (std.mem.indexOfScalar(u8, value, '.')) |dot| {
         if (findParameterType(parameters, value[0..dot])) |object| {
             if (try objectMemberType(alloc, object, value[dot + 1 ..])) |property| return property;
+            if (isEntityName(value)) return substituteBodyQueries(alloc, try std.fmt.allocPrint(alloc, "typeof {s}", .{value}), parameters);
         }
     }
     if (findParameterType(parameters, value)) |parameter_type| return parameter_type;
@@ -1793,6 +1821,29 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         if (std.mem.eql(u8, left, "number") and std.mem.eql(u8, right, "number")) return "number";
     }
 
+    if (value.len >= 2 and value[0] == '[' and value[value.len - 1] == ']') spread_array: {
+        const elements = try parseArrayElements(alloc, value[1 .. value.len - 1]);
+        var has_spread = false;
+        for (elements) |element| {
+            if (ch.startsWith(trim(element), "...")) has_spread = true;
+        }
+        if (!has_spread) break :spread_array;
+        var element_type: ?[]const u8 = null;
+        for (elements) |element| {
+            const item = trim(element);
+            const spread = ch.startsWith(item, "...");
+            const inferred_item = try inferBodyExpressionTypeScoped(alloc, if (spread) trim(item[3..]) else item, parameters, depth + 1, class_scope, return_scope);
+            // A source-valid spread supplies an iterable, potentially narrowed
+            // by its enclosing branch. Its iteration value, not a readonly
+            // tuple or an optional indexed access, is the new array's element.
+            const item_type = if (spread)
+                try std.fmt.allocPrint(alloc, "(NonNullable<{s}> extends Iterable<infer Element> ? Element : never)", .{inferred_item})
+            else
+                inferred_item;
+            element_type = if (element_type) |previous| try unionOf(alloc, previous, item_type) else item_type;
+        }
+        return std.fmt.allocPrint(alloc, "({s})[]", .{element_type orelse "never"});
+    }
     const inferred = if (value.len >= 2 and value[0] == '{' and value[value.len - 1] == '}')
         try inferObjectTypeContextual(alloc, value, false, depth + 1, null, parameters, class_scope, return_scope)
     else
@@ -2884,7 +2935,9 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
         if ((ch.startsWith(prop.key, "get ") or ch.startsWith(prop.key, "set ")) and try computed_keys.hasTemplateSubstitution(alloc, trim(prop.key[4..]))) continue;
         if (std.mem.eql(u8, prop.key, "...")) {
             const spread_value = trim(prop.value);
-            const spread_type = if (isEntityName(spread_value))
+            const spread_type = if (parameters) |body_parameters|
+                try inferBodySpreadType(alloc, spread_value, body_parameters, depth + 1, class_scope, return_scope)
+            else if (isEntityName(spread_value))
                 try std.fmt.allocPrint(alloc, "typeof {s}", .{spread_value})
             else
                 try inferNarrowTypeWithKeyConstants(alloc, spread_value, is_const, false, depth + 1, key_constants);
@@ -3096,10 +3149,25 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
 
     var merged_type: []const u8 = spread_types.items[0];
     for (spread_types.items[1..]) |spread_type| {
-        merged_type = try std.fmt.allocPrint(alloc, "Omit<{s}, keyof {s}> & {s}", .{ merged_type, spread_type, spread_type });
+        merged_type = if (findTopLevelToken(spread_type, "|", 0) != null)
+            try std.fmt.allocPrint(alloc, "Omit<{s}, keyof ({s})> & ({s})", .{ merged_type, spread_type, spread_type })
+        else
+            try std.fmt.allocPrint(alloc, "Omit<{s}, keyof {s}> & {s}", .{ merged_type, spread_type, spread_type });
     }
     if (emitted_count == 0) return merged_type;
     return std.fmt.allocPrint(alloc, "Omit<{s}, keyof {s}> & {s}", .{ merged_type, own_type, own_type });
+}
+
+/// A conditional spread with an empty branch contributes optional properties,
+/// while its values are still inferred in the function's parameter scope.
+fn inferBodySpreadType(alloc: std.mem.Allocator, expression: []const u8, parameters: []const u8, depth: usize, class_scope: ?*ClassScope, return_scope: ?*return_scopes.Scope) InferError![]const u8 {
+    var value = trim(expression);
+    while (value.len >= 2 and value[0] == '(' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) value = trim(value[1 .. value.len - 1]);
+    if (splitTopLevelConditional(value)) |conditional| {
+        const nonempty = if (std.mem.eql(u8, trim(conditional.when_false), "{}")) conditional.when_true else if (std.mem.eql(u8, trim(conditional.when_true), "{}")) conditional.when_false else null;
+        if (nonempty) |branch| return std.fmt.allocPrint(alloc, "Partial<{s}>", .{try inferBodyExpressionTypeScoped(alloc, branch, parameters, depth + 1, class_scope, return_scope)});
+    }
+    return inferBodyExpressionTypeScoped(alloc, value, parameters, depth + 1, class_scope, return_scope);
 }
 
 /// Infer type from new expression
