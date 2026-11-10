@@ -12,8 +12,8 @@ import { attachEnumBodies } from '../enum-declarations'
 import { attachFunctionProperties } from '../function-properties'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
-import { extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, numericLiteralType } from '../processor/type-inference'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
+import { classFieldDefaultDoc, extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -2691,6 +2691,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   }
 
   /** Build class body DTS (members only, no implementations) */
+  /** Comments before the class member being read, for its `@defaultValue` doc. */
+  let memberLeadingComments: string[] | undefined
+
   function buildClassBodyDts(): string {
     if (pos >= len || source.charCodeAt(pos) !== CH_LBRACE)
       return '{}'
@@ -2709,6 +2712,9 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       // Skip semicolons
       if (source.charCodeAt(pos) === CH_SEMI) { pos++; continue }
+
+      // A field's doc comment carries its @defaultValue.
+      memberLeadingComments = extractLeadingComments(pos)
 
       // Skip static blocks
       if (matchWord('static') && peekAfterWord('static') === CH_LBRACE) {
@@ -2986,6 +2992,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
   /** Handle method or property after reading the member name */
   // eslint-disable-next-line pickier/no-unused-vars -- `isAbstract` is positional; the callers pass it and `isAsync` follows it
   function handleMethodOrPropertyAfterName(memberName: string, modPrefix: string, isStatic: boolean, isReadonly: boolean, isGenerator: boolean, isAbstract: boolean, isAsync: boolean, members: string[]): void {
+    const leadingComments = memberLeadingComments
+    memberLeadingComments = undefined
     skipWhitespaceAndComments()
     if (pos >= len)
       return
@@ -3145,6 +3153,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       if (pos < len && source.charCodeAt(pos) === CH_SEMI)
         pos++
 
+      const annotated = type.length > 0
       if (!type) {
         if (initText) {
           const asType = extractAssertion(initText)
@@ -3167,7 +3176,8 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
 
       const optMark = isOptional ? '?' : ''
       classFrames.at(-1)?.fields.set(`${isStatic ? 'static:' : ''}${memberName}`, isOptional ? `(${type}) | undefined` : type)
-      members.push(`${modPrefix}${memberName}${optMark}: ${type};`)
+      const doc = keepComments && !annotated && initText ? classFieldDefaultDoc(leadingComments, initText, type) : ''
+      members.push(`${doc}${modPrefix}${memberName}${optMark}: ${type};`)
     }
     else {
       // Unknown member, skip it
@@ -3200,8 +3210,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     let depth = 0
     let inStr = false
     let strCh = 0
+    const rawParamTexts: string[] = []
     for (let i = 0; i <= inner.length; i++) {
       if (i === inner.length) {
+        rawParamTexts.push(inner.slice(start))
         params.push(stripParamComments(inner.slice(start).trim()))
         break
       }
@@ -3235,12 +3247,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
         depth--
       }
       else if (ch === CH_COMMA && depth === 0) {
+        rawParamTexts.push(inner.slice(start, i))
         params.push(stripParamComments(inner.slice(start, i).trim()))
         start = i + 1
       }
     }
 
-    for (const param of params) {
+    for (const [paramIndex, param] of params.entries()) {
       // Check for access modifier keywords
       const hasPublic = param.startsWith('public ') || param.startsWith('public\t')
       const hasProtected = param.startsWith('protected ') || param.startsWith('protected\t')
@@ -3290,7 +3303,13 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       const nameEnd = p.search(/[?:=]/)
       if (nameEnd !== -1 && p.charCodeAt(nameEnd) !== 63 /* ? */ && hasTopLevelDefault(p))
         dtsParam = dtsParam.replace(/^([\w$]+)\?:/, '$1:')
-      members.push(hasPrivate ? `  private ${dtsParam.split(/[?:]/, 1)[0]};` : `  ${modText}${dtsParam};`)
+      // An unannotated `public x = 1` documents its initializer on the field.
+      let doc = ''
+      if (keepComments && !hasPrivate && nameEnd !== -1 && p.charCodeAt(nameEnd) === CH_EQUAL) {
+        const initializer = p.slice(nameEnd + 1)
+        doc = classFieldDefaultDoc(leadingSourceComments(rawParamTexts[paramIndex]), initializer, inferTypeFromDefault(initializer))
+      }
+      members.push(hasPrivate ? `  private ${dtsParam.split(/[?:]/, 1)[0]};` : `${doc}  ${modText}${dtsParam};`)
     }
   }
 

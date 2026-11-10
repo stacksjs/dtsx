@@ -111,6 +111,35 @@ describe('TypeScript engine inference', () => {
     expect(output).toContain('export declare function wait(ms?: number): number;')
   })
 
+  test('class fields and parameter properties document their initializers', () => {
+    const output = emit([
+      'export class Client {',
+      '  retries = 3',
+      `  static version = '1.0.0'`,
+      '  /** The port */',
+      '  port = 8080',
+      '  /* not documentation */',
+      '  enabled = true',
+      '  /** @defaultValue 9 */',
+      '  custom = 1',
+      '  typed: number = 5',
+      `  mode = 'fast' as const`,
+      `  constructor(public timeout = 1000, /** Host name */ protected host = 'h', public typedParam: number = 2) {}`,
+      '}',
+    ].join('\n'))
+    expect(output).toContain('  /** @defaultValue 3 */\n  retries: number;')
+    expect(output).toContain(`  /** @defaultValue '1.0.0' */\n  static version: string;`)
+    expect(output).toContain('  /**\n   * The port\n   * @defaultValue 8080\n   */\n  port: number;')
+    expect(output).toContain('  /** @defaultValue true */\n  enabled: boolean;')
+    expect(output).toContain('  /** @defaultValue 9 */\n  custom: number;')
+    expect(output).toContain(';\n  typed: number;')
+    expect(output).toContain(';\n  mode: \'fast\';')
+    expect(output).toContain('  /** @defaultValue 1000 */\n  public timeout: number;')
+    expect(output).toContain(`  /**\n   * Host name\n   * @defaultValue 'h'\n   */\n  protected host: string;`)
+    expect(output).toContain(';\n  public typedParam: number;')
+    expect(emit('export class C { retries = 3 }', true)).toContain('  /** @defaultValue 3 */\n  retries: number;')
+  })
+
   test('an object default made only of functions is omitted', () => {
     const output = emit([
       'export const handlers = { onReady: () => true, format(value: number) { return value } }',

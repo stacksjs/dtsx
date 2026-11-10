@@ -89,6 +89,7 @@ export declare interface AsyncDisposable {
 export type Status = typeof STATUSES[number];
 /** Class with symbol properties */
 export declare class SymbolClass {
+  /** @defaultValue 'SymbolClass' */
   [Symbol.toStringTag]: string;
   [Symbol.iterator](): Generator<number>;
   get [customSymbol](): string;

@@ -10,6 +10,7 @@ export declare class CatalogFetchError extends Error {
 }
 export declare class Client {
   protected readonly baseUrl: string;
+  /** @defaultValue 3 */
   public retries: number;
   public readonly pattern: string;
   public onError: (reason?: string) => void;

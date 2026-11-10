@@ -119,6 +119,8 @@ pub const Scanner = struct {
     binding_name_counter: usize = 0,
     inference_sources: []const module_syntax.InferenceSource = &.{},
     class_fields: ?*std.StringHashMap([]const u8) = null,
+    /// Comments before the class member being read, for its `@defaultValue` doc.
+    member_leading_comments: ?[]const []const u8 = null,
     class_receiver_static: bool = false,
     class_returns: ?*std.array_list.Managed(@import("semantic_context.zig").PendingReturn) = null,
     /// Whole-source declaration-syntax tokens, lexed once and shared by every

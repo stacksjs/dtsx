@@ -2064,6 +2064,9 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
             continue;
         }
 
+        // A field's doc comment carries its @defaultValue.
+        s.member_leading_comments = extractLeadingComments(s, s.pos);
+
         // Skip static blocks
         if (s.matchWord("static") and s.peekAfterWord("static") == ch.CH_LBRACE) {
             s.pos += 6;
@@ -2384,6 +2387,8 @@ fn skipAccessorBody(s: *Scanner) void {
 
 /// Handle method or property after reading member name
 fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_prefix: []const u8, is_static: bool, is_readonly: bool, is_generator: bool, is_abstract: bool, is_async: bool, members: *std.array_list.Managed([]const u8)) !void {
+    const leading_comments = s.member_leading_comments;
+    s.member_leading_comments = null;
     _ = is_abstract;
     s.skipWhitespaceAndComments();
     if (s.pos >= s.len) return;
@@ -2518,6 +2523,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
 
         if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) s.pos += 1;
 
+        const annotated = prop_type.len > 0;
         if (prop_type.len == 0) {
             if (init_text.len > 0) {
                 const as_type = extractAssertion(init_text);
@@ -2541,10 +2547,13 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
             try fields.put(key, field_type);
         }
         const opt_mark: []const u8 = if (is_optional) "?" else "";
-        // Direct alloc — fixed shape "<prefix><name>[?]: <type>;".
-        const prop_total = mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;
+        const doc: []const u8 = if (s.keep_comments and !annotated and init_text.len > 0) try type_inf.classFieldDefaultDoc(s.allocator, leading_comments, init_text, prop_type) else "";
+        // Direct alloc — fixed shape "<doc><prefix><name>[?]: <type>;".
+        const prop_total = doc.len + mod_prefix.len + member_name.len + opt_mark.len + 2 + prop_type.len + 1;
         const prop_buf = try s.allocator.alloc(u8, prop_total);
         var pp: usize = 0;
+        @memcpy(prop_buf[pp..][0..doc.len], doc);
+        pp += doc.len;
         @memcpy(prop_buf[pp..][0..mod_prefix.len], mod_prefix);
         pp += mod_prefix.len;
         @memcpy(prop_buf[pp..][0..member_name.len], member_name);
@@ -2571,6 +2580,8 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
     // Split by comma at depth 0
     var params = std.array_list.Managed([]const u8).init(s.allocator);
     defer params.deinit();
+    var raw_param_texts = std.array_list.Managed([]const u8).init(s.allocator);
+    defer raw_param_texts.deinit();
     var start: usize = 0;
     var depth: isize = 0;
     var in_str = false;
@@ -2622,13 +2633,15 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
             // The `>` of an arrow (`=>`) closes nothing.
             depth -= 1;
         } else if (c == ch.CH_COMMA and depth == 0) {
+            try raw_param_texts.append(inner[start..i]);
             try params.append(stripParamComments(s, std.mem.trim(u8, inner[start..i], " \t\r\n")));
             start = i + 1;
         }
     }
+    try raw_param_texts.append(inner[start..]);
     try params.append(stripParamComments(s, std.mem.trim(u8, inner[start..], " \t\r\n")));
 
-    for (params.items) |param| {
+    for (params.items, raw_param_texts.items) |param, raw_param| {
         if (param.len == 0) continue;
         // First-byte fast-fail — only constructor params starting with 'p' or
         // 'r' can carry an access modifier, so reject everything else without
@@ -2707,6 +2720,16 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
                 }
             }
         }
+        // An unannotated `public x = 1` documents its initializer on the field.
+        var doc: []const u8 = "";
+        if (s.keep_comments) {
+            var name_end: usize = 0;
+            while (name_end < p.len and p[name_end] != '?' and p[name_end] != ':' and p[name_end] != '=') name_end += 1;
+            if (name_end < p.len and p[name_end] == '=') {
+                const initializer = p[name_end + 1 ..];
+                doc = try type_inf.classFieldDefaultDoc(s.allocator, try type_inf.leadingSourceComments(s.allocator, raw_param), initializer, inferTypeFromDefault(s, initializer));
+            }
+        }
         const pub_token: []const u8 = if (has_public) "public" else "";
         const prot_token: []const u8 = if (has_protected) "protected" else "";
         const ro_token: []const u8 = if (has_readonly) "readonly" else "";
@@ -2716,9 +2739,11 @@ fn extractParamProperties(s: *Scanner, raw_params: []const u8, members: *std.arr
         const mod_text_len = pub_token.len + prot_token.len + ro_token.len +
             (if (num_mods > 0) num_mods else 0); // separators + trailing space when any modifier present
 
-        const m_total = 2 + mod_text_len + dts_param.len + 1;
+        const m_total = doc.len + 2 + mod_text_len + dts_param.len + 1;
         const mbuf = try s.allocator.alloc(u8, m_total);
         var mp: usize = 0;
+        @memcpy(mbuf[mp..][0..doc.len], doc);
+        mp += doc.len;
         mbuf[mp] = ' ';
         mp += 1;
         mbuf[mp] = ' ';

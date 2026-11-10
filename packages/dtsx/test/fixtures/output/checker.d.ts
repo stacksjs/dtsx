@@ -45,6 +45,7 @@ declare class SymbolTrackerImpl implements SymbolTracker {
   context: NodeBuilderContext;
   readonly inner: SymbolTracker | undefined;
   readonly canTrackSymbol: boolean;
+  /** @defaultValue false */
   disableTrackSymbol: boolean;
   constructor(context: NodeBuilderContext, tracker: SymbolTracker | undefined, moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined);
   trackSymbol(symbol: Symbol, enclosingDeclaration: Node | undefined, meaning: SymbolFlags): boolean;

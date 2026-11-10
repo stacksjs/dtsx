@@ -1601,6 +1601,76 @@ function isBaseType(type: string): boolean {
   return type === 'number' || type === 'string' || type === 'boolean'
 }
 
+/**
+ * The comments that open a parameter's source text (`/** doc *\/ public x = 1`),
+ * in order. Mirrored by the native engine.
+ */
+export function leadingSourceComments(text: string): string[] {
+  const comments: string[] = []
+  let index = 0
+  while (index < text.length) {
+    while (index < text.length && text.charCodeAt(index) <= 32) index++
+    if (text.startsWith('/*', index)) {
+      const close = text.indexOf('*/', index + 2)
+      if (close === -1) break
+      comments.push(text.slice(index, close + 2))
+      index = close + 2
+    }
+    else if (text.startsWith('//', index)) {
+      let end = index
+      while (end < text.length && text.charCodeAt(end) !== 10 && text.charCodeAt(end) !== 13) end++
+      comments.push(text.slice(index, end).trimEnd())
+      index = end
+    }
+    else {
+      break
+    }
+  }
+  return comments
+}
+
+/**
+ * The doc block a class field (or constructor parameter property) gets for its
+ * initializer: `@defaultValue` exactly as a widened object-literal property
+ * gets it, merged with the member's own doc comment the way a variable's is.
+ * Each line carries the two-space class member indent. Empty when the field
+ * gets no `@defaultValue`. Mirrored by the native engine.
+ */
+export function classFieldDefaultDoc(comments: readonly string[] | undefined, initializer: string, type: string): string {
+  const raw = initializer.trim()
+  if (!isBaseType(type) || !isPrimitiveLiteral(raw)) return ''
+  // Doc comments only: a plain `/* note */` is not documentation to merge into.
+  const existing = (comments ?? []).map(comment => comment.trim()).filter(comment => comment.startsWith('/**') || comment.startsWith('//')).join('\n')
+  let doc: string
+  if (existing.includes('@defaultValue')) {
+    doc = existing
+  }
+  else {
+    const tag = `@defaultValue ${escapeJsdocContent(raw)}`
+    if (!existing) {
+      doc = `/** ${tag} */`
+    }
+    else {
+      const closing = existing.lastIndexOf('*/')
+      if (closing !== -1) {
+        let before = existing.slice(0, closing).trimEnd()
+        // A single-line `/** text` opens onto its own line, as for variables.
+        if (before.startsWith('/** ') && !before.includes('\n')) before = `/**\n * ${before.slice(4)}`
+        doc = `${before}\n * ${tag}\n */`
+      }
+      else {
+        const text = existing.startsWith('// ') ? existing.slice(3) : existing.startsWith('//') ? existing.slice(2) : existing
+        doc = `/**\n * ${text}\n * ${tag}\n */`
+      }
+    }
+  }
+  return doc.split('\n').map((line) => {
+    const content = line.trim()
+    if (!content) return ''
+    return content.startsWith('*') ? `   ${content}` : `  ${content}`
+  }).join('\n') + '\n'
+}
+
 /** Check if an array literal only contains primitives/nested arrays/objects (no runtime expressions) */
 function isSimpleArrayDefault(val: string): boolean {
   // Scan character by character, skipping quoted strings.

@@ -2581,7 +2581,7 @@ pub fn inferArrayTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const u
 }
 
 /// Check if a value string is a primitive literal (number, string, boolean)
-fn isPrimitiveLiteral(val: []const u8) bool {
+pub fn isPrimitiveLiteral(val: []const u8) bool {
     if (val.len == 0) return false;
     // First-byte dispatch: each kind of literal has a distinct prefix byte —
     // saves running every check on every value.
@@ -2596,7 +2596,7 @@ fn isPrimitiveLiteral(val: []const u8) bool {
 }
 
 /// Check if a type is a base/widened type
-fn isBaseType(t: []const u8) bool {
+pub fn isBaseType(t: []const u8) bool {
     // Length-first dispatch: number=6, string=6, boolean=7. Reject all other
     // lengths in O(1) without invoking std.mem.eql.
     return switch (t.len) {
@@ -2604,6 +2604,91 @@ fn isBaseType(t: []const u8) bool {
         7 => std.mem.eql(u8, t, "boolean"),
         else => false,
     };
+}
+
+/// The comments that open a parameter's source text (`/** doc */ public x = 1`),
+/// in order. Mirrors the TypeScript emitter's `leadingSourceComments`.
+pub fn leadingSourceComments(alloc: std.mem.Allocator, text: []const u8) InferError![]const []const u8 {
+    var comments = std.array_list.Managed([]const u8).init(alloc);
+    errdefer comments.deinit();
+    var index: usize = 0;
+    while (index < text.len) {
+        while (index < text.len and text[index] <= ' ') index += 1;
+        if (ch.startsWith(text[index..], "/*")) {
+            const close = ch.indexOf(text, "*/", index + 2) orelse break;
+            try comments.append(text[index .. close + 2]);
+            index = close + 2;
+        } else if (ch.startsWith(text[index..], "//")) {
+            var end = index;
+            while (end < text.len and text[end] != '\n' and text[end] != '\r') end += 1;
+            try comments.append(std.mem.trimEnd(u8, text[index..end], " \t"));
+            index = end;
+        } else break;
+    }
+    return comments.toOwnedSlice();
+}
+
+/// The doc block a class field (or constructor parameter property) gets for
+/// its initializer: `@defaultValue` exactly as a widened object-literal
+/// property gets it, merged with the member's own doc comment the way a
+/// variable's is. Each line carries the two-space class member indent. Empty
+/// when the field gets no `@defaultValue`. Mirrors the TypeScript emitter's
+/// `classFieldDefaultDoc`.
+pub fn classFieldDefaultDoc(alloc: std.mem.Allocator, comments: ?[]const []const u8, initializer: []const u8, field_type: []const u8) InferError![]const u8 {
+    const raw = trim(initializer);
+    if (!isBaseType(field_type) or !isPrimitiveLiteral(raw)) return "";
+    var joined = std.array_list.Managed(u8).init(alloc);
+    for (comments orelse &.{}) |comment| {
+        const text = trim(comment);
+        // Doc comments only: a plain `/* note */` is not documentation to merge into.
+        if (!ch.startsWith(text, "/**") and !ch.startsWith(text, "//")) continue;
+        if (joined.items.len > 0) try joined.append('\n');
+        try joined.appendSlice(text);
+    }
+    const existing = joined.items;
+    var doc = std.array_list.Managed(u8).init(alloc);
+    if (std.mem.indexOf(u8, existing, "@defaultValue") != null) {
+        try doc.appendSlice(existing);
+    } else {
+        const escaped = try comment_utils.escapeJsdocContent(alloc, raw);
+        const tag = try std.fmt.allocPrint(alloc, "@defaultValue {s}", .{escaped});
+        if (existing.len == 0) {
+            try doc.appendSlice("/** ");
+            try doc.appendSlice(tag);
+            try doc.appendSlice(" */");
+        } else if (std.mem.lastIndexOf(u8, existing, "*/")) |closing| {
+            var before = std.mem.trimEnd(u8, existing[0..closing], " \t\r\n");
+            // A single-line `/** text` opens onto its own line, as for variables.
+            if (ch.startsWith(before, "/** ") and std.mem.indexOfScalar(u8, before, '\n') == null) {
+                try doc.appendSlice("/**\n * ");
+                before = before[4..];
+            }
+            try doc.appendSlice(before);
+            try doc.appendSlice("\n * ");
+            try doc.appendSlice(tag);
+            try doc.appendSlice("\n */");
+        } else {
+            const text = if (ch.startsWith(existing, "// ")) existing[3..] else if (ch.startsWith(existing, "//")) existing[2..] else existing;
+            try doc.appendSlice("/**\n * ");
+            try doc.appendSlice(text);
+            try doc.appendSlice("\n * ");
+            try doc.appendSlice(tag);
+            try doc.appendSlice("\n */");
+        }
+    }
+    var out = std.array_list.Managed(u8).init(alloc);
+    var lines = std.mem.splitScalar(u8, doc.items, '\n');
+    var first = true;
+    while (lines.next()) |line| {
+        if (!first) try out.append('\n');
+        first = false;
+        const content = trim(line);
+        if (content.len == 0) continue;
+        try out.appendSlice(if (content[0] == '*') "   " else "  ");
+        try out.appendSlice(content);
+    }
+    try out.append('\n');
+    return out.toOwnedSlice();
 }
 
 /// Check if an array literal only contains primitives/nested arrays/objects (no runtime expressions)
@@ -3932,4 +4017,22 @@ test "numeric literal types drop separators" {
     try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "5_000", false, false, 0));
     const plain = "42";
     try std.testing.expectEqual(plain.ptr, (try numericLiteralType(alloc, plain)).ptr);
+}
+
+test "class field defaults merge with doc comments" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("  /** @defaultValue 3 */\n", try classFieldDefaultDoc(alloc, null, "3", "number"));
+    try std.testing.expectEqualStrings("  /**\n   * The port\n   * @defaultValue 8080\n   */\n", try classFieldDefaultDoc(alloc, &.{"/** The port */"}, " 8080 ", "number"));
+    try std.testing.expectEqualStrings("  /**\n   * note\n   * @defaultValue 'a'\n   */\n", try classFieldDefaultDoc(alloc, &.{"// note"}, "'a'", "string"));
+    try std.testing.expectEqualStrings("  /** @defaultValue true */\n", try classFieldDefaultDoc(alloc, &.{"/* plain */"}, "true", "boolean"));
+    try std.testing.expectEqualStrings("  /** @defaultValue 9 */\n", try classFieldDefaultDoc(alloc, &.{"/** @defaultValue 9 */"}, "1", "number"));
+    try std.testing.expectEqualStrings("  /** @defaultValue '*\\/' */\n", try classFieldDefaultDoc(alloc, null, "'*/'", "string"));
+    try std.testing.expectEqualStrings("", try classFieldDefaultDoc(alloc, null, "[1]", "number[]"));
+    try std.testing.expectEqualStrings("", try classFieldDefaultDoc(alloc, null, "'fast'", "'fast'"));
+    const comments = try leadingSourceComments(alloc, " /** doc */ // line\n public x = 1");
+    try std.testing.expectEqual(@as(usize, 2), comments.len);
+    try std.testing.expectEqualStrings("/** doc */", comments[0]);
+    try std.testing.expectEqualStrings("// line", comments[1]);
 }
