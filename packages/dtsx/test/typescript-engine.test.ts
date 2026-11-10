@@ -49,4 +49,28 @@ describe('TypeScript engine inference', () => {
     const output = emit(`export const handlers = [() => 'a', 1]`)
     expect(output).toContain('export declare const handlers: ((() => string) | number)[];')
   })
+
+  test('a method of a primitive parameter has its fixed result type', () => {
+    const output = emit([
+      'export const format = (value: number, digits = 2) => value.toFixed(digits)',
+      'export function first(s: string) { return s.at(0) }',
+      'export function both(s: string) { return [s.at(0)] }',
+      'export function parts(s: string) { return s.split(\',\') }',
+      'export function size(s: string) { return s.indexOf(\'a\') }',
+      'export function flag(b: boolean, g: bigint) { return { b: b.toString(), g: g.valueOf() } }',
+      'export function other(s: string) { return s.custom() }',
+      'export function maybe(s?: string) { return s.trim() }',
+    ].join('\n'))
+    expect(output).toContain('export declare const format: (value: number, digits?: number) => string;')
+    expect(output).toContain('export declare function first(s: string): string | undefined;')
+    // A union result keeps its parentheses inside a larger type.
+    expect(output).toContain('export declare function both(s: string): (string | undefined)[];')
+    expect(output).toContain('export declare function parts(s: string): string[];')
+    expect(output).toContain('export declare function size(s: string): number;')
+    expect(output).toContain('b: string;')
+    expect(output).toContain('g: bigint')
+    expect(output).toContain('export declare function other(s: string): ReturnType<(string)["custom"]>;')
+    // An optional receiver is not a primitive keyword type.
+    expect(output).toContain('export declare function maybe(s?: string): ReturnType<((string) | undefined)["trim"]>;')
+  })
 })

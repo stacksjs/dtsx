@@ -683,6 +683,68 @@ function collectParameterTypes(parameters: string, resolve?: (value: string) => 
   return types
 }
 
+/**
+ * Methods of a primitive receiver whose result does not depend on arguments.
+ * The native engine keeps the identical table (`primitiveMethodReturnType`).
+ */
+const PRIMITIVE_METHOD_RETURN_TYPES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  string: {
+    at: 'string | undefined',
+    charAt: 'string',
+    charCodeAt: 'number',
+    codePointAt: 'number | undefined',
+    concat: 'string',
+    endsWith: 'boolean',
+    includes: 'boolean',
+    indexOf: 'number',
+    lastIndexOf: 'number',
+    localeCompare: 'number',
+    normalize: 'string',
+    padEnd: 'string',
+    padStart: 'string',
+    repeat: 'string',
+    replace: 'string',
+    replaceAll: 'string',
+    search: 'number',
+    slice: 'string',
+    split: 'string[]',
+    startsWith: 'boolean',
+    substring: 'string',
+    toLocaleLowerCase: 'string',
+    toLocaleUpperCase: 'string',
+    toLowerCase: 'string',
+    toString: 'string',
+    toUpperCase: 'string',
+    trim: 'string',
+    trimEnd: 'string',
+    trimStart: 'string',
+    valueOf: 'string',
+  },
+  number: {
+    toExponential: 'string',
+    toFixed: 'string',
+    toLocaleString: 'string',
+    toPrecision: 'string',
+    toString: 'string',
+    valueOf: 'number',
+  },
+  bigint: {
+    toLocaleString: 'string',
+    toString: 'string',
+    valueOf: 'bigint',
+  },
+  boolean: {
+    toString: 'string',
+    valueOf: 'boolean',
+  },
+}
+
+/** The result of calling `method` on a value of a primitive keyword type, when it is fixed. */
+export function primitiveMethodReturnType(receiver: string, method: string): string | undefined {
+  const methods = Object.hasOwn(PRIMITIVE_METHOD_RETURN_TYPES, receiver) ? PRIMITIVE_METHOD_RETURN_TYPES[receiver] : undefined
+  return methods && Object.hasOwn(methods, method) ? methods[method] : undefined
+}
+
 /** Read a known object member without manufacturing a type for opaque shapes. */
 function objectMemberType(type: string, name: string): string | undefined {
   type = type.trim()
@@ -769,24 +831,40 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     const root = tokens[index + 1]
     if (!root || root.kind !== 'word') continue
     let type = parameterTypes.get(inferred.slice(root.start, root.end))
+    const rootType = type
     const unresolved = !type
     let start = token.start
     let end = root.end
     const queryIndex = index
+    const properties: string[] = []
     index++
     while (tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '.' && tokens[index + 2]?.kind === 'word') {
       const property = tokens[index + 2]
+      properties.push(inferred.slice(property.start, property.end))
       if (!unresolved) type = `(${type})["${inferred.slice(property.start, property.end)}"]`
       end = property.end
       index += 2
     }
+    const wrappedInReturnType = queryIndex >= 2
+      && inferred.slice(tokens[queryIndex - 2].start, tokens[queryIndex - 2].end) === 'ReturnType'
+      && inferred.slice(tokens[queryIndex - 1].start, tokens[queryIndex - 1].end) === '<'
+      && tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '>'
+    // A call on a primitive parameter: `value.toFixed(2)` is a string.
+    const primitiveResult = rootType && wrappedInReturnType && properties.length === 1
+      ? primitiveMethodReturnType(rootType.trim(), properties[0])
+      : undefined
+    if (primitiveResult) {
+      start = tokens[queryIndex - 2].start
+      end = tokens[++index].end
+      const whole = start === 0 && end === inferred.length
+      result += inferred.slice(cursor, start) + (whole || !primitiveResult.includes('|') ? primitiveResult : `(${primitiveResult})`)
+      cursor = end
+      continue
+    }
     // Keep the enclosing object/tuple shape. An unresolved query alone is a
     // valid unknown property; a ReturnType over that query must collapse as
     // one node, rather than forming ReturnType<unknown> or unknown.member.
-    if (unresolved && queryIndex >= 2
-      && inferred.slice(tokens[queryIndex - 2].start, tokens[queryIndex - 2].end) === 'ReturnType'
-      && inferred.slice(tokens[queryIndex - 1].start, tokens[queryIndex - 1].end) === '<'
-      && tokens[index + 1] && inferred.slice(tokens[index + 1].start, tokens[index + 1].end) === '>') {
+    if (unresolved && wrappedInReturnType) {
       start = tokens[queryIndex - 2].start
       end = tokens[++index].end
     }

@@ -335,6 +335,8 @@ fn inferBodyCallType(alloc: std.mem.Allocator, value: []const u8, parameters: []
         return "unknown";
     };
     if (dot == null) return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{root_type});
+    // A call on a primitive parameter: `value.toFixed(2)` is a string.
+    if (primitiveMethodReturnType(trim(root_type), callee[dot.? + 1 ..])) |result| return result;
 
     // Each member access wraps its object, as the TypeScript emitter's query
     // substitution does: `(Date)["toISOString"]`.
@@ -345,6 +347,76 @@ fn inferBodyCallType(alloc: std.mem.Allocator, value: []const u8, parameters: []
         callable_type = try std.fmt.allocPrint(alloc, "({s})[\"{s}\"]", .{ callable_type, property });
     }
     return try std.fmt.allocPrint(alloc, "ReturnType<{s}>", .{callable_type});
+}
+
+const PrimitiveMethod = struct { name: []const u8, result: []const u8 };
+
+const string_methods = [_]PrimitiveMethod{
+    .{ .name = "at", .result = "string | undefined" },
+    .{ .name = "charAt", .result = "string" },
+    .{ .name = "charCodeAt", .result = "number" },
+    .{ .name = "codePointAt", .result = "number | undefined" },
+    .{ .name = "concat", .result = "string" },
+    .{ .name = "endsWith", .result = "boolean" },
+    .{ .name = "includes", .result = "boolean" },
+    .{ .name = "indexOf", .result = "number" },
+    .{ .name = "lastIndexOf", .result = "number" },
+    .{ .name = "localeCompare", .result = "number" },
+    .{ .name = "normalize", .result = "string" },
+    .{ .name = "padEnd", .result = "string" },
+    .{ .name = "padStart", .result = "string" },
+    .{ .name = "repeat", .result = "string" },
+    .{ .name = "replace", .result = "string" },
+    .{ .name = "replaceAll", .result = "string" },
+    .{ .name = "search", .result = "number" },
+    .{ .name = "slice", .result = "string" },
+    .{ .name = "split", .result = "string[]" },
+    .{ .name = "startsWith", .result = "boolean" },
+    .{ .name = "substring", .result = "string" },
+    .{ .name = "toLocaleLowerCase", .result = "string" },
+    .{ .name = "toLocaleUpperCase", .result = "string" },
+    .{ .name = "toLowerCase", .result = "string" },
+    .{ .name = "toString", .result = "string" },
+    .{ .name = "toUpperCase", .result = "string" },
+    .{ .name = "trim", .result = "string" },
+    .{ .name = "trimEnd", .result = "string" },
+    .{ .name = "trimStart", .result = "string" },
+    .{ .name = "valueOf", .result = "string" },
+};
+const number_methods = [_]PrimitiveMethod{
+    .{ .name = "toExponential", .result = "string" },
+    .{ .name = "toFixed", .result = "string" },
+    .{ .name = "toLocaleString", .result = "string" },
+    .{ .name = "toPrecision", .result = "string" },
+    .{ .name = "toString", .result = "string" },
+    .{ .name = "valueOf", .result = "number" },
+};
+const bigint_methods = [_]PrimitiveMethod{
+    .{ .name = "toLocaleString", .result = "string" },
+    .{ .name = "toString", .result = "string" },
+    .{ .name = "valueOf", .result = "bigint" },
+};
+const boolean_methods = [_]PrimitiveMethod{
+    .{ .name = "toString", .result = "string" },
+    .{ .name = "valueOf", .result = "boolean" },
+};
+
+/// The result of calling `method` on a value of a primitive keyword type,
+/// when it is fixed. The TypeScript emitter keeps the identical table
+/// (`PRIMITIVE_METHOD_RETURN_TYPES`).
+pub fn primitiveMethodReturnType(receiver: []const u8, method: []const u8) ?[]const u8 {
+    const methods: []const PrimitiveMethod = if (std.mem.eql(u8, receiver, "string"))
+        &string_methods
+    else if (std.mem.eql(u8, receiver, "number"))
+        &number_methods
+    else if (std.mem.eql(u8, receiver, "bigint"))
+        &bigint_methods
+    else if (std.mem.eql(u8, receiver, "boolean"))
+        &boolean_methods
+    else
+        return null;
+    for (methods) |entry| if (std.mem.eql(u8, entry.name, method)) return entry.result;
+    return null;
 }
 
 /// Parse array elements handling nested structures.
@@ -1752,21 +1824,45 @@ fn substituteBodyQueries(alloc: std.mem.Allocator, inferred: []const u8, paramet
         if (token.kind != .word or !std.mem.eql(u8, text(inferred, tokens, index), "typeof")) continue;
         if (index + 1 >= tokens.len or tokens[index + 1].kind != .word) continue;
         var query_type: ?[]const u8 = findParameterType(parameters, text(inferred, tokens, index + 1));
+        const root_type = query_type;
         const unresolved = query_type == null;
         var start: usize = token.start;
         var end: usize = tokens[index + 1].end;
         const query_index = index;
+        var property_count: usize = 0;
+        var last_property: []const u8 = "";
         index += 1;
         while (index + 2 < tokens.len and std.mem.eql(u8, text(inferred, tokens, index + 1), ".") and tokens[index + 2].kind == .word) {
+            property_count += 1;
+            last_property = text(inferred, tokens, index + 2);
             if (!unresolved) query_type = try std.fmt.allocPrint(alloc, "({s})[\"{s}\"]", .{ query_type.?, text(inferred, tokens, index + 2) });
             end = tokens[index + 2].end;
             index += 2;
         }
-        if (unresolved and query_index >= 2 and
+        const wrapped_in_return_type = query_index >= 2 and
             std.mem.eql(u8, text(inferred, tokens, query_index - 2), "ReturnType") and
             std.mem.eql(u8, text(inferred, tokens, query_index - 1), "<") and
-            std.mem.eql(u8, text(inferred, tokens, index + 1), ">"))
-        {
+            std.mem.eql(u8, text(inferred, tokens, index + 1), ">");
+        // A call on a primitive parameter: `value.toFixed(2)` is a string.
+        if (root_type != null and wrapped_in_return_type and property_count == 1) {
+            if (primitiveMethodReturnType(trim(root_type.?), last_property)) |primitive_result| {
+                start = tokens[query_index - 2].start;
+                index += 1;
+                end = tokens[index].end;
+                const whole = start == 0 and end == inferred.len;
+                try result.appendSlice(inferred[cursor..start]);
+                if (whole or std.mem.indexOfScalar(u8, primitive_result, '|') == null) {
+                    try result.appendSlice(primitive_result);
+                } else {
+                    try result.append('(');
+                    try result.appendSlice(primitive_result);
+                    try result.append(')');
+                }
+                cursor = end;
+                continue;
+            }
+        }
+        if (unresolved and wrapped_in_return_type) {
             start = tokens[query_index - 2].start;
             index += 1;
             end = tokens[index].end;
@@ -3787,4 +3883,20 @@ test "const tuple spreads keep variadic length" {
     const alloc = arena.allocator();
     try std.testing.expectEqualStrings("readonly [...unknown[]]", try inferNarrowType(alloc, "[...(flag ? a : b)] as const", false, false, 0));
     try std.testing.expectEqualStrings("readonly [...readonly [1, 2], 3]", try inferNarrowType(alloc, "[...[1, 2], 3] as const", false, false, 0));
+}
+
+test "primitive receivers resolve fixed method results" {
+    try std.testing.expectEqualStrings("string", primitiveMethodReturnType("number", "toFixed").?);
+    try std.testing.expectEqualStrings("string | undefined", primitiveMethodReturnType("string", "at").?);
+    try std.testing.expectEqualStrings("string[]", primitiveMethodReturnType("string", "split").?);
+    try std.testing.expectEqualStrings("bigint", primitiveMethodReturnType("bigint", "valueOf").?);
+    try std.testing.expectEqualStrings("string", primitiveMethodReturnType("boolean", "toString").?);
+    try std.testing.expect(primitiveMethodReturnType("string", "custom") == null);
+    try std.testing.expect(primitiveMethodReturnType("Date", "toString") == null);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("string", try inferFunctionBodyReturnType(alloc, "{ return value.toFixed(2) }", "(value: number)", 0));
+    try std.testing.expectEqualStrings("(string | undefined)[]", try inferFunctionBodyReturnType(alloc, "{ return [s.at(0)] }", "(s: string)", 0));
+    try std.testing.expectEqualStrings("ReturnType<(string)[\"custom\"]>", try inferFunctionBodyReturnType(alloc, "{ return s.custom() }", "(s: string)", 0));
 }
