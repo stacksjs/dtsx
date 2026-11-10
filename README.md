@@ -352,6 +352,49 @@ export declare const config: {
 };
 ```
 
+#### Classes & Parameters
+
+Defaults on class fields and parameter properties surface the same way, and defaulted parameters keep the types their defaults imply:
+
+```ts
+// Source
+export class Client {
+  retries = 3
+  static version = '1.0.0'
+  constructor(public timeout = 1000) {}
+}
+
+export function connect(host = 'localhost', { ssl = true, poolSize = 10 } = {}) {
+  return { host, ssl, poolSize }
+}
+
+export function format(value: number, digits = 2) {
+  return value.toFixed(digits)
+}
+```
+
+dtsx output:
+
+```ts
+export declare function connect(host?: string, { ssl, poolSize }?: { ssl?: boolean | undefined; poolSize?: number | undefined }): {
+  host: string;
+  ssl: boolean;
+  poolSize: number
+};
+export declare function format(value: number, digits?: number): string;
+export declare class Client {
+  /** @defaultValue 3 */
+  retries: number;
+  /** @defaultValue '1.0.0' */
+  static version: string;
+  /** @defaultValue 1000 */
+  public timeout: number;
+  constructor(timeout?: number);
+}
+```
+
+tsc infers the same types but drops every default. oxc requires annotations: it reports 5 errors, declares `connect` as returning `{}` without its second parameter, and leaves `format` without a return type.
+
 #### Generic Type Replacement
 
 dtsx replaces broad generic annotations with narrow types inferred from the actual value:
@@ -424,8 +467,11 @@ export const promiseVal = Promise.resolve(42)
 | `config.routes` | `string[]` | `string[]` | `unknown` (error) |
 | `conf` _(generic annotation)_ | exact properties | `{ [key]: string }` | `{ [key]: string }` |
 | `Promise.resolve(42)` | `Promise<42>` | `Promise<number>` | `unknown` (error) |
+| class field `retries = 3` | `number` + `@defaultValue` | `number` | `number` |
+| `{ ssl = true } = {}` parameter | `{ ssl?: boolean \| undefined }` | `{ ssl?: boolean \| undefined }` | dropped (error) |
+| `value.toFixed(digits)` return | `string` | `string` | missing (error) |
 | **Value info preserved?**|**Yes**|**No**|**No** |
-| **Errors**|**0**|**0**|**3** |
+| **Errors**|**0**|**0**|**3** (+5 for the classes & parameters example) |
 
 dtsx produces **sound** types (correctly widened for mutable containers) while preserving original values via `@defaultValue` JSDoc — something neither tsc nor oxc does. No `as const`, no explicit annotations, no `isolatedDeclarations` flag required.
 
