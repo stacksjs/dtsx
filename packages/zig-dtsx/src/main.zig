@@ -358,7 +358,10 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
 /// Worker errors have one owned slot per task, inspected only after join.
 /// Keep the existing native thread pool and bounded arena reuse.
 fn workerFn(ctx: WorkerCtx) void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // malloc recycles a worker's buffers in user space. Taking them from the
+    // page allocator maps and unmaps memory for every few files, and with
+    // many workers those calls queue on the process's address-space lock.
+    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena.deinit();
     var files_since_reset: usize = 0;
     for (ctx.tasks, ctx.failures) |task, *failure| {
@@ -371,6 +374,58 @@ fn workerFn(ctx: WorkerCtx) void {
             files_since_reset = 0;
         }
     }
+}
+
+/// Read context: one slice of tasks whose sources this thread snapshots.
+const ReadCtx = struct {
+    input_dir_fd: c_int,
+    tasks: []FileTask,
+    failures: []?anyerror,
+};
+
+/// Sources outlive the workers and are released with the process, so they
+/// come from the thread-safe C allocator instead of the setup arena.
+fn readWorkerFn(ctx: ReadCtx) void {
+    for (ctx.tasks, ctx.failures) |*task, *failure| {
+        task.source = readProjectSource(std.heap.c_allocator, ctx.input_dir_fd, task.input_name_z) catch |err| {
+            failure.* = err;
+            continue;
+        };
+    }
+}
+
+/// Threads worth starting for `file_count` files: each needs about 8 files to
+/// amortize its ~100µs spawn and join.
+fn projectThreadCount(file_count: usize) usize {
+    const cpu_count = std.Thread.getCpuCount() catch 4;
+    return @min(cpu_count, @max(file_count / 8, 1));
+}
+
+/// Run `worker` once per context, each on its own thread, and wait for all of
+/// them. One context, or a thread that cannot start, runs on the caller.
+fn runOnThreads(comptime Ctx: type, comptime worker: fn (Ctx) void, sa: std.mem.Allocator, contexts: []const Ctx) !void {
+    if (contexts.len <= 1) {
+        for (contexts) |ctx| worker(ctx);
+        return;
+    }
+    const threads = try sa.alloc(?std.Thread, contexts.len);
+    for (contexts, threads) |ctx, *thread| {
+        thread.* = std.Thread.spawn(.{}, worker, .{ctx}) catch blk: {
+            worker(ctx);
+            break :blk null;
+        };
+    }
+    for (threads) |thread| {
+        if (thread) |started| started.join();
+    }
+}
+
+/// Split `count` items into `parts` contiguous ranges of near-equal size.
+fn partitionRange(count: usize, parts: usize, part: usize) struct { start: usize, end: usize } {
+    const base = count / parts;
+    const remainder = count % parts;
+    const start = part * base + @min(part, remainder);
+    return .{ .start = start, .end = start + base + @as(usize, if (part < remainder) 1 else 0) };
 }
 
 fn checkTaskFailures(tasks: []const FileTask, failures: []const ?anyerror) !void {
@@ -467,15 +522,28 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
     // plan one set of bytes and then re-read another set in worker threads.
     const source_root = try std.Io.Dir.cwd().realPathFileAlloc(io, project_dir, sa);
     const graph_files = try sa.alloc(augmentation_graph.File, tasks.len);
-    for (tasks, filenames, 0..) |*task, filename, index| {
-        task.source = readProjectSource(sa, input_dir_fd, task.input_name_z) catch |err| {
+    // Every source is read exactly once, before planning, on as many threads
+    // as the emission below uses.
+    const thread_count = projectThreadCount(filenames.len);
+    {
+        const read_contexts = try sa.alloc(ReadCtx, thread_count);
+        for (read_contexts, 0..) |*ctx, part| {
+            const range = partitionRange(tasks.len, thread_count, part);
+            ctx.* = .{ .input_dir_fd = input_dir_fd, .tasks = tasks[range.start..range.end], .failures = failures[range.start..range.end] };
+        }
+        try runOnThreads(ReadCtx, readWorkerFn, sa, read_contexts);
+    }
+    for (filenames, failures) |filename, failure| {
+        if (failure) |err| {
             writeErr("error: ");
             writeErr(filename);
             writeErr(": ");
             writeErr(@errorName(err));
             writeErr("\n");
             return err;
-        };
+        }
+    }
+    for (tasks, filenames, 0..) |task, filename, index| {
         graph_files[index] = .{ .path = try std.fs.path.resolveAlloc(sa, &.{ source_root, filename }), .source = task.source };
     }
     var failed_source: ?[]const u8 = null;
@@ -510,45 +578,13 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
         }, file.source);
     }
 
-    // Thread pool — cap threads to avoid spawn/join overhead dominating for small projects.
-    // Each thread needs ~8 files minimum to amortize ~100µs spawn+join cost.
-    const cpu_count = std.Thread.getCpuCount() catch 4;
-    const max_threads = @min(cpu_count, @max(filenames.len / 8, 1));
-
-    if (max_threads <= 1) {
-        workerFn(.{ .output_dir_fd = output_dir_fd, .tasks = tasks, .failures = failures });
-        return checkTaskFailures(tasks, failures);
+    // Emit and write on the same number of threads.
+    const contexts = try sa.alloc(WorkerCtx, thread_count);
+    for (contexts, 0..) |*ctx, part| {
+        const range = partitionRange(tasks.len, thread_count, part);
+        ctx.* = .{ .output_dir_fd = output_dir_fd, .tasks = tasks[range.start..range.end], .failures = failures[range.start..range.end] };
     }
-
-    const files_per_thread = filenames.len / max_threads;
-    const remainder = filenames.len % max_threads;
-    const threads = try sa.alloc(std.Thread, max_threads);
-
-    // Heap-allocate so >256-core machines don't silently truncate.
-    const thread_spawned = try sa.alloc(bool, max_threads);
-    @memset(thread_spawned, false);
-    var offset: usize = 0;
-    for (0..max_threads) |t| {
-        const count = files_per_thread + @as(usize, if (t < remainder) 1 else 0);
-        const ctx = WorkerCtx{
-            .output_dir_fd = output_dir_fd,
-            .tasks = tasks[offset .. offset + count],
-            .failures = failures[offset .. offset + count],
-        };
-        offset += count;
-
-        threads[t] = std.Thread.spawn(.{}, workerFn, .{ctx}) catch {
-            workerFn(ctx);
-            continue;
-        };
-        thread_spawned[t] = true;
-    }
-
-    for (0..max_threads) |t| {
-        if (thread_spawned[t]) {
-            threads[t].join();
-        }
-    }
+    try runOnThreads(WorkerCtx, workerFn, sa, contexts);
     try checkTaskFailures(tasks, failures);
 }
 

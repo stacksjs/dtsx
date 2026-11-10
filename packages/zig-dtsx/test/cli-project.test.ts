@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isAvailable, runTsc } from '../../dtsx/test/helpers/tsc'
@@ -192,3 +192,35 @@ test('normally packed native CLI generates nested declarations after normal and 
     expect(existsSync(outputFile)).toBe(false)
   }
 }), 15000)
+
+// Sources are read on several threads before any file is emitted.
+test('native project reads many sources in parallel and emits each one', () => directory(async (root) => {
+  const input = join(root, 'src')
+  const output = join(root, 'types')
+  await mkdir(input, { recursive: true })
+  const count = 200
+  for (let index = 0; index < count; index++)
+    await writeFile(join(input, `file${index}.ts`), `export const value${index} = { id: ${index}, name: 'file${index}' }\n`)
+  const result = invoke(['--project', input, '--outdir', output])
+  expect(result.exitCode, result.stderr.toString()).toBe(0)
+  for (let index = 0; index < count; index++) {
+    const declaration = await readFile(join(output, `file${index}.d.ts`), 'utf8')
+    expect(declaration).toContain(`export declare const value${index}: {`)
+    expect(declaration).toContain(`/** @defaultValue ${index} */\n  id: number;`)
+    expect(declaration).toContain(`/** @defaultValue 'file${index}' */\n  name: string`)
+  }
+}))
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('native project names the unreadable source among many and writes nothing', () => directory(async (root) => {
+  const input = join(root, 'src')
+  const output = join(root, 'types')
+  await mkdir(input, { recursive: true })
+  for (let index = 0; index < 120; index++)
+    await writeFile(join(input, `file${index}.ts`), `export const value${index}: number = ${index}\n`)
+  await chmod(join(input, 'file77.ts'), 0o000)
+  const result = invoke(['--project', input, '--outdir', output])
+  await chmod(join(input, 'file77.ts'), 0o644)
+  expect(result.exitCode).not.toBe(0)
+  expect(result.stderr.toString()).toContain('error: file77.ts: InputReadFailure')
+  expect(existsSync(join(output, 'file0.d.ts'))).toBe(false)
+}))

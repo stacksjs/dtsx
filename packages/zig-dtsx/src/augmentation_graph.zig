@@ -80,6 +80,46 @@ pub fn free(allocator: std.mem.Allocator, required: [][][]const u8) void {
 /// linear in sources/edges, not a permanent source-by-source reachability matrix.
 pub const Options = struct { isolated_declarations: bool = false, failure_file: ?*?[]const u8 = null };
 
+fn skipTrivia(source: []const u8, start: usize) usize {
+    var i = start;
+    while (i < source.len) {
+        const c = source[i];
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
+            i += 1;
+        } else if (c == '/' and i + 1 < source.len and source[i + 1] == '/') {
+            i = std.mem.indexOfScalarPos(u8, source, i + 2, '\n') orelse source.len;
+        } else if (c == '/' and i + 1 < source.len and source[i + 1] == '*') {
+            i = if (std.mem.indexOfPos(u8, source, i + 2, "*/")) |end| end + 2 else source.len;
+        } else break;
+    }
+    return i;
+}
+
+/// Whether `source` can hold a module augmentation, `declare module '<name>'`
+/// with any whitespace or comments between the words. Text in a string or a
+/// comment can match too; only a source that cannot match skips the lexer.
+fn mayAugmentModule(source: []const u8) bool {
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, source, from, "declare")) |found| {
+        from = found + 7;
+        const keyword = skipTrivia(source, from);
+        if (keyword == from or !std.mem.startsWith(u8, source[keyword..], "module")) continue;
+        const name = skipTrivia(source, keyword + 6);
+        if (name < source.len and (source[name] == '\'' or source[name] == '"')) return true;
+    }
+    return false;
+}
+
+test "only a declare module with a quoted name needs module references" {
+    try std.testing.expect(mayAugmentModule("declare module './a' {}"));
+    try std.testing.expect(mayAugmentModule("export {}\ndeclare /* why */\n  module // name\n \"pkg\" { }"));
+    try std.testing.expect(!mayAugmentModule("declare module Legacy {}"));
+    try std.testing.expect(!mayAugmentModule("declare const module: string"));
+    try std.testing.expect(!mayAugmentModule("export declare function f(): void; export const module = 'x'"));
+    try std.testing.expect(!mayAugmentModule("declaremodule 'x'"));
+    try std.testing.expect(!mayAugmentModule("declare"));
+}
+
 pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options) ![][][]const u8 {
     var failed_source: ?[]const u8 = null;
     errdefer if (options.failure_file) |failure| {
@@ -95,7 +135,7 @@ pub fn plan(allocator: std.mem.Allocator, files: []const File, options: Options)
         failed_source = file.path;
         try paths.put(try key(a, file.path), index);
         nodes[index] = .{ .edges = .init(a), .visible = .init(a), .augmented = .init(a), .required = .init(a) };
-        references[index] = if (std.mem.indexOf(u8, file.source, "declare") != null and std.mem.indexOf(u8, file.source, "module") != null)
+        references[index] = if (mayAugmentModule(file.source))
             try modules.collectModuleReferences(a, file.source)
         else
             &.{};
