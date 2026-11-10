@@ -4,7 +4,7 @@ export declare function getNodeId(node: Node): number;
 /** @internal */
 export declare function getSymbolId(symbol: Symbol): SymbolId;
 /** @internal */
-export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): ([boolean] extends [object] ? boolean : [Exclude<boolean, object> & (false | 0 | 0n | '' | null | undefined)] extends [never] ? boolean : Exclude<NonNullable<boolean>, false | 0 | 0n | '' | null | undefined> | ([boolean] extends [object] ? boolean : [boolean] extends [false | 0 | 0n | '' | null | undefined] ? boolean : unknown extends (boolean) ? boolean : (Exclude<boolean, object> & (false | 0 | 0n | '' | null | undefined)) | boolean));
+export declare function isInstantiatedModule(node: ModuleDeclaration, preserveConstEnums: boolean): boolean;
 /** @internal */
 export declare function createTypeChecker(host: TypeCheckerHost): TypeChecker;
 /** @internal */

@@ -103,3 +103,38 @@ testIfNative.each([
     expect(output).not.toContain('extends')
   }
 })
+
+// A plain boolean, string or number decides the conditional as well: it is
+// never nullish, `||` keeps its truthy values, `&&` keeps its one falsy value.
+testIfNative.each([
+  ['boolean || boolean', '(x: boolean, y: boolean)', 'x || y', 'boolean'],
+  ['boolean || (boolean && boolean)', '(x: boolean, y: boolean)', 'x || (y && x)', 'boolean'],
+  ['boolean && boolean', '(x: boolean, y: boolean)', 'x && y', 'boolean'],
+  ['boolean || string', '(x: boolean, s: string)', 'x || s', 'true | string'],
+  ['boolean && string', '(x: boolean, s: string)', 'x && s', 'false | string'],
+  ['string || literal', '(s: string)', `s || 'fallback'`, 'string'],
+  ['string && number', '(s: string, n: number)', 's && n', `'' | number`],
+  ['number || number', '(n: number)', 'n || 5', 'number'],
+  ['number && string', '(n: number)', `n && 'yes'`, '0 | string'],
+  ['string ?? literal', '(s: string)', `s ?? 'fallback'`, 'string'],
+  ['number ?? string', '(n: number, s: string)', 'n ?? s', 'number'],
+  ['boolean ?? string', '(x: boolean, s: string)', 'x ?? s', 'boolean'],
+  ['boolean || unknown', '(x: boolean, u: unknown)', 'x || u', 'unknown'],
+  ['string && optional', '(s: string, t: string | undefined)', 's && t', 'string | undefined'],
+  ['boolean || function', '(x: boolean, cb: () => void)', 'x || cb', 'true | (() => void)'],
+  ['boolean && function', '(x: boolean, cb: (a: number) => string)', 'x && cb', 'false | ((a: number) => string)'],
+  ['unknown ?? function', '(x: unknown, cb: () => void)', 'x ?? cb', '{} | (() => void)'],
+  ['a function parameter', '(cb: () => void)', 'cb', '() => void'],
+])('%s is declared as its decided type in both engines', (_name, parameters, expression, expected) => {
+  const input = `export function value${parameters} { return ${expression} }\n`
+  const declaration = `export declare function value${parameters}: ${expected};`
+  expect(processSource(input, true).trim()).toBe(declaration)
+  expect(processSourceWithTypeScriptEngine(input, 'value.ts').trim()).toBe(declaration)
+})
+
+// Other operand types keep the conditional, which only tsc can decide.
+testIfNative('a union operand keeps its conditional type', () => {
+  const input = 'export function value(s: string | undefined) { return s ?? 1 }\n'
+  for (const output of [processSource(input, true), processSourceWithTypeScriptEngine(input, 'value.ts')])
+    expect(output).toContain('[string | undefined] extends [NonNullable<string | undefined>]')
+})

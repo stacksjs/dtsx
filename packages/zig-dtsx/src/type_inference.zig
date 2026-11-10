@@ -1878,13 +1878,106 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     return substituteBodyQueries(alloc, inferred, parameters);
 }
 
-fn logicalBodyType(alloc: std.mem.Allocator, left: []const u8, right: []const u8, operator: []const u8) InferError![]const u8 {
+/// Top-level members of a union type, or null when the text is not safely
+/// splittable (an arrow's `>` would unbalance the bracket count).
+fn unionMembers(alloc: std.mem.Allocator, type_text: []const u8) InferError!?[]const []const u8 {
+    if (ch.contains(type_text, "=>")) return null;
+    var members = std.array_list.Managed([]const u8).init(alloc);
+    var depth: i32 = 0;
+    var start: usize = 0;
+    var index: usize = 0;
+    while (index <= type_text.len) : (index += 1) {
+        const c: u8 = if (index == type_text.len) '|' else type_text[index];
+        switch (c) {
+            '\'', '"', '`' => {
+                index += 1;
+                while (index < type_text.len and type_text[index] != c) index += if (type_text[index] == '\\') 2 else 1;
+                if (index >= type_text.len) return null;
+            },
+            '(', '[', '{', '<' => depth += 1,
+            ')', ']', '}', '>' => depth -= 1,
+            '|' => if (depth == 0) {
+                const member = trim(type_text[start..@min(index, type_text.len)]);
+                if (member.len > 0) try members.append(member);
+                start = index + 1;
+            },
+            else => {},
+        }
+        if (depth < 0) return null;
+    }
+    if (depth != 0) return null;
+    return members.items;
+}
+
+fn isQuotedLiteralType(member: []const u8) bool {
+    if (member.len < 2) return false;
+    const quote = member[0];
+    if ((quote != '\'' and quote != '"') or member[member.len - 1] != quote) return false;
+    return std.mem.indexOfScalar(u8, member[1 .. member.len - 1], quote) == null;
+}
+
+fn isPlainNumberType(member: []const u8) bool {
+    const digits = if (member.len > 0 and member[0] == '-') member[1..] else member;
+    if (digits.len == 0) return false;
+    var seen_dot = false;
+    for (digits, 0..) |c, i| {
+        if (c == '.') {
+            if (seen_dot or i == 0 or i + 1 == digits.len) return false;
+            seen_dot = true;
+        } else if (c < '0' or c > '9') return false;
+    }
+    return true;
+}
+
+/// `first | second` with duplicate members removed and literals absorbed by
+/// their own primitive (`true | false` and `true | boolean` are `boolean`).
+fn logicalUnion(alloc: std.mem.Allocator, first: []const u8, second: []const u8) InferError![]const u8 {
+    const split = try unionMembers(alloc, second) orelse return std.fmt.allocPrint(alloc, "{s} | {s}", .{ first, second });
+    var members = std.array_list.Managed([]const u8).init(alloc);
+    try members.append(first);
+    for (split) |member| {
+        if (!containsType(members.items, member)) try members.append(member);
+    }
+    if (containsType(members.items, "unknown")) return "unknown";
+    const has_boolean = containsType(members.items, "boolean") or (containsType(members.items, "true") and containsType(members.items, "false"));
+    const has_string = containsType(members.items, "string");
+    const has_number = containsType(members.items, "number");
+    var result = std.array_list.Managed([]const u8).init(alloc);
+    var placed_boolean = false;
+    for (members.items) |member| {
+        if (has_boolean and (std.mem.eql(u8, member, "true") or std.mem.eql(u8, member, "false") or std.mem.eql(u8, member, "boolean"))) {
+            if (!placed_boolean) try result.append("boolean");
+            placed_boolean = true;
+        } else if (has_string and isQuotedLiteralType(member)) {
+            continue;
+        } else if (has_number and isPlainNumberType(member)) {
+            continue;
+        } else try result.append(member);
+    }
+    return std.mem.join(alloc, " | ", result.items);
+}
+
+fn logicalBodyType(alloc: std.mem.Allocator, left: []const u8, raw_right: []const u8, operator: []const u8) InferError![]const u8 {
+    // A function type is only a union member inside parentheses.
+    const right = if (findMainArrowIndex(raw_right) != null) try std.fmt.allocPrint(alloc, "({s})", .{trim(raw_right)}) else raw_right;
     // The conditionals below are already decided for an `unknown` left
     // operand: `??` and `||` yield its non-nullish values (`{}`) or the right
     // operand, and `&&` yields `unknown`. Print that result instead.
     if (std.mem.eql(u8, trim(left), "unknown")) {
         if (std.mem.eql(u8, operator, "&&") or std.mem.eql(u8, trim(right), "unknown")) return "unknown";
         return std.fmt.allocPrint(alloc, "{{}} | {s}", .{right});
+    }
+    // They are decided for a plain primitive too: it is never nullish, so
+    // `??` keeps it; `||` yields its truthy values or the right operand; `&&`
+    // yields its one falsy value or the right operand.
+    const primitive = trim(left);
+    const is_boolean = std.mem.eql(u8, primitive, "boolean");
+    const is_string = std.mem.eql(u8, primitive, "string");
+    if (is_boolean or is_string or std.mem.eql(u8, primitive, "number")) {
+        if (std.mem.eql(u8, operator, "??")) return primitive;
+        const falsy_value: []const u8 = if (is_boolean) "false" else if (is_string) "''" else "0";
+        const truthy: []const u8 = if (is_boolean) "true" else primitive;
+        return logicalUnion(alloc, if (std.mem.eql(u8, operator, "||")) truthy else falsy_value, right);
     }
     const falsy = "false | 0 | 0n | '' | null | undefined";
     if (std.mem.eql(u8, operator, "??"))
@@ -2186,7 +2279,7 @@ fn findParameterType(parameters: []const u8, name: []const u8) ?[]const u8 {
             if (c == '(' or c == '[' or c == '{' or c == '<') nesting += 1 else if (c == ')' or c == ']' or c == '}' or (c == '>' and (cursor == 0 or parameters[cursor - 1] != '='))) {
                 if (nesting == 0) break;
                 nesting -= 1;
-            } else if ((c == ',' or c == '=') and nesting == 0) break;
+            } else if (nesting == 0 and (c == ',' or (c == '=' and !(cursor + 1 < parameters.len and parameters[cursor + 1] == '>')))) break;
         }
         const parameter_type = trim(parameters[type_start..cursor]);
         if (parameter_type.len > 0) return parameter_type;

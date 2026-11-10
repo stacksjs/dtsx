@@ -1016,12 +1016,83 @@ function topLevelLogicalOperator(value: string, operator: string): number {
   return -1
 }
 
+/** Top-level members of a union type, or null when the text is not safely splittable. */
+function unionMembers(type: string): string[] | null {
+  // An arrow's `>` would unbalance the bracket count.
+  if (type.includes('=>')) return null
+  const members: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index <= type.length; index++) {
+    const char = index === type.length ? '|' : type[index]
+    if (char === '\'' || char === '"' || char === '`') {
+      index++
+      while (index < type.length && type[index] !== char) index += type[index] === '\\' ? 2 : 1
+      if (index >= type.length) return null
+    }
+    else if (char === '(' || char === '[' || char === '{' || char === '<') { depth++ }
+    else if (char === ')' || char === ']' || char === '}' || char === '>') { depth-- }
+    else if (char === '|' && depth === 0) {
+      const member = type.slice(start, index).trim()
+      if (member) members.push(member)
+      start = index + 1
+    }
+    if (depth < 0) return null
+  }
+  return depth === 0 ? members : null
+}
+
+/**
+ * `first | second` with duplicate members removed and literals absorbed by
+ * their own primitive (`true | false` and `true | boolean` are `boolean`).
+ */
+function logicalUnion(first: string, second: string): string {
+  const split = unionMembers(second)
+  if (!split) return `${first} | ${second}`
+  const members: string[] = []
+  for (const member of [first, ...split]) {
+    if (member === 'unknown') return 'unknown'
+    if (!members.includes(member)) members.push(member)
+  }
+  const hasBoolean = members.includes('boolean') || (members.includes('true') && members.includes('false'))
+  const hasString = members.includes('string')
+  const hasNumber = members.includes('number')
+  const result: string[] = []
+  let placedBoolean = false
+  for (const member of members) {
+    if (hasBoolean && (member === 'true' || member === 'false' || member === 'boolean')) {
+      if (!placedBoolean) result.push('boolean')
+      placedBoolean = true
+    }
+    else if (hasString && isQuotedLiteralType(member)) { continue }
+    else if (hasNumber && /^-?\d+(?:\.\d+)?$/.test(member)) { continue }
+    else { result.push(member) }
+  }
+  return result.join(' | ')
+}
+
+function isQuotedLiteralType(member: string): boolean {
+  const quote = member[0]
+  return member.length >= 2 && (quote === '\'' || quote === '"') && member.endsWith(quote) && !member.slice(1, -1).includes(quote)
+}
+
 /** Conditional types retain the operand's nullability and truthiness bounds. */
-function logicalBodyType(left: string, right: string, operator: string): string {
+function logicalBodyType(left: string, rawRight: string, operator: string): string {
+  // A function type is only a union member inside parentheses.
+  const right = findMainArrowIndex(rawRight) !== -1 ? `(${rawRight.trim()})` : rawRight
   // The conditionals below are already decided for an `unknown` left operand:
   // `??` and `||` yield its non-nullish values (`{}`) or the right operand,
   // and `&&` yields `unknown`. Print that result instead of the conditional.
   if (left.trim() === 'unknown') return operator === '&&' || right.trim() === 'unknown' ? 'unknown' : `{} | ${right}`
+  // They are decided for a plain primitive too: it is never nullish, so `??`
+  // keeps it; `||` yields its truthy values or the right operand; `&&` yields
+  // its one falsy value or the right operand.
+  const primitive = left.trim()
+  if (primitive === 'boolean' || primitive === 'string' || primitive === 'number') {
+    if (operator === '??') return primitive
+    const falsyValue = primitive === 'boolean' ? 'false' : primitive === 'string' ? `''` : '0'
+    return logicalUnion(operator === '||' ? (primitive === 'boolean' ? 'true' : primitive) : falsyValue, right)
+  }
   const falsy = "false | 0 | 0n | '' | null | undefined"
   if (operator === '??') return `([${left}] extends [NonNullable<${left}>] ? ${left} : NonNullable<${left}> | ${right})`
   if (operator === '||') return `([${left}] extends [object] ? ${left} : [Exclude<${left}, object> & (${falsy})] extends [never] ? ${left} : Exclude<NonNullable<${left}>, ${falsy}> | ${right})`
