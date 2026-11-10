@@ -99,6 +99,15 @@ pub fn isNumericLiteral(s: []const u8) bool {
     return i == s.len;
 }
 
+/// A numeric or BigInt literal as a literal type: separators do not belong to
+/// its value (`5_000` is `5000`). Mirrors the TypeScript emitter.
+pub fn numericLiteralType(alloc: std.mem.Allocator, literal: []const u8) InferError![]const u8 {
+    if (std.mem.indexOfScalar(u8, literal, '_') == null) return literal;
+    var out = try std.array_list.Managed(u8).initCapacity(alloc, literal.len);
+    for (literal) |c| if (c != '_') out.appendAssumeCapacity(c);
+    return out.toOwnedSlice();
+}
+
 /// Check decimal, hexadecimal, binary, and octal BigInt literals, including a
 /// leading minus and numeric separators.
 fn isBigIntLiteral(s: []const u8) bool {
@@ -740,20 +749,6 @@ fn stripTrailingInlineComment(text: []const u8) []const u8 {
     return text;
 }
 
-fn isSimpleNumber(v: []const u8) bool {
-    var i: usize = 0;
-    if (i < v.len and v[i] == '-') i += 1;
-    const int_start = i;
-    while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
-    if (i == int_start) return false;
-    if (i == v.len) return true;
-    if (v[i] != '.') return false;
-    i += 1;
-    const frac_start = i;
-    while (i < v.len and v[i] >= '0' and v[i] <= '9') i += 1;
-    return i > frac_start and i == v.len;
-}
-
 /// Clean one parameter: drop its initializer and mark it optional.
 /// `name: T = v` becomes `name?: T`; an unannotated `name = v` gets a type
 /// guessed from the literal, as the TypeScript emitter does.
@@ -796,24 +791,21 @@ fn cleanSingleParam(alloc: std.mem.Allocator, param: []const u8) InferError![]co
     if (equal_idx) |eq| {
         const name = trim(param[0..eq]);
         const marker: []const u8 = if (!ch.endsWith(name, "?")) "?" else "";
-        const default_value = trim(param[eq + 1 ..]);
-        var type_text: []const u8 = "unknown";
-        if (std.mem.eql(u8, default_value, "true") or std.mem.eql(u8, default_value, "false")) {
-            type_text = "boolean";
-        } else if (isSimpleNumber(default_value)) {
-            type_text = "number";
-        } else if (default_value.len >= 2 and ((default_value[0] == '\'' and default_value[default_value.len - 1] == '\'') or
-            (default_value[0] == '"' and default_value[default_value.len - 1] == '"')))
-        {
-            type_text = "string";
-        } else if (ch.startsWith(default_value, "[")) {
-            type_text = "unknown[]";
-        } else if (ch.startsWith(default_value, "{")) {
-            type_text = "Record<string, unknown>";
-        }
-        return std.fmt.allocPrint(alloc, "{s}{s}: {s}", .{ name, marker, type_text });
+        return std.fmt.allocPrint(alloc, "{s}{s}: {s}", .{ name, marker, simpleDefaultType(param[eq + 1 ..]) });
     }
     return param;
+}
+
+/// A type guessed from a parameter default's literal form.
+fn simpleDefaultType(value: []const u8) []const u8 {
+    const default_value = trim(value);
+    if (std.mem.eql(u8, default_value, "true") or std.mem.eql(u8, default_value, "false")) return "boolean";
+    if (isNumericLiteral(default_value)) return "number";
+    if (default_value.len >= 2 and ((default_value[0] == '\'' and default_value[default_value.len - 1] == '\'') or
+        (default_value[0] == '"' and default_value[default_value.len - 1] == '"'))) return "string";
+    if (ch.startsWith(default_value, "[")) return "unknown[]";
+    if (ch.startsWith(default_value, "{")) return "Record<string, unknown>";
+    return "unknown";
 }
 
 /// Clean parameter defaults from a parameter list, with or without its
@@ -2158,19 +2150,19 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     // Fast path: if first char is a digit, it's almost certainly a number or BigInt literal
     if (trimmed[0] >= '0' and trimmed[0] <= '9') {
         if (isNumericLiteral(trimmed)) {
-            return if (!is_const) "number" else trimmed;
+            return if (!is_const) "number" else try numericLiteralType(alloc, trimmed);
         }
         // BigInt literal: digits followed by 'n'
         if (isBigIntLiteral(trimmed)) {
-            return if (is_const) trimmed else "bigint";
+            return if (is_const) try numericLiteralType(alloc, trimmed) else "bigint";
         }
     }
 
     // Fast path: negative numbers
     if (trimmed[0] == '-' and trimmed.len > 1 and trimmed[1] >= '0' and trimmed[1] <= '9') {
-        if (isBigIntLiteral(trimmed)) return if (is_const) trimmed else "bigint";
+        if (isBigIntLiteral(trimmed)) return if (is_const) try numericLiteralType(alloc, trimmed) else "bigint";
         if (isNumericLiteral(trimmed)) {
-            return if (!is_const) "number" else trimmed;
+            return if (!is_const) "number" else try numericLiteralType(alloc, trimmed);
         }
     }
 
@@ -2209,7 +2201,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     // Number literals
     if (isNumericLiteral(trimmed)) {
         if (!is_const) return "number";
-        return trimmed;
+        return try numericLiteralType(alloc, trimmed);
     }
 
     // Boolean literals (length-first to skip most comparisons)
@@ -2279,7 +2271,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
 
     // BigInt literals (digits followed by 'n')
     if (isBigIntLiteral(trimmed)) {
-        if (is_const) return trimmed;
+        if (is_const) return try numericLiteralType(alloc, trimmed);
         return "bigint";
     }
 
@@ -2582,7 +2574,7 @@ fn isPrimitiveLiteral(val: []const u8) bool {
         '\'' => val.len >= 2 and val[val.len - 1] == '\'',
         't' => val.len == 4 and std.mem.eql(u8, val, "true"),
         'f' => val.len == 5 and std.mem.eql(u8, val, "false"),
-        '-', '0'...'9' => isNumericLiteral(val),
+        '-', '.', '0'...'9' => isNumericLiteral(val),
         else => false,
     };
 }
@@ -3899,4 +3891,16 @@ test "primitive receivers resolve fixed method results" {
     try std.testing.expectEqualStrings("string", try inferFunctionBodyReturnType(alloc, "{ return value.toFixed(2) }", "(value: number)", 0));
     try std.testing.expectEqualStrings("(string | undefined)[]", try inferFunctionBodyReturnType(alloc, "{ return [s.at(0)] }", "(s: string)", 0));
     try std.testing.expectEqualStrings("ReturnType<(string)[\"custom\"]>", try inferFunctionBodyReturnType(alloc, "{ return s.custom() }", "(s: string)", 0));
+}
+
+test "numeric literal types drop separators" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings("5000", try inferNarrowType(alloc, "5_000", true, false, 0));
+    try std.testing.expectEqualStrings("-1000.5", try inferNarrowType(alloc, "-1_000.5", true, false, 0));
+    try std.testing.expectEqualStrings("1000n", try inferNarrowType(alloc, "1_000n", true, false, 0));
+    try std.testing.expectEqualStrings("number", try inferNarrowType(alloc, "5_000", false, false, 0));
+    const plain = "42";
+    try std.testing.expectEqual(plain.ptr, (try numericLiteralType(alloc, plain)).ptr);
 }

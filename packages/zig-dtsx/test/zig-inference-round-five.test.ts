@@ -12,8 +12,9 @@ describeIf('Zig inference parity round five', () => {
     expect(dts(`export const value = ${value}`)).toContain(`value: ${value}`)
   })
 
+  // Separators are not part of a literal type's value (`1_000n` is `1000n`).
   test.each(['-1n', '0xffn', '0b101n', '0o77n', '1_000n'])('recognizes %s as a bigint literal', value => {
-    expect(dts(`export const value = ${value}`)).toContain(`value: ${value}`)
+    expect(dts(`export const value = ${value}`)).toContain(`value: ${value.replaceAll('_', '')};`)
   })
 
   test.each([

@@ -73,4 +73,24 @@ describe('TypeScript engine inference', () => {
     // An optional receiver is not a primitive keyword type.
     expect(output).toContain('export declare function maybe(s?: string): ReturnType<((string) | undefined)["trim"]>;')
   })
+
+  test('numeric separators are not part of a literal type', () => {
+    const output = emit([
+      'export const timeout = 5_000',
+      'export const big = 1_000n',
+      'export const hex = 0xFF_FF',
+      'export let retries = 1_000',
+      'export const fixed = { max: 10_000 } as const',
+      'export class K { static readonly max = 2_000 }',
+      'export function wait(ms = 1_000) { return ms }',
+    ].join('\n'))
+    expect(output).toContain('export declare const timeout: 5000;')
+    expect(output).toContain('export declare const big: 1000n;')
+    expect(output).toContain('export declare const hex: 0xFFFF;')
+    // A widened declaration documents the value as written.
+    expect(output).toContain('/** @defaultValue 1_000 */\nexport declare let retries: number;')
+    expect(output).toContain('readonly max: 10000')
+    expect(output).toContain('static readonly max: 2000;')
+    expect(output).toContain('export declare function wait(ms?: number): number;')
+  })
 })

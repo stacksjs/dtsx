@@ -52,7 +52,8 @@ describeIf('Zig inference parity round two', () => {
     ['scientific', '1e3'],
     ['separated', '1_000'],
   ])('recognizes %s numeric literals', (_name, literal) => {
-    expect(dts(`export const value = ${literal}`)).toContain(`value: ${literal}`)
+    // Separators are not part of a literal type's value (`1_000` is `1000`).
+    expect(dts(`export const value = ${literal}`)).toContain(`value: ${literal.replaceAll('_', '')};`)
   })
 
   test('unions conditional expression branches', () => {

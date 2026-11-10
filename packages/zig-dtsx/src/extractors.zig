@@ -472,22 +472,10 @@ fn endsWithWord(text: []const u8, word: []const u8) bool {
 // Parameter processing
 // ========================================================================
 
-/// Check if string is a numeric literal
+/// Check if string is a numeric literal: decimal, scientific, radix-prefixed,
+/// with numeric separators (the shared inference grammar).
 pub fn isNumericLiteral(v: []const u8) bool {
-    if (v.len == 0) return false;
-    var i: usize = 0;
-    if (v[0] == '-') {
-        i = 1;
-        if (i >= v.len) return false;
-    }
-    if (!ch.isDigit(v[i])) return false;
-    while (i < v.len and ch.isDigit(v[i])) i += 1;
-    if (i < v.len and v[i] == '.') {
-        i += 1;
-        if (i >= v.len or !ch.isDigit(v[i])) return false;
-        while (i < v.len and ch.isDigit(v[i])) i += 1;
-    }
-    return i == v.len;
+    return type_inf.isNumericLiteral(v);
 }
 
 /// Infer type from a default value expression (simple cases)
@@ -506,7 +494,7 @@ pub fn inferTypeFromDefault(s: *Scanner, value: []const u8) []const u8 {
         '[' => "unknown[]",
         '{' => "Record<string, unknown>",
         '\'', '"' => if (v.len >= 2 and v[v.len - 1] == v[0]) "string" else "unknown",
-        '-', '0'...'9' => if (isNumericLiteral(v)) "number" else "unknown",
+        '-', '.', '0'...'9' => if (isNumericLiteral(v)) "number" else "unknown",
         else => "unknown",
     };
     if (!std.mem.eql(u8, simple, "unknown")) return simple;
@@ -524,7 +512,7 @@ pub fn inferLiteralType(alloc: std.mem.Allocator, value: []const u8) []const u8 
     var v = std.mem.trim(u8, value, " \t\r\n");
     if (ch.endsWith(v, "as const")) v = std.mem.trim(u8, v[0 .. v.len - 8], " \t\r\n");
     if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "false")) return v;
-    if (v.len > 0 and isNumericLiteral(v)) return v;
+    if (v.len > 0 and isNumericLiteral(v)) return type_inf.numericLiteralType(alloc, v) catch v;
     if (literalExpressionType(alloc, v)) |expression_type| return expression_type;
     return (type_inf.inferCallType(alloc, v) catch null) orelse "unknown";
 }

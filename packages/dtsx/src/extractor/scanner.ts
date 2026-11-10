@@ -13,7 +13,7 @@ import { attachFunctionProperties } from '../function-properties'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { normalizeDefaultParameterOrder } from '../parameters'
-import { extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType } from '../processor/type-inference'
+import { extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -1877,22 +1877,6 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     return `${name}${optionalMarker}: ${type}`
   }
 
-  /** Check if string is a numeric literal (integer or decimal, optionally negative) */
-  function isNumericLiteral(v: string): boolean {
-    let i = 0
-    if (i < v.length && v.charCodeAt(i) === 45 /* - */) i++
-    if (i >= v.length) return false
-    const c = v.charCodeAt(i)
-    if (c < 48 || c > 57) return false // not a digit
-    while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    if (i < v.length && v.charCodeAt(i) === 46 /* . */) {
-      i++
-      if (i >= v.length || v.charCodeAt(i) < 48 || v.charCodeAt(i) > 57) return false
-      while (i < v.length && v.charCodeAt(i) >= 48 && v.charCodeAt(i) <= 57) i++
-    }
-    return i === v.length
-  }
-
   /** Infer type from a default value expression (simple cases) */
   function inferTypeFromDefault(value: string): string {
     const v = value.trim()
@@ -1921,7 +1905,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     if (v === 'true' || v === 'false')
       return v
     if (isNumericLiteral(v))
-      return v
+      return numericLiteralType(v)
     // String-literal concatenations: `'a' + 'b'` narrows to the joined
     // literal, `'a' + expr` widens to string, and purely numeric arithmetic
     // (`60 * 1000`) widens to number. Anything else composed of quotes is
