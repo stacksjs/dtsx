@@ -140,6 +140,25 @@ describe('TypeScript engine inference', () => {
     expect(emit('export class C { retries = 3 }', true)).toContain('  /** @defaultValue 3 */\n  retries: number;')
   })
 
+  test('each nested object type literal indents one more level', () => {
+    const output = emit(`export const config = { features: { cache: true, limits: { max: 1 } }, list: [{ id: 1 }] } as const`)
+    expect(output).toContain([
+      'export declare const config: {',
+      '  readonly features: {',
+      '    readonly cache: true;',
+      '    readonly limits: {',
+      '      readonly max: 1',
+      '    }',
+      '  };',
+      '  readonly list: readonly [{',
+      '    readonly id: 1',
+      '  }]',
+      '};',
+    ].join('\n'))
+    // An inferred class member type sits one level inside the class body.
+    expect(emit('export class K { make() { return { a: { b: 1 } } } }')).toContain('  make(): {\n    a: {\n      b: number\n    }\n  };')
+  })
+
   test('an object default made only of functions is omitted', () => {
     const output = emit([
       'export const handlers = { onReady: () => true, format(value: number) { return value } }',

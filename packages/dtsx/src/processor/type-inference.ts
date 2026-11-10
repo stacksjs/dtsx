@@ -810,6 +810,15 @@ export function primitiveMethodReturnType(receiver: string, method: string): str
   return methods && Object.hasOwn(methods, method) ? methods[method] : undefined
 }
 
+/**
+ * A type embedded as a member of an object type literal (or class body) moves
+ * one level in: each of its continuation lines gains two spaces, so nested
+ * literals indent by level. Mirrored by the native engine (`indentNestedType`).
+ */
+export function indentNestedType(type: string): string {
+  return type.includes('\n') ? type.replaceAll('\n', '\n  ') : type
+}
+
 /** Read a known object member without manufacturing a type for opaque shapes. */
 function objectMemberType(type: string, name: string): string | undefined {
   type = type.trim()
@@ -1831,17 +1840,17 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
       if (accessor) {
         const sig = formatAccessor(accessor.kind, accessor.name, valueType)
         if (sig) {
-          propTypes.push(`${commentPrefix}${sig}`)
+          propTypes.push(`${commentPrefix}${indentNestedType(sig)}`)
           // Accessors don't carry @defaultValue; skip the trackDefaults block below.
           continue
         }
       }
 
       if (!isConst && isBaseType(valueType) && isPrimitiveLiteral(rawVal)) {
-        propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${valueType}`)
+        propTypes.push(`${commentPrefix}/** @defaultValue ${escapeJsdocContent(rawVal)} */\n  ${emitKey}: ${indentNestedType(valueType)}`)
       }
       else {
-        propTypes.push(`${commentPrefix}${isConst ? 'readonly ' : ''}${emitKey}: ${valueType}`)
+        propTypes.push(`${commentPrefix}${isConst ? 'readonly ' : ''}${emitKey}: ${indentNestedType(valueType)}`)
       }
     }
 
@@ -1896,7 +1905,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   // it does not synthesize a string index as a plain object literal does.
   if (stringIndex && spreadTypes.length === 0) {
     const members = [...new Set(propertyTypes)].map(type => type.includes('=>') || type.includes(' & ') ? `(${type})` : type)
-    propTypes.unshift(`${isConst ? 'readonly ' : ''}[x: string]: ${members.join(' | ')}`)
+    propTypes.unshift(`${isConst ? 'readonly ' : ''}[x: string]: ${indentNestedType(members.join(' | '))}`)
   }
   const ownType = propTypes.length > 0 ? `{\n  ${propTypes.join(';\n  ')}\n}` : '{}'
   if (spreadTypes.length === 0) return ownType

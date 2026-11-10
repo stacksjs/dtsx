@@ -17,14 +17,14 @@ export declare const SIMPLE_CONST: 'hello';
 /** Nested object with as const */
 export declare const CONFIG: {
   readonly api: {
-  readonly baseUrl: 'https://api.example.com';
-  readonly timeout: 5000;
-  readonly retries: 3
-};
+    readonly baseUrl: 'https://api.example.com';
+    readonly timeout: 5000;
+    readonly retries: 3
+  };
   readonly features: {
-  readonly darkMode: true;
-  readonly notifications: false
-};
+    readonly darkMode: true;
+    readonly notifications: false
+  };
   readonly routes: readonly ['/', '/about', '/contact']
 };
 /** Array as const */
@@ -32,13 +32,13 @@ export declare const STATUSES: readonly ['pending', 'active', 'completed', 'arch
 /** Deeply nested as const */
 export declare const DEEP_CONFIG: {
   readonly level1: {
-  readonly level2: {
-  readonly level3: {
-  readonly value: 42;
-  readonly items: readonly [1, 2, 3]
-}
-}
-}
+    readonly level2: {
+      readonly level3: {
+        readonly value: 42;
+        readonly items: readonly [1, 2, 3]
+      }
+    }
+  }
 };
 /** Computed property key */
 declare const COMPUTED_KEY: 'dynamicProperty';

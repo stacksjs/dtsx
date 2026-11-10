@@ -2335,7 +2335,7 @@ fn buildClassBodyDtsChecked(s: *Scanner) ![]const u8 {
         var inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, item.body, item.parameters, 0, s, item.generics);
         if (item.is_async and !ch.startsWith(inferred, "Promise<")) inferred = try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred});
         for (members.items) |*member| {
-            if (std.mem.indexOf(u8, member.*, item.marker) != null) member.* = try std.mem.replaceOwned(u8, s.allocator, member.*, item.marker, inferred);
+            if (std.mem.indexOf(u8, member.*, item.marker) != null) member.* = try std.mem.replaceOwned(u8, s.allocator, member.*, item.marker, try type_inf.indentNestedType(s.allocator, inferred));
         }
     }
     if (members.items.len == 0) return "{}";
@@ -2438,7 +2438,7 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                     ret_type = marker;
                 } else {
                     const inferred = try type_inf.inferFunctionBodyReturnTypeGeneric(s.allocator, s.source[body_start..s.pos], raw_params, 0, s, generics);
-                    ret_type = if (is_async and !ch.startsWith(inferred, "Promise<")) try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) else inferred;
+                    ret_type = try type_inf.indentNestedType(s.allocator, if (is_async and !ch.startsWith(inferred, "Promise<")) try std.fmt.allocPrint(s.allocator, "Promise<{s}>", .{inferred}) else inferred);
                 }
             }
         } else if (s.pos < s.len and s.source[s.pos] == ch.CH_SEMI) {

@@ -13,7 +13,7 @@ import { attachFunctionProperties } from '../function-properties'
 import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
-import { classFieldDefaultDoc, extractSatisfiesType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
+import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -2863,10 +2863,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
             pos++
           }
           const index = output.length
-          output.push(`${modPrefix}get ${memberName}(): ${retType || 'unknown'};`)
+          output.push(`${modPrefix}get ${memberName}(): ${getterBody ? indentNestedType(retType) : retType || 'unknown'};`)
           if (getterBody) frame.pending.push(() => {
             const type = inferFunctionBodyReturnType(getterBody!, false, '()', value => scopedMemberExpression(value, isStatic))
-            output[index] = `${modPrefix}get ${memberName}(): ${type};`
+            output[index] = `${modPrefix}get ${memberName}(): ${indentNestedType(type)};`
           })
         }
         else {
@@ -3060,10 +3060,10 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       // the package ships. Nothing is lost: `retType` above is already resolved
       // to Generator<...> / AsyncGenerator<...> when the source did not annotate.
       const memberIndex = members.length
-      members.push(`${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${retType};`)
+      members.push(`${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${inferredBody ? indentNestedType(retType) : retType};`)
       if (inferredBody) classFrames.at(-1)?.pending.push(() => {
         const type = inferFunctionBodyReturnType(inferredBody!, isAsync, rawParams, value => scopedMemberExpression(value, isStatic))
-        members[memberIndex] = `${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${type};`
+        members[memberIndex] = `${modPrefix}${memberName}${optMark}${generics}${dtsParams}: ${indentNestedType(type)};`
       })
     }
     else if (nextCh === CH_COLON || nextCh === CH_EQUAL || nextCh === CH_SEMI || nextCh === CH_RBRACE || nextCh === CH_LF || nextCh === CH_CR) {

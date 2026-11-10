@@ -2027,6 +2027,14 @@ fn oneOfSyntax(value: []const u8, choices: []const []const u8) bool {
     return false;
 }
 
+/// A type embedded as a member of an object type literal (or class body)
+/// moves one level in: each of its continuation lines gains two spaces, so
+/// nested literals indent by level. Mirrors the TypeScript emitter's `indentNestedType`.
+pub fn indentNestedType(alloc: std.mem.Allocator, type_text: []const u8) InferError![]const u8 {
+    if (std.mem.indexOfScalar(u8, type_text, '\n') == null) return type_text;
+    return std.mem.replaceOwned(u8, alloc, type_text, "\n", "\n  ");
+}
+
 fn objectMemberType(alloc: std.mem.Allocator, raw_type: []const u8, name: []const u8) InferError!?[]const u8 {
     const object = trim(raw_type);
     if (object.len < 2 or object[0] != '{' or object[object.len - 1] != '}') return null;
@@ -2958,18 +2966,18 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
                 try parts.appendSlice("get ");
                 try parts.appendSlice(trim(prop.key[4..]));
                 try parts.appendSlice("(): ");
-                try parts.appendSlice(getter_type);
+                try parts.appendSlice(try indentNestedType(alloc, getter_type));
             } else if (ch.startsWith(prop.key, "set ")) {
                 const end = if (ch.startsWith(val_type, "(")) findMatchingBracket(val_type, 0, '(', ')') else null;
                 const setter_params = if (end) |index| val_type[0 .. index + 1] else "(value: unknown)";
                 try parts.appendSlice("set ");
                 try parts.appendSlice(trim(prop.key[4..]));
-                try parts.appendSlice(setter_params);
+                try parts.appendSlice(try indentNestedType(alloc, setter_params));
             } else {
                 if (is_const) try parts.appendSlice("readonly ");
                 try parts.appendSlice(emit_key);
                 try parts.appendSlice(": ");
-                try parts.appendSlice(val_type);
+                try parts.appendSlice(try indentNestedType(alloc, val_type));
             }
         }
 
@@ -3022,7 +3030,7 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
             if (emitted_types.items.len > 0) try parts.appendSlice(" | ");
             const grouped = ch.contains(property_type, "=>") or ch.contains(property_type, " & ");
             if (grouped) try parts.append('(');
-            try parts.appendSlice(property_type);
+            try parts.appendSlice(try indentNestedType(alloc, property_type));
             if (grouped) try parts.append(')');
             try emitted_types.append(property_type);
         }
@@ -4035,4 +4043,15 @@ test "class field defaults merge with doc comments" {
     try std.testing.expectEqual(@as(usize, 2), comments.len);
     try std.testing.expectEqualStrings("/** doc */", comments[0]);
     try std.testing.expectEqualStrings("// line", comments[1]);
+}
+
+test "nested object type literals indent by level" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqualStrings(
+        "{\n  readonly a: {\n    readonly b: {\n      readonly c: 1\n    }\n  }\n}",
+        try inferNarrowType(alloc, "{ a: { b: { c: 1 } } } as const", true, false, 0),
+    );
+    try std.testing.expectEqualStrings("number", try indentNestedType(alloc, "number"));
 }

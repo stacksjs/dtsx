@@ -45,24 +45,24 @@ export declare const someObject: {
   someNestedArray3: (number[] | string)[];
   someOtherNestedArray: ((string | number | unknown | (() => unknown))[] | number[])[];
   someComplexArray: ({
-  /** @defaultValue 'value' */
-  key: string
-}[] | ({
-  /** @defaultValue 'value2' */
-  key2: string
-} | string | number)[] | (string | unknown)[])[];
+    /** @defaultValue 'value' */
+    key: string
+  }[] | ({
+    /** @defaultValue 'value2' */
+    key2: string
+  } | string | number)[] | (string | unknown)[])[];
   someObject: {
-  /** @defaultValue 'value' */
-  key: string
-};
+    /** @defaultValue 'value' */
+    key: string
+  };
   someNestedObject: { key: { /** @defaultValue 'value' */ nestedKey: string }; otherKey: { nestedKey: ReturnType<typeof process.cwd>; nestedKey2: () => void } };
   someNestedObjectArray: ({
-  /** @defaultValue 'value' */
-  key: string
-} | {
-  /** @defaultValue 'value2' */
-  key2: string
-})[];
+    /** @defaultValue 'value' */
+    key: string
+  } | {
+    /** @defaultValue 'value2' */
+    key2: string
+  })[];
   someOtherObject: typeof some.deep.object;
   someInlineCall2: typeof console.log;
   someInlineCall3: ReturnType<typeof console.log>
@@ -85,9 +85,9 @@ export declare const defaultHeaders: {
 export declare const complexArrays: {
   matrix: ((number | (number | number[])[])[] | (string | string[])[] | (boolean | (boolean | boolean[])[])[])[];
   tuples: readonly [
-    readonly [1, 'string', true] |
-    readonly ['literal', 42, false]
-  ];
+      readonly [1, 'string', true] |
+      readonly ['literal', 42, false]
+    ];
   mixedArrays: (Date | Promise<string> | (() => Promise<string>) | (() => Generator<any, any, any>))[]
 };
 // Nested Object Types with Methods
@@ -114,27 +114,27 @@ export declare const methodDecoratorWithExplicitType: (
 // Complex Constants with Type Inference
 export declare const CONFIG_MAP: {
   readonly development: {
-  readonly features: {
-  readonly auth: {
-  readonly providers: readonly ['google', 'github'];
-  readonly settings: {
-  readonly timeout: 5000;
-  readonly retries: 3
-}
-}
-}
-};
+    readonly features: {
+      readonly auth: {
+        readonly providers: readonly ['google', 'github'];
+        readonly settings: {
+          readonly timeout: 5000;
+          readonly retries: 3
+        }
+      }
+    }
+  };
   readonly production: {
-  readonly features: {
-  readonly auth: {
-  readonly providers: readonly ['google', 'github', 'microsoft'];
-  readonly settings: {
-  readonly timeout: 3000;
-  readonly retries: 5
-}
-}
-}
-}
+    readonly features: {
+      readonly auth: {
+        readonly providers: readonly ['google', 'github', 'microsoft'];
+        readonly settings: {
+          readonly timeout: 3000;
+          readonly retries: 5
+        }
+      }
+    }
+  }
 };
 export declare const command: {
   run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>;

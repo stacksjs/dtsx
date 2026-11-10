@@ -29,13 +29,13 @@ export declare const errorInstance: Error;
 // Complex nested structures
 export declare const deeplyNested: {
   readonly level1: {
-  readonly level2: {
-  readonly level3: {
-  readonly value: 'deep';
-  readonly array: readonly [1, readonly [2, readonly [3, readonly [4]]]]
-}
-}
-}
+    readonly level2: {
+      readonly level3: {
+        readonly value: 'deep';
+        readonly array: readonly [1, readonly [2, readonly [3, readonly [4]]]]
+      }
+    }
+  }
 };
 /**
  * Mixed type arrays

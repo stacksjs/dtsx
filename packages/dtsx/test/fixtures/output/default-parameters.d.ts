@@ -21,9 +21,9 @@ export declare const presets: {
   resilient: (config?: { sentryDsn?: string; bugsnagApiKey?: string; services?: string[] }) => string;
   load: (options?: { cache?: boolean }, attempts?: number) => Promise<number>;
   configure: (config?: {
-    host?: string
-    port?: number
-  }) => void;
+      host?: string
+      port?: number
+    }) => void;
   withCallback: (count?: number, done?: () => void) => number
 };
 export declare const format: (value?: number, unit?: string) => string;
