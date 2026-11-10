@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { processSourceWithTypeScriptEngine } from '../../dtsx/src/process-source'
+import { nativeEngineAvailable } from '../../dtsx/src/native-engine'
+import { processSource as processSdkSource, processSourceWithTypeScriptEngine } from '../../dtsx/src/process-source'
 import { isAvailable, runTsc } from '../../dtsx/test/helpers/tsc'
 import { processSource, ZIG_AVAILABLE } from '../src/index'
 
@@ -34,9 +35,10 @@ type ModelCheck = NoAny<IsAny<typeof api.imported>>
 void [id, value, plainId, factoryValue, method, callable, authored, reverse]
 `
 
-for (const mode of ['native', 'core'] as const) {
+for (const mode of ['native', 'sdk', 'core'] as const) {
   test(`${mode} generic calls retain import queries and callable type arguments`, async () => {
     expect(ZIG_AVAILABLE).toBe(true)
+    if (mode === 'sdk') expect(nativeEngineAvailable()).toBe(true)
     expect(isAvailable).toBe(true)
     const directory = await mkdtemp(join(tmpdir(), 'dtsx-generic-import-'))
     try {
@@ -46,7 +48,7 @@ for (const mode of ['native', 'core'] as const) {
         compilerOptions: { strict: true, skipLibCheck: false, noEmit: true, target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', types: [], paths: {} },
         files: ['consumer.ts'],
       }))
-      const declarations = mode === 'native' ? processSource(source) : processSourceWithTypeScriptEngine(source)
+      const declarations = mode === 'native' ? processSource(source) : mode === 'sdk' ? processSdkSource(source, 'api.ts') : processSourceWithTypeScriptEngine(source)
       for (const [label, content] of [['source', source], [mode, declarations]]) {
         await rm(join(directory, 'api.ts'), { force: true })
         await rm(join(directory, 'api.d.ts'), { force: true })
