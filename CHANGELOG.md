@@ -1,5 +1,32 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.38...v0.11.39)
+
+## ✨ Features
+
+- document class field initializers with @defaultValue ([998206f](https://github.com/stacksjs/dtsx/commit/998206f)) _(by Chris Breuer <chris@stacksjs.com>)_
+- omit an object @defaultValue made only of functions ([503d1e4](https://github.com/stacksjs/dtsx/commit/503d1e4)) _(by Chris Breuer <chris@stacksjs.com>)_
+- declare defaulted object binding parameters like tsc ([5162924](https://github.com/stacksjs/dtsx/commit/5162924)) _(by Chris Breuer <chris@stacksjs.com>)_
+- resolve method calls on primitive parameters ([c1283b3](https://github.com/stacksjs/dtsx/commit/c1283b3)) _(by Chris Breuer <chris@stacksjs.com>)_
+- publish the bundler plugins as @dtsx/<tool> ([6fc7824](https://github.com/stacksjs/dtsx/commit/6fc7824)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🐛 Bug Fixes
+
+- indent nested object type literals by level ([8edb887](https://github.com/stacksjs/dtsx/commit/8edb887)) _(by Chris Breuer <chris@stacksjs.com>)_
+- drop numeric separators from literal types ([8a84fcc](https://github.com/stacksjs/dtsx/commit/8a84fcc)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 📝 Documentation
+
+- compare class field and parameter output with tsc and oxc ([e057669](https://github.com/stacksjs/dtsx/commit/e057669)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.39 ([888490e](https://github.com/stacksjs/dtsx/commit/888490e)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.37...v0.11.38)
 
 ## 🐛 Bug Fixes
