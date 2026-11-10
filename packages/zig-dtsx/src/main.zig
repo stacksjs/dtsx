@@ -64,6 +64,7 @@ const c = if (builtin.os.tag == .windows) struct {
     pub extern "c" fn read(fd: c_int, buf: [*]u8, count: usize) isize;
     pub extern "c" fn write(fd: c_int, buf: [*]const u8, count: usize) isize;
     pub extern "c" fn lseek(fd: c_int, offset: c_long, whence: c_int) c_long;
+    pub extern "c" fn ftruncate(fd: c_int, length: c_long) c_int;
 
     // fcntl.h flag values. BSD-derived libcs (Darwin/FreeBSD/DragonFly) use
     // hex bits; glibc/musl Linux use octal — these specific constants are
@@ -193,7 +194,42 @@ fn readStdin(alloc: std.mem.Allocator) ![]const u8 {
     return try buf.toOwnedSlice();
 }
 
+/// Replace the contents of the regular file open at `fd` with `data`, then
+/// close it. The file is overwritten from its start and cut only when it used
+/// to be longer: opening with O_TRUNC instead makes the filesystem release
+/// the old blocks and allocate them again, about twice the cost when a build
+/// rewrites declarations that are already there.
+fn replaceFileContents(fd: c_int, data: []const u8) !void {
+    var closed = false;
+    defer if (!closed) {
+        _ = c.close(fd);
+    };
+    var offset: usize = 0;
+    while (offset < data.len) {
+        const count = c.write(fd, data.ptr + offset, data.len - offset);
+        if (count <= 0) return error.OutputWriteFailure;
+        offset += @as(usize, @intCast(count));
+    }
+    // A pipe or device has no end to seek to and nothing to cut.
+    const previous_end = c.lseek(fd, 0, c.SEEK_END);
+    if (previous_end > @as(c_long, @intCast(data.len)) and c.ftruncate(fd, @intCast(data.len)) != 0) return error.OutputWriteFailure;
+    const close_result = c.close(fd);
+    closed = true;
+    if (close_result != 0) return error.OutputWriteFailure;
+}
+
 fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void {
+    if (builtin.os.tag != .windows) {
+        const path_z = try alloc.dupeSentinel(u8, path, 0);
+        defer alloc.free(path_z);
+        const with_newline = try alloc.alloc(u8, data.len + 1);
+        defer alloc.free(with_newline);
+        @memcpy(with_newline[0..data.len], data);
+        with_newline[data.len] = '\n';
+        const fd = c.open(path_z.ptr, c.O_WRONLY | c.O_CREAT, @as(c_uint, 0o644));
+        if (fd < 0) return error.OutputWriteFailure;
+        return replaceFileContents(fd, with_newline);
+    }
     const fp = (try openFilePath(alloc, path, "wb")) orelse return error.OutputWriteFailure;
     var closed = false;
     defer if (!closed) {
@@ -337,21 +373,9 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
     } else {
         // Preserve the existing NUL-allocation contract and trailing newline.
         @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
-        const fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT | c.O_TRUNC, @as(c_uint, 0o644));
+        const fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT, @as(c_uint, 0o644));
         if (fd < 0) return error.OutputWriteFailure;
-        var closed = false;
-        defer if (!closed) {
-            _ = c.close(fd);
-        };
-        var offset: usize = 0;
-        while (offset < output.len + 1) {
-            const count = c.write(fd, @ptrCast(output.ptr + offset), output.len + 1 - offset);
-            if (count <= 0) return error.OutputWriteFailure;
-            offset += @as(usize, @intCast(count));
-        }
-        const close_result = c.close(fd);
-        closed = true;
-        if (close_result != 0) return error.OutputWriteFailure;
+        try replaceFileContents(fd, output.ptr[0 .. output.len + 1]);
     }
 }
 

@@ -224,3 +224,52 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('native pr
   expect(result.stderr.toString()).toContain('error: file77.ts: InputReadFailure')
   expect(existsSync(join(output, 'file0.d.ts'))).toBe(false)
 }))
+
+// Outputs are overwritten in place, so a declaration that got shorter must
+// not keep the tail of the file it replaces.
+test('native project replaces longer, shorter and identical declarations exactly', () => directory(async (root) => {
+  const input = join(root, 'src')
+  const output = join(root, 'types')
+  await mkdir(input, { recursive: true })
+  await mkdir(output, { recursive: true })
+  const names = ['longer', 'shorter', 'identical', 'fresh']
+  for (const name of names)
+    await writeFile(join(input, `${name}.ts`), `export const ${name}: number = 1;\n`)
+  const expected = (name: string): string => `export declare const ${name}: number;\n`
+  await writeFile(join(output, 'longer.d.ts'), `${expected('longer')}${'// stale tail\n'.repeat(5000)}`)
+  await writeFile(join(output, 'shorter.d.ts'), 'x')
+  await writeFile(join(output, 'identical.d.ts'), expected('identical'))
+
+  for (let run = 0; run < 2; run++) {
+    const result = invoke(['--project', input, '--outdir', output])
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    for (const name of names)
+      expect(await readFile(join(output, `${name}.d.ts`), 'utf8')).toBe(expected(name))
+  }
+}))
+
+test('native single-file output replaces a longer and a shorter file exactly', () => directory(async (root) => {
+  const source = join(root, 'value.ts')
+  const output = join(root, 'value.d.ts')
+  await writeFile(source, 'export const value: number = 1;\n')
+  const expected = 'export declare const value: number;\n'
+  for (const previous of [`${expected}${'// stale tail\n'.repeat(5000)}`, 'x', expected, null]) {
+    if (previous === null) await rm(output)
+    else await writeFile(output, previous)
+    const result = invoke([source, '-o', output])
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    expect(await readFile(output, 'utf8')).toBe(expected)
+  }
+}))
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('native single-file output reports a file it may not write', () => directory(async (root) => {
+  const source = join(root, 'value.ts')
+  const output = join(root, 'value.d.ts')
+  await writeFile(source, 'export const value: number = 1;\n')
+  await writeFile(output, 'keep')
+  await chmod(output, 0o444)
+  const result = invoke([source, '-o', output])
+  expect(result.exitCode).not.toBe(0)
+  expect(result.stderr.toString()).toContain('OutputWriteFailure')
+  expect(await readFile(output, 'utf8')).toBe('keep')
+}))
