@@ -1182,6 +1182,10 @@ fn findMatchingBracket(str: []const u8, start: usize, open: u8, close: u8) ?usiz
 
 /// Find a token outside strings and nested expression delimiters.
 fn findTopLevelToken(str: []const u8, token: []const u8, start: usize) ?usize {
+    // Only an occurrence of the token can be returned, and most values hold
+    // none of the operators they are probed for: a vectorized search skips
+    // the bracket-tracking walk.
+    if (start >= str.len or ch.indexOf(str, token, start) == null) return null;
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
     var brace_depth: i32 = 0;
@@ -1211,6 +1215,7 @@ fn findTopLevelToken(str: []const u8, token: []const u8, start: usize) ?usize {
 }
 
 fn findTopLevelComma(str: []const u8) ?usize {
+    if (ch.indexOfChar(str, ',', 0) == null) return null;
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
     var brace_depth: i32 = 0;
@@ -2166,8 +2171,9 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     if (isRegexLiteral(trimmed)) return "RegExp";
 
     // Recognize functions before expression operators so the `>` in `=>` and
-    // generic parameter lists cannot be mistaken for a comparison.
-    if (findMainArrowIndex(trimmed) != null or ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
+    // generic parameter lists cannot be mistaken for a comparison. A value
+    // with a main arrow has already returned above.
+    if (ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
         return inferFunctionType(alloc, trimmed, in_union, depth, is_const);
     }
 
@@ -2274,11 +2280,6 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     // New expressions
     if (ch.startsWith(trimmed, "new ")) {
         return inferNewExpressionType(alloc, trimmed);
-    }
-
-    // Function expressions
-    if (findMainArrowIndex(trimmed) != null or ch.startsWith(trimmed, "function") or ch.startsWith(trimmed, "async")) {
-        return inferFunctionType(alloc, trimmed, in_union, depth, is_const);
     }
 
     // Template literal

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { processSource as processWithTypeScript } from '../../dtsx/src/index'
 import { processSource, ZIG_AVAILABLE } from '../src/index'
 
 const describeIf = ZIG_AVAILABLE ? describe : describe.skip
@@ -71,5 +72,32 @@ describeIf('parameter modifier detection', () => {
   test('names that start like a modifier pass through', () => {
     expect(processSource('export function f(reporter: string, options: number, publicPath: string, overrides: string[]): void {}', true))
       .toContain('f(reporter: string, options: number, publicPath: string, overrides: string[]): void;')
+  })
+})
+
+// Each initializer is classified by probing for an arrow, a comma operator and
+// binary operators. The probes skip values that cannot contain the token; the
+// declarations must stay exactly what the TypeScript engine prints.
+describeIf('initializer probes', () => {
+  test.each([
+    ['arrow', '(value: number): string => String(value)'],
+    ['async arrow', 'async (id: string): Promise<number> => id.length'],
+    ['function expression', 'function (a: number, b: number): number { return a + b }'],
+    ['async function expression', 'async function load(): Promise<void> {}'],
+    ['arrows nested in an object', '{ parse: (text: string): number => Number(text), limits: [1, 2], name: \'x\' }'],
+    ['arrow inside a call argument', '[1, 2, 3].map((n: number): number => n * 2)'],
+    ['comma operator', '(1, \'last\')'],
+    ['commas only inside brackets', '[1, 2, { a: 3, b: [4, 5] }]'],
+    ['conditional', 'Math.random() > 0.5 ? \'yes\' : 42'],
+    ['nullish and logical', 'process.env.NAME ?? \'fallback\''],
+    ['arithmetic', '2 * 3 + 4'],
+    ['string concatenation', '\'a\' + 1'],
+    ['comparison', '1 < 2'],
+    ['operator text inside a string', '\'a ? b : c, d => e && f\''],
+    ['bitwise', '1 << 4'],
+    ['instanceof', 'globalThis instanceof Object'],
+  ])('%s', (_name, initializer) => {
+    const source = `export const value = ${initializer}\nexport let mutable = ${initializer}\n`
+    expect(processSource(source, true).trim()).toBe(processWithTypeScript(source, 'value.ts').trim())
   })
 })
