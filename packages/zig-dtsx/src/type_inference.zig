@@ -2776,6 +2776,8 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
     // Track clean default parts when collecting and this is a non-const container
     const build_default = _collect_clean_default and !is_const;
     var clean_props = std.array_list.Managed([]const u8).init(alloc);
+    // Function entries only repeat their signatures from the type.
+    var function_props: usize = 0;
     var spread_types = std.array_list.Managed([]const u8).init(alloc);
     var property_types = std.array_list.Managed([]const u8).init(alloc);
     var string_index = false;
@@ -2921,6 +2923,7 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
                 try ps.appendSlice(": ");
                 try ps.appendSlice(if (prop.is_method) try cleanMethodSignature(alloc, val_type) else fn_type_raw);
                 try clean_props.append(try ps.toOwnedSlice());
+                function_props += 1;
             }
         }
     }
@@ -2942,7 +2945,8 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
     try parts.appendSlice("\n}");
 
     // Store computed clean default for parent/emitter to consume
-    if (build_default and clean_props.items.len > 0) {
+    // A block of function signatures alone repeats the type: no default.
+    if (build_default and clean_props.items.len > function_props) {
         var one_line = std.array_list.Managed(u8).init(alloc);
         try one_line.appendSlice("{ ");
         for (clean_props.items, 0..) |item, ci| {

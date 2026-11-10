@@ -23,7 +23,7 @@ export declare var helloWorld: string;
  *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
  *   someNestedArray3: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', [11, 12, 13], ],
  *   someObject: { key: 'value' },
- *   someNestedObject: { key: { nestedKey: 'value' }, otherKey: { nestedKey2: () => void } },
+ *   someNestedObject: { key: { nestedKey: 'value' } },
  *   someNestedObjectArray: [ { key: 'value' }, { key2: 'value2' }, ]
  * }
  * ```
@@ -90,25 +90,7 @@ export declare const complexArrays: {
   ];
   mixedArrays: (Date | Promise<string> | (() => Promise<string>) | (() => Generator<any, any, any>))[]
 };
-/**
- * Nested Object Types with Methods
- * @defaultValue
- * ```ts
- * {
- *   handlers: {
- *     onSuccess: <T>(data: T) => Promise<void>,
- *     onError: (error: Error & { code?: number }) => never,
- *     someOtherMethod: () => void
- *   },
- *   utils: {
- *     formatters: {
- *       date: (input: Date) => ReturnType<(Date)["toISOString"]>,
- *       currency: (amount: number, currency?: string) => unknown
- *     }
- *   }
- * }
- * ```
- */
+// Nested Object Types with Methods
 export declare const complexObject: {
   handlers: { onSuccess: <T>(data: T) => Promise<void>; onError: (error: Error & { code?: number }) => never; someOtherMethod: () => void };
   utils: { formatters: { date: (input: Date) => ReturnType<(Date)["toISOString"]>; currency: (amount: number, currency?: string) => unknown } }
@@ -154,15 +136,6 @@ export declare const CONFIG_MAP: {
 }
 }
 };
-/**
- * @defaultValue
- * ```ts
- * {
- *   run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>,
- *   runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>
- * }
- * ```
- */
 export declare const command: {
   run: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>;
   runSync: (command: string, options?: CliOptions) => Promise<Result<Subprocess<Writable, Readable, Readable>, Error>>

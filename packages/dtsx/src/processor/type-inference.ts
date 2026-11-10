@@ -1668,6 +1668,8 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
   // Track whether we should build a clean default inline
   const trackDefaults = _collectCleanDefault && !isConst
   const cleanProps: string[] = []
+  // Function entries only repeat their signatures from the type.
+  let functionProps = 0
 
   for (const [key, val] of properties) {
     const { comments: keyComments, key: propertyKey } = splitLeadingCommentsFromKey(key)
@@ -1795,16 +1797,19 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
         // Collapsed with cleanMethodSignature, which separates object-type
         // members it joins onto one line (`{ a?: string; b?: number }`).
         cleanProps.push(`${cleanKey}: ${withoutComments(cleanMethodSignature(valueType))}`)
+        functionProps++
       }
       else if (!rawVal.startsWith('[') && (rawVal.includes('=>') || rawVal.startsWith('function') || rawVal.startsWith('async'))) {
         const fnType = inferFunctionType(rawVal, false, 0, true)
         cleanProps.push(`${cleanKey}: ${withoutComments(fnType)}`)
+        functionProps++
       }
     }
   }
 
   // Store the clean default result
-  if (trackDefaults && cleanProps.length > 0) {
+  // A block of function signatures alone repeats the type: no default.
+  if (trackDefaults && cleanProps.length > functionProps) {
     const indent = _depth > 0 ? (_depth - 1) / 2 : 0
     const oneLine = `{ ${cleanProps.join(', ')} }`
     if (oneLine.length <= 80) {

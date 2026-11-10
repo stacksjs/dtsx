@@ -110,4 +110,14 @@ describe('TypeScript engine inference', () => {
     expect(output).toContain('static readonly max: 2000;')
     expect(output).toContain('export declare function wait(ms?: number): number;')
   })
+
+  test('an object default made only of functions is omitted', () => {
+    const output = emit([
+      'export const handlers = { onReady: () => true, format(value: number) { return value } }',
+      'export const mixed = { port: 1, onReady: () => true }',
+    ].join('\n'))
+    expect(output).toContain('export declare const handlers: {')
+    expect(output).not.toContain('@defaultValue `{ onReady')
+    expect(output).toContain('/** @defaultValue `{ port: 1, onReady: () => boolean }` */')
+  })
 })
