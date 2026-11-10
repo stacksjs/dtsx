@@ -17,7 +17,7 @@ export declare var helloWorld: string;
  *   someBoolean: true,
  *   someFalse: false,
  *   someFunction: () => void,
- *   anotherOne: () => unknown,
+ *   anotherOne: () => ([unknown] extends [NonNullable<unknown>] ? unknown : NonNullable<unknown> | string),
  *   someArray: [1, 2, 3],
  *   someNestedArray: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], ],
  *   someNestedArray2: [ [1, 2, 3], [4, 5, 6, 7, 8, 9, 10], 'dummy value', ],
@@ -38,7 +38,7 @@ export declare const someObject: {
   /** @defaultValue false */
   someFalse: boolean;
   someFunction: () => void;
-  anotherOne: () => unknown;
+  anotherOne: () => ([unknown] extends [NonNullable<unknown>] ? unknown : NonNullable<unknown> | string);
   someArray: number[];
   someNestedArray: number[][];
   someNestedArray2: (number[] | string)[];
