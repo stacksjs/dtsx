@@ -71,6 +71,7 @@ const c = if (builtin.os.tag == .windows) struct {
     // mutually inconsistent so we have to pick per OS.
     pub const O_RDONLY: c_int = 0;
     pub const O_WRONLY: c_int = 1;
+    pub const O_RDWR: c_int = 2;
     pub const O_CREAT: c_int = if (bsd_libc) 0x0200 else 0o100;
     pub const O_TRUNC: c_int = if (bsd_libc) 0x0400 else 0o1000;
 
@@ -194,25 +195,59 @@ fn readStdin(alloc: std.mem.Allocator) ![]const u8 {
     return try buf.toOwnedSlice();
 }
 
-/// Replace the contents of the regular file open at `fd` with `data`, then
-/// close it. The file is overwritten from its start and cut only when it used
-/// to be longer: opening with O_TRUNC instead makes the filesystem release
-/// the old blocks and allocate them again, about twice the cost when a build
-/// rewrites declarations that are already there.
-fn replaceFileContents(fd: c_int, data: []const u8) !void {
+/// Whether the file open at `fd`, which is `size` bytes long, holds `data`.
+fn fileHolds(fd: c_int, size: c_long, data: []const u8) bool {
+    if (size != @as(c_long, @intCast(data.len)) or c.lseek(fd, 0, c.SEEK_SET) != 0) return false;
+    var buffer: [64 * 1024]u8 = undefined;
+    var compared: usize = 0;
+    while (compared < data.len) {
+        const count = c.read(fd, &buffer, @min(buffer.len, data.len - compared));
+        if (count <= 0) return false;
+        const got: usize = @intCast(count);
+        if (!std.mem.eql(u8, buffer[0..got], data[compared .. compared + got])) return false;
+        compared += got;
+    }
+    return true;
+}
+
+/// Make the output file `name` (relative to `dir_fd`, or to the working
+/// directory when `dir_fd` is null) hold exactly `data`.
+///
+/// A file that already holds `data` is left untouched, so a rebuild that
+/// changes nothing keeps its modification time and does not wake watchers or
+/// incremental builds downstream. Otherwise it is overwritten from its start
+/// and cut only when it used to be longer: opening with O_TRUNC instead makes
+/// the filesystem release the old blocks and allocate them again, about twice
+/// the cost.
+fn replaceFileContents(dir_fd: ?c_int, name: [*:0]const u8, data: []const u8) !void {
+    const mode = @as(c_uint, 0o644);
+    // Reading the old contents needs read access; a write-only file is
+    // simply rewritten.
+    var readable = true;
+    var fd = if (dir_fd) |dir| c.openat(dir, name, c.O_RDWR | c.O_CREAT, mode) else c.open(name, c.O_RDWR | c.O_CREAT, mode);
+    if (fd < 0) {
+        readable = false;
+        fd = if (dir_fd) |dir| c.openat(dir, name, c.O_WRONLY | c.O_CREAT, mode) else c.open(name, c.O_WRONLY | c.O_CREAT, mode);
+    }
+    if (fd < 0) return error.OutputWriteFailure;
     var closed = false;
     defer if (!closed) {
         _ = c.close(fd);
     };
-    var offset: usize = 0;
-    while (offset < data.len) {
-        const count = c.write(fd, data.ptr + offset, data.len - offset);
-        if (count <= 0) return error.OutputWriteFailure;
-        offset += @as(usize, @intCast(count));
-    }
-    // A pipe or device has no end to seek to and nothing to cut.
+    // A pipe or device has no end to seek to, nothing to compare and nothing
+    // to cut.
     const previous_end = c.lseek(fd, 0, c.SEEK_END);
-    if (previous_end > @as(c_long, @intCast(data.len)) and c.ftruncate(fd, @intCast(data.len)) != 0) return error.OutputWriteFailure;
+    const unchanged = readable and previous_end > 0 and fileHolds(fd, previous_end, data);
+    if (!unchanged) {
+        if (previous_end >= 0 and c.lseek(fd, 0, c.SEEK_SET) != 0) return error.OutputWriteFailure;
+        var offset: usize = 0;
+        while (offset < data.len) {
+            const count = c.write(fd, data.ptr + offset, data.len - offset);
+            if (count <= 0) return error.OutputWriteFailure;
+            offset += @as(usize, @intCast(count));
+        }
+        if (previous_end > @as(c_long, @intCast(data.len)) and c.ftruncate(fd, @intCast(data.len)) != 0) return error.OutputWriteFailure;
+    }
     const close_result = c.close(fd);
     closed = true;
     if (close_result != 0) return error.OutputWriteFailure;
@@ -226,9 +261,7 @@ fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void
         defer alloc.free(with_newline);
         @memcpy(with_newline[0..data.len], data);
         with_newline[data.len] = '\n';
-        const fd = c.open(path_z.ptr, c.O_WRONLY | c.O_CREAT, @as(c_uint, 0o644));
-        if (fd < 0) return error.OutputWriteFailure;
-        return replaceFileContents(fd, with_newline);
+        return replaceFileContents(null, path_z.ptr, with_newline);
     }
     const fp = (try openFilePath(alloc, path, "wb")) orelse return error.OutputWriteFailure;
     var closed = false;
@@ -373,9 +406,7 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
     } else {
         // Preserve the existing NUL-allocation contract and trailing newline.
         @as([*]u8, @constCast(output.ptr))[output.len] = '\n';
-        const fd = c.openat(ctx.output_dir_fd, task.output_name_z, c.O_WRONLY | c.O_CREAT, @as(c_uint, 0o644));
-        if (fd < 0) return error.OutputWriteFailure;
-        try replaceFileContents(fd, output.ptr[0 .. output.len + 1]);
+        try replaceFileContents(ctx.output_dir_fd, task.output_name_z, output.ptr[0 .. output.len + 1]);
     }
 }
 

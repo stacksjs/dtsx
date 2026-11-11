@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isAvailable, runTsc } from '../../dtsx/test/helpers/tsc'
@@ -272,4 +272,58 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('native si
   expect(result.exitCode).not.toBe(0)
   expect(result.stderr.toString()).toContain('OutputWriteFailure')
   expect(await readFile(output, 'utf8')).toBe('keep')
+}))
+
+// A declaration that did not change is not written again, so its modification
+// time survives and watchers or incremental builds downstream stay quiet.
+const longAgo = new Date('2020-01-01T00:00:00Z')
+
+test('native project leaves unchanged declarations untouched and rewrites changed ones', () => directory(async (root) => {
+  const input = join(root, 'src')
+  const output = join(root, 'types')
+  await mkdir(input, { recursive: true })
+  for (const name of ['same', 'changed', 'sameLength'])
+    await writeFile(join(input, `${name}.ts`), `export const ${name}: number = 1;\n`)
+  expect(invoke(['--project', input, '--outdir', output]).exitCode).toBe(0)
+  for (const name of ['same', 'changed', 'sameLength'])
+    await utimes(join(output, `${name}.d.ts`), longAgo, longAgo)
+
+  await writeFile(join(input, 'changed.ts'), 'export const changed: string = \'now a string\';\n')
+  // Same byte length, different text: only a comparison can tell.
+  await writeFile(join(input, 'sameLength.ts'), 'export const sameLength: string = 1 as any;\n')
+  expect((await readFile(join(output, 'sameLength.d.ts'), 'utf8')).length).toBe('export declare const sameLength: string;\n'.length)
+  expect(invoke(['--project', input, '--outdir', output]).exitCode).toBe(0)
+
+  expect((await stat(join(output, 'same.d.ts'))).mtime.getTime()).toBe(longAgo.getTime())
+  expect(await readFile(join(output, 'same.d.ts'), 'utf8')).toBe('export declare const same: number;\n')
+  expect((await stat(join(output, 'changed.d.ts'))).mtime.getTime()).toBeGreaterThan(longAgo.getTime())
+  expect(await readFile(join(output, 'changed.d.ts'), 'utf8')).toBe('export declare const changed: string;\n')
+  expect((await stat(join(output, 'sameLength.d.ts'))).mtime.getTime()).toBeGreaterThan(longAgo.getTime())
+  expect(await readFile(join(output, 'sameLength.d.ts'), 'utf8')).toBe('export declare const sameLength: string;\n')
+}))
+
+test('native single-file output leaves an unchanged file untouched', () => directory(async (root) => {
+  const source = join(root, 'value.ts')
+  const output = join(root, 'value.d.ts')
+  await writeFile(source, 'export const value: number = 1;\n')
+  expect(invoke([source, '-o', output]).exitCode).toBe(0)
+  await utimes(output, longAgo, longAgo)
+  expect(invoke([source, '-o', output]).exitCode).toBe(0)
+  expect((await stat(output)).mtime.getTime()).toBe(longAgo.getTime())
+  await writeFile(source, 'export const value: string = \'1\';\n')
+  expect(invoke([source, '-o', output]).exitCode).toBe(0)
+  expect((await stat(output)).mtime.getTime()).toBeGreaterThan(longAgo.getTime())
+  expect(await readFile(output, 'utf8')).toBe('export declare const value: string;\n')
+}))
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('native output that cannot be read back is still rewritten', () => directory(async (root) => {
+  const source = join(root, 'value.ts')
+  const output = join(root, 'value.d.ts')
+  await writeFile(source, 'export const value: number = 1;\n')
+  await writeFile(output, 'stale and much longer than the declaration that replaces it\n')
+  await chmod(output, 0o200)
+  const result = invoke([source, '-o', output])
+  await chmod(output, 0o644)
+  expect(result.exitCode, result.stderr.toString()).toBe(0)
+  expect(await readFile(output, 'utf8')).toBe('export declare const value: number;\n')
 }))
