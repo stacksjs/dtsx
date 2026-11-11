@@ -1,5 +1,23 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.45...v0.11.46)
+
+## 🐛 Bug Fixes
+
+- preserve contextual constructor types in class fields ([77b9681](https://github.com/stacksjs/dtsx/commit/77b9681)) _(by Chris <chris@stacksjs.com>)_ ([#3181](https://github.com/stacksjs/dtsx/issues/3181))
+
+## ✅ Tests
+
+- qualify extracted published SDK payloads with installed consumers ([8d4db1d](https://github.com/stacksjs/dtsx/commit/8d4db1d)) _(by Chris <chris@stacksjs.com>)_ ([#3179](https://github.com/stacksjs/dtsx/issues/3179))
+
+## 🔧 Chores
+
+- release v0.11.46 ([e7847dc](https://github.com/stacksjs/dtsx/commit/e7847dc)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.44...v0.11.45)
 
 ## 🐛 Bug Fixes
