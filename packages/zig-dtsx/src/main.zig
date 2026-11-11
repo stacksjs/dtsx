@@ -2,6 +2,7 @@
 /// Reads TypeScript source from stdin or file, writes .d.ts to stdout or file.
 /// Supports batch mode via --project <dir> --outdir <dir>.
 const std = @import("std");
+const platform = @import("platform.zig");
 const builtin = @import("builtin");
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
@@ -15,7 +16,8 @@ const augmentation_graph = @import("augmentation_graph.zig");
 // headers. This also keeps cross-compilation working on CI runners where
 // `addTranslateC` blows up with `CacheCheckFailed` for cross targets.
 //
-// Directory traversal uses the platform-aware std.Io filesystem API.
+// Directory traversal uses the platform-aware std.Io filesystem API, except
+// where platform.zig calls libc directly.
 // Checked file operations retain UCRT stdio on Windows and stdio/openat(2)
 // on POSIX (Linux and the BSD-derived Apple platforms). Stdio FILE* globals
 // have different external symbol names
@@ -293,7 +295,70 @@ fn fileOrder(_: void, left: []const u8, right: []const u8) bool {
 
 /// Discover relative source paths without following directory symlinks. The
 /// output tree is identified physically, including when roots use aliases.
-fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8, out_path: []const u8) ![][]const u8 {
+/// Whether a directory is never searched for sources.
+fn isSkippedDirectory(name: []const u8) bool {
+    return std.mem.eql(u8, name, "node_modules") or std.mem.eql(u8, name, ".git") or std.mem.eql(u8, name, ".dtsx-cache");
+}
+
+/// `collectTsFiles` on libc directory streams (see platform.zig).
+fn collectTsFilesDirect(alloc: std.mem.Allocator, dir_path: []const u8, out_path: []const u8) ![][]const u8 {
+    const source_root = platform.realPath(alloc, dir_path) catch return error.DirNotFound;
+    defer alloc.free(source_root);
+    const output_root = try platform.realPath(alloc, out_path);
+    defer alloc.free(output_root);
+    const exclude_output = !samePath(source_root, output_root) and withinPath(output_root, source_root);
+    var files = std.array_list.Managed([]const u8).init(alloc);
+    errdefer {
+        for (files.items) |name| alloc.free(name);
+        files.deinit();
+    }
+    // Directories still to list, as paths relative to the root ("" is the root).
+    var pending = std.array_list.Managed([]const u8).init(alloc);
+    defer {
+        for (pending.items) |relative| alloc.free(relative);
+        pending.deinit();
+    }
+    try pending.append(try alloc.dupe(u8, ""));
+    while (pending.pop()) |relative| {
+        defer alloc.free(relative);
+        const directory_z = if (relative.len == 0) try alloc.dupeSentinel(u8, dir_path, 0) else try std.fmt.allocPrintSentinel(alloc, "{s}/{s}", .{ dir_path, relative }, 0);
+        defer alloc.free(directory_z);
+        var listing = platform.Listing.open(directory_z) catch |err| return if (relative.len == 0) error.DirNotFound else err;
+        defer listing.close();
+        while (try listing.next(alloc)) |entry| {
+            const entry_path = if (relative.len == 0) try alloc.dupe(u8, entry.name) else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ relative, entry.name });
+            var keep = false;
+            defer if (!keep) alloc.free(entry_path);
+            if (entry.kind == .directory) {
+                if (isSkippedDirectory(entry.name)) continue;
+                if (exclude_output) {
+                    const full_path = try std.fs.path.resolve(alloc, &.{ source_root, entry_path });
+                    defer alloc.free(full_path);
+                    if (withinPath(full_path, output_root)) continue;
+                }
+                try pending.append(entry_path);
+                keep = true;
+                continue;
+            }
+            if (!std.mem.endsWith(u8, entry.name, ".ts") or std.mem.endsWith(u8, entry.name, ".d.ts")) continue;
+            if (entry.kind == .sym_link) {
+                // Preserve unreadable file links as tasks, so checked reads report
+                // their failures. Directory links never become recursive roots.
+                const target_z = try std.fmt.allocPrintSentinel(alloc, "{s}/{s}", .{ dir_path, entry_path }, 0);
+                defer alloc.free(target_z);
+                if (platform.resolvesToDirectory(target_z.ptr)) continue;
+            }
+            try files.append(entry_path);
+            keep = true;
+        }
+    }
+    std.mem.sort([]const u8, files.items, {}, fileOrder);
+    return files.toOwnedSlice();
+}
+
+const collectTsFiles = if (platform.direct_libc) collectTsFilesDirect else collectTsFilesPortable;
+
+fn collectTsFilesPortable(alloc: std.mem.Allocator, dir_path: []const u8, out_path: []const u8) ![][]const u8 {
     const io = std.Io.Threaded.global_single_threaded.io();
     var root = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return error.DirNotFound;
     defer root.close(io);
@@ -313,7 +378,7 @@ fn collectTsFiles(alloc: std.mem.Allocator, dir_path: []const u8, out_path: []co
         var entry = value;
         if (entry.kind == .unknown) entry.kind = (try entry.dir.statFile(io, entry.basename, .{ .follow_symlinks = false })).kind;
         if (entry.kind == .directory) {
-            if (std.mem.eql(u8, entry.basename, "node_modules") or std.mem.eql(u8, entry.basename, ".git") or std.mem.eql(u8, entry.basename, ".dtsx-cache")) continue;
+            if (isSkippedDirectory(entry.basename)) continue;
             if (exclude_output) {
                 const full_path = try std.fs.path.resolve(alloc, &.{ source_root, entry.path });
                 defer alloc.free(full_path);
@@ -452,27 +517,7 @@ fn readWorkerFn(ctx: ReadCtx) void {
 /// Threads worth starting for `file_count` files: each needs about 8 files to
 /// amortize its ~100µs spawn and join.
 fn projectThreadCount(file_count: usize) usize {
-    const cpu_count = std.Thread.getCpuCount() catch 4;
-    return @min(cpu_count, @max(file_count / 8, 1));
-}
-
-/// Run `worker` once per context, each on its own thread, and wait for all of
-/// them. One context, or a thread that cannot start, runs on the caller.
-fn runOnThreads(comptime Ctx: type, comptime worker: fn (Ctx) void, sa: std.mem.Allocator, contexts: []const Ctx) !void {
-    if (contexts.len <= 1) {
-        for (contexts) |ctx| worker(ctx);
-        return;
-    }
-    const threads = try sa.alloc(?std.Thread, contexts.len);
-    for (contexts, threads) |ctx, *thread| {
-        thread.* = std.Thread.spawn(.{}, worker, .{ctx}) catch blk: {
-            worker(ctx);
-            break :blk null;
-        };
-    }
-    for (threads) |thread| {
-        if (thread) |started| started.join();
-    }
+    return @min(platform.cpuCount(), @max(file_count / 8, 1));
 }
 
 /// Split `count` items into `parts` contiguous ranges of near-equal size.
@@ -507,9 +552,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
 
     // Prepare parent paths through the platform-aware filesystem API. Worker
     // stdio still checks writes, flushes and closes independently per file.
-    const io = std.Io.Threaded.global_single_threaded.io();
-    var output_root = try std.Io.Dir.cwd().createDirPathOpen(io, out_dir, .{});
-    defer output_root.close(io);
+    try platform.makePath(sa, out_dir);
     const out_z = try sa.dupeSentinel(u8, out_dir, 0);
 
     // Open directory file descriptors for openat (POSIX only)
@@ -532,10 +575,15 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
 
     // Collect .ts filenames
     const filenames = try collectTsFiles(sa, project_dir, out_dir);
+    var created_parent: ?[]const u8 = null;
     for (filenames) |filename| {
         if (std.fs.path.dirname(filename)) |parent| {
-            var output_parent = try output_root.createDirPathOpen(io, parent, .{});
-            output_parent.close(io);
+            // Sorted names put a directory's files together.
+            if (created_parent) |previous| {
+                if (std.mem.eql(u8, previous, parent)) continue;
+            }
+            try platform.makePath(sa, try std.fs.path.join(sa, &.{ out_dir, parent }));
+            created_parent = parent;
         }
     }
     if (filenames.len == 0) return;
@@ -575,7 +623,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
 
     // The standalone CLI owns source snapshots and its activation graph. Do not
     // plan one set of bytes and then re-read another set in worker threads.
-    const source_root = try std.Io.Dir.cwd().realPathFileAlloc(io, project_dir, sa);
+    const source_root = try platform.realPath(sa, project_dir);
     const graph_files = try sa.alloc(augmentation_graph.File, tasks.len);
     // Every source is read exactly once, before planning, on as many threads
     // as the emission below uses.
@@ -586,7 +634,7 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
             const range = partitionRange(tasks.len, thread_count, part);
             ctx.* = .{ .input_dir_fd = input_dir_fd, .tasks = tasks[range.start..range.end], .failures = failures[range.start..range.end] };
         }
-        try runOnThreads(ReadCtx, readWorkerFn, sa, read_contexts);
+        try platform.runOnThreads(ReadCtx, readWorkerFn, sa, read_contexts);
     }
     for (filenames, failures) |filename, failure| {
         if (failure) |err| {
@@ -639,14 +687,41 @@ fn processProject(alloc: std.mem.Allocator, project_dir: []const u8, out_dir: []
         const range = partitionRange(tasks.len, thread_count, part);
         ctx.* = .{ .output_dir_fd = output_dir_fd, .tasks = tasks[range.start..range.end], .failures = failures[range.start..range.end] };
     }
-    try runOnThreads(WorkerCtx, workerFn, sa, contexts);
+    try platform.runOnThreads(WorkerCtx, workerFn, sa, contexts);
     try checkTaskFailures(tasks, failures);
 }
 
 // Support both Zig 0.15.x (argsAlloc) and 0.16+ (Init.Minimal)
 const has_process_init = @hasDecl(std.process, "Init");
 
-pub const main = if (has_process_init) mainInit else mainLegacy;
+pub const main = if (has_process_init) (if (platform.direct_libc) mainDirect else mainInit) else mainLegacy;
+
+/// The standard panic handlers print through `std.Io`, which is what
+/// platform.zig keeps out of the Darwin binary. This one prints the message
+/// and aborts.
+pub const panic = if (platform.direct_libc) std.debug.FullPanic(reportPanic) else std.debug.FullPanic(std.debug.defaultPanic);
+
+extern "c" fn exit(status: c_int) noreturn;
+extern "c" fn abort() noreturn;
+
+fn reportPanic(message: []const u8, first_trace_address: ?usize) noreturn {
+    _ = first_trace_address;
+    writeErr("panic: ");
+    writeErr(message);
+    writeErr("\n");
+    abort();
+}
+
+/// Entry point where the binary avoids `std.Io`: report a failure the way the
+/// standard entry point does (`error: Name`, status 1) without its tracing.
+fn mainDirect(init: std.process.Init.Minimal) void {
+    mainInit(init) catch |err| {
+        writeErr("error: ");
+        writeErr(@errorName(err));
+        writeErr("\n");
+        exit(1);
+    };
+}
 
 fn mainInit(init: std.process.Init.Minimal) !void {
     const alloc = std.heap.c_allocator;

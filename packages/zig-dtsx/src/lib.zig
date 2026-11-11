@@ -1,6 +1,22 @@
 /// C ABI exports for Bun FFI integration.
 /// Provides process_source(+len variants), result_length, free_result.
 const std = @import("std");
+const platform = @import("platform.zig");
+
+/// The standard panic handlers print through `std.Io`; see platform.zig for
+/// why the Darwin library avoids it. This one prints the message and aborts.
+pub const panic = if (platform.direct_libc) std.debug.FullPanic(reportPanic) else std.debug.FullPanic(std.debug.defaultPanic);
+
+extern "c" fn write(fd: c_int, buffer: [*]const u8, count: usize) isize;
+extern "c" fn abort() noreturn;
+
+fn reportPanic(message: []const u8, first_trace_address: ?usize) noreturn {
+    _ = first_trace_address;
+    _ = write(2, "panic: ", 7);
+    _ = write(2, message.ptr, message.len);
+    _ = write(2, "\n", 1);
+    abort();
+}
 const Scanner = @import("scanner.zig").Scanner;
 const emitter = @import("emitter.zig");
 const module_specifiers = @import("module_specifiers.zig");
@@ -312,7 +328,7 @@ fn processBatchInternal(
     const max_threads: usize = if (thread_count > 0)
         @intCast(thread_count)
     else
-        @intCast(std.Thread.getCpuCount() catch 4);
+        platform.cpuCount();
     // Cap the thread count so each thread gets at least ~4 files. Spawn+join
     // overhead (~100µs per thread) dominates if a thread has only 1-2 small
     // files to process. Mirrors the heuristic in main.zig:processProject.
@@ -327,40 +343,22 @@ fn processBatchInternal(
     }
 
     // Distribute tasks across threads
-    const threads = std.heap.c_allocator.alloc(std.Thread, num_threads) catch {
+    const chunks = std.heap.c_allocator.alloc([]const BatchTask, num_threads) catch {
         // Fallback to single-threaded
         batchWorker(tasks);
         return;
     };
-    defer std.heap.c_allocator.free(threads);
-
-    // Heap-allocate thread-spawned flags so we don't overflow when num_threads > 64.
-    const thread_spawned = std.heap.c_allocator.alloc(bool, num_threads) catch {
-        batchWorker(tasks);
-        return;
-    };
-    defer std.heap.c_allocator.free(thread_spawned);
-    @memset(thread_spawned, false);
-
+    defer std.heap.c_allocator.free(chunks);
     const chunk_size = (n + num_threads - 1) / num_threads;
+    var used: usize = 0;
     for (0..num_threads) |t| {
         const start = t * chunk_size;
         if (start >= n) break;
-        const end = @min(start + chunk_size, n);
-        threads[t] = std.Thread.spawn(.{}, batchWorker, .{tasks[start..end]}) catch {
-            // If spawn fails, process this chunk on the main thread immediately
-            batchWorker(tasks[start..end]);
-            continue;
-        };
-        thread_spawned[t] = true;
+        chunks[used] = tasks[start..@min(start + chunk_size, n)];
+        used += 1;
     }
-
-    // Join all successfully spawned threads
-    for (0..num_threads) |t| {
-        if (thread_spawned[t]) {
-            threads[t].join();
-        }
-    }
+    // A thread that cannot start runs its chunk on this one.
+    platform.runOnThreads([]const BatchTask, batchWorker, std.heap.c_allocator, chunks[0..used]) catch batchWorker(tasks);
 }
 
 /// Free multiple results from a batch call.
