@@ -1,5 +1,23 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.47...v0.11.48)
+
+## 🐛 Bug Fixes
+
+- preserve parameter rest bindings in declaration output ([98864d1](https://github.com/stacksjs/dtsx/commit/98864d1)) _(by Chris <chris@stacksjs.com>)_
+
+## ✅ Tests
+
+- verify released SDK graphs through public npm ([2f87e3d](https://github.com/stacksjs/dtsx/commit/2f87e3d)) _(by Chris <chris@stacksjs.com>)_ ([#3181](https://github.com/stacksjs/dtsx/issues/3181))
+
+## 🔧 Chores
+
+- release v0.11.48 ([cb87118](https://github.com/stacksjs/dtsx/commit/cb87118)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.46...v0.11.47)
 
 ## ✅ Tests
