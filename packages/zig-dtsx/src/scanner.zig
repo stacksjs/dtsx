@@ -530,7 +530,8 @@ pub const Scanner = struct {
         } else {
             const last = items[items.len - 1];
             const last_text = prefix[last.start..last.end];
-            if (last.kind == .punctuation and last_text.len == 1 and
+            const generic_operand = std.mem.eql(u8, last_text, ">") and module_syntax.endsWithTypeArguments(prefix, items);
+            if (!generic_operand and last.kind == .punctuation and last_text.len == 1 and
                 std.mem.indexOfScalar(u8, "+-*/%=<>&|^!~?:,.([{", last_text[0]) != null) return false;
             if (last.kind == .word) {
                 const operators = [_][]const u8{ "as", "in", "of", "new", "typeof", "keyof", "extends", "instanceof", "satisfies", "await", "return", "yield", "void" };

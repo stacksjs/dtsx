@@ -1520,89 +1520,101 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
                 initializer_start = init_start;
-                var depth: isize = 0;
-                var angle_depth: isize = 0;
-                var jsx_depth: isize = 0;
-                var jsx_tag_end: ?usize = null;
-                var completed_jsx_end: ?usize = null;
-                while (s.pos < s.len) {
-                    // SIMD fast-skip: bulk-skip bytes that can't be structural
-                    if (depth > 0) {
-                        while (s.pos + 16 <= s.len) {
-                            const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
-                            const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH)));
-                            if (!@reduce(.Or, interesting)) {
-                                s.pos += 16;
-                            } else {
-                                break;
+                // A value-position `<` can start type arguments or compare/shift.
+                // If optimistic angle tracking never closes, scan the same value
+                // again as operators rather than consuming subsequent declarations.
+                var track_angles = true;
+                while (true) {
+                    var depth: isize = 0;
+                    var angle_depth: isize = 0;
+                    var jsx_depth: isize = 0;
+                    var jsx_tag_end: ?usize = null;
+                    var completed_jsx_end: ?usize = null;
+                    while (s.pos < s.len) {
+                        // SIMD fast-skip: bulk-skip bytes that can't be structural
+                        if (depth > 0) {
+                            while (s.pos + 16 <= s.len) {
+                                const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                                const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH)));
+                                if (!@reduce(.Or, interesting)) {
+                                    s.pos += 16;
+                                } else {
+                                    break;
+                                }
+                            }
+                        } else {
+                            while (s.pos + 16 <= s.len) {
+                                const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
+                                const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_COMMA))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
+                                    (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
+                                if (!@reduce(.Or, interesting)) {
+                                    s.pos += 16;
+                                } else {
+                                    break;
+                                }
                             }
                         }
-                    } else {
-                        while (s.pos + 16 <= s.len) {
-                            const chunk: @Vector(16, u8) = s.source[s.pos..][0..16].*;
-                            const interesting = (chunk == @as(@Vector(16, u8), @splat(ch.CH_LPAREN))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RPAREN))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LBRACKET))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RBRACKET))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LANGLE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_RANGLE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SQUOTE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_DQUOTE))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_BACKTICK))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SLASH))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_SEMI))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_COMMA))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_LF))) |
-                                (chunk == @as(@Vector(16, u8), @splat(ch.CH_CR)));
-                            if (!@reduce(.Or, interesting)) {
-                                s.pos += 16;
-                            } else {
-                                break;
-                            }
+                        if (s.pos >= s.len) break;
+                        if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and jsx_tag_end == null and s.checkASIAfterInitializer(init_start, completed_jsx_end)) break;
+                        // Tag syntax already proven by jsxTagAt is not a regex.
+                        // This includes the self-closing slash after an attribute
+                        // expression's '}', which otherwise looks like a regex start.
+                        const jsx_syntax_slash = s.source[s.pos] == ch.CH_SLASH and
+                            ((s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE) or
+                                (jsx_tag_end != null and s.pos + 1 == jsx_tag_end.? and s.source[s.pos + 1] == ch.CH_RANGLE));
+                        if (!jsx_syntax_slash and s.skipNonCode()) continue;
+                        const ic = s.source[s.pos];
+                        if (ic == ch.CH_LANGLE and depth == 0) {
+                            if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
+                                jsx_depth = @max(0, jsx_depth + tag.delta);
+                                jsx_tag_end = tag.end;
+                            } else if (track_angles and (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth += 1;
+                        } else if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET) {
+                            depth += 1;
+                        } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET) {
+                            depth -= 1;
+                        } else if (ic == ch.CH_RANGLE and depth == 0) {
+                            if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
+                                if (jsx_depth == 0) completed_jsx_end = s.pos;
+                                jsx_tag_end = null;
+                            } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
+                                (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
+                        } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                            break;
                         }
+                        s.pos += 1;
                     }
-                    if (s.pos >= s.len) break;
-                    if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and jsx_tag_end == null and s.checkASIAfterInitializer(init_start, completed_jsx_end)) break;
-                    // Tag syntax already proven by jsxTagAt is not a regex.
-                    // This includes the self-closing slash after an attribute
-                    // expression's '}', which otherwise looks like a regex start.
-                    const jsx_syntax_slash = s.source[s.pos] == ch.CH_SLASH and
-                        ((s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE) or
-                            (jsx_tag_end != null and s.pos + 1 == jsx_tag_end.? and s.source[s.pos + 1] == ch.CH_RANGLE));
-                    if (!jsx_syntax_slash and s.skipNonCode()) continue;
-                    const ic = s.source[s.pos];
-                    if (ic == ch.CH_LANGLE and depth == 0) {
-                        if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
-                            jsx_depth = @max(0, jsx_depth + tag.delta);
-                            jsx_tag_end = tag.end;
-                        } else if (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL) angle_depth += 1;
-                    } else if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET) {
-                        depth += 1;
-                    } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET) {
-                        depth -= 1;
-                    } else if (ic == ch.CH_RANGLE and depth == 0) {
-                        if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
-                            if (jsx_depth == 0) completed_jsx_end = s.pos;
-                            jsx_tag_end = null;
-                        } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
-                            (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
-                    } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
-                        break;
+                    if (angle_depth > 0 and track_angles) {
+                        track_angles = false;
+                        s.pos = init_start;
+                        continue;
                     }
-                    s.pos += 1;
+                    break;
                 }
                 // A comment after the value (`= 1 // note`) is not part of it.
                 initializer_text = if (skip_isolated_initializer) "" else withoutTrailingComments(s.sliceTrimmed(init_start, s.pos));

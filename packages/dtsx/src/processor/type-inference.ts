@@ -537,6 +537,15 @@ function isNumericArithmetic(value: string): boolean {
       hasOperator = true
       continue
     }
+    if (c === 60 || c === 62) {
+      let end = i + 1
+      while (end < value.length && value.charCodeAt(end) === c) end++
+      const length = end - i
+      if (length !== 2 && !(c === 62 && length === 3)) return false
+      hasOperator = true
+      i = end - 1
+      continue
+    }
     if (c === 46 || c === 40 || c === 41 || c <= 32) continue // . ( ) whitespace
     return false
   }
@@ -564,6 +573,10 @@ function hasTopLevelComparison(value: string): boolean {
     if (value.startsWith('===', index) || value.startsWith('!==', index)
       || value.startsWith('==', index) || value.startsWith('!=', index)
       || value.startsWith('>=', index) || value.startsWith('<=', index)) return true
+    if ((char === 62 || char === 60) && value.charCodeAt(index + 1) === char) {
+      while (value.charCodeAt(index + 1) === char) index++
+      continue
+    }
     if ((char === 62 || char === 60) && value.charCodeAt(index - 1) !== 61 && value.charCodeAt(index + 1) !== 61) return true
   }
   return false

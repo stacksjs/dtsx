@@ -496,18 +496,17 @@ const Context = struct {
         const is_const = if (entry.modifiers) |modifiers| modifiers.len > 0 and std.mem.eql(u8, modifiers[0], "const") else false;
         if (self.inferred_calls.get(entry)) |call_type| {
             entry.inferred_type = call_type;
-            const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
-            entry.text = try std.fmt.allocPrint(self.allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, call_type });
         } else if (entry.type_annotation.len == 0 and is_const and alias != null and !std.mem.eql(u8, alias.?, entry.name) and origin != null) {
             if (value.unresolved) entry.inference_error = .unsupported_value_flow else if (value.type) |value_type| {
                 entry.inferred_type = if (origin.?.declared != null and try sameType(self.allocator, origin.?.declared.?, value_type))
                     try std.fmt.allocPrint(self.allocator, "typeof {s}", .{alias.?})
                 else
                     value_type;
-                entry.text = try std.fmt.allocPrint(self.allocator, "{s}declare const {s}: {s};", .{
-                    @as([]const u8, if (entry.is_exported) "export " else ""), entry.name, entry.inferred_type,
-                });
             }
+        }
+        if (entry.inferred_type.len > 0) {
+            const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
+            entry.text = try std.fmt.allocPrint(self.allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, entry.inferred_type });
         }
         if (entry.type_annotation.len > 0) {
             binding.flow = if (value.type) |value_type|
@@ -647,6 +646,16 @@ pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, sou
     var has_alias = false;
     for (ordered.items) |entry| {
         if (entry.kind != .variable_decl or entry.type_annotation.len > 0) continue;
+        // The private graph must see exactly the call query the emitter will use,
+        // even when there are no aliases that require source-position flow analysis.
+        if (try type_inf.inferCallType(allocator, entry.value)) |call| {
+            const inferred = try type_inf.inferNarrowType(allocator, entry.value, false, false, 0);
+            if (std.mem.eql(u8, call, inferred)) {
+                entry.inferred_type = call;
+                const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
+                entry.text = try std.fmt.allocPrint(allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, call });
+            }
+        }
         if (try directCall(allocator, entry.value, &context.functions)) |name| {
             if (context.local_calls.get(name)) |call| {
                 try context.inferred_calls.put(entry, call.type);

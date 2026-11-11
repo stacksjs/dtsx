@@ -125,6 +125,82 @@ pub const SyntaxError = std.mem.Allocator.Error || error{InvalidContext};
 pub const VisitError = SyntaxError || error{StopVisit};
 pub const tokenizeDeclarationSyntax = tokens;
 
+/// A final `>` can finish a type argument operand rather than require a
+/// right-hand value. Work on code tokens so comments, strings and arrow
+/// return types cannot change the balance of the enclosing argument list.
+pub fn endsWithTypeArguments(source: []const u8, items: []const SyntaxToken) bool {
+    if (items.len < 4) return false;
+    const last = items[items.len - 1];
+    if (!std.mem.eql(u8, source[last.start..last.end], ">")) return false;
+    var angles: usize = 0;
+    var groups: usize = 0;
+    var index = items.len;
+    while (index > 0) {
+        index -= 1;
+        const item = items[index];
+        if (item.kind != .punctuation) continue;
+        const text = source[item.start..item.end];
+        if (std.mem.eql(u8, text, ")") or std.mem.eql(u8, text, "]") or std.mem.eql(u8, text, "}")) {
+            groups += 1;
+        } else if (std.mem.eql(u8, text, "(") or std.mem.eql(u8, text, "[") or std.mem.eql(u8, text, "{")) {
+            if (groups == 0) return false;
+            groups -= 1;
+        } else if (groups == 0 and std.mem.eql(u8, text, ">")) {
+            if (index > 0 and items[index - 1].end == item.start and std.mem.eql(u8, source[items[index - 1].start..items[index - 1].end], "=")) continue;
+            angles += 1;
+        } else if (groups == 0 and std.mem.eql(u8, text, "<")) {
+            if (angles == 0) return false;
+            angles -= 1;
+            if (angles == 0) {
+                if (index == 0 or index == items.len - 2) return false;
+                var operand_index = index - 1;
+                while (std.mem.eql(u8, source[items[operand_index].start..items[operand_index].end], "!")) {
+                    if (operand_index == 0) return false;
+                    operand_index -= 1;
+                }
+                const before = items[operand_index];
+                const operand = source[before.start..before.end];
+                if (std.mem.eql(u8, operand, ">")) {
+                    // Chained instantiation needs a proven operand too. A
+                    // relational `left > <Type>` still needs the asserted value.
+                    index = operand_index + 1;
+                    continue;
+                }
+                return before.kind == .word or std.mem.eql(u8, operand, ")") or std.mem.eql(u8, operand, "]");
+            }
+        }
+    }
+    return false;
+}
+
+test "type argument operands distinguish closing arguments from operators" {
+    const cases = .{
+        .{ "value as Map<string, unknown>", true },
+        .{ "identity<number>", true },
+        .{ "identity!<number>", true },
+        .{ "identity!!<number>", true },
+        .{ "identity<string>!<number>", true },
+        .{ "identity < number >", true },
+        .{ "value satisfies Map<string, Map<string, unknown>>", true },
+        .{ "value as Map<'<' | '>', () => Map<string, unknown>>", true },
+        .{ "value as Container<{ run: () => Map<string, unknown> }>", true },
+        .{ "value as Map<string, unknown> /* > */", true },
+        .{ "left >", false },
+        .{ "left >>", false },
+        .{ "left >>>", false },
+        .{ "left >=", false },
+        .{ "left =>", false },
+        .{ "call<value> >", false },
+        .{ "call<value> + right >", false },
+        .{ "left > <number>", false },
+    };
+    inline for (cases) |case| {
+        const items = try tokenizeDeclarationSyntax(std.testing.allocator, case[0]);
+        defer std.testing.allocator.free(items);
+        try std.testing.expectEqual(case[1], endsWithTypeArguments(case[0], items));
+    }
+}
+
 fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token {
     if (content.len > std.math.maxInt(u32)) return error.InvalidContext;
     var result = std.array_list.Managed(Token).init(allocator);

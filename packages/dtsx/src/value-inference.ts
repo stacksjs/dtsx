@@ -3,7 +3,7 @@ import { directConstValueAlias, returnTypeExpectsObject } from './declaration-re
 import { isIdentChar, isIdentStart } from './lexical'
 import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from './module-references'
 import { extractAllImportedItems } from './processor/imports'
-import { inferNarrowType } from './processor/type-inference'
+import { inferCallType, inferNarrowType } from './processor/type-inference'
 
 interface Binding {
   declared?: string
@@ -124,6 +124,13 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
   let hasAlias = false
   for (const declaration of ordered) {
     if (declaration.kind !== 'variable' || declaration.typeAnnotation || typeof declaration.value !== 'string') continue
+    // The private graph must see exactly the call query the emitter will use,
+    // even when there are no aliases that require source-position flow analysis.
+    const emittedCall = inferCallType(declaration.value)
+    if (emittedCall && inferNarrowType(declaration.value, false) === emittedCall) {
+      declaration.inferredType = emittedCall
+      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${emittedCall};`
+    }
     const call = directCall(declaration.value)
     if (call && localCalls.has(call)) {
       inferredCalls.set(declaration, callType(call))
@@ -517,14 +524,15 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
     const inferredCall = inferredCalls.get(declaration)
     if (inferredCall) {
       declaration.inferredType = inferredCall
-      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${inferredCall};`
     }
     else if (!declaration.typeAnnotation && declaration.modifiers?.[0] === 'const' && alias && alias !== declaration.name && origin) {
       if (value.unresolved) declaration.inferenceError = 'DTSX_UNSUPPORTED_VALUE_FLOW'
       else if (value.type) {
         declaration.inferredType = origin.declared && sameType(origin.declared, value.type) ? `typeof ${alias}` : value.type
-        declaration.text = `${declaration.isExported ? 'export ' : ''}declare const ${declaration.name}: ${declaration.inferredType};`
       }
+    }
+    if (declaration.inferredType) {
+      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${declaration.inferredType};`
     }
     if (declaration.typeAnnotation) {
       binding.flow = value.type ? assignedType(declaration.typeAnnotation, value.type) ?? declaration.typeAnnotation : declaration.typeAnnotation

@@ -2100,6 +2100,10 @@ fn hasTopLevelComparison(value: []const u8) bool {
         const rest = value[index..];
         if (ch.startsWith(rest, "===") or ch.startsWith(rest, "!==") or ch.startsWith(rest, "==") or
             ch.startsWith(rest, "!=") or ch.startsWith(rest, ">=") or ch.startsWith(rest, "<=")) return true;
+        if ((c == '>' or c == '<') and index + 1 < value.len and value[index + 1] == c) {
+            while (index + 1 < value.len and value[index + 1] == c) index += 1;
+            continue;
+        }
         if ((c == '>' or c == '<') and (index == 0 or value[index - 1] != '=') and (index + 1 >= value.len or value[index + 1] != '=')) return true;
     }
     return false;
