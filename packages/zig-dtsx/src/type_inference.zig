@@ -1875,6 +1875,11 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
         try inferObjectTypeContextual(alloc, value, false, depth + 1, null, parameters, class_scope, return_scope)
     else
         try inferNarrowType(alloc, value, false, false, depth + 1);
+    if (std.mem.eql(u8, inferred, "unknown") and isIdentifierName(value)) {
+        if (return_scope) |scope| {
+            if (try scope.resolveValue(value)) |resolved| return resolved;
+        }
+    }
     return substituteBodyQueries(alloc, inferred, parameters);
 }
 
@@ -2214,6 +2219,15 @@ pub fn bodyParameters(alloc: std.mem.Allocator, raw: []const u8, scope: ?*ClassS
                     if (optional and equal == null) try result.append('(');
                     try result.appendSlice(inferred);
                     if (optional and equal == null) try result.appendSlice(") | undefined");
+                } else if (ch.startsWith(name, "{") or ch.startsWith(name, "[")) {
+                    // Preserve callable ownership even when the parameter's
+                    // projected type is unknown to this inference path.
+                    const names = @import("binding_patterns.zig").bindingPatternNames(alloc, name) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidContext;
+                    for (names) |binding_name| {
+                        if (result.items.len > 0) try result.appendSlice(", ");
+                        try result.appendSlice(binding_name);
+                        try result.appendSlice(": unknown");
+                    }
                 }
             }
             start = if (token) |item| item.end else content.len;

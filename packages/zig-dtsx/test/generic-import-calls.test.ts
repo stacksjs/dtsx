@@ -17,10 +17,22 @@ export const callable = lazyModel<(value: string) => number>('callable')
 `
 const model = `const model = { id: 1, where(column: string, value: number) { return { column, value } } }
 export function factory() { return model }
+export function shadow() { const model = { id: 'local' }; return model }
+export function parameter<T>(model: T) { return model }
+export function createLocal() { const local = 1; return { local } }
+export function partial({ a, b = 1 }: Record<string, unknown> = {}) { void a; return b }
+export function binding({ model }: { model: number }) { return model }
 export default model
 `
 const controls = `import * as api from './api.js'
 import * as original from './source.js'
+import { shadow, parameter, createLocal, partial, binding } from './model.js'
+const shadowId: string = shadow().id
+const parameterValue: number = parameter(1)
+const localValue: number = createLocal().local
+const partialValue: unknown = partial()
+const bindingValue: unknown = binding({ model: 1 })
+void [shadowId, parameterValue, localValue, partialValue, bindingValue]
 const id: number = api.imported.id
 const value: number = api.imported.where('id', 1).value
 const plainId: number = api.plain.where('id', 1).id
@@ -32,6 +44,9 @@ const reverse: typeof api.imported = original.imported
 type IsAny<T> = 0 extends (1 & T) ? true : false
 type NoAny<T extends false> = T
 type ModelCheck = NoAny<IsAny<typeof api.imported>>
+type FactoryCheck = NoAny<IsAny<typeof api.factory>>
+type PartialCheck = NoAny<IsAny<ReturnType<typeof partial>>>
+type BindingCheck = NoAny<IsAny<ReturnType<typeof binding>>>
 void [id, value, plainId, factoryValue, method, callable, authored, reverse]
 `
 
@@ -49,14 +64,19 @@ for (const mode of ['native', 'sdk', 'core'] as const) {
         files: ['consumer.ts'],
       }))
       const declarations = mode === 'native' ? processSource(source) : mode === 'sdk' ? processSdkSource(source, 'api.ts') : processSourceWithTypeScriptEngine(source)
+      const modelDeclarations = mode === 'native' ? processSource(model) : mode === 'sdk' ? processSdkSource(model, 'model.ts') : processSourceWithTypeScriptEngine(model)
       for (const [label, content] of [['source', source], [mode, declarations]]) {
         await rm(join(directory, 'api.ts'), { force: true })
         await rm(join(directory, 'api.d.ts'), { force: true })
         await writeFile(join(directory, label === 'source' ? 'api.ts' : 'api.d.ts'), content!)
+        if (label !== 'source') {
+          await rm(join(directory, 'model.ts'))
+          await writeFile(join(directory, 'model.d.ts'), modelDeclarations!)
+        }
         await writeFile(join(directory, 'consumer.ts'), controls)
         const valid = runTsc(directory, ['--project', 'tsconfig.json'])
         expect(valid.ok, `${label}: ${valid.output}`).toBe(true)
-        for (const invalid of ['const invalid: string = id', "api.imported.where('id', 'wrong')", 'api.method.run(1)']) {
+        for (const invalid of ['const invalid: string = id', "api.imported.where('id', 'wrong')", 'api.method.run(1)', "api.factory.where('id', 'wrong')", 'const invalid: number = shadowId', 'const invalid: { id: number } = binding({ model: 1 })']) {
           await writeFile(join(directory, 'consumer.ts'), `${controls}\n${invalid}`)
           const rejected = runTsc(directory, ['--project', 'tsconfig.json'])
           expect(rejected.ok, label).toBe(false)

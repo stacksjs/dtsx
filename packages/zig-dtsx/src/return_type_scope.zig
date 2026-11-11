@@ -26,6 +26,15 @@ pub const Scope = struct {
     }
 
     pub fn resolve(self: *Scope, asserted: []const u8) Error!?[]const u8 {
+        return self.resolveAt(asserted, @intFromPtr(asserted.ptr) - @intFromPtr(self.body.ptr));
+    }
+
+    pub fn resolveValue(self: *Scope, value: []const u8) Error!?[]const u8 {
+        const root = self.root orelse return null;
+        return self.resolveAt(try std.fmt.allocPrint(root.allocator, "typeof {s}", .{value}), @intFromPtr(value.ptr) - @intFromPtr(self.body.ptr));
+    }
+
+    fn resolveAt(self: *Scope, asserted: []const u8, offset: usize) Error!?[]const u8 {
         const root = self.root orelse return null;
         const alloc = root.allocator;
         if (self.helper == null) {
@@ -39,7 +48,6 @@ pub const Scope = struct {
             }
             try self.blocks.append(.{ .start = 0, .end = self.body.len, .header = 0, .name = "", .parent = 0 });
         }
-        const offset = @intFromPtr(asserted.ptr) - @intFromPtr(self.body.ptr);
         var pairs = std.array_list.Managed(Pair).init(alloc);
         defer pairs.deinit();
         const tokens = try syntax.tokenizeDeclarationSyntax(alloc, self.body);

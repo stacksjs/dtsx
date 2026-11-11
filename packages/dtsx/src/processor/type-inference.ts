@@ -3,6 +3,7 @@
  * Handles inferring narrow types from values
  */
 import type { KeyConstants } from '../computed-keys'
+import { bindingPatternNames } from '../binding-patterns'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
 import { tokenizeDeclarationSyntax } from '../module-references'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
@@ -732,7 +733,14 @@ function collectParameterTypes(parameters: string, resolve?: (value: string) => 
       for (const element of binding) types.set(element.alias, resolve?.(element.value) ?? inferNarrowType(element.value, false))
       continue
     }
-    if (!isIdentifierName(name)) continue
+    if (!isIdentifierName(name)) {
+      // An unresolved parameter still belongs to this callable. Its local
+      // binding must not become a query against an emitted module variable.
+      if (name.startsWith('{') || name.startsWith('[')) {
+        for (const binding of bindingPatternNames(name)) types.set(binding, 'unknown')
+      }
+      continue
+    }
     let type = colon !== -1 ? part.slice(colon + 1, equal !== -1 ? equal : undefined).trim() : ''
     if (!type && equal !== -1) {
       const value = part.slice(equal + 1).trim()
@@ -744,6 +752,7 @@ function collectParameterTypes(parameters: string, resolve?: (value: string) => 
       if (equal === -1 && part.slice(0, colon).trim().endsWith('?')) type = `(${type}) | undefined`
       types.set(name, type)
     }
+    else types.set(name, 'unknown')
   }
   return types
 }
@@ -923,6 +932,7 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
   const inferred = memberQuery ?? (value.startsWith('{') && value.endsWith('}')
     ? inferObjectType(value, false, inferenceDepth + 1, undefined, item => inferBodyExpressionType(item, parameterTypes, classExpression, assertedType, position, inferenceDepth + 1))
     : inferNarrowType(value, false))
+  if (inferred === 'unknown' && isIdentifierName(value) && assertedType) return assertedType(`typeof ${value}`, position)
   const tokens = tokenizeDeclarationSyntax(inferred)
   let result = ''
   let cursor = 0
@@ -1926,7 +1936,7 @@ export function inferObjectType(value: string, isConst: boolean, _depth: number 
     // Mutable properties widen fresh literals; const assertions and explicitly
     // annotated literal bindings retain their identity.
     if (trimVal === propertyKey && isIdentifierName(trimVal)) {
-      valueType = (isConst ? undefined : keyConstants?.mutableBindingTypes?.get(trimVal)) ?? `typeof ${trimVal}`
+      valueType = resolve?.(val) ?? (isConst ? undefined : keyConstants?.mutableBindingTypes?.get(trimVal)) ?? `typeof ${trimVal}`
     }
     // Method definitions (method shorthand syntax) — convert directly to function type
     // to avoid double-processing through inferNarrowType which loses return type info

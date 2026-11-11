@@ -101,10 +101,12 @@ describe('semantic return inference regressions', () => {
     expect(output).toContain('choose(flag: boolean): number | string')
   })
 
-  it('does not leak function-local shorthand bindings into declarations', () => {
+  it('retains function-local shorthand bindings in their declaration scope', () => {
     const output = processSourceSemantic(`export function create() { const local = 1; return { local } }`)
-    expect(output).toContain('local: unknown')
-    expect(output).not.toContain('typeof local')
+    expect(output).toContain('local: __dtsx_return_')
+    expect(output).toContain('declare namespace __dtsx_return_')
+    expect(output).toContain('const local: 1;')
+    expect(output).toContain('= typeof local')
   })
 })
 
