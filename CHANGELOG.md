@@ -1,5 +1,25 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.44...v0.11.45)
+
+## 🐛 Bug Fixes
+
+- parse initializer type spans and JSX boundaries structurally ([0ed7fa6](https://github.com/stacksjs/dtsx/commit/0ed7fa6)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3179](https://github.com/stacksjs/dtsx/issues/3179))
+- **native**: report Darwin faults without the standard I/O table ([f5adb57](https://github.com/stacksjs/dtsx/commit/f5adb57)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3180](https://github.com/stacksjs/dtsx/issues/3180))
+- preserve initializer boundaries and inferred query dependencies ([c93cd75](https://github.com/stacksjs/dtsx/commit/c93cd75)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ✅ Tests
+
+- select the reference declaration engine explicitly ([72223ba](https://github.com/stacksjs/dtsx/commit/72223ba)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.45 ([defaec3](https://github.com/stacksjs/dtsx/commit/defaec3)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.43...v0.11.44)
 
 ## ✨ Features
