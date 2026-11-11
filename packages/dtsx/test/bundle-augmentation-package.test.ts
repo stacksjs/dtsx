@@ -69,18 +69,31 @@ const additionalControls: Record<string, string> = {
 const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
 
 async function controls(root: string, specifier: string, name: string, hiddenCode = 'TS2459'): Promise<void> {
-  for (const [type, expected] of [['number', []], ['string', ['error TS2322']]] as const) {
+  const files: string[] = []
+  for (const type of ['number', 'string'] as const) {
     const expression = name.startsWith('external') ? 'instance.add(1, 2)' : 'new ParentThing().add(1, 2)'
     const setup = name.startsWith('external') ? `import type { ParentThing } from '${specifier}'; declare const instance: ParentThing;` : `import { ParentThing } from '${specifier}';`
-    await writeFile(join(root, 'control.ts'), `${setup} const value: ${type} = ${expression}; void value; ${(additionalControls[name] ?? '').replaceAll('$SPEC', specifier)}`)
-    const result = runTsc(root, ['--project', 'tsconfig.json'])
-    expect(result.ok, result.output).toBe(type === 'number')
-    expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual([...expected])
+    const file = type === 'number' ? 'control-positive.ts' : 'control-wrong-type.ts'
+    files.push(file)
+    await writeFile(join(root, file), `${setup} const value: ${type} = ${expression}; void value; ${(additionalControls[name] ?? '').replaceAll('$SPEC', specifier)}`)
   }
-  await writeFile(join(root, 'control.ts'), `import { install } from '${specifier}'; void install`)
-  const hidden = runTsc(root, ['--project', 'tsconfig.json'])
-  expect(hidden.ok, hidden.output).toBe(false)
-  expect(hidden.output.match(/error TS\d+/g) ?? [], hidden.output).toEqual([`error ${hiddenCode}`])
+  files.push('control-hidden.ts')
+  await writeFile(join(root, 'control-hidden.ts'), `import { install } from '${specifier}'; void install`)
+  await writeFile(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions, files }))
+  // Each control is an external module, so negative witnesses cannot modify
+  // the positive's scope. One compiler program still requires exactly the two
+  // intended diagnostics, attributed to their own negative files, and none in
+  // the positive or any dependency. Keep all existing install/timeout guards.
+  const result = runTsc(root, ['--project', 'tsconfig.json'])
+  expect(result.ok, result.output).toBe(false)
+  expect(result.output.match(/error TS\d+/g) ?? [], result.output).toHaveLength(2)
+  const diagnostics = [...result.output.matchAll(/^([^\r\n]+?)\(\d+,\d+\): error TS(\d+):/gm)]
+    .map(match => ({ file: match[1].replaceAll('\\', '/'), code: Number(match[2]) }))
+    .sort((left, right) => left.file.localeCompare(right.file))
+  expect(diagnostics, result.output).toEqual([
+    { file: 'control-hidden.ts', code: Number(hiddenCode.slice(2)) },
+    { file: 'control-wrong-type.ts', code: 2322 },
+  ])
 }
 
 for (const producer of ['core', 'bun-plugin'] as const) {
