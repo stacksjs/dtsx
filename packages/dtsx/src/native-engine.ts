@@ -11,9 +11,9 @@
  * native engine is compared with: the `engine` option, the CLI's `--engine`
  * flag, or `DTSX_ENGINE=typescript`.
  */
+import process from 'node:process'
 import { existsSync } from 'node:fs'
 import { arch, platform } from 'node:os'
-import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 interface NativeLibrary {
@@ -26,7 +26,7 @@ interface NativeLibrary {
 export interface NativeEmitOptions {
   keepComments: boolean
   isolatedDeclarations: boolean
-  /** Source path, required when a context (inference sources, augmentation imports) is supplied. */
+  /** Source path selects TypeScript/TSX syntax and identifies contextual emission. */
   sourceFile?: string
   /** Authored dependency snapshots for monomorphic call inference, by import specifier. */
   inferenceSources?: ReadonlyMap<string, string>
@@ -168,7 +168,7 @@ export function emitWithNativeEngine(source: string, options: NativeEmitOptions)
   if (!native) return null
   if (source.length * 3 > input.length) input = new Uint8Array(source.length * 3)
   const { written } = encoder.encodeInto(source, input)
-  const needsContext = (options.inferenceSources?.size ?? 0) > 0 || (options.augmentationImports?.size ?? 0) > 0
+  const needsContext = options.sourceFile !== undefined || (options.inferenceSources?.size ?? 0) > 0 || (options.augmentationImports?.size ?? 0) > 0
   let result: unknown
   if (needsContext) {
     const sourceFile = options.sourceFile ?? 'source.ts'
@@ -176,7 +176,7 @@ export function emitWithNativeEngine(source: string, options: NativeEmitOptions)
       version: 1,
       moduleSpecifierMode: 'preserve',
       sourceFile,
-      outputFile: sourceFile.replace(/\.[cm]?tsx?$/, '.d.ts'),
+      outputFile: sourceFile.replace(/\.(?:[cm]?[jt]sx?|vue|stx)$/, '.d.ts'),
       sourceHash: new Bun.CryptoHasher('sha256').update(input.subarray(0, written)).digest('hex'),
       rewrites: [],
       augmentationImports: [...(options.augmentationImports ?? [])],

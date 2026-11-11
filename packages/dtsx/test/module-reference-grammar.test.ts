@@ -1,5 +1,17 @@
 import { expect, test } from 'bun:test'
 import { rewriteModuleSpecifiers, scanReExportSpecifiers } from '../src/module-graph'
+import { createJsxTagReader } from '../src/lexical'
+import { tokenizeDeclarationSyntax } from '../src/module-references'
+
+test.each([8, 32, 128, 256])('nested JSX attribute headers retain all openers and following code at depth %i', (depth) => {
+  const source = `export const tree = ${'<A child={'.repeat(depth)}<A />${'} />'.repeat(depth)}; export const after = 1`
+  const opening = source.indexOf('<')
+  const read = createJsxTagReader(source)
+  expect(read(opening)).toEqual({ delta: 0, end: source.indexOf(';') - 1 })
+  const tokens = tokenizeDeclarationSyntax(source).map(token => source.slice(token.start, token.end))
+  expect(tokens.filter(token => token === '<')).toHaveLength(depth + 1)
+  expect(tokens.slice(-6)).toEqual([';', 'export', 'const', 'after', '=', '1'])
+})
 
 test('module references include nested template substitutions while ignoring literal text and regular expressions', () => {
   const source = [

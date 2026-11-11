@@ -20,21 +20,21 @@ const declarationCache = new Map<string, { declarations: Declaration[], contentH
  */
 export function extractDeclarations(
   sourceCode: string,
-  filePath: string,
+  filePath: string | undefined,
   keepComments: boolean = true,
   isolatedDeclarations: boolean = false,
   importedFunctions?: ReadonlySet<string>,
 ): Declaration[] {
   // Component files are transformed into virtual TS modules before scanning.
-  if (isVueFile(filePath)) {
+  if (isVueFile(filePath ?? '')) {
     sourceCode = transformVueSfcToTs(sourceCode)
   }
-  else if (isStxFile(filePath)) {
+  else if (isStxFile(filePath ?? '')) {
     sourceCode = transformStxToTs(sourceCode)
   }
 
   const contentHash = hashContent(sourceCode)
-  const cacheKey = `${filePath}:${keepComments ? 1 : 0}:${isolatedDeclarations ? 1 : 0}:${JSON.stringify([...(importedFunctions ?? [])].sort())}`
+  const cacheKey = JSON.stringify([filePath, keepComments, isolatedDeclarations, [...(importedFunctions ?? [])].sort()])
   const cached = declarationCache.get(cacheKey)
 
   if (cached && cached.contentHash === contentHash) {

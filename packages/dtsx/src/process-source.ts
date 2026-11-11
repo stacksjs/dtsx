@@ -14,11 +14,11 @@ import { isVueFile, transformVueSfcToTs } from './vue'
  * null otherwise, or when the native emitter rejects the input, and the
  * TypeScript engine runs instead.
  */
-export function emitNatively(sourceCode: string, filename: string, keepComments: boolean, importOrder: readonly string[], isolatedDeclarations: boolean, engine?: DeclarationEngine): string | null {
+export function emitNatively(sourceCode: string, filename: string | undefined, keepComments: boolean, importOrder: readonly string[], isolatedDeclarations: boolean, engine?: DeclarationEngine): string | null {
   if (importOrder.length !== 1 || importOrder[0] !== 'bun') return null
   if (resolveDeclarationEngine(engine) === 'typescript') return null
-  const source = isVueFile(filename) ? transformVueSfcToTs(sourceCode) : isStxFile(filename) ? transformStxToTs(sourceCode) : sourceCode
-  return emitWithNativeEngine(source, { keepComments, isolatedDeclarations, engine })
+  const source = isVueFile(filename ?? '') ? transformVueSfcToTs(sourceCode) : isStxFile(filename ?? '') ? transformStxToTs(sourceCode) : sourceCode
+  return emitWithNativeEngine(source, { keepComments, isolatedDeclarations, engine, sourceFile: filename })
 }
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ const resultCache = new Map<string, { result: string, contentHash: number | bigi
  */
 export function processSource(
   sourceCode: string,
-  filename: string = 'stdin.ts',
+  filename?: string,
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
@@ -77,7 +77,7 @@ export function processSource(
 /** Generate declarations through the annotation-first isolated fast path. */
 export function processSourceIsolated(
   sourceCode: string,
-  filename: string = 'stdin.ts',
+  filename?: string,
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
 ): string {
@@ -87,18 +87,18 @@ export function processSourceIsolated(
 /** Generate declarations through the value-aware semantic inference path. */
 export function processSourceSemantic(
   sourceCode: string,
-  filename: string = 'stdin.ts',
+  filename?: string,
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
 ): string {
   return processSource(sourceCode, filename, keepComments, importOrder, false)
 }
 
-function emitWithTypeScriptEngine(sourceCode: string, filename: string, keepComments: boolean, importOrder: string[], isolatedDeclarations: boolean): string {
+function emitWithTypeScriptEngine(sourceCode: string, filename: string | undefined, keepComments: boolean, importOrder: string[], isolatedDeclarations: boolean): string {
   // Extract declarations (has its own cache layer too)
   const declarations = extractDeclarations(sourceCode, filename, keepComments, isolatedDeclarations)
   const context: ProcessingContext = {
-    filePath: filename,
+    filePath: filename ?? 'stdin.ts',
     sourceCode,
     declarations,
   }
@@ -115,7 +115,7 @@ export function clearResultCache(): void {
  */
 export function processSourceDirect(
   sourceCode: string,
-  filename: string = 'stdin.ts',
+  filename?: string,
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
@@ -131,23 +131,23 @@ export function processSourceDirect(
  */
 export function processSourceWithTypeScriptEngine(
   sourceCode: string,
-  filename: string = 'stdin.ts',
+  filename?: string,
   keepComments: boolean = true,
   importOrder: string[] = ['bun'],
   isolatedDeclarations: boolean = false,
 ): string {
   // Component files are transformed into virtual TS modules before scanning.
-  if (isVueFile(filename)) {
+  if (isVueFile(filename ?? '')) {
     sourceCode = transformVueSfcToTs(sourceCode)
   }
-  else if (isStxFile(filename)) {
+  else if (isStxFile(filename ?? '')) {
     sourceCode = transformStxToTs(sourceCode)
   }
   const declarations = isolatedDeclarations
     ? scanIsolatedDeclarations(sourceCode, filename, keepComments)
     : scanSemanticDeclarations(sourceCode, filename, keepComments)
   const context: ProcessingContext = {
-    filePath: filename,
+    filePath: filename ?? 'stdin.ts',
     sourceCode,
     declarations,
   }

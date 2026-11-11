@@ -8,6 +8,7 @@ const module_specifiers = @import("module_specifiers.zig");
 const binding_patterns = @import("binding_patterns.zig");
 const parameter_order = @import("parameters.zig");
 const scanner = @import("scanner.zig");
+const lexical = @import("lexical.zig");
 const Scanner = scanner.Scanner;
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
@@ -1520,16 +1521,11 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                 s.skipWhitespaceAndComments();
                 const init_start = s.pos;
                 initializer_start = init_start;
-                // A value-position `<` can start type arguments or compare/shift.
-                // If optimistic angle tracking never closes, scan the same value
-                // again as operators rather than consuming subsequent declarations.
-                var track_angles = true;
-                while (true) {
+                // Only proven type syntax hides initializer separators.
+                {
                     var depth: isize = 0;
-                    var angle_depth: isize = 0;
                     var jsx_depth: isize = 0;
-                    var jsx_tag_end: ?usize = null;
-                    var completed_jsx_end: ?usize = null;
+                    var completed_operand_end: ?usize = null;
                     while (s.pos < s.len) {
                         // SIMD fast-skip: bulk-skip bytes that can't be structural
                         if (depth > 0) {
@@ -1580,41 +1576,38 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                             }
                         }
                         if (s.pos >= s.len) break;
-                        if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and jsx_tag_end == null and s.checkASIAfterInitializer(init_start, completed_jsx_end)) break;
-                        // Tag syntax already proven by jsxTagAt is not a regex.
-                        // This includes the self-closing slash after an attribute
-                        // expression's '}', which otherwise looks like a regex start.
-                        const jsx_syntax_slash = s.source[s.pos] == ch.CH_SLASH and
-                            ((s.pos > 0 and s.source[s.pos - 1] == ch.CH_LANGLE) or
-                                (jsx_tag_end != null and s.pos + 1 == jsx_tag_end.? and s.source[s.pos + 1] == ch.CH_RANGLE));
-                        if (!jsx_syntax_slash and s.skipNonCode()) continue;
+                        if (depth == 0 and jsx_depth == 0 and try s.checkASIAfterInitializer(init_start, completed_operand_end)) break;
+                        if (s.skipNonCode()) continue;
                         const ic = s.source[s.pos];
-                        if (ic == ch.CH_LANGLE and depth == 0) {
-                            if (scanner.jsxTagAt(s.source, s.pos)) |tag| {
-                                jsx_depth = @max(0, jsx_depth + tag.delta);
-                                jsx_tag_end = tag.end;
-                            } else if (track_angles and (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth += 1;
+                        if (ic == ch.CH_LANGLE) {
+                            const span = if (depth == 0 and jsx_depth == 0) try s.readInitializerType(s.pos, init_start, completed_operand_end) else null;
+                            if (span != null and (span.?.parameters or span.?.complete_operand or s.jsx_syntax == false)) {
+                                s.pos = span.?.end;
+                                completed_operand_end = if (span.?.complete_operand) span.?.end else null;
+                                continue;
+                            }
+                            const tag = if (jsx_depth > 0 or ((s.pos + 1 >= s.len or s.source[s.pos + 1] != '/') and lexical.canStartJsx(s.source, s.pos))) try s.readJsxTag(s.pos) else null;
+                            if (tag) |jsx_tag| {
+                                jsx_depth = @max(0, jsx_depth + jsx_tag.delta);
+                                s.pos = jsx_tag.end + 1;
+                                if (jsx_depth == 0) completed_operand_end = s.pos;
+                                continue;
+                            } else if (jsx_depth == 0) {
+                                if (span) |assertion| {
+                                    s.pos = assertion.end;
+                                    completed_operand_end = if (assertion.complete_operand) assertion.end else null;
+                                    continue;
+                                }
+                            }
                         } else if (ic == ch.CH_LPAREN or ic == ch.CH_LBRACE or ic == ch.CH_LBRACKET) {
                             depth += 1;
                         } else if (ic == ch.CH_RPAREN or ic == ch.CH_RBRACE or ic == ch.CH_RBRACKET) {
                             depth -= 1;
-                        } else if (ic == ch.CH_RANGLE and depth == 0) {
-                            if (jsx_tag_end != null and jsx_tag_end.? == s.pos) {
-                                if (jsx_depth == 0) completed_jsx_end = s.pos;
-                                jsx_tag_end = null;
-                            } else if (jsx_depth == 0 and !s.isArrowGT() and angle_depth > 0 and
-                                (s.pos + 1 >= s.len or s.source[s.pos + 1] != ch.CH_EQUAL)) angle_depth -= 1;
-                        } else if (depth == 0 and angle_depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
+                        } else if (depth == 0 and jsx_depth == 0 and (ic == ch.CH_SEMI or ic == ch.CH_COMMA)) {
                             break;
                         }
                         s.pos += 1;
                     }
-                    if (angle_depth > 0 and track_angles) {
-                        track_angles = false;
-                        s.pos = init_start;
-                        continue;
-                    }
-                    break;
                 }
                 // A comment after the value (`= 1 // note`) is not part of it.
                 initializer_text = if (skip_isolated_initializer) "" else withoutTrailingComments(s.sliceTrimmed(init_start, s.pos));

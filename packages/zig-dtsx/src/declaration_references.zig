@@ -43,9 +43,8 @@ fn eq(source: []const u8, items: []const Token, index: usize, value: []const u8)
 /// streams tokens instead of materializing them: the whole source is still
 /// lexed so malformed literals are reported exactly as before.
 pub fn isExternalModuleSource(allocator: std.mem.Allocator, source: []const u8) !bool {
-    _ = allocator;
     var detector = ExternalModuleDetector{ .source = source };
-    syntax.visitDeclarationSyntax(source, &detector) catch |err| switch (err) {
+    syntax.visitDeclarationSyntax(allocator, source, &detector) catch |err| switch (err) {
         error.StopVisit => unreachable, // stop_when_found is false
         else => |e| return e,
     };
@@ -58,9 +57,9 @@ pub fn isExternalModuleSource(allocator: std.mem.Allocator, source: []const u8) 
 /// from a lexically validated source): stop at the first top-level
 /// import/export instead of lexing the remainder. Lexical errors met before
 /// that point still propagate, as with isExternalModuleSource.
-pub fn emittedTextIsExternalModule(text_value: []const u8) syntax.SyntaxError!bool {
+pub fn emittedTextIsExternalModule(allocator: std.mem.Allocator, text_value: []const u8) syntax.SyntaxError!bool {
     var detector = ExternalModuleDetector{ .source = text_value };
-    syntax.visitDeclarationSyntax(text_value, StopOnModule{ .detector = &detector }) catch |err| switch (err) {
+    syntax.visitDeclarationSyntax(allocator, text_value, StopOnModule{ .detector = &detector }) catch |err| switch (err) {
         error.StopVisit => return true,
         else => |e| return e,
     };

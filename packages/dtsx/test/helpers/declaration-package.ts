@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect } from 'bun:test'
 import { dts } from '../../../bun-plugin/src'
-import { processSource, ZIG_AVAILABLE } from '../../../zig-dtsx/src'
+import { processSource, processSourceWithContext, ZIG_AVAILABLE } from '../../../zig-dtsx/src'
 import { generate } from '../../src'
 import { traceAsync, traceSync } from './phase-trace'
 import { isAvailable, runTsc } from './tsc'
@@ -11,6 +11,7 @@ import { isAvailable, runTsc } from './tsc'
 export type DeclarationProducer = 'core' | 'bun-plugin' | 'native' | 'typescript'
 
 export interface DeclarationPackageCase {
+  filename?: 'index.ts' | 'index.tsx'
   source: string
   positive: string
   negatives: Array<{ code: number, content: string }>
@@ -22,14 +23,15 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
   const directory = await mkdtemp(join(tmpdir(), 'dtsx-declaration-contract-'))
   const library = join(directory, 'library')
   const consumer = join(directory, 'consumer')
-  const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
+  const filename = fixture.filename ?? 'index.ts'
+  const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', jsx: 'preserve', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
   try {
     expect(isAvailable).toBe(true)
     if (producer === 'native') expect(ZIG_AVAILABLE).toBe(true)
     await mkdir(join(library, 'src'), { recursive: true })
     await mkdir(consumer)
     await writeFile(join(library, 'package.json'), JSON.stringify({ name: 'declaration-contract', version: '1.0.0', type: 'module', files: ['dist'], exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } } }))
-    await writeFile(join(library, 'src/index.ts'), fixture.source)
+    await writeFile(join(library, 'src', filename), fixture.source)
 
     async function checkConsumers(cwd: string, specifier: string): Promise<void> {
       for (const [index, control] of [{ content: fixture.positive }, ...fixture.negatives].entries()) {
@@ -45,11 +47,14 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
     }
 
     await checkConsumers(library, './src/index.js')
+    if (filename.endsWith('.tsx')) await writeFile(join(library, 'tsconfig.json'), JSON.stringify({ compilerOptions: { jsx: 'react', jsxFactory: 'createElement' } }))
     const details = { library, producer, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
-    const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src/index.ts')], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] })] : [] }), details)
+    const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src', filename)], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename] })] : [] }), details)
     expect(built.success, JSON.stringify(built.logs)).toBe(true)
-    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'], ...(producer === 'typescript' ? { engine: 'typescript' as const } : {}) }), details)
-    else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), traceSync('Native declaration generation', () => processSource(fixture.source, true), details))
+    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename], ...(producer === 'typescript' ? { engine: 'typescript' as const } : {}) }), details)
+    else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), traceSync('Native declaration generation', () => fixture.filename
+      ? processSourceWithContext(fixture.source, { version: 1, moduleSpecifierMode: 'preserve', sourceFile: join(library, 'src', filename), outputFile: join(library, 'dist/index.d.ts'), sourceHash: details.sourceHash, rewrites: [] }, true)
+      : processSource(fixture.source, true), details))
 
     const declaration = await readFile(join(library, 'dist/index.d.ts'), 'utf8')
     fixture.inspect?.(declaration)

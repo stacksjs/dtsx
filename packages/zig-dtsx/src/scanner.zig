@@ -6,73 +6,12 @@ const ch = @import("char_utils.zig");
 const lexical = @import("lexical.zig");
 const module_syntax = @import("module_specifiers.zig");
 const types = @import("types.zig");
+const initializer_types = @import("initializer_type_spans.zig");
 const declaration_refs = @import("declaration_references.zig");
 const value_inference = @import("value_inference.zig");
 const Declaration = types.Declaration;
 const DeclarationKind = types.DeclarationKind;
 const Allocator = std.mem.Allocator;
-
-pub const JsxTagInfo = struct { delta: isize, end: usize };
-
-/// Recognize a JSX tag while skipping an implementation statement. Requiring
-/// a matching close for non-self-closing tags keeps comparisons, assertions,
-/// and generic type parameters out of JSX depth accounting.
-pub fn jsxTagAt(source: []const u8, index: usize) ?JsxTagInfo {
-    if (index + 1 >= source.len or source[index] != ch.CH_LANGLE) return null;
-    const next = source[index + 1];
-    if (next == ch.CH_RANGLE) return .{ .delta = 1, .end = index + 1 };
-    if (next == ch.CH_SLASH) {
-        const close_end = ch.indexOfChar(source, ch.CH_RANGLE, index + 2) orelse return null;
-        return .{ .delta = -1, .end = close_end };
-    }
-    if (!ch.isIdentStart(next)) return null;
-
-    var name_end = index + 2;
-    while (name_end < source.len) : (name_end += 1) {
-        const code = source[name_end];
-        if (!ch.isIdentChar(code) and code != ch.CH_DOT and code != ':' and code != '-') break;
-    }
-    if (name_end >= source.len) return null;
-    const tag_name = source[index + 1 .. name_end];
-    const delimiter = source[name_end];
-    if (!ch.isWhitespace(delimiter) and delimiter != ch.CH_RANGLE and delimiter != ch.CH_SLASH) return null;
-
-    var brace_depth: usize = 0;
-    var quote: u8 = 0;
-    var tag_end = name_end;
-    while (tag_end < source.len) : (tag_end += 1) {
-        const code = source[tag_end];
-        if (quote != 0) {
-            if (code == ch.CH_BACKSLASH) tag_end += 1 else if (code == quote) quote = 0;
-            continue;
-        }
-        if (code == ch.CH_SQUOTE or code == ch.CH_DQUOTE or code == ch.CH_BACKTICK) {
-            quote = code;
-        } else if (code == ch.CH_LBRACE) {
-            brace_depth += 1;
-        } else if (code == ch.CH_RBRACE and brace_depth > 0) {
-            brace_depth -= 1;
-        } else if (code == ch.CH_RANGLE and brace_depth == 0) {
-            break;
-        }
-    }
-    if (tag_end >= source.len) return null;
-
-    var before_end = tag_end - 1;
-    while (before_end > index and ch.isWhitespace(source[before_end])) before_end -= 1;
-    if (source[before_end] == ch.CH_SLASH) return .{ .delta = 0, .end = tag_end };
-
-    var search_from = tag_end + 1;
-    while (ch.indexOf(source, "</", search_from)) |close_start| {
-        const close_name_start = close_start + 2;
-        const close_name_end = close_name_start + tag_name.len;
-        if (close_name_end < source.len and std.mem.eql(u8, source[close_name_start..close_name_end], tag_name) and
-            (source[close_name_end] == ch.CH_RANGLE or ch.isWhitespace(source[close_name_end])))
-            return .{ .delta = 1, .end = tag_end };
-        search_from = close_start + 2;
-    }
-    return null;
-}
 
 /// Comptime-optimized word comparison: uses integer casts for power-of-2 sizes (1/2/4/8 bytes).
 inline fn comptime_match(comptime N: usize, src: *const [N]u8, comptime word: []const u8) bool {
@@ -126,6 +65,9 @@ pub const Scanner = struct {
     /// Whole-source declaration-syntax tokens, lexed once and shared by every
     /// whole-source analysis (module detection, expandos, call inference).
     source_tokens: ?[]const module_syntax.SyntaxToken = null,
+    initializer_type_reader: ?initializer_types.Reader = null,
+    jsx_reader: ?lexical.JsxReader = null,
+    jsx_syntax: ?bool = null,
 
     pub fn init(allocator: Allocator, source: []const u8, keep_comments: bool, isolated_declarations: bool) Scanner {
         // Pre-size declarations: typical TS file has ~1 declaration per 200 bytes
@@ -147,6 +89,8 @@ pub const Scanner = struct {
     }
 
     pub fn deinit(self: *Scanner) void {
+        if (self.jsx_reader) |*reader| reader.deinit();
+        if (self.initializer_type_reader) |*reader| reader.deinit();
         if (self.source_tokens) |tokens| self.allocator.free(tokens);
         self.declarations.deinit();
         if (self.non_exported_types_inited) self.non_exported_types.deinit();
@@ -486,7 +430,7 @@ pub const Scanner = struct {
     /// only a declaration keyword. Look at both operands of the line break.
     /// Canonical tokens keep comment prose and quoted operators out of this
     /// decision. This predicate leaves the scanner position unchanged.
-    pub fn checkASIAfterInitializer(self: *const Scanner, initializer_start: usize, completed_jsx_end: ?usize) bool {
+    pub fn checkASIAfterInitializer(self: *Scanner, initializer_start: usize, completed_operand_end: ?usize) module_syntax.SyntaxError!bool {
         if (self.pos >= self.len or self.pos <= initializer_start) return false;
         const current = self.source[self.pos];
         if (current != ch.CH_LF and current != ch.CH_CR and
@@ -517,26 +461,22 @@ pub const Scanner = struct {
         }
         if (!line_break) return false;
 
-        // A completed JSX span is an operand proven by this source scanner.
-        // Its closing tags need not obey the declaration lexer's regex rules.
-        // Only code after that span can make the operand incomplete again.
-        const completed_jsx = completed_jsx_end != null and completed_jsx_end.? < self.pos;
-        const prefix_start = if (completed_jsx) completed_jsx_end.? + 1 else initializer_start;
-        const prefix = self.source[prefix_start..self.pos];
-        const items = module_syntax.tokenizeDeclarationSyntax(self.allocator, prefix) catch @panic("OOM");
-        defer self.allocator.free(items);
-        if (items.len == 0) {
-            if (!completed_jsx) return false;
-        } else {
-            const last = items[items.len - 1];
-            const last_text = prefix[last.start..last.end];
-            const generic_operand = std.mem.eql(u8, last_text, ">") and module_syntax.endsWithTypeArguments(prefix, items);
-            if (!generic_operand and last.kind == .punctuation and last_text.len == 1 and
-                std.mem.indexOfScalar(u8, "+-*/%=<>&|^!~?:,.([{", last_text[0]) != null) return false;
-            if (last.kind == .word) {
-                const operators = [_][]const u8{ "as", "in", "of", "new", "typeof", "keyof", "extends", "instanceof", "satisfies", "await", "return", "yield", "void" };
-                for (operators) |operator| if (std.mem.eql(u8, last_text, operator)) return false;
-            }
+        const items = try self.sourceTokens();
+        var low: usize = 0;
+        var high = items.len;
+        while (low < high) {
+            const middle = (low + high) / 2;
+            if (items[middle].start < self.pos) low = middle + 1 else high = middle;
+        }
+        if (low == 0 or items[low - 1].start < initializer_start) return false;
+        const last = items[low - 1];
+        const last_text = self.source[last.start..last.end];
+        const complete_operand = completed_operand_end != null and last.end == completed_operand_end.?;
+        if (!complete_operand and last.kind == .punctuation and last_text.len == 1 and
+            std.mem.indexOfScalar(u8, "+-*/%=<>&|^!~?:,.([{", last_text[0]) != null) return false;
+        if (last.kind == .word) {
+            const operators = [_][]const u8{ "as", "in", "of", "new", "typeof", "keyof", "extends", "instanceof", "satisfies", "await", "return", "yield", "void" };
+            for (operators) |operator| if (std.mem.eql(u8, last_text, operator)) return false;
         }
         if (look >= self.len) return true;
         // Calls, element access, tags, operators and assertions can continue a
@@ -823,7 +763,11 @@ pub const Scanner = struct {
                 continue;
             }
             if (c == ch.CH_LANGLE) {
-                if (jsxTagAt(self.source, self.pos)) |tag| jsx_depth = @max(0, jsx_depth + tag.delta);
+                if (self.readJsxTag(self.pos) catch |err| {
+                    self.pending_error = err;
+                    self.pos = self.len;
+                    return;
+                }) |tag| jsx_depth = @max(0, jsx_depth + tag.delta);
                 self.pos += 1;
                 continue;
             }
@@ -1009,6 +953,20 @@ pub const Scanner = struct {
     // ========================================================================
     // Public scan entry point
     // ========================================================================
+
+    pub fn setSourceFilename(self: *Scanner, filename: []const u8) void {
+        self.jsx_syntax = std.mem.endsWith(u8, filename, ".tsx") or std.mem.endsWith(u8, filename, ".jsx");
+    }
+
+    pub fn readJsxTag(self: *Scanner, index: usize) std.mem.Allocator.Error!?lexical.JsxTagInfo {
+        if (self.jsx_reader == null) self.jsx_reader = .{ .source = self.source, .allocator = self.allocator };
+        return self.jsx_reader.?.read(index);
+    }
+
+    pub fn readInitializerType(self: *Scanner, opening: usize, initializer_start: usize, previous_operand_end: ?usize) module_syntax.SyntaxError!?initializer_types.Span {
+        if (self.initializer_type_reader == null) self.initializer_type_reader = .{ .source = self.source, .tokens = try self.sourceTokens(), .allocator = self.allocator };
+        return self.initializer_type_reader.?.read(opening, initializer_start, previous_operand_end);
+    }
 
     /// Tokens of the whole source, lexed on first use and then reused.
     pub fn sourceTokens(self: *Scanner) module_syntax.SyntaxError![]const module_syntax.SyntaxToken {

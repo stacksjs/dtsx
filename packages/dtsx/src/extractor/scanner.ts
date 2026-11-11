@@ -4,14 +4,15 @@
  * Produces the same Declaration[] shape that the processor expects.
  */
 import type { Declaration } from '../types'
-import { functionCount } from '../call-signatures'
 import { projectBindingPattern } from '../binding-patterns'
+import { functionCount } from '../call-signatures'
 import { attachComputedKeyConstants } from '../computed-keys'
 import { collectDeclarationValueReferences, isExternalModuleSource } from '../declaration-references'
 import { attachEnumBodies } from '../enum-declarations'
 import { attachFunctionProperties } from '../function-properties'
-import { isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
-import { decodeStringLiteral, parseImportEquals, scanModuleReferences, tokenizeDeclarationSyntax } from '../module-references'
+import { createInitializerTypeReader } from '../initializer-type-spans'
+import { canStartJsx, createJsxTagReader, isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
+import { decodeStringLiteral, parseImportEquals, scanModuleReferences, sourceSyntaxTokens, tokenizeDeclarationSyntax } from '../module-references'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
@@ -96,7 +97,7 @@ const PARAM_MODIFIERS = ['public', 'protected', 'private', 'readonly', 'override
  * Select the declaration scanner explicitly from the configured generation mode.
  * Kept for backwards compatibility with callers that pass a boolean mode flag.
  */
-export function scanDeclarations(_source: string, _filename: string, _keepComments: boolean = true, _isolatedDeclarations: boolean = false): Declaration[] {
+export function scanDeclarations(_source: string, _filename: string | undefined, _keepComments: boolean = true, _isolatedDeclarations: boolean = false): Declaration[] {
   return _isolatedDeclarations
     ? scanIsolatedDeclarations(_source, _filename, _keepComments)
     : scanSemanticDeclarations(_source, _filename, _keepComments)
@@ -108,34 +109,36 @@ export function scanDeclarations(_source: string, _filename: string, _keepCommen
  * Explicit annotations are authoritative in this mode, so initializer values are
  * skipped instead of being parsed or used to narrow the public declaration type.
  */
-export function scanIsolatedDeclarations(source: string, filename: string, keepComments: boolean = true): Declaration[] {
+export function scanIsolatedDeclarations(source: string, filename: string | undefined, keepComments: boolean = true): Declaration[] {
   return scanDeclarationsInternal(source, filename, keepComments, true)
 }
 
 /**
  * Scan a regular TypeScript source file and retain values needed by type inference.
  */
-export function scanSemanticDeclarations(source: string, filename: string, keepComments: boolean = true, importedFunctions?: ReadonlySet<string>): Declaration[] {
+export function scanSemanticDeclarations(source: string, filename: string | undefined, keepComments: boolean = true, importedFunctions?: ReadonlySet<string>): Declaration[] {
   return scanDeclarationsInternal(source, filename, keepComments, false, false, importedFunctions)
 }
 
 /** Ambient block members bind implicitly; retain them without public-root pruning. */
-export function scanAmbientDeclarationMembers(source: string, filename: string, keepComments = true): Declaration[] {
+export function scanAmbientDeclarationMembers(source: string, filename: string | undefined, keepComments = true): Declaration[] {
   return scanDeclarationsInternal(source, filename, keepComments, true, true)
 }
 
 /** Scan TypeScript source code without constructing a TypeScript AST. */
-function scanDeclarationsInternal(_source: string, _filename: string, _keepComments: boolean, _isolatedDeclarations: boolean, retainAmbientMembers = false, importedFunctions?: ReadonlySet<string>): Declaration[] {
+function scanDeclarationsInternal(_source: string, _filename: string | undefined, _keepComments: boolean, _isolatedDeclarations: boolean, retainAmbientMembers = false, importedFunctions?: ReadonlySet<string>): Declaration[] {
   const source = _source
   const keepComments = _keepComments
   const isolatedDeclarations = _isolatedDeclarations
   const len = source.length
+  const readJsxTag = createJsxTagReader(source)
   const externalModule = isExternalModuleSource(source)
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
   const nonExportedFunctionGroups = new Map<string, Declaration[]>()
   const functionBodies = new Set<Declaration>()
   let pos = 0
+  let readInitializerType: ReturnType<typeof createInitializerTypeReader> | undefined
   let classHelperCounter = 0
   const classFrames: Array<{ fields: Map<string, string>, pending: Array<() => void>, isStatic: boolean }> = []
 
@@ -641,40 +644,29 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
    *
    * Does NOT consume characters.
    */
-  function checkASIAfterInitializer(): boolean {
+  function checkASIAfterInitializer(initializerStart: number, completeOperandEnd?: number): boolean {
     const ch = source.charCodeAt(pos)
-    if (ch !== CH_LF && ch !== CH_CR)
+    if (ch !== CH_LF && ch !== CH_CR && !(ch === CH_SLASH && (source[pos + 1] === '/' || source[pos + 1] === '*')))
       return false
-    if (endsMidExpression(pos))
-      return false
-    const saved = pos
-    pos++
-    while (pos < len) {
-      const c = source.charCodeAt(pos)
-      if (c === CH_SPACE || c === CH_TAB || c === CH_CR || c === CH_LF) { pos++; continue }
-      if (c === CH_SLASH && pos + 1 < len) {
-        const next = source.charCodeAt(pos + 1)
-        if (next === CH_SLASH) {
-          pos = lineCommentEnd(pos + 2)
-          continue
-        }
-        if (next === CH_STAR) {
-          const end = source.indexOf('*/', pos + 2)
-          pos = end === -1 ? len : end + 2
-          continue
-        }
-      }
-      break
+    const tokens = sourceSyntaxTokens(source)
+    let low = 0
+    let high = tokens.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if (tokens[middle].start < pos) low = middle + 1
+      else high = middle
     }
-    const c = pos < len ? source[pos] : ''
-    const two = source.slice(pos, pos + 2)
-    const continuesExpression = (c === '.' || c === '?' || c === ':' || c === ')' || c === ']' || c === '}'
-      || c === ',' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%'
-      || c === '<' || c === '>' || c === '=' || c === '&' || c === '|' || c === '^'
-      || c === '`' || two === '=>'
-      || matchWord('as') || matchWord('satisfies') || matchWord('instanceof') || matchWord('in'))
-    pos = saved
-    return !continuesExpression
+    const previous = tokens[low - 1]
+    const next = tokens[low]
+    if (!previous || previous.start < initializerStart || !/[\r\n]/.test(source.slice(pos, next?.start ?? len))) return false
+    const last = source.slice(previous.start, previous.end)
+    if (previous.end !== completeOperandEnd && previous.kind === 'punctuation' && '+-*/%=<>&|^!~?:,.([{'.includes(last)) return false
+    if (previous.kind === 'word' && ['as', 'in', 'of', 'new', 'typeof', 'keyof', 'extends', 'instanceof', 'satisfies', 'await', 'return', 'yield', 'void'].includes(last)) return false
+    if (!next) return true
+    const value = source.slice(next.start, next.end)
+    return !('.?:)]},+-*/%<>=&|^`(['.includes(value)
+      || (next.kind === 'literal' && source.charCodeAt(next.start) === CH_BACKTICK)
+      || ['as', 'satisfies', 'instanceof', 'in'].includes(value))
   }
 
   /**
@@ -888,7 +880,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       }
 
       if (ch === CH_LANGLE) {
-        const jsxDelta = jsxTagDeltaAt(idx)
+        const jsxDelta = (readJsxTag(idx)?.delta ?? null)
         if (jsxDelta !== null) jsxDepth = Math.max(0, jsxDepth + jsxDelta)
         STMT_DELIM_RE.lastIndex = idx + 1
         continue
@@ -2169,7 +2161,7 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
       // and every type derived from it (`ReturnType<typeof make>`) was empty.
       if (!hasExplicitReturnType && !isGenerator) {
         const body = source.slice(bodyStart, pos - 1)
-        const scope = createReturnTypeScope(body, _filename, () => {
+        const scope = createReturnTypeScope(body, _filename ?? 'stdin.ts', () => {
           let name: string
           do { name = `__dtsx_return_${classHelperCounter++}` } while (source.includes(name))
           return name
@@ -2300,68 +2292,43 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
           skipWhitespaceAndComments()
           const initStart = pos
           initializerStart = initStart
-          // Read initializer until ; or , at depth 0, or ASI.
-          //
-          // `<` is genuinely ambiguous in a value position: it opens a generic in
-          // `new Map<string, number>()`, and it compares or shifts in `a < b` and
-          // `1 << 0`. Treating it as a generic is right for the first and
-          // catastrophic for the second - an angle depth that never closes means
-          // the `;` and ASI breaks below, which all require depth 0, never fire.
-          // The scan then runs to end-of-file and swallows every later
-          // declaration into this one initializer. The .d.ts silently omits them
-          // and the build still exits 0: one `const FLAG = 1 << 0` cost a
-          // 5974-line file in stacks 21 of its 29 exports, and the truncation
-          // only surfaced once a subpath re-exported that file.
-          //
-          // No local rule tells the two apart - `a < b` and `Foo<Bar>` differ
-          // only in what the names mean. So scan optimistically and let the
-          // outcome decide: angles left open at the end were operators all along,
-          // so rescan from the same point ignoring them. Balanced generics finish
-          // on the first pass and never reach the second.
+          // Only syntactically proven type spans hide commas and line breaks.
           let depth = 0
-          let angleDepth = 0
           let jsxDepth = 0
-          let trackAngles = true
-          for (;; ) {
-            pos = initStart
-            depth = 0
-            angleDepth = 0
-            jsxDepth = 0
-            while (pos < len) {
-              if (skipNonCode()) {
-                if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && commentEndsStatement()) break
+          let completeOperandEnd: number | undefined
+          while (pos < len) {
+            if (depth === 0 && jsxDepth === 0 && checkASIAfterInitializer(initStart, completeOperandEnd)) break
+            if (skipNonCode()) continue
+            const ic = source.charCodeAt(pos)
+            if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
+              depth++
+            else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
+              depth--
+            else if (ic === CH_LANGLE) {
+              readInitializerType ??= createInitializerTypeReader(source)
+              const span = depth === 0 && jsxDepth === 0 ? readInitializerType(pos, initStart, completeOperandEnd) : undefined
+              if (span?.parameters || span?.completeOperand || (span && _filename !== undefined && !/\.[jt]sx$/.test(_filename))) {
+                pos = span.end
+                completeOperandEnd = span.completeOperand ? span.end : undefined
                 continue
               }
-              const ic = source.charCodeAt(pos)
-              if (ic === CH_LPAREN || ic === CH_LBRACE || ic === CH_LBRACKET)
-                depth++
-              else if (ic === CH_RPAREN || ic === CH_RBRACE || ic === CH_RBRACKET)
-                depth--
-              else if (ic === CH_LANGLE && depth === 0) {
-                const jsxDelta = jsxTagDeltaAt(pos)
-                if (jsxDelta !== null)
-                  jsxDepth = Math.max(0, jsxDepth + jsxDelta)
-                else if (trackAngles && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
-                  angleDepth++
+              const tag = jsxDepth > 0 || (source[pos + 1] !== '/' && canStartJsx(source, pos)) ? readJsxTag(pos) : null
+              if (tag) {
+                jsxDepth = Math.max(0, jsxDepth + tag.delta)
+                pos = tag.end + 1
+                if (jsxDepth === 0) completeOperandEnd = pos
+                continue
               }
-              else if (ic === CH_RANGLE && depth === 0 && jsxDepth === 0 && !isArrowGT()) {
-                // Don't count >= as closing angle bracket, and prevent going negative
-                if (angleDepth > 0 && (pos + 1 >= len || source.charCodeAt(pos + 1) !== CH_EQUAL))
-                  angleDepth--
+              else if (jsxDepth === 0) {
+                if (span) {
+                  pos = span.end
+                  completeOperandEnd = span.completeOperand ? span.end : undefined
+                  continue
+                }
               }
-              else if (depth === 0 && angleDepth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA))
-                break
-              if (depth === 0 && angleDepth === 0 && jsxDepth === 0
-                && (checkASITopLevel() || checkASIAfterInitializer())) {
-                break
-              }
-              pos++
             }
-            if (angleDepth > 0 && trackAngles) {
-              trackAngles = false
-              continue
-            }
-            break
+            else if (depth === 0 && jsxDepth === 0 && (ic === CH_SEMI || ic === CH_COMMA)) break
+            pos++
           }
           // A comment after the value (`= 1 // note`) is not part of it.
           initializerText = withoutTrailingComments(sliceTrimmed(initStart, pos))
@@ -2409,47 +2376,6 @@ function scanDeclarationsInternal(_source: string, _filename: string, _keepComme
     } while (pos < len)
 
     return results
-  }
-
-  /** Return the JSX nesting delta for a tag beginning at index, or null. */
-  function jsxTagDeltaAt(index: number): number | null {
-    if (source.charCodeAt(index) !== CH_LANGLE || index + 1 >= len) return null
-    const next = source.charCodeAt(index + 1)
-    if (next === CH_RANGLE) return 1 // fragment open: <>
-    if (next === CH_SLASH) return -1 // element or fragment close
-    if (!isIdentStart(next)) return null
-
-    let nameEnd = index + 2
-    while (nameEnd < len) {
-      const code = source.charCodeAt(nameEnd)
-      if (!isIdentChar(code) && code !== CH_DOT && code !== 58 /* : */ && code !== 45 /* - */) break
-      nameEnd++
-    }
-    const tagName = source.slice(index + 1, nameEnd)
-    const delimiter = source.charCodeAt(nameEnd)
-    if (delimiter > 32 && delimiter !== CH_RANGLE && delimiter !== CH_SLASH) return null
-
-    let braceDepth = 0
-    let quote = 0
-    let tagEnd = nameEnd
-    for (; tagEnd < len; tagEnd++) {
-      const code = source.charCodeAt(tagEnd)
-      if (quote !== 0) {
-        if (code === CH_BACKSLASH) tagEnd++
-        else if (code === quote) quote = 0
-        continue
-      }
-      if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) quote = code
-      else if (code === CH_LBRACE) braceDepth++
-      else if (code === CH_RBRACE && braceDepth > 0) braceDepth--
-      else if (code === CH_RANGLE && braceDepth === 0) break
-    }
-    if (tagEnd >= len) return null
-
-    let beforeEnd = tagEnd - 1
-    while (beforeEnd > index && source.charCodeAt(beforeEnd) <= 32) beforeEnd--
-    if (source.charCodeAt(beforeEnd) === CH_SLASH) return 0
-    return source.indexOf(`</${tagName}`, tagEnd + 1) === -1 ? null : 1
   }
 
   /**

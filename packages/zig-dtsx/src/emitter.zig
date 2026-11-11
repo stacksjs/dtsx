@@ -1349,7 +1349,7 @@ fn processDeclarationsInternal(
                 break;
             }
         }
-        if (!needs_boundary) needs_boundary = !try references.emittedTextIsExternalModule(result.items);
+        if (!needs_boundary) needs_boundary = !try references.emittedTextIsExternalModule(alloc, result.items);
         if (needs_boundary) {
             if (result.items.len > 0) try result.append('\n');
             try result.appendSlice("export {};");

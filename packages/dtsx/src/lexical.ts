@@ -224,8 +224,8 @@ function closesControlHeader(source: string, end: number): boolean {
 }
 
 /** Check if `/` at current pos is the start of a regex literal (not division). */
-export function isRegexStart(source: string, pos: number): boolean {
-  const p = previousCodeIndex(source, pos - 1)
+export function isRegexStart(source: string, pos: number, previousTokenEnd?: number): boolean {
+  const p = previousTokenEnd === undefined ? previousCodeIndex(source, pos - 1) : previousTokenEnd - 1
   if (p < 0) return true
   const prev = source.charCodeAt(p)
   if (prev === 41 /* ) */) return closesControlHeader(source, p)
@@ -265,4 +265,125 @@ export function skipRegexLiteral(source: string, start: number): number {
   // Skip flags (g, i, m, s, u, y, d, v)
   while (pos < len && isIdentChar(source.charCodeAt(pos))) pos++
   return pos
+}
+
+/** Whether the preceding code token permits a JSX primary expression. */
+export function canStartJsx(source: string, before: number, previousTokenEnd?: number): boolean {
+  const previous = previousTokenEnd === undefined ? previousCodeIndex(source, before - 1) : previousTokenEnd - 1
+  if (previous < 0) return true
+  const char = source[previous]
+  if ('=([{,:;!?+-*/%&|^~<'.includes(char)) return true
+  if (char === '>' && source[previous - 1] === '=') return true
+  let start = previous
+  while (start >= 0 && isIdentChar(source.charCodeAt(start))) start--
+  return ['return', 'throw', 'yield', 'await', 'case', 'void', 'typeof', 'delete', 'new', 'else', 'do'].includes(source.slice(start + 1, previous + 1))
+}
+
+/** Tag boundaries shared by source scanning and canonical tokenization. */
+type JsxTag = { delta: number, end: number } | null
+
+function jsxTagAt(source: string, index: number, closingTags?: ReadonlyMap<string, number>, readNested?: (index: number) => JsxTag): JsxTag {
+  const len = source.length
+  if (source.charCodeAt(index) !== CH_LANGLE || index + 1 >= len) return null
+  const next = source.charCodeAt(index + 1)
+  if (next === CH_RANGLE) return { delta: 1, end: index + 1 }
+  if (next === CH_SLASH) {
+    let end = index + 2
+    if (source.charCodeAt(end) !== CH_RANGLE) {
+      if (!isIdentStart(source.charCodeAt(end))) return null
+      while (end < len && (isIdentChar(source.charCodeAt(end)) || '.:-'.includes(source[end]))) end++
+      while (end < len && /\s/.test(source[end])) end++
+    }
+    return source.charCodeAt(end) === CH_RANGLE ? { delta: -1, end } : null
+  }
+  if (!isIdentStart(next)) return null
+
+  let nameEnd = index + 2
+  while (nameEnd < len) {
+    const code = source.charCodeAt(nameEnd)
+    if (!isIdentChar(code) && code !== 46 /* . */ && code !== 58 /* : */ && code !== 45 /* - */) break
+    nameEnd++
+  }
+  const tagName = source.slice(index + 1, nameEnd)
+  const delimiter = source.charCodeAt(nameEnd)
+  if (delimiter > 32 && delimiter !== CH_RANGLE && delimiter !== CH_SLASH) return null
+
+  let braceDepth = 0
+  let quote = 0
+  let tagEnd = nameEnd
+  let codeEnd = nameEnd
+  for (; tagEnd < len; tagEnd++) {
+    const code = source.charCodeAt(tagEnd)
+    if (quote !== 0) {
+      if (code === CH_BACKSLASH) tagEnd++
+      else if (code === quote) { quote = 0; codeEnd = tagEnd + 1 }
+      continue
+    }
+    if (code === CH_LANGLE && braceDepth > 0 && (source[tagEnd + 1] === '/' || canStartJsx(source, tagEnd, codeEnd))) {
+      const nested = readNested ? readNested(tagEnd) : jsxTagAt(source, tagEnd, closingTags)
+      if (nested) {
+        tagEnd = nested.end
+        codeEnd = tagEnd + 1
+        continue
+      }
+    }
+    if (code === CH_SLASH && braceDepth > 0) {
+      const next = source.charCodeAt(tagEnd + 1)
+      if (next === CH_SLASH) {
+        while (tagEnd < len && source.charCodeAt(tagEnd) !== CH_LF && source.charCodeAt(tagEnd) !== CH_CR) tagEnd++
+        continue
+      }
+      if (next === CH_STAR) {
+        const end = source.indexOf('*/', tagEnd + 2)
+        if (end === -1) return null
+        tagEnd = end + 1
+        continue
+      }
+      if (isRegexStart(source, tagEnd, codeEnd)) {
+        tagEnd = skipRegexLiteral(source, tagEnd) - 1
+        codeEnd = tagEnd + 1
+        continue
+      }
+    }
+    if (code === CH_SQUOTE || code === CH_DQUOTE || code === CH_BACKTICK) quote = code
+    else if (code === CH_LBRACE) braceDepth++
+    else if (code === CH_RBRACE && braceDepth > 0) braceDepth--
+    else if (code === CH_LANGLE && braceDepth === 0) return null
+    else if (code === CH_RANGLE && braceDepth === 0) break
+    if (code > 32) codeEnd = tagEnd + 1
+  }
+  if (tagEnd >= len) return null
+
+  let beforeEnd = tagEnd - 1
+  while (beforeEnd > index && source.charCodeAt(beforeEnd) <= 32) beforeEnd--
+  if (source.charCodeAt(beforeEnd) === CH_SLASH) return { delta: 0, end: tagEnd }
+  const closing = closingTags ? (closingTags.get(tagName) ?? -1) : source.indexOf(`</${tagName}`, tagEnd + 1)
+  return closing > tagEnd ? { delta: 1, end: tagEnd } : null
+}
+
+/** Index closing candidates once, including files containing many assertions. */
+export function createJsxTagReader(source: string, syntaxSlashes?: Set<number>): (index: number) => JsxTag {
+  let closingTags: Map<string, number> | undefined
+  const headers = new Map<number, JsxTag>()
+  function read(index: number): JsxTag {
+    if (headers.has(index)) return headers.get(index)!
+    if (!closingTags) {
+      closingTags = new Map()
+      let position = source.indexOf('</')
+      while (position !== -1) {
+        const tag = jsxTagAt(source, position)
+        if (tag) {
+          let end = position + 2
+          while (end < tag.end && !/\s/.test(source[end])) end++
+          closingTags.set(source.slice(position + 2, end), position)
+        }
+        position = source.indexOf('</', position + 2)
+      }
+    }
+    const tag = jsxTagAt(source, index, closingTags, read)
+    headers.set(index, tag)
+    if (tag && source[tag.end - 1] === '/') syntaxSlashes?.add(tag.end - 1)
+    return tag
+  }
+  return read
 }

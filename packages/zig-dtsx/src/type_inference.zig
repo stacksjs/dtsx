@@ -38,99 +38,9 @@ pub fn consumeCleanDefault() ?[]const u8 {
     return val;
 }
 
-fn isDigitForBase(c: u8, base: u8) bool {
-    return switch (base) {
-        2 => c == '0' or c == '1',
-        8 => c >= '0' and c <= '7',
-        10 => c >= '0' and c <= '9',
-        16 => (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F'),
-        else => false,
-    };
-}
-
-fn consumeDigits(s: []const u8, cursor: *usize, base: u8) bool {
-    var saw_digit = false;
-    var previous_separator = false;
-    while (cursor.* < s.len) {
-        const c = s[cursor.*];
-        if (isDigitForBase(c, base)) {
-            saw_digit = true;
-            previous_separator = false;
-            cursor.* += 1;
-        } else if (c == '_' and saw_digit and !previous_separator and cursor.* + 1 < s.len and isDigitForBase(s[cursor.* + 1], base)) {
-            previous_separator = true;
-            cursor.* += 1;
-        } else break;
-    }
-    return saw_digit and !previous_separator;
-}
-
-/// Check decimal, scientific, hexadecimal, binary, and octal numeric literals.
-pub fn isNumericLiteral(s: []const u8) bool {
-    if (s.len == 0) return false;
-    var i: usize = 0;
-    if (s[i] == '-') i += 1;
-    if (i >= s.len) return false;
-    if (i + 2 <= s.len and s[i] == '0' and i + 1 < s.len) {
-        const base: ?u8 = switch (s[i + 1]) {
-            'x', 'X' => 16,
-            'b', 'B' => 2,
-            'o', 'O' => 8,
-            else => null,
-        };
-        if (base) |b| {
-            i += 2;
-            return consumeDigits(s, &i, b) and i == s.len;
-        }
-    }
-    const has_integer_digits = consumeDigits(s, &i, 10);
-    if (i < s.len and s[i] == '.') {
-        i += 1;
-        const has_fraction_digits = consumeDigits(s, &i, 10);
-        if (!has_integer_digits and !has_fraction_digits) return false;
-    } else if (!has_integer_digits) {
-        return false;
-    }
-    if (i < s.len and (s[i] == 'e' or s[i] == 'E')) {
-        i += 1;
-        if (i < s.len and (s[i] == '+' or s[i] == '-')) i += 1;
-        if (!consumeDigits(s, &i, 10)) return false;
-    }
-    return i == s.len;
-}
-
-/// A numeric or BigInt literal as a literal type: separators do not belong to
-/// its value (`5_000` is `5000`). Mirrors the TypeScript emitter.
-pub fn numericLiteralType(alloc: std.mem.Allocator, literal: []const u8) InferError![]const u8 {
-    if (std.mem.indexOfScalar(u8, literal, '_') == null) return literal;
-    var out = try std.array_list.Managed(u8).initCapacity(alloc, literal.len);
-    for (literal) |c| if (c != '_') out.appendAssumeCapacity(c);
-    return out.toOwnedSlice();
-}
-
-/// Check decimal, hexadecimal, binary, and octal BigInt literals, including a
-/// leading minus and numeric separators.
-fn isBigIntLiteral(s: []const u8) bool {
-    if (s.len < 2) return false;
-    if (s[s.len - 1] != 'n') return false;
-    const digits = s[0 .. s.len - 1];
-    var i: usize = 0;
-    if (digits[i] == '-') i += 1;
-    if (i >= digits.len) return false;
-    if (i + 1 < digits.len and digits[i] == '0') {
-        const base: ?u8 = switch (digits[i + 1]) {
-            'x', 'X' => 16,
-            'b', 'B' => 2,
-            'o', 'O' => 8,
-            else => null,
-        };
-        if (base) |b| {
-            i += 2;
-            return consumeDigits(digits, &i, b) and i == digits.len;
-        }
-    }
-    return consumeDigits(digits, &i, 10) and i == digits.len;
-}
+pub const isNumericLiteral = @import("numeric_literals.zig").isNumericLiteral;
+pub const isBigIntLiteral = @import("numeric_literals.zig").isBigIntLiteral;
+pub const numericLiteralType = @import("numeric_literals.zig").numericLiteralType;
 
 const StaticTruthiness = enum { unknown, truthy, falsy };
 
@@ -331,6 +241,12 @@ pub fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]
         entity = trim(callee[0..generic_start]);
         has_type_arguments = true;
     }
+    if (ch.endsWith(entity, "?.")) {
+        is_optional = true;
+        const type_arguments = callee[entity.len..];
+        entity = trim(entity[0 .. entity.len - 2]);
+        callee = try std.fmt.allocPrint(alloc, "{s}{s}", .{ entity, type_arguments });
+    }
     if (!isEntityName(entity)) return null;
     const arguments = trim(value[open + 1 .. value.len - 1]);
     const has_inline_function = findArrowOutsideParens(arguments) != null or ch.startsWith(arguments, "function") or ch.startsWith(arguments, "async function");
@@ -342,7 +258,7 @@ pub fn inferCallType(alloc: std.mem.Allocator, value: []const u8) InferError!?[]
     } else if (!has_type_arguments and !is_optional and !has_inline_function and !has_reference_argument and !has_nested_call) return null;
 
     const call_type = try std.fmt.allocPrint(alloc, "ReturnType<typeof {s}>", .{callee});
-    if (is_optional) return try std.fmt.allocPrint(alloc, "{s} | undefined", .{call_type});
+    if (is_optional) return try std.fmt.allocPrint(alloc, "ReturnType<NonNullable<typeof {s}>> | (null extends typeof {s} ? undefined : undefined extends typeof {s} ? undefined : never)", .{ callee, entity, entity });
     return call_type;
 }
 
@@ -1259,12 +1175,14 @@ fn findTopLevelToken(str: []const u8, token: []const u8, start: usize) ?usize {
     return null;
 }
 
-fn findTopLevelComma(str: []const u8) ?usize {
+fn findTopLevelComma(alloc: std.mem.Allocator, str: []const u8) InferError!?usize {
     if (ch.indexOfChar(str, ',', 0) == null) return null;
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
     var brace_depth: i32 = 0;
-    var angle_depth: i32 = 0;
+    var reader: ?@import("initializer_type_spans.zig").Reader = null;
+    defer if (reader) |*parser| parser.deinit();
+    var complete_operand_end: ?usize = null;
     var last_comma: ?usize = null;
     var i: usize = 0;
     while (i < str.len) : (i += 1) {
@@ -1285,8 +1203,20 @@ fn findTopLevelComma(str: []const u8) ?usize {
             i = (if (std.mem.indexOfPos(u8, str, i + 2, "*/")) |close| close + 2 else str.len) - 1;
             continue;
         }
-        if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') brace_depth -= 1 else if (c == '<') angle_depth += 1 else if (c == '>' and angle_depth > 0) angle_depth -= 1;
-        if (c == ',' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0 and angle_depth == 0) last_comma = i;
+        if (c == '/' and @import("lexical.zig").isRegexStart(str, i)) {
+            i = @import("lexical.zig").skipRegex(str, i) - 1;
+            continue;
+        }
+        if (c == '<' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0) {
+            if (reader == null) reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, str);
+            if (try reader.?.read(i, 0, complete_operand_end)) |span| {
+                i = span.end - 1;
+                complete_operand_end = if (span.complete_operand) span.end else null;
+                continue;
+            }
+        }
+        if (c == '(') paren_depth += 1 else if (c == ')') paren_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}') brace_depth -= 1;
+        if (c == ',' and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0) last_comma = i;
     }
     return last_comma;
 }
@@ -1369,11 +1299,44 @@ fn unionOf(alloc: std.mem.Allocator, left: []const u8, right: []const u8) InferE
 
 /// Whether `value` is a single operand (identifier, member chain, call or
 /// element access) with no top-level binary operator.
-fn isUnaryOperand(value: []const u8) bool {
+fn inferPrefixAssertion(alloc: std.mem.Allocator, value: []const u8) InferError!?[]const u8 {
+    if (!ch.startsWith(value, "<")) return null;
+    var reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, value);
+    defer reader.deinit();
+    const span = try reader.read(0, 0, null) orelse return null;
+    if (span.parameters or span.complete_operand or trim(value[span.end..]).len == 0 or !try isUnaryOperand(alloc, trim(value[span.end..]))) return null;
+    return trim(value[1 .. span.end - 1]);
+}
+
+fn isUnaryOperand(alloc: std.mem.Allocator, raw_value: []const u8) InferError!bool {
+    const value = withoutEdgeComments(raw_value);
+    var reader: ?@import("initializer_type_spans.zig").Reader = null;
+    defer if (reader) |*parser| parser.deinit();
     var depth: i32 = 0;
     var i: usize = 0;
     while (i < value.len) : (i += 1) {
         const c = value[i];
+        if (c == '/') {
+            if (i + 1 < value.len and value[i + 1] == '/') {
+                i = ch.lineCommentEnd(value, i + 2);
+                continue;
+            }
+            if (i + 1 < value.len and value[i + 1] == '*') {
+                i = if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |end| end + 1 else value.len;
+                continue;
+            }
+            if (@import("lexical.zig").isRegexStart(value, i)) {
+                i = @import("lexical.zig").skipRegex(value, i) - 1;
+                continue;
+            }
+        }
+        if (c == '<' and depth == 0) {
+            if (reader == null) reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, value);
+            if (try reader.?.read(i, 0, null)) |span| {
+                i = span.end - 1;
+                continue;
+            }
+        }
         switch (c) {
             '\'', '"', '`' => {
                 var j = i + 1;
@@ -1387,7 +1350,18 @@ fn isUnaryOperand(value: []const u8) bool {
             '?' => if (depth == 0 and !(i + 1 < value.len and value[i + 1] == '.')) return false,
             '=', '!', '<', '>', '&', '|', '+', '-', '*', '/', '%', ',', ':' => if (depth == 0) return false,
             ' ', '\t', '\n', '\r' => if (depth == 0) {
+                const prefix = withoutEdgeComments(value[0..i]);
+                var word_start = prefix.len;
+                while (word_start > 0 and std.ascii.isAlphabetic(prefix[word_start - 1])) word_start -= 1;
+                const words = [_][]const u8{ "new", "void", "typeof", "delete", "await", "yield" };
+                var unary_keyword = false;
+                for (words) |word| if (std.mem.eql(u8, prefix[word_start..], word)) {
+                    unary_keyword = true;
+                    break;
+                };
                 const rest = std.mem.trimStart(u8, value[i..], " \t\n\r");
+                i = value.len - rest.len - 1;
+                if (unary_keyword) continue;
                 if (rest.len > 0 and rest[0] != '.' and rest[0] != '?' and rest[0] != '(' and rest[0] != '[') return false;
             },
             else => {},
@@ -1838,7 +1812,13 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
             if (try scope.resolve(asserted)) |resolved| return resolved;
         }
     }
-    if (hasTopLevelComparison(value)) return "boolean";
+    if (try inferPrefixAssertion(alloc, value)) |asserted| {
+        if (return_scope) |scope| {
+            if (try scope.resolve(asserted)) |resolved| return resolved;
+        }
+        return asserted;
+    }
+    if (try hasTopLevelComparison(alloc, value)) return "boolean";
 
     if (lastTopLevelArithmetic(value)) |i| {
         const c = value[i];
@@ -2079,7 +2059,9 @@ fn substituteBodyQueries(alloc: std.mem.Allocator, inferred: []const u8, paramet
 }
 
 /// A top-level comparison operator makes an expression boolean.
-fn hasTopLevelComparison(value: []const u8) bool {
+fn hasTopLevelComparison(alloc: std.mem.Allocator, value: []const u8) InferError!bool {
+    var reader: ?@import("initializer_type_spans.zig").Reader = null;
+    defer if (reader) |*parser| parser.deinit();
     var depth: i32 = 0;
     var index: usize = 0;
     while (index < value.len) : (index += 1) {
@@ -2087,6 +2069,20 @@ fn hasTopLevelComparison(value: []const u8) bool {
         if (c == '"' or c == '\'' or c == '`') {
             index = skipQuotedValue(value, index, c) - 1;
             continue;
+        }
+        if (c == '/') {
+            if (index + 1 < value.len and value[index + 1] == '/') {
+                index = ch.lineCommentEnd(value, index + 2);
+                continue;
+            }
+            if (index + 1 < value.len and value[index + 1] == '*') {
+                index = if (std.mem.indexOfPos(u8, value, index + 2, "*/")) |end| end + 1 else value.len;
+                continue;
+            }
+            if (@import("lexical.zig").isRegexStart(value, index)) {
+                index = @import("lexical.zig").skipRegex(value, index) - 1;
+                continue;
+            }
         }
         if (c == '(' or c == '[' or c == '{') {
             depth += 1;
@@ -2097,6 +2093,13 @@ fn hasTopLevelComparison(value: []const u8) bool {
             continue;
         }
         if (depth != 0) continue;
+        if (c == '<') {
+            if (reader == null) reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, value);
+            if (try reader.?.read(index, 0, null)) |span| {
+                index = span.end - 1;
+                continue;
+            }
+        }
         const rest = value[index..];
         if (ch.startsWith(rest, "===") or ch.startsWith(rest, "!==") or ch.startsWith(rest, "==") or
             ch.startsWith(rest, "!=") or ch.startsWith(rest, ">=") or ch.startsWith(rest, "<=")) return true;
@@ -2382,6 +2385,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     }
 
     if (isJsxExpression(trimmed)) return "JSX.Element";
+    if (try inferPrefixAssertion(alloc, trimmed)) |asserted| return asserted;
 
     // Recognize an outer arrow before comma-operator handling because JSX text
     // and children may contain commas that are not JavaScript operators.
@@ -2389,7 +2393,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
 
     // The comma operator evaluates to its final operand. Reuse the balanced
     // element splitter so commas inside calls, arrays, and objects are ignored.
-    if (findTopLevelComma(trimmed)) |comma| return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1, key_constants);
+    if (try findTopLevelComma(alloc, trimmed)) |comma| return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[comma + 1 ..]), is_const, in_union, depth + 1, key_constants);
 
     if (trimmed.len > 2 and (ch.startsWith(trimmed, "++") or ch.startsWith(trimmed, "--")))
         return inferUpdateType(alloc, trimmed[2..]);
@@ -2404,7 +2408,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
     }
     // `typeof x` is a string, but `typeof x === 'object' && ...` is a larger
     // expression; leave those to the comparison and logical rules below.
-    if (ch.startsWith(trimmed, "typeof ") and isUnaryOperand(trimmed[7..])) return "string";
+    if (ch.startsWith(trimmed, "typeof ") and try isUnaryOperand(alloc, trimmed[7..])) return "string";
     if (ch.startsWith(trimmed, "void ")) return "undefined";
     if (ch.startsWith(trimmed, "delete ")) return "boolean";
     if (trimmed[0] == '!') return "boolean";
@@ -2591,6 +2595,9 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
         }
     }
 
+    if (try hasTopLevelComparison(alloc, trimmed)) return "boolean";
+    if (findTopLevelToken(trimmed, " instanceof ", 0) != null or findTopLevelToken(trimmed, " in ", 0) != null) return "boolean";
+
     // Numeric and bitwise operators. Infer BigInt when either operand is
     // statically BigInt; unsigned right shift is always a number operation.
     inline for (.{ ">>>", "<<", ">>", "**", "&", "|", "^" }) |operator| {
@@ -2619,11 +2626,6 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
             }
         }
     }
-
-    inline for (.{ "===", "!==", "==", "!=", ">=", "<=", ">", "<" }) |operator| {
-        if (findTopLevelToken(trimmed, operator, 0) != null) return "boolean";
-    }
-    if (findTopLevelToken(trimmed, " instanceof ", 0) != null or findTopLevelToken(trimmed, " in ", 0) != null) return "boolean";
 
     return "unknown";
 }
@@ -4060,8 +4062,8 @@ test "generic and optional calls retain callable types" {
     const alloc = arena.allocator();
     try std.testing.expectEqualStrings("ReturnType<typeof factory<string>>", try inferNarrowType(alloc, "factory<string>()", false, false, 0));
     try std.testing.expectEqualStrings("ReturnType<typeof api.factory<number>>", try inferNarrowType(alloc, "api.factory<number>()", false, false, 0));
-    try std.testing.expectEqualStrings("ReturnType<typeof factory> | undefined", try inferNarrowType(alloc, "factory?.()", false, false, 0));
-    try std.testing.expectEqualStrings("ReturnType<typeof api.factory> | undefined", try inferNarrowType(alloc, "api.factory?.(1)", false, false, 0));
+    try std.testing.expectEqualStrings("ReturnType<NonNullable<typeof factory>> | (null extends typeof factory ? undefined : undefined extends typeof factory ? undefined : never)", try inferNarrowType(alloc, "factory?.()", false, false, 0));
+    try std.testing.expectEqualStrings("ReturnType<NonNullable<typeof api.factory>> | (null extends typeof api.factory ? undefined : undefined extends typeof api.factory ? undefined : never)", try inferNarrowType(alloc, "api.factory?.(1)", false, false, 0));
     inline for (.{
         "typeof import('./model.js').default",
         "ReturnType<typeof import('./model.js').factory>",
@@ -4156,7 +4158,7 @@ test "JSX expressions infer portable element types" {
     try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => (<List render={item => <span>{item}</span>} />)", false, false, 0));
     try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => <List render={item => <span>{item}</span>} />", false, false, 0));
     try std.testing.expectEqualStrings("() => JSX.Element", try inferNarrowType(alloc, "() => (\n<List title=\"score > threshold\" render={item => item.score > 0 ? <strong>{item.label}</strong> : <em>none</em>} />\n)", false, false, 0));
-    try std.testing.expectEqualStrings("boolean", try inferNarrowType(alloc, "<Value>input", false, false, 0));
+    try std.testing.expectEqualStrings("Value", try inferNarrowType(alloc, "<Value>input", false, false, 0));
 }
 
 test "extractSatisfiesType" {

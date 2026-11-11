@@ -457,6 +457,7 @@ fn processFileTask(alloc: std.mem.Allocator, ctx: WorkerCtx, task: FileTask) !vo
     const source = task.source;
 
     var scanner = Scanner.init(alloc, source, task.keep_comments, task.isolated_declarations);
+    scanner.setSourceFilename(if (task.context) |value| value.wire.sourceFile else std.mem.span(task.input_name_z));
     if (task.context) |value| scanner.inference_sources = value.wire.inferenceSources;
     _ = try scanner.scan();
     var context = task.context;
@@ -826,6 +827,7 @@ fn processBatchRequest(alloc: std.mem.Allocator, keep_comments: bool, isolated_d
         context.delivered_sources = &delivered;
         var scanner = Scanner.init(a, file.source, keep_comments, isolated_declarations);
         scanner.inference_sources = context.wire.inferenceSources;
+        scanner.setSourceFilename(context.wire.sourceFile);
         _ = scanner.scan() catch |err| {
             writeErr("error: ");
             writeErr(file.context.sourceFile);
@@ -968,6 +970,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     const arena_alloc = arena.allocator();
 
     var scanner = Scanner.init(arena_alloc, source, keep_comments, isolated_declarations);
+    if (context) |value| scanner.setSourceFilename(value.wire.sourceFile) else if (input_file) |path| scanner.setSourceFilename(path);
     _ = try scanner.scan();
 
     const default_import_order = [_][]const u8{"bun"};

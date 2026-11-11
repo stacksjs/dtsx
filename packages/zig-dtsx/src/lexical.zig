@@ -192,7 +192,14 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
 }
 
 pub fn isRegexStart(source: []const u8, position: usize) bool {
-    const p = previousCodeIndex(source, @as(isize, @intCast(position)) - 1);
+    return isRegexAfter(source, previousCodeIndex(source, @as(isize, @intCast(position)) - 1));
+}
+
+pub fn isRegexStartAfterToken(source: []const u8, token_end: usize) bool {
+    return isRegexAfter(source, @as(isize, @intCast(token_end)) - 1);
+}
+
+fn isRegexAfter(source: []const u8, p: isize) bool {
     if (p < 0) return true; // start of file
     const prev = source[@intCast(p)];
     if (prev == ')') return closesControlHeader(source, @intCast(p));
@@ -267,4 +274,201 @@ pub fn skipRegex(source: []const u8, start: usize) usize {
     // Skip flags
     while (position < source.len and ch.isIdentChar(source[position])) position += 1;
     return position;
+}
+
+/// Whether the preceding code token permits a JSX primary expression.
+pub fn canStartJsx(source: []const u8, before: usize) bool {
+    return canStartJsxAfter(source, previousCodeIndex(source, @as(isize, @intCast(before)) - 1));
+}
+
+pub fn canStartJsxAfterToken(source: []const u8, token_end: usize) bool {
+    return canStartJsxAfter(source, @as(isize, @intCast(token_end)) - 1);
+}
+
+fn canStartJsxAfter(source: []const u8, previous: isize) bool {
+    if (previous < 0) return true;
+    const last: usize = @intCast(previous);
+    const char = source[last];
+    if (std.mem.indexOfScalar(u8, "=([{,:;!?+-*/%&|^~<", char) != null) return true;
+    if (char == '>' and last > 0 and source[last - 1] == '=') return true;
+    var start = last + 1;
+    while (start > 0 and ch.isIdentChar(source[start - 1])) start -= 1;
+    const words = [_][]const u8{ "return", "throw", "yield", "await", "case", "void", "typeof", "delete", "new", "else", "do" };
+    for (words) |word| if (std.mem.eql(u8, source[start .. last + 1], word)) return true;
+    return false;
+}
+
+pub const JsxTagInfo = struct { delta: isize, end: usize };
+
+/// Recognize a JSX tag while skipping an implementation statement. Requiring
+/// a matching close for non-self-closing tags keeps comparisons, assertions,
+/// and generic type parameters out of JSX depth accounting.
+fn jsxTagAt(source: []const u8, index: usize, closing_tags: ?*const std.StringHashMapUnmanaged(usize), reader: ?*JsxReader) std.mem.Allocator.Error!?JsxTagInfo {
+    if (index + 1 >= source.len or source[index] != ch.CH_LANGLE) return null;
+    const next = source[index + 1];
+    if (next == ch.CH_RANGLE) return .{ .delta = 1, .end = index + 1 };
+    if (next == ch.CH_SLASH) {
+        var end = index + 2;
+        if (end >= source.len) return null;
+        if (source[end] != ch.CH_RANGLE) {
+            if (!ch.isIdentStart(source[end])) return null;
+            while (end < source.len and (ch.isIdentChar(source[end]) or std.mem.indexOfScalar(u8, ".:-", source[end]) != null)) end += 1;
+            while (end < source.len and ch.isWhitespace(source[end])) end += 1;
+        }
+        return if (end < source.len and source[end] == ch.CH_RANGLE) .{ .delta = -1, .end = end } else null;
+    }
+    if (!ch.isIdentStart(next)) return null;
+
+    var name_end = index + 2;
+    while (name_end < source.len) : (name_end += 1) {
+        const code = source[name_end];
+        if (!ch.isIdentChar(code) and code != ch.CH_DOT and code != ':' and code != '-') break;
+    }
+    if (name_end >= source.len) return null;
+    const tag_name = source[index + 1 .. name_end];
+    const delimiter = source[name_end];
+    if (!ch.isWhitespace(delimiter) and delimiter != ch.CH_RANGLE and delimiter != ch.CH_SLASH) return null;
+
+    var brace_depth: usize = 0;
+    var quote: u8 = 0;
+    var tag_end = name_end;
+    var code_end = name_end;
+    while (tag_end < source.len) : (tag_end += 1) {
+        const code = source[tag_end];
+        if (quote != 0) {
+            if (code == ch.CH_BACKSLASH) {
+                tag_end += 1;
+            } else if (code == quote) {
+                quote = 0;
+                code_end = tag_end + 1;
+            }
+            continue;
+        }
+        if (code == ch.CH_LANGLE and brace_depth > 0 and
+            ((tag_end + 1 < source.len and source[tag_end + 1] == '/') or canStartJsxAfterToken(source, code_end)))
+        {
+            if (try if (reader) |cached| cached.read(tag_end) else jsxTagAt(source, tag_end, closing_tags, null)) |nested| {
+                tag_end = nested.end;
+                code_end = tag_end + 1;
+                continue;
+            }
+        }
+        if (code == ch.CH_SLASH and brace_depth > 0) {
+            const next_code = if (tag_end + 1 < source.len) source[tag_end + 1] else 0;
+            if (next_code == ch.CH_SLASH) {
+                while (tag_end < source.len and source[tag_end] != ch.CH_LF and source[tag_end] != ch.CH_CR) tag_end += 1;
+                continue;
+            }
+            if (next_code == ch.CH_STAR) {
+                const end = std.mem.indexOfPos(u8, source, tag_end + 2, "*/") orelse return null;
+                tag_end = end + 1;
+                continue;
+            }
+            if (isRegexStartAfterToken(source, code_end)) {
+                tag_end = skipRegex(source, tag_end) - 1;
+                code_end = tag_end + 1;
+                continue;
+            }
+        }
+        if (code == ch.CH_SQUOTE or code == ch.CH_DQUOTE or code == ch.CH_BACKTICK) {
+            quote = code;
+        } else if (code == ch.CH_LBRACE) {
+            brace_depth += 1;
+        } else if (code == ch.CH_RBRACE and brace_depth > 0) {
+            brace_depth -= 1;
+        } else if (code == ch.CH_LANGLE and brace_depth == 0) {
+            return null;
+        } else if (code == ch.CH_RANGLE and brace_depth == 0) {
+            break;
+        }
+        if (!ch.isWhitespace(code)) code_end = tag_end + 1;
+    }
+    if (tag_end >= source.len) return null;
+
+    var before_end = tag_end - 1;
+    while (before_end > index and ch.isWhitespace(source[before_end])) before_end -= 1;
+    if (source[before_end] == ch.CH_SLASH) return .{ .delta = 0, .end = tag_end };
+
+    if (closing_tags) |tags| {
+        const closing = tags.get(tag_name) orelse return null;
+        return if (closing > tag_end) .{ .delta = 1, .end = tag_end } else null;
+    }
+    var search_from = tag_end + 1;
+    while (ch.indexOf(source, "</", search_from)) |close_start| {
+        const close_name_start = close_start + 2;
+        const close_name_end = close_name_start + tag_name.len;
+        if (close_name_end < source.len and std.mem.eql(u8, source[close_name_start..close_name_end], tag_name) and
+            (source[close_name_end] == ch.CH_RANGLE or ch.isWhitespace(source[close_name_end])))
+            return .{ .delta = 1, .end = tag_end };
+        search_from = close_start + 2;
+    }
+    return null;
+}
+
+/// Per-source closing-tag index; names borrow the source until deinit.
+pub const JsxReader = struct {
+    source: []const u8,
+    allocator: std.mem.Allocator,
+    indexed: bool = false,
+    closing_tags: std.StringHashMapUnmanaged(usize) = .empty,
+    headers: std.AutoHashMapUnmanaged(usize, ?JsxTagInfo) = .empty,
+    syntax_slashes: std.AutoHashMapUnmanaged(usize, void) = .empty,
+
+    pub fn deinit(self: *JsxReader) void {
+        self.closing_tags.deinit(self.allocator);
+        self.headers.deinit(self.allocator);
+        self.syntax_slashes.deinit(self.allocator);
+    }
+
+    pub fn isTagSlash(self: *const JsxReader, index: usize) bool {
+        return self.syntax_slashes.contains(index);
+    }
+
+    pub fn read(self: *JsxReader, index: usize) std.mem.Allocator.Error!?JsxTagInfo {
+        if (self.headers.get(index)) |cached| return cached;
+        if (!self.indexed) {
+            var position: usize = 0;
+            while (std.mem.indexOfPos(u8, self.source, position, "</")) |opening| {
+                if (try jsxTagAt(self.source, opening, null, null)) |tag| {
+                    var end = opening + 2;
+                    while (end < tag.end and !ch.isWhitespace(self.source[end])) end += 1;
+                    try self.closing_tags.put(self.allocator, self.source[opening + 2 .. end], opening);
+                }
+                position = opening + 2;
+            }
+            self.indexed = true;
+        }
+        const tag = try jsxTagAt(self.source, index, &self.closing_tags, self);
+        try self.headers.put(self.allocator, index, tag);
+        if (tag) |header| {
+            if (header.end > 0 and self.source[header.end - 1] == '/') try self.syntax_slashes.put(self.allocator, header.end - 1, {});
+        }
+        return tag;
+    }
+};
+
+test "nested JSX headers are memoized at every opening" {
+    const alloc = std.testing.allocator;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(alloc);
+    var openings: std.ArrayList(usize) = .empty;
+    defer openings.deinit(alloc);
+    const depth = 128;
+    for (0..depth) |_| {
+        try openings.append(alloc, source.items.len);
+        try source.appendSlice(alloc, "<A child={");
+    }
+    try openings.append(alloc, source.items.len);
+    try source.appendSlice(alloc, "<A />");
+    for (0..depth) |_| try source.appendSlice(alloc, "} />");
+    var reader = JsxReader{ .source = source.items, .allocator = alloc };
+    defer reader.deinit();
+    try std.testing.expectEqual(source.items.len - 1, (try reader.read(0)).?.end);
+    try std.testing.expectEqual(depth + 1, reader.headers.count());
+    try std.testing.expectEqual(depth + 1, reader.syntax_slashes.count());
+    for (openings.items) |opening| try std.testing.expect((try reader.read(opening)) != null);
+    try std.testing.expectEqual(depth + 1, reader.headers.count());
+    try std.testing.expect((try reader.read(1)) == null);
+    try std.testing.expect((try reader.read(1)) == null);
+    try std.testing.expectEqual(depth + 2, reader.headers.count());
 }

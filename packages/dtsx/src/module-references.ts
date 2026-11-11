@@ -1,5 +1,5 @@
 /** Shared grammatical module literals for graph discovery and declaration rewriting. */
-import { isIdentChar, isIdentStart, isRegexStart, skipRegexLiteral } from './lexical'
+import { canStartJsx, createJsxTagReader, isIdentChar, isIdentStart, isRegexStart, skipRegexLiteral } from './lexical'
 
 export interface SyntaxToken {
   start: number
@@ -21,6 +21,8 @@ export interface ModuleReference {
 export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
   const tokens: SyntaxToken[] = []
   const length = source.length
+  const jsxSyntaxSlashes = new Set<number>()
+  const readJsxTag = createJsxTagReader(source, jsxSyntaxSlashes)
   let position = 0
 
   // Character codes are compared directly; indexing would allocate a
@@ -48,9 +50,21 @@ export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
 
   function code_(substitution = false): void {
     let braces = 0
+    let jsxDepth = 0
     while (position < length) {
       const start = position
       const code = source.charCodeAt(position)
+      if (code === 60 && (jsxDepth > 0 || (source[position + 1] !== '/' && canStartJsx(source, position, tokens.at(-1)?.end ?? 0)))) {
+        const tag = readJsxTag(position)
+        if (tag) {
+          jsxDepth = Math.max(0, jsxDepth + tag.delta)
+          if (tag.delta < 0) {
+            position = tag.end + 1
+            tokens.push({ start, end: position, kind: 'literal' })
+            continue
+          }
+        }
+      }
       // ASCII whitespace inline; only non-ASCII units need the Unicode \s test.
       if (code === 32 || (code >= 9 && code <= 13) || (code > 127 && /\s/.test(source[position]))) { position++; continue }
       if (code === 47 /* / */) {
@@ -65,7 +79,7 @@ export function tokenizeDeclarationSyntax(source: string): SyntaxToken[] {
           position = end === -1 ? length : end + 2
           continue
         }
-        if (isRegexStart(source, position)) {
+        if (!jsxSyntaxSlashes.has(position) && isRegexStart(source, position, tokens.at(-1)?.end ?? 0)) {
           position = skipRegexLiteral(source, position)
           tokens.push({ start, end: position, kind: 'literal' })
           continue

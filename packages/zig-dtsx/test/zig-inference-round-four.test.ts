@@ -10,12 +10,12 @@ function dts(source: string): string {
 describeIf('Zig inference parity round four', () => {
   test('models optional bare calls', () => {
     expect(dts('declare const factory: (() => number) | undefined; export const value = factory?.()'))
-      .toContain('value: ReturnType<typeof factory> | undefined')
+      .toContain('value: ReturnType<NonNullable<typeof factory>> | (null extends typeof factory ? undefined : undefined extends typeof factory ? undefined : never)')
   })
 
   test('models optional member calls', () => {
     expect(dts('declare const api: { factory?: () => number }\nexport const value = api.factory?.()'))
-      .toContain('value: ReturnType<typeof api.factory> | undefined')
+      .toContain('value: ReturnType<NonNullable<typeof api.factory>> | (null extends typeof api.factory ? undefined : undefined extends typeof api.factory ? undefined : never)')
   })
 
   test('models instantiated generic calls', () => {

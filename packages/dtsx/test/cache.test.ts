@@ -109,7 +109,7 @@ describe('BuildCache', () => {
 
       const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      expect(manifest.version).toBe(24)
+      expect(manifest.version).toBe(25)
       expect(Object.keys(manifest.entries)).toHaveLength(1)
       // Construct a previous-format fixture with every other field intact.
       // This does not claim that an historical SDK produced the fixture.
@@ -171,6 +171,22 @@ describe('BuildCache', () => {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
       // A constructed prior-cache fixture, preserving its matching source hash.
       writeFileSync(manifestPath, JSON.stringify({ ...manifest, version: 10 }))
+      const current = new BuildCache(config)
+      expect(current.load()).toBe(false)
+      expect(current.getCachedIfValid(file, tempDir)).toBeNull()
+    })
+
+    it('rejects version 24 initializer declarations with omitted exports', () => {
+      const config = makeConfig()
+      const source = 'export const first = 1 <\n2\nexport const second = 3 > 2'
+      const file = writeSourceFile('comparisons.ts', source)
+      const producer = new BuildCache(config)
+      producer.update(file, source, 'export declare const first: boolean;', tempDir)
+      producer.save()
+      const manifestPath = join(tempDir, '.dtsx-cache', 'manifest.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      // Construct a matching prior-format cache rather than attribute it to a release.
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, version: 24 }))
       const current = new BuildCache(config)
       expect(current.load()).toBe(false)
       expect(current.getCachedIfValid(file, tempDir)).toBeNull()
@@ -409,7 +425,7 @@ describe('BuildCache', () => {
 
       const raw = readFileSync(join(tempDir, '.dtsx-cache', 'manifest.json'), 'utf-8')
       const parsed = JSON.parse(raw)
-      expect(parsed.version).toBe(24)
+      expect(parsed.version).toBe(25)
       expect(parsed.entries).toEqual({})
       expect(typeof parsed.configHash).toBe('string')
       expect(typeof parsed.createdAt).toBe('number')

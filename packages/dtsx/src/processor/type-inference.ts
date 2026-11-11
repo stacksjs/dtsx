@@ -5,9 +5,14 @@
 import type { KeyConstants } from '../computed-keys'
 import { bindingPatternNames } from '../binding-patterns'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
+import { createInitializerTypeReader } from '../initializer-type-spans'
+import { isRegexStart, skipRegexLiteral } from '../lexical'
 import { tokenizeDeclarationSyntax } from '../module-references'
+import { isBigIntLiteral, isNumericLiteral, numericLiteralType } from '../numeric-literals'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { escapeJsdocContent } from './comments'
+
+export { isBigIntLiteral, isNumericLiteral, numericLiteralType } from '../numeric-literals'
 
 /**
  * Maximum recursion depth for type inference to prevent stack overflow on deeply nested types
@@ -78,93 +83,6 @@ export function consumeCleanDefault(): string | null {
   const val = _cleanDefaultResult
   _cleanDefaultResult = null
   return val
-}
-
-function isDigitForBase(code: number, base: number): boolean {
-  if (base === 2) return code === 48 || code === 49
-  if (base === 8) return code >= 48 && code <= 55
-  if (base === 10) return code >= 48 && code <= 57
-  return (code >= 48 && code <= 57) || (code >= 97 && code <= 102) || (code >= 65 && code <= 70)
-}
-
-/** Digits of one base with single `_` separators between them; advances `cursor.at`. */
-function consumeDigits(s: string, cursor: { at: number }, base: number): boolean {
-  let sawDigit = false
-  let previousSeparator = false
-  while (cursor.at < s.length) {
-    const code = s.charCodeAt(cursor.at)
-    if (isDigitForBase(code, base)) {
-      sawDigit = true
-      previousSeparator = false
-      cursor.at++
-    }
-    else if (code === 95 /* _ */ && sawDigit && !previousSeparator && cursor.at + 1 < s.length && isDigitForBase(s.charCodeAt(cursor.at + 1), base)) {
-      previousSeparator = true
-      cursor.at++
-    }
-    else {
-      break
-    }
-  }
-  return sawDigit && !previousSeparator
-}
-
-function radixPrefix(s: string, at: number): number {
-  if (s.charCodeAt(at) !== 48 /* 0 */ || at + 1 >= s.length) return 0
-  const marker = s.charCodeAt(at + 1) | 32
-  return marker === 120 /* x */ ? 16 : marker === 98 /* b */ ? 2 : marker === 111 /* o */ ? 8 : 0
-}
-
-/**
- * Decimal, scientific, hexadecimal, binary, and octal numeric literals with
- * an optional leading minus and numeric separators (the native engine's grammar).
- */
-export function isNumericLiteral(s: string): boolean {
-  if (s.length === 0) return false
-  const cursor = { at: 0 }
-  if (s.charCodeAt(0) === 45 /* - */) cursor.at++
-  if (cursor.at >= s.length) return false
-  const base = radixPrefix(s, cursor.at)
-  if (base) {
-    cursor.at += 2
-    return consumeDigits(s, cursor, base) && cursor.at === s.length
-  }
-  const hasIntegerDigits = consumeDigits(s, cursor, 10)
-  if (s.charCodeAt(cursor.at) === 46 /* . */) {
-    cursor.at++
-    const hasFractionDigits = consumeDigits(s, cursor, 10)
-    if (!hasIntegerDigits && !hasFractionDigits) return false
-  }
-  else if (!hasIntegerDigits) {
-    return false
-  }
-  const exponent = s.charCodeAt(cursor.at)
-  if (exponent === 101 /* e */ || exponent === 69 /* E */) {
-    cursor.at++
-    if (s.charCodeAt(cursor.at) === 43 /* + */ || s.charCodeAt(cursor.at) === 45 /* - */) cursor.at++
-    if (!consumeDigits(s, cursor, 10)) return false
-  }
-  return cursor.at === s.length
-}
-
-/** Decimal, hexadecimal, binary, and octal BigInt literals, with a leading minus and separators. */
-export function isBigIntLiteral(s: string): boolean {
-  if (s.length < 2 || s.charCodeAt(s.length - 1) !== 110 /* n */) return false
-  const digits = s.slice(0, -1)
-  const cursor = { at: 0 }
-  if (digits.charCodeAt(0) === 45 /* - */) cursor.at++
-  if (cursor.at >= digits.length) return false
-  const base = radixPrefix(digits, cursor.at)
-  if (base) {
-    cursor.at += 2
-    return consumeDigits(digits, cursor, base) && cursor.at === digits.length
-  }
-  return consumeDigits(digits, cursor, 10) && cursor.at === digits.length
-}
-
-/** A numeric or BigInt literal as a literal type: separators do not belong to its value (`5_000` is `5000`). */
-export function numericLiteralType(literal: string): string {
-  return literal.includes('_') ? literal.replaceAll('_', '') : literal
 }
 
 /**
@@ -279,6 +197,8 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
   const trimmed = value.trim()
 
   if (isJsxExpression(trimmed)) return 'JSX.Element'
+  const prefixAssertion = inferPrefixAssertion(trimmed)
+  if (prefixAssertion) return prefixAssertion
 
   // BigInt expressions (check early)
   if (trimmed.startsWith('BigInt(')) {
@@ -555,11 +475,17 @@ function isNumericArithmetic(value: string): boolean {
 /** Check for a comparison operator outside nested expressions and strings. */
 function hasTopLevelComparison(value: string): boolean {
   let depth = 0
+  let readType: ReturnType<typeof createInitializerTypeReader> | undefined
   for (let index = 0; index < value.length; index++) {
     const char = value.charCodeAt(index)
     if (char === 34 || char === 39 || char === 96) {
       index = skipQuotedValue(value, index, char) - 1
       continue
+    }
+    if (char === 47) {
+      if (value[index + 1] === '/') { const end = value.indexOf('\n', index + 2); index = end === -1 ? value.length : end; continue }
+      if (value[index + 1] === '*') { const end = value.indexOf('*/', index + 2); index = end === -1 ? value.length : end + 1; continue }
+      if (isRegexStart(value, index)) { index = skipRegexLiteral(value, index) - 1; continue }
     }
     if (char === 40 || char === 91 || char === 123) {
       depth++
@@ -570,6 +496,11 @@ function hasTopLevelComparison(value: string): boolean {
       continue
     }
     if (depth !== 0) continue
+    if (char === 60) {
+      readType ??= createInitializerTypeReader(value)
+      const span = readType(index, 0)
+      if (span) { index = span.end - 1; continue }
+    }
     if (value.startsWith('===', index) || value.startsWith('!==', index)
       || value.startsWith('==', index) || value.startsWith('!=', index)
       || value.startsWith('>=', index) || value.startsWith('<=', index)) return true
@@ -914,6 +845,8 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
   const assertion = wholeReturnAssertion(value)
   if (assertion && assertedType) return assertedType(assertion, position)
 
+  const prefixAssertion = inferPrefixAssertion(value)
+  if (prefixAssertion) return assertedType ? assertedType(prefixAssertion, position) : prefixAssertion
   if (hasTopLevelComparison(value)) return 'boolean'
 
   let depth = 0
@@ -1195,8 +1128,17 @@ function withoutEdgeComments(value: string): string {
 }
 
 /** Whether a unary operator's operand is the whole remaining expression. */
+function inferPrefixAssertion(value: string): string | undefined {
+  if (!value.startsWith('<')) return undefined
+  const span = createInitializerTypeReader(value)(0, 0)
+  if (!span || span.parameters || span.completeOperand || !value.slice(span.end).trim() || !isUnaryOperand(value.slice(span.end).trim())) return undefined
+  return value.slice(1, span.end - 1).trim()
+}
+
 function isUnaryOperand(value: string): boolean {
+  value = withoutEdgeComments(value)
   let depth = 0
+  let readType: ReturnType<typeof createInitializerTypeReader> | undefined
   for (let i = 0; i < value.length; i++) {
     const char = value[i]
     if (char === '\'' || char === '"' || char === '`') {
@@ -1208,6 +1150,16 @@ function isUnaryOperand(value: string): boolean {
       i = j
       continue
     }
+    if (char === '/') {
+      if (value[i + 1] === '/') { const end = value.indexOf('\n', i + 2); i = end === -1 ? value.length : end; continue }
+      if (value[i + 1] === '*') { const end = value.indexOf('*/', i + 2); i = end === -1 ? value.length : end + 1; continue }
+      if (isRegexStart(value, i)) { i = skipRegexLiteral(value, i) - 1; continue }
+    }
+    if (char === '<' && depth === 0) {
+      readType ??= createInitializerTypeReader(value)
+      const span = readType(i, 0)
+      if (span) { i = span.end - 1; continue }
+    }
     if (char === '(' || char === '[' || char === '{') depth++
     else if (char === ')' || char === ']' || char === '}') depth--
     else if (depth !== 0) continue
@@ -1215,6 +1167,9 @@ function isUnaryOperand(value: string): boolean {
     else if ('=!<>&|+-*/%,:'.includes(char)) return false
     else if (char === ' ' || char === '\t' || char === '\n' || char === '\r') {
       const rest = value.slice(i).trimStart()
+      const previousWord = /[A-Za-z]+$/.exec(withoutEdgeComments(value.slice(0, i)))?.[0]
+      i = value.length - rest.length - 1
+      if (previousWord && ['new', 'void', 'typeof', 'delete', 'await', 'yield'].includes(previousWord)) continue
       if (rest && rest[0] !== '.' && rest[0] !== '?' && rest[0] !== '(' && rest[0] !== '[') return false
     }
   }
@@ -2166,6 +2121,12 @@ export function inferCallType(value: string): string | null {
     entity = callee.slice(0, genericStart).trim()
     hasTypeArguments = true
   }
+  if (entity.endsWith('?.')) {
+    isOptional = true
+    const typeArguments = callee.slice(entity.length)
+    entity = entity.slice(0, -2).trim()
+    callee = entity + typeArguments
+  }
   if (!isEntityName(entity)) return null
 
   const argumentsText = value.slice(open + 1, -1).trim()
@@ -2181,7 +2142,9 @@ export function inferCallType(value: string): string | null {
   else if (!hasTypeArguments && !isOptional && !hasInlineFunction && !hasReferenceArgument && !hasNestedCall) return null
 
   const type = `ReturnType<typeof ${callee}>`
-  return isOptional ? `${type} | undefined` : type
+  return isOptional
+    ? `ReturnType<NonNullable<typeof ${callee}>> | (null extends typeof ${entity} ? undefined : undefined extends typeof ${entity} ? undefined : never)`
+    : type
 }
 
 /**

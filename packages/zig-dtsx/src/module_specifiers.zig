@@ -125,82 +125,6 @@ pub const SyntaxError = std.mem.Allocator.Error || error{InvalidContext};
 pub const VisitError = SyntaxError || error{StopVisit};
 pub const tokenizeDeclarationSyntax = tokens;
 
-/// A final `>` can finish a type argument operand rather than require a
-/// right-hand value. Work on code tokens so comments, strings and arrow
-/// return types cannot change the balance of the enclosing argument list.
-pub fn endsWithTypeArguments(source: []const u8, items: []const SyntaxToken) bool {
-    if (items.len < 4) return false;
-    const last = items[items.len - 1];
-    if (!std.mem.eql(u8, source[last.start..last.end], ">")) return false;
-    var angles: usize = 0;
-    var groups: usize = 0;
-    var index = items.len;
-    while (index > 0) {
-        index -= 1;
-        const item = items[index];
-        if (item.kind != .punctuation) continue;
-        const text = source[item.start..item.end];
-        if (std.mem.eql(u8, text, ")") or std.mem.eql(u8, text, "]") or std.mem.eql(u8, text, "}")) {
-            groups += 1;
-        } else if (std.mem.eql(u8, text, "(") or std.mem.eql(u8, text, "[") or std.mem.eql(u8, text, "{")) {
-            if (groups == 0) return false;
-            groups -= 1;
-        } else if (groups == 0 and std.mem.eql(u8, text, ">")) {
-            if (index > 0 and items[index - 1].end == item.start and std.mem.eql(u8, source[items[index - 1].start..items[index - 1].end], "=")) continue;
-            angles += 1;
-        } else if (groups == 0 and std.mem.eql(u8, text, "<")) {
-            if (angles == 0) return false;
-            angles -= 1;
-            if (angles == 0) {
-                if (index == 0 or index == items.len - 2) return false;
-                var operand_index = index - 1;
-                while (std.mem.eql(u8, source[items[operand_index].start..items[operand_index].end], "!")) {
-                    if (operand_index == 0) return false;
-                    operand_index -= 1;
-                }
-                const before = items[operand_index];
-                const operand = source[before.start..before.end];
-                if (std.mem.eql(u8, operand, ">")) {
-                    // Chained instantiation needs a proven operand too. A
-                    // relational `left > <Type>` still needs the asserted value.
-                    index = operand_index + 1;
-                    continue;
-                }
-                return before.kind == .word or std.mem.eql(u8, operand, ")") or std.mem.eql(u8, operand, "]");
-            }
-        }
-    }
-    return false;
-}
-
-test "type argument operands distinguish closing arguments from operators" {
-    const cases = .{
-        .{ "value as Map<string, unknown>", true },
-        .{ "identity<number>", true },
-        .{ "identity!<number>", true },
-        .{ "identity!!<number>", true },
-        .{ "identity<string>!<number>", true },
-        .{ "identity < number >", true },
-        .{ "value satisfies Map<string, Map<string, unknown>>", true },
-        .{ "value as Map<'<' | '>', () => Map<string, unknown>>", true },
-        .{ "value as Container<{ run: () => Map<string, unknown> }>", true },
-        .{ "value as Map<string, unknown> /* > */", true },
-        .{ "left >", false },
-        .{ "left >>", false },
-        .{ "left >>>", false },
-        .{ "left >=", false },
-        .{ "left =>", false },
-        .{ "call<value> >", false },
-        .{ "call<value> + right >", false },
-        .{ "left > <number>", false },
-    };
-    inline for (cases) |case| {
-        const items = try tokenizeDeclarationSyntax(std.testing.allocator, case[0]);
-        defer std.testing.allocator.free(items);
-        try std.testing.expectEqual(case[1], endsWithTypeArguments(case[0], items));
-    }
-}
-
 fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token {
     if (content.len > std.math.maxInt(u32)) return error.InvalidContext;
     var result = std.array_list.Managed(Token).init(allocator);
@@ -209,7 +133,9 @@ fn tokens(allocator: std.mem.Allocator, content: []const u8) SyntaxError![]Token
     // up front avoids repeated regrowth while tokenizing whole sources.
     try result.ensureTotalCapacity(content.len / 3 + 8);
     var i: usize = 0;
-    scanCode(ListSink{ .list = &result }, content, &i, false) catch |err| switch (err) {
+    var jsx_reader = lexical.JsxReader{ .source = content, .allocator = allocator };
+    defer jsx_reader.deinit();
+    scanCode(ListSink{ .list = &result }, content, &i, false, &jsx_reader) catch |err| switch (err) {
         error.StopVisit => unreachable, // ListSink never stops early
         else => |e| return e,
     };
@@ -230,16 +156,18 @@ const ListSink = struct {
 
 /// Stream every token to `sink` without materializing a token array. The sink
 /// sees exactly the sequence `tokens` would return, and the same lexical
-/// errors are reported, so whole-source checks can avoid allocation.
-pub fn visitDeclarationSyntax(content: []const u8, sink: anytype) VisitError!void {
+/// errors are reported, so whole-source checks avoid allocating a token array.
+pub fn visitDeclarationSyntax(allocator: std.mem.Allocator, content: []const u8, sink: anytype) VisitError!void {
     if (content.len > std.math.maxInt(u32)) return error.InvalidContext;
     var i: usize = 0;
-    try scanCode(sink, content, &i, false);
+    var jsx_reader = lexical.JsxReader{ .source = content, .allocator = allocator };
+    defer jsx_reader.deinit();
+    try scanCode(sink, content, &i, false, &jsx_reader);
 }
 
 // Template raw text is literal data. Only ${...} switches back to TypeScript
 // syntax, including nested templates and object/type braces in a substitution.
-fn scanTemplate(sink: anytype, content: []const u8, position: *usize) VisitError!void {
+fn scanTemplate(sink: anytype, content: []const u8, position: *usize, jsx_reader: *lexical.JsxReader) VisitError!void {
     var raw_start = position.*;
     position.* += 1;
     while (position.* < content.len) {
@@ -255,7 +183,7 @@ fn scanTemplate(sink: anytype, content: []const u8, position: *usize) VisitError
             try sink.push(tok(raw_start, i + 1, .template));
             try sink.push(tok(i + 1, i + 2, .punctuation));
             position.* += 2;
-            try scanCode(sink, content, position, true);
+            try scanCode(sink, content, position, true, jsx_reader);
             raw_start = position.*;
         } else position.* += 1;
     }
@@ -286,14 +214,26 @@ fn blockCommentEnd(content: []const u8, from: usize) ?usize {
     return null;
 }
 
-fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: bool) VisitError!void {
+fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: bool, jsx_reader: *lexical.JsxReader) VisitError!void {
     var braces: usize = 0;
+    var jsx_depth: usize = 0;
     // End of the last real token. Regex detection looks back from here, so a
     // comment between a token and `/` is not mistaken for preceding code.
     var code_end = position.*;
     while (position.* < content.len) {
         const i = position.*;
         const c = content[i];
+        if (c == '<' and (jsx_depth > 0 or ((i + 1 >= content.len or content[i + 1] != '/') and lexical.canStartJsxAfterToken(content, code_end)))) {
+            if (try jsx_reader.read(i)) |tag| {
+                jsx_depth = @intCast(@max(0, @as(isize, @intCast(jsx_depth)) + tag.delta));
+                if (tag.delta < 0) {
+                    position.* = tag.end + 1;
+                    try sink.push(tok(i, position.*, .template));
+                    code_end = position.*;
+                    continue;
+                }
+            }
+        }
         switch (c) {
             ' ', '\t', '\n', '\r' => {
                 position.* += 1;
@@ -308,7 +248,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                     position.* = (blockCommentEnd(content, i + 2) orelse return error.InvalidContext) + 2;
                     continue;
                 }
-                if (lexical.isRegexStart(content, code_end)) {
+                if (!jsx_reader.isTagSlash(i) and lexical.isRegexStartAfterToken(content, code_end)) {
                     position.* = lexical.skipRegex(content, i);
                     try sink.push(tok(i, position.*, .template));
                     code_end = position.*;
@@ -316,7 +256,7 @@ fn scanCode(sink: anytype, content: []const u8, position: *usize, substitution: 
                 }
             },
             '`' => {
-                try scanTemplate(sink, content, position);
+                try scanTemplate(sink, content, position, jsx_reader);
                 code_end = position.*;
                 continue;
             },

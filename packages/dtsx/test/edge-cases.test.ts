@@ -423,4 +423,45 @@ export function after(): string { return 'b' }
 `
     expect(extractDeclarations(code, 'lt.ts').map(d => d.name)).toEqual(['isSmaller', 'after'])
   })
+
+  test.each([
+    ['closed JSX', '<div>hello</div>'],
+    ['self-closing JSX', '<div />'],
+    ['multiline JSX tag', '<div\n id="a"\n/>'],
+    ['JSX attribute expression', '<div value={make()} />'],
+    ['generic call', 'make<string, number>()'],
+    ['generic constructor', 'new Map<string, Array<number>>()'],
+    ['generic function expression', 'function identity<T, U>(value: T): T { return value }'],
+    ['anonymous generic generator', 'function*<T, U>(value: T) { yield value }'],
+    ['generic class expression', 'class Value<T, U> { value?: T }'],
+    ['generic arrow', '<T, U>(value: T): T => value'],
+    ['async generic arrow', 'async <T, U>(value: T): Promise<T> => value'],
+    ['generic arrow with a runtime default', '<T, U>(value: T, fallback: U = null as U): T => value'],
+    ['optional generic call', 'make?.<string, number>()'],
+    ['keyword assertion', 'void <Map<string, number>>new Map()'],
+    ['prefix assertion', '<Map<string, number>>\nmake()'],
+    ['comment containing operator', '1 /* +\n implementation */'],
+    ['call continued on the next line', 'make<string, number>\n()'],
+    ['element access continued on the next line', 'make()\n[0]'],
+  ])('retains the complete %s initializer and later exports', (_label, value) => {
+    const declarations = extractDeclarations(`export const result = ${value}\nexport const after = 1`, value.includes('<div') ? 'boundary.tsx' : 'boundary.ts')
+    expect(declarations.filter(declaration => declaration.isExported).map(declaration => declaration.name)).toEqual(['result', 'after'])
+    expect(declarations[0].value).toBe(value.startsWith('1 /*') ? '1' : value)
+  })
+
+  test('JSX does not hide a subsequent same-line generic call', () => {
+    const source = 'function make<T, U>(): number { return 1 }\nexport const jsx = <div>hello</div>; export const result = make<string, number>();\nexport const after = 1'
+    const declarations = extractDeclarations(source, 'boundary.tsx')
+    expect(declarations.filter(declaration => declaration.isExported).map(declaration => declaration.name)).toEqual(['jsx', 'result', 'after'])
+    expect(declarations.find(declaration => declaration.name === 'result')?.value).toBe('make<string, number>()')
+  })
+
+  test('closing-tag text does not turn generic calls or arrows into JSX', () => {
+    for (const value of ['make<number>()', '<T>(value: T): T => value']) {
+      const source = `function make<T>(): number { return 1 }\nexport const result = ${value}; export const text = "</number></T>"; export const after = 1`
+      const declarations = extractDeclarations(source, 'boundary.ts')
+      expect(declarations.filter(declaration => declaration.isExported).map(declaration => declaration.name)).toEqual(['result', 'text', 'after'])
+      expect(declarations.find(declaration => declaration.name === 'result')?.value).toBe(value)
+    }
+  })
 })
