@@ -129,9 +129,10 @@ pub fn isPrivateImportableDeclaration(declaration: Declaration) bool {
 
 const Scope = struct { start: usize, end: usize, names: std.StringHashMap(void) };
 
-fn addReference(source: []const u8, items: []const Token, index: usize, scopes: []const Scope, references: *std.StringHashMap(void)) !void {
+fn addReference(source: []const u8, items: []const Token, index: usize, scopes: []const Scope, references: *std.StringHashMap(void), positions: ?*std.AutoHashMap(usize, void)) !void {
     if (index >= items.len or items[index].kind != .word) return;
     const name = text(source, items, index);
+    if (positions) |found| try found.put(items[index].start, {});
     for (scopes) |scope| {
         if (index >= scope.start and index < scope.end and scope.names.contains(name)) return;
     }
@@ -166,7 +167,7 @@ inline fn isWord(source: []const u8, items: []const Token, index: usize, value: 
     return index < items.len and items[index].kind == .word and std.mem.eql(u8, source[items[index].start..items[index].end], value);
 }
 
-fn expressionReferences(source: []const u8, items: []const Token, start: usize, end: usize, pairs: Pairs, scopes: []const Scope, references: *std.StringHashMap(void)) !void {
+fn expressionReferences(source: []const u8, items: []const Token, start: usize, end: usize, pairs: Pairs, scopes: []const Scope, references: *std.StringHashMap(void), positions: ?*std.AutoHashMap(usize, void)) !void {
     var i = start;
     while (i < end) : (i += 1) {
         if (isPunct(source, items, i, '<')) {
@@ -177,17 +178,53 @@ fn expressionReferences(source: []const u8, items: []const Token, start: usize, 
         }
         if (items[i].kind != .word or (i > 0 and isPunct(source, items, i - 1, '.')) or isPunct(source, items, i + 1, ':')) continue;
         if (oneOf(text(source, items, i), &.{ "true", "false", "null", "undefined", "new", "this", "super", "as", "satisfies", "typeof", "void", "keyof" })) continue;
-        try addReference(source, items, i, scopes, references);
+        try addReference(source, items, i, scopes, references, positions);
     }
 }
 
+fn memberHeader(source: []const u8, items: []const Token, pairs: Pairs, start: usize) bool {
+    var label = start;
+    while (oneOf(text(source, items, label), &.{ "readonly", "public", "private", "protected", "static", "abstract", "override", "declare", "accessor", "get", "set", "async" }) and
+        label + 1 < items.len and (items[label + 1].kind == .word or items[label + 1].kind == .quoted or isPunct(source, items, label + 1, '[') or (source[items[label + 1].start] >= '0' and source[items[label + 1].start] <= '9'))) label += 1;
+    if (isPunct(source, items, label, '(')) return isPunct(source, items, (pairs.get(label) orelse return false) + 1, ':');
+    if (isPunct(source, items, label, '<')) return isPunct(source, items, (pairs.get(label) orelse return false) + 1, '(');
+    var after = label + 1;
+    if (isPunct(source, items, label, '[')) {
+        after = (pairs.get(label) orelse return false) + 1;
+    } else if (label < items.len and source[items[label].start] >= '0' and source[items[label].start] <= '9') {
+        while (after < items.len and items[after - 1].end == items[after].start and numericPropertyToken(text(source, items, after))) after += 1;
+    } else if (label >= items.len or (items[label].kind != .word and items[label].kind != .quoted and items[label].kind != .template)) return false;
+    if (isPunct(source, items, after, '?')) after += 1;
+    if (isPunct(source, items, after, '<')) after = (pairs.get(after) orelse return false) + 1;
+    return isPunct(source, items, after, ':') or isPunct(source, items, after, '(');
+}
+
+fn numericPropertyToken(value: []const u8) bool {
+    if (value.len == 0) return false;
+    for (value) |c| {
+        if (std.mem.indexOfScalar(u8, "0123456789abcdefABCDEFxXoObB_eE.+-", c) == null) return false;
+    }
+    return true;
+}
+
+pub const TypeReferences = struct { candidates: *const std.StringHashMap(Declaration), references: *std.StringHashMap(void) };
+
 pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declaration, references: *std.StringHashMap(void)) !void {
+    return collectReferences(allocator, declaration, references, null);
+}
+
+pub fn collectReferences(allocator: std.mem.Allocator, declaration: Declaration, references: *std.StringHashMap(void), type_references: ?TypeReferences) !void {
+    var value_positions = std.AutoHashMap(usize, void).init(allocator);
+    defer value_positions.deinit();
+    const positions = if (type_references != null) &value_positions else null;
     const source = declaration.text;
     const items = try syntax.tokenizeDeclarationSyntax(allocator, source);
     defer allocator.free(items);
     const pairs = Pairs{ .close = try allocator.alloc(usize, items.len) };
     defer allocator.free(pairs.close);
     @memset(pairs.close, Pairs.none);
+    var generic_openings = std.AutoHashMap(usize, usize).init(allocator);
+    defer generic_openings.deinit();
     var stack = std.array_list.Managed(usize).init(allocator);
     defer stack.deinit();
     for (items, 0..) |token, i| {
@@ -205,12 +242,18 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
                 {
                     _ = stack.pop();
                     pairs.close[open] = i;
+                    if (opener == '<') try generic_openings.put(i, open);
                 }
             },
             else => {},
         }
     }
 
+    var generic_scopes = std.array_list.Managed(Scope).init(allocator);
+    defer {
+        for (generic_scopes.items) |*scope| scope.names.deinit();
+        generic_scopes.deinit();
+    }
     var scopes = std.array_list.Managed(Scope).init(allocator);
     defer {
         for (scopes.items) |*scope| scope.names.deinit();
@@ -243,12 +286,33 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
         }
         var end = close + @as(usize, if (isPunct(source, items, close + 1, ':')) 2 else 3);
         while (end < items.len) {
+            if (end > close + 2 and std.mem.indexOfScalar(u8, source[items[end - 1].end..items[end].start], '\n') != null and
+                !oneOf(text(source, items, end - 1), &.{ "|", "&", "?", "extends", "keyof", "typeof", "readonly", "new", "infer", "is" }))
+            {
+                if (memberHeader(source, items, pairs, end)) break;
+            }
             if (items[end].kind == .punctuation) {
                 const c = source[items[end].start];
                 if (c == ';' or c == ',' or c == ')' or c == ']' or c == '}' or
                     (c == '>' and !isPunct(source, items, end -| 1, '='))) break;
             }
             end = if (pairs.get(end)) |nested| nested + 1 else end + 1;
+        }
+        if (type_references != null and open > 0) {
+            if (generic_openings.get(open - 1)) |generic_open| {
+                var generic_names = std.StringHashMap(void).init(allocator);
+                errdefer generic_names.deinit();
+                var generic_parameter = generic_open + 1;
+                while (generic_parameter < open - 1) {
+                    while (oneOf(text(source, items, generic_parameter), &.{ "const", "in", "out" })) generic_parameter += 1;
+                    if (generic_parameter < items.len and items[generic_parameter].kind == .word) try generic_names.put(text(source, items, generic_parameter), {});
+                    while (generic_parameter < open - 1 and !isPunct(source, items, generic_parameter, ',')) {
+                        generic_parameter = if (pairs.get(generic_parameter)) |nested| nested + 1 else generic_parameter + 1;
+                    }
+                    generic_parameter += 1;
+                }
+                try generic_scopes.append(.{ .start = generic_open, .end = end, .names = generic_names });
+            }
         }
         try scopes.append(.{ .start = open, .end = end, .names = names });
     }
@@ -257,22 +321,33 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
         if (token.kind == .word) {
             const word = source[token.start..token.end];
             if (std.mem.eql(u8, word, "typeof")) {
-                try addReference(source, items, i + 1, scopes.items, references);
+                try addReference(source, items, i + 1, scopes.items, references, positions);
             } else if (std.mem.eql(u8, word, "export")) {
                 var next = i + 1;
                 if (isWord(source, items, next, "default")) {
-                    if (!oneOf(text(source, items, next + 1), &.{ "function", "class", "abstract" }))
-                        try expressionReferences(source, items, next + 1, items.len, pairs, scopes.items, references);
+                    if (!oneOf(text(source, items, next + 1), &.{ "function", "class", "abstract" })) {
+                        try expressionReferences(source, items, next + 1, items.len, pairs, scopes.items, references, positions);
+                        if (type_references) |types| {
+                            if (types.candidates.contains(text(source, items, next + 1)) and (next + 2 == items.len or isPunct(source, items, next + 2, ';')))
+                                try types.references.put(text(source, items, next + 1), {});
+                        }
+                    }
                     continue;
                 }
-                if (isWord(source, items, next, "type")) next += 1;
+                const type_only = isWord(source, items, next, "type");
+                if (type_only) next += 1;
                 if (isPunct(source, items, next, '{')) {
                     const close = pairs.get(next) orelse continue;
                     if (isWord(source, items, close + 1, "from")) continue;
                     var item = next + 1;
                     while (item < close) {
-                        if (isWord(source, items, item, "type") and item + 1 < items.len and items[item + 1].kind == .word and !isWord(source, items, item + 1, "as")) item += 1;
-                        try addReference(source, items, item, scopes.items, references);
+                        const inline_type = isWord(source, items, item, "type") and item + 1 < items.len and items[item + 1].kind == .word and !isWord(source, items, item + 1, "as");
+                        if (inline_type) item += 1;
+                        const has_type = if (type_references) |types| types.candidates.contains(text(source, items, item)) else false;
+                        if (has_type) try type_references.?.references.put(text(source, items, item), {});
+                        if (!has_type or (!type_only and !inline_type)) {
+                            try addReference(source, items, item, scopes.items, references, positions);
+                        } else if (positions) |found| try found.put(items[item].start, {});
                         while (item < close and !isPunct(source, items, item, ',')) item += 1;
                         item += 1;
                     }
@@ -282,7 +357,7 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
             if (pairs.get(i)) |close| {
                 const after_close = isPunct(source, items, close + 1, ':') or isPunct(source, items, close + 1, '?') or isPunct(source, items, close + 1, '(');
                 if (after_close and !isPunct(source, items, i + 2, ':') and !isWord(source, items, i + 2, "in"))
-                    try expressionReferences(source, items, i + 1, close, pairs, scopes.items, references);
+                    try expressionReferences(source, items, i + 1, close, pairs, scopes.items, references, positions);
             }
         }
     }
@@ -300,8 +375,71 @@ pub fn collectValueReferences(allocator: std.mem.Allocator, declaration: Declara
             while (end < items.len and !isPunct(source, items, end, '{') and !isWord(source, items, end, "implements")) {
                 end = if (pairs.get(end)) |nested| nested + 1 else end + 1;
             }
-            try expressionReferences(source, items, i + 1, end, pairs, scopes.items, references);
+            try expressionReferences(source, items, i + 1, end, pairs, scopes.items, references, positions);
             break;
+        }
+    }
+    if (type_references) |types| {
+        var generic_names = std.StringHashMap(void).init(allocator);
+        defer generic_names.deinit();
+        const generic_tokens = try syntax.tokenizeDeclarationSyntax(allocator, declaration.generics);
+        defer allocator.free(generic_tokens);
+        var depth: usize = 0;
+        var parameter = false;
+        for (generic_tokens) |token| {
+            const value = declaration.generics[token.start..token.end];
+            if (oneOf(value, &.{ "<", "(", "[", "{" })) {
+                depth += 1;
+                if (std.mem.eql(u8, value, "<") and depth == 1) parameter = true;
+            } else if (oneOf(value, &.{ ">", ")", "]", "}" }) and !(std.mem.eql(u8, value, ">") and token.start > 0 and declaration.generics[token.start - 1] == '=')) {
+                depth -|= 1;
+            } else if (std.mem.eql(u8, value, ",") and depth == 1) {
+                parameter = true;
+            } else if (parameter and depth == 1 and token.kind == .word and !oneOf(value, &.{ "const", "in", "out" })) {
+                try generic_names.put(value, {});
+                parameter = false;
+            }
+        }
+        const Event = struct { index: usize, name: []const u8, delta: i64 };
+        var events = std.array_list.Managed(Event).init(allocator);
+        defer events.deinit();
+        for (generic_scopes.items) |scope| {
+            var names = scope.names.keyIterator();
+            while (names.next()) |name| {
+                try events.append(.{ .index = scope.start, .name = name.*, .delta = 1 });
+                try events.append(.{ .index = scope.end, .name = name.*, .delta = -1 });
+            }
+        }
+        std.mem.sort(Event, events.items, {}, struct {
+            fn less(_: void, left: Event, right: Event) bool {
+                return left.index < right.index;
+            }
+        }.less);
+        var active = std.StringHashMap(i64).init(allocator);
+        defer active.deinit();
+        var event: usize = 0;
+        for (items, 0..) |token, i| {
+            while (event < events.items.len and events.items[event].index <= i) : (event += 1) {
+                const entry = events.items[event];
+                const binding = try active.getOrPut(entry.name);
+                if (!binding.found_existing) binding.value_ptr.* = 0;
+                binding.value_ptr.* += entry.delta;
+            }
+            if (token.kind != .word or value_positions.contains(token.start)) continue;
+            const name = source[token.start..token.end];
+            if (!types.candidates.contains(name) or generic_names.contains(name) or (active.get(name) orelse 0) > 0) continue;
+            const before = if (i > 0) text(source, items, i - 1) else "";
+            const after = text(source, items, i + 1);
+            if (std.mem.eql(u8, before, "as") and declaration.kind == .export_decl) continue;
+            if (oneOf(before, &.{ ".", "const", "let", "var", "function", "class", "interface", "type", "enum", "namespace", "module" })) continue;
+            if ((std.mem.eql(u8, after, ":") and !std.mem.eql(u8, before, "?")) or (std.mem.eql(u8, after, "?") and isPunct(source, items, i + 2, ':'))) continue;
+            if (std.mem.eql(u8, after, "(") or (std.mem.eql(u8, after, "?") and isPunct(source, items, i + 2, '('))) continue;
+            if (std.mem.eql(u8, after, "<")) {
+                if (pairs.get(i + 1)) |close| {
+                    if (isPunct(source, items, close + 1, '(')) continue;
+                }
+            }
+            try types.references.put(name, {});
         }
     }
 }

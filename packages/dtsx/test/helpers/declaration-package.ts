@@ -78,6 +78,7 @@ async function declarationProducers(): Promise<DeclarationProducers> {
 
 export interface DeclarationPackageCase {
   filename?: 'index.ts' | 'index.tsx'
+  global?: boolean
   isolatedDeclarations?: boolean
   source: string
   positive: string
@@ -91,7 +92,7 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
   const library = join(directory, 'library')
   const consumer = join(directory, 'consumer')
   const filename = fixture.filename ?? 'index.ts'
-  const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', jsx: 'preserve', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
+  const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', jsx: 'preserve', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true, ...(fixture.global ? { moduleDetection: 'legacy' } : {}) }
   try {
     const { dts, generate, processSource, processSourceWithContext, ZIG_AVAILABLE, input } = await declarationProducers()
     expect(isAvailable).toBe(true)
@@ -103,7 +104,8 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
 
     async function checkConsumers(cwd: string, specifier: string): Promise<void> {
       for (const [index, control] of [{ content: fixture.positive }, ...fixture.negatives].entries()) {
-        await writeFile(join(cwd, 'control.ts'), `import * as api from '${specifier}'\n${control.content}\n`)
+        const reference = fixture.global ? `/// <reference path="${specifier === './src/index.js' ? './src/index.ts' : './node_modules/declaration-contract/dist/index.d.ts'}" />` : `import * as api from '${specifier}'`
+        await writeFile(join(cwd, 'control.ts'), `${reference}\n${control.content}\n`)
         await writeFile(join(cwd, 'tsconfig.json'), JSON.stringify({ compilerOptions, files: ['control.ts'] }))
         const result = runTsc(cwd, ['--project', 'tsconfig.json'])
         expect(result.ok, result.output).toBe(index === 0)

@@ -8,15 +8,15 @@ const ch = @import("char_utils.zig");
 pub const PendingReturn = struct { marker: []const u8, body: []const u8, parameters: []const u8, generics: []const u8, is_async: bool, is_static: bool };
 
 pub const ConstructorBinding = enum { nominal_class, value, namespace };
-pub const ConstructorNamespace = struct { parent: ?usize, path: []const u8, bindings: std.StringHashMap(ConstructorBinding), exports: std.StringHashMap(void), ambient: bool };
-pub const PendingConstructorField = struct { marker: []const u8, initializer: []const u8, class_name: []const u8, namespace: ?usize };
+pub const ConstructorNamespace = struct { parent: ?usize, path: []const u8, bindings: std.StringHashMap(ConstructorBinding), exports: std.StringHashMap(void), annotated_values: std.StringHashMap(void), ambient: bool };
+pub const PendingConstructorField = struct { marker: []const u8, initializer: []const u8, class_name: []const u8, namespace: ?usize, binding: bool };
 
 pub fn enterConstructorNamespace(s: *Scanner, name: []const u8, ambient: bool) !void {
     const parent = s.constructor_namespace;
     const prefix = if (parent) |index| s.constructor_namespaces.items[index].path else "";
     const path = if (prefix.len > 0) try std.fmt.allocPrint(s.allocator, "{s}.{s}", .{ prefix, name }) else name;
     const index = s.constructor_namespaces.items.len;
-    try s.constructor_namespaces.append(.{ .parent = parent, .path = path, .bindings = std.StringHashMap(ConstructorBinding).init(s.allocator), .exports = std.StringHashMap(void).init(s.allocator), .ambient = ambient or (if (parent) |outer| s.constructor_namespaces.items[outer].ambient else false) });
+    try s.constructor_namespaces.append(.{ .parent = parent, .path = path, .bindings = std.StringHashMap(ConstructorBinding).init(s.allocator), .exports = std.StringHashMap(void).init(s.allocator), .annotated_values = std.StringHashMap(void).init(s.allocator), .ambient = ambient or (if (parent) |outer| s.constructor_namespaces.items[outer].ambient else false) });
     s.constructor_namespace = index;
 }
 
@@ -48,7 +48,7 @@ pub fn namespaceHeaderIsAmbient(s: *Scanner, start: usize, end: usize) bool {
     return false;
 }
 
-pub fn deferConstructorField(s: *Scanner, initializer: []const u8) ![]const u8 {
+pub fn deferClassInitializer(s: *Scanner, initializer: []const u8, binding: bool) ![]const u8 {
     var marker = try std.fmt.allocPrint(s.allocator, "__dtsx_constructor_field_{d}__", .{s.constructor_fields.items.len});
     if (!s.constructor_marker_names_loaded) {
         for (try s.sourceTokens()) |token| {
@@ -58,7 +58,7 @@ pub fn deferConstructorField(s: *Scanner, initializer: []const u8) ![]const u8 {
         s.constructor_marker_names_loaded = true;
     }
     while (s.occupied_constructor_markers.contains(marker)) marker = try std.fmt.allocPrint(s.allocator, "{s}_", .{marker});
-    try s.constructor_fields.append(.{ .marker = marker, .initializer = initializer, .class_name = s.class_name, .namespace = s.constructor_namespace });
+    try s.constructor_fields.append(.{ .marker = marker, .initializer = initializer, .class_name = s.class_name, .namespace = s.constructor_namespace, .binding = binding });
     return marker;
 }
 
@@ -85,14 +85,44 @@ pub fn resolveConstructorFields(s: *Scanner) !void {
             }
         }
     }
+    var annotated_bindings = std.StringHashMap(void).init(s.allocator);
+    defer annotated_bindings.deinit();
+    for (s.declarations.items) |declaration| {
+        if (declaration.kind == .variable_decl and declaration.preserve_type_annotation) try annotated_bindings.put(declaration.name, {});
+    }
+    candidates = s.non_exported_types.valueIterator();
+    while (candidates.next()) |declaration| {
+        if (declaration.kind == .variable_decl and declaration.preserve_type_annotation) try annotated_bindings.put(declaration.name, {});
+    }
+    var qualified_annotated = std.StringHashMap(void).init(s.allocator);
+    defer qualified_annotated.deinit();
+    for (s.constructor_namespaces.items) |scope| {
+        var values = scope.annotated_values.keyIterator();
+        while (values.next()) |name| {
+            if (scope.exports.contains(name.*)) try qualified_annotated.put(try std.fmt.allocPrint(s.allocator, "{s}.{s}", .{ scope.path, name.* }), {});
+        }
+    }
     var types = std.StringHashMap([]const u8).init(s.allocator);
     defer types.deinit();
     for (s.constructor_fields.items) |field| {
-        try types.put(field.marker, try inference.inferNewExpressionType(s.allocator, field.initializer, .{ .names = &names, .class_name = field.class_name, .namespaces = s.constructor_namespaces.items, .namespace = field.namespace, .qualified_bindings = &qualified_bindings }));
+        try types.put(field.marker, if (field.binding) try annotatedBindingField(s, field, &annotated_bindings, &qualified_bindings, &qualified_annotated) else try inference.inferNewExpressionType(s.allocator, field.initializer, .{ .names = &names, .class_name = field.class_name, .namespaces = s.constructor_namespaces.items, .namespace = field.namespace, .qualified_bindings = &qualified_bindings }));
     }
     for (s.declarations.items) |*declaration| try resolveConstructorField(s, declaration, &types);
     candidates = s.non_exported_types.valueIterator();
     while (candidates.next()) |declaration| try resolveConstructorField(s, declaration, &types);
+}
+
+// Resolve after the full module scan so forward constants retain their authored types.
+fn annotatedBindingField(s: *Scanner, field: PendingConstructorField, annotated: *const std.StringHashMap(void), qualified: *const std.StringHashMap(ConstructorBinding), qualified_annotated: *const std.StringHashMap(void)) ![]const u8 {
+    var namespace = field.namespace;
+    while (namespace) |index| {
+        const scope = &s.constructor_namespaces.items[index];
+        if (scope.bindings.contains(field.initializer)) return if (scope.annotated_values.contains(field.initializer)) try std.fmt.allocPrint(s.allocator, "typeof {s}", .{field.initializer}) else "unknown";
+        const name = try std.fmt.allocPrint(s.allocator, "{s}.{s}", .{ scope.path, field.initializer });
+        if (qualified.contains(name)) return if (qualified_annotated.contains(name)) try std.fmt.allocPrint(s.allocator, "typeof {s}", .{field.initializer}) else "unknown";
+        namespace = scope.parent;
+    }
+    return if (annotated.contains(field.initializer)) try std.fmt.allocPrint(s.allocator, "typeof {s}", .{field.initializer}) else "unknown";
 }
 
 fn resolveConstructorField(s: *Scanner, declaration: *@import("types.zig").Declaration, types: *const std.StringHashMap([]const u8)) !void {

@@ -2603,13 +2603,21 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                     prop_type = t;
                 } else if (ch.startsWith(init_text, "new ")) {
                     // Constructed instance types do not depend on field mutability.
-                    prop_type = try @import("semantic_context.zig").deferConstructorField(s, init_text);
+                    prop_type = try @import("semantic_context.zig").deferClassInitializer(s, init_text, false);
                 } else {
                     const has_const_assertion = ch.endsWith(init_text, " as const");
                     const inferred_value = if (has_const_assertion) std.mem.trim(u8, init_text[0 .. init_text.len - " as const".len], " \t\r\n") else init_text;
                     const is_const_like = has_const_assertion or (is_static and is_readonly);
                     prop_type = if (is_const_like or ch.endsWith(inferred_value, "as const")) inferLiteralType(s.allocator, inferred_value) else inferTypeFromDefault(s, inferred_value);
                     if (is_const_like and std.mem.eql(u8, prop_type, "unknown")) prop_type = inferTypeFromDefault(s, inferred_value);
+                    if (std.mem.eql(u8, prop_type, "unknown") and inferred_value.len > 0 and ch.isIdentStart(inferred_value[0])) {
+                        var identifier = true;
+                        for (inferred_value[1..]) |byte| if (!ch.isIdentChar(byte)) {
+                            identifier = false;
+                            break;
+                        };
+                        if (identifier) prop_type = try @import("semantic_context.zig").deferClassInitializer(s, inferred_value, true);
+                    }
                 }
             } else {
                 prop_type = "unknown";
@@ -3114,6 +3122,13 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8, name: []const u8, 
                     s.pos += 1;
                 }
                 vtype = s.sliceTrimmed(ts, s.pos);
+            }
+            if (vtype.len > 0) {
+                if (s.constructor_namespace) |index| s.constructor_namespaces.items[index].annotated_values.put(vname, {}) catch |err| {
+                    s.pending_error = err;
+                    s.pos = s.len;
+                    return "{}";
+                };
             }
             var init_text: []const u8 = "";
             if (s.pos < s.len and s.source[s.pos] == ch.CH_EQUAL) {

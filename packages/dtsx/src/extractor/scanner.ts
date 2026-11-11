@@ -135,6 +135,17 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   const externalModule = isExternalModuleSource(source)
   const declarations: Declaration[] = []
   const nonExportedTypes = new Map<string, Declaration>()
+  const privateTypeGroups = new Map<string, Declaration[]>()
+  function retainNonExportedType(name: string, declaration: Declaration): void {
+    const typeOnly = declaration.kind === 'interface' || declaration.kind === 'type'
+    if (typeOnly) {
+      const group = privateTypeGroups.get(name)
+      if (group) group.push(declaration)
+      else privateTypeGroups.set(name, [declaration])
+    }
+    const previous = nonExportedTypes.get(name)
+    if (!typeOnly || !previous || previous.kind !== 'variable' && previous.kind !== 'function') nonExportedTypes.set(name, declaration)
+  }
   const nonExportedFunctionGroups = new Map<string, Declaration[]>()
   const functionBodies = new Set<Declaration>()
   let pos = 0
@@ -142,17 +153,17 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   let classHelperCounter = 0
   const classFrames: Array<{ name: string, fields: Map<string, string>, pending: Array<() => void>, isStatic: boolean }> = []
   type ConstructorBinding = 'class' | 'value' | 'namespace'
-  interface ConstructorNamespace { path: string, bindings: Map<string, ConstructorBinding>, exports: Set<string>, ambient: boolean }
+  interface ConstructorNamespace { path: string, bindings: Map<string, ConstructorBinding>, exports: Set<string>, annotatedValues: Set<string>, ambient: boolean }
   const constructorNamespaces: ConstructorNamespace[] = []
   const activeConstructorNamespaces: ConstructorNamespace[] = []
-  const constructorFields: Array<{ marker: string, initializer: string, classes: string[], namespaces: ConstructorNamespace[] }> = []
+  const constructorFields: Array<{ marker: string, initializer: string, classes: string[], namespaces: ConstructorNamespace[], binding: boolean }> = []
   let occupiedConstructorMarkers: Set<string> | undefined
 
-  function deferConstructorField(initializer: string): string {
+  function deferClassInitializer(initializer: string, binding = false): string {
     let marker = `__dtsx_constructor_field_${constructorFields.length}__`
     occupiedConstructorMarkers ??= new Set(sourceSyntaxTokens(source).filter(token => token.kind === 'word').map(token => source.slice(token.start, token.end)).filter(name => name.startsWith('__dtsx_constructor_field_')))
     while (occupiedConstructorMarkers.has(marker)) marker += '_'
-    constructorFields.push({ marker, initializer, classes: classFrames.map(frame => frame.name), namespaces: [...activeConstructorNamespaces] })
+    constructorFields.push({ marker, initializer, classes: classFrames.map(frame => frame.name), namespaces: [...activeConstructorNamespaces], binding })
     return marker
   }
 
@@ -196,7 +207,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     const tail = tokenizeDeclarationSyntax(declarationSource.slice(classDeclaration.end ?? declarationSource.length))
     if (tail.some(token => declarationSource.slice((classDeclaration.end ?? 0) + token.start, (classDeclaration.end ?? 0) + token.end) !== ';')) return undefined
     const text = members.map(item => item.text.replace(/^export\s+/, '').replace(/^declare\s+/, '')).join('\n')
-    nonExportedTypes.set(helper, { kind: 'module', name: helper, text: `declare namespace ${helper} {\n${text}\n}`, moduleForm: 'namespace', isExported: false, start: pos, end: pos })
+    retainNonExportedType(helper, { kind: 'module', name: helper, text: `declare namespace ${helper} {\n${text}\n}`, moduleForm: 'namespace', isExported: false, start: pos, end: pos })
     return `typeof ${helper}.${name}`
   }
 
@@ -210,7 +221,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     const group = nonExportedFunctionGroups.get(declaration.name)
     if (group) group.push(declaration)
     else nonExportedFunctionGroups.set(declaration.name, [declaration])
-    nonExportedTypes.set(declaration.name, declaration)
+    retainNonExportedType(declaration.name, declaration)
   }
 
   // Skip BOM (byte order mark)
@@ -2208,7 +2219,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           let name: string
           do { name = `__dtsx_return_${classHelperCounter++}` } while (source.includes(name))
           return name
-        }, declaration => nonExportedTypes.set(declaration.name, { ...declaration, start: pos, end: pos }), generics)
+        }, declaration => retainNonExportedType(declaration.name, { ...declaration, start: pos, end: pos }), generics)
         returnType = scope.finish(inferFunctionBodyReturnType(body, isAsync, rawParams, scopedClassExpression, scope.resolve))
       }
     }
@@ -3132,7 +3143,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           else if (initText.startsWith('new ')) {
             // Constructed instances keep their type arguments regardless of
             // field mutability or the literal-narrowing modifiers below.
-            type = deferConstructorField(initText)
+            type = deferClassInitializer(initText)
           }
           else {
             // `as const` always narrows to the literal type (like tsc), no
@@ -3141,6 +3152,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
             const isConstAssertion = initText.endsWith('as const')
             const isConstLike = isStatic && isReadonly
             type = (isConstAssertion || isConstLike) ? inferLiteralType(initText) : inferTypeFromDefault(initText)
+            if (type === 'unknown' && isEntityNameText(initText) && !initText.includes('.')) type = deferClassInitializer(initText, true)
           }
         }
         else {
@@ -3296,7 +3308,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       return '{}'
     pos++ // skip {
     const parent = activeConstructorNamespaces.at(-1)?.path
-    const scope = { path: parent ? `${parent}.${name}` : name, bindings: new Map<string, ConstructorBinding>(), exports: new Set<string>(), ambient: ambient || activeConstructorNamespaces.at(-1)?.ambient === true }
+    const scope = { path: parent ? `${parent}.${name}` : name, bindings: new Map<string, ConstructorBinding>(), exports: new Set<string>(), annotatedValues: new Set<string>(), ambient: ambient || activeConstructorNamespaces.at(-1)?.ambient === true }
     constructorNamespaces.push(scope)
     activeConstructorNamespaces.push(scope)
 
@@ -3393,6 +3405,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           vtype = sliceTrimmed(ts, pos)
         }
 
+        if (vtype) scope.annotatedValues.add(vname)
         let initText = ''
         if (pos < len && source.charCodeAt(pos) === CH_EQUAL) {
           pos++
@@ -4036,12 +4049,12 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     else if (ch0 === 105 /* i */ && matchWord('interface')) {
       // Non-exported interface
       const decl = extractInterface(stmtStart, false)
-      nonExportedTypes.set(decl.name, decl)
+      retainNonExportedType(decl.name, decl)
     }
     else if (ch0 === 116 /* t */ && matchWord('type')) {
       // Non-exported type alias
       const decl = extractTypeAlias(stmtStart, false)
-      nonExportedTypes.set(decl.name, decl)
+      retainNonExportedType(decl.name, decl)
       declarations.push(decl)
     }
     else if (ch0 === 102 /* f */ && matchWord('function')) {
@@ -4073,7 +4086,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         skipWhitespaceAndComments()
         if (matchWord('class')) {
           const decl = extractClass(stmtStart, false, false)
-          nonExportedTypes.set(decl.name, decl)
+          retainNonExportedType(decl.name, decl)
           declarations.push(decl)
         }
         else {
@@ -4088,7 +4101,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     else if (ch0 === 99 /* c */) {
       if (matchWord('class')) {
         const decl = extractClass(stmtStart, false, false)
-        nonExportedTypes.set(decl.name, decl)
+        retainNonExportedType(decl.name, decl)
         declarations.push(decl)
       }
       else if (matchWord('const')) {
@@ -4100,7 +4113,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           pos = savedPos + 5
           skipWhitespaceAndComments()
           const decl = extractEnum(stmtStart, false, true)
-          nonExportedTypes.set(decl.name, decl)
+          retainNonExportedType(decl.name, decl)
           declarations.push(decl)
         }
         else {
@@ -4109,7 +4122,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           pos = savedPos
           const decls = extractVariable(stmtStart, 'const', false)
           for (let _di = 0; _di < decls.length; _di++) {
-            nonExportedTypes.set(decls[_di].name, decls[_di])
+            retainNonExportedType(decls[_di].name, decls[_di])
           }
         }
       }
@@ -4121,7 +4134,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     else if (ch0 === 101 /* e */ && matchWord('enum')) {
       // Non-exported enum
       const decl = extractEnum(stmtStart, false, false)
-      nonExportedTypes.set(decl.name, decl)
+      retainNonExportedType(decl.name, decl)
       declarations.push(decl)
     }
     else if ((ch0 === 108 /* l */ && matchWord('let')) || (ch0 === 118 /* v */ && matchWord('var'))) {
@@ -4132,7 +4145,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       const kw = matchWord('let') ? 'let' : 'var'
       const decls = extractVariable(stmtStart, kw, false)
       for (let _di = 0; _di < decls.length; _di++) {
-        nonExportedTypes.set(decls[_di].name, decls[_di])
+        retainNonExportedType(decls[_di].name, decls[_di])
       }
     }
     else if (ch0 === 109 /* m */ && matchWord('module') && isModuleLikeDeclaration(6)) {
@@ -4185,15 +4198,33 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   if (constructorFields.length) {
     const candidates = new Set([...declarations, ...nonExportedTypes.values()])
     const nominal = new Set([...candidates].filter(declaration => declaration.kind === 'class').map(declaration => declaration.name))
+    const annotatedBindings = new Set([...candidates].filter(item => item.kind === 'variable' && !!item.typeAnnotation).map(item => item.name))
+    const qualifiedAnnotatedBindings = new Set<string>()
     const qualifiedBindings = new Map<string, ConstructorBinding>()
     for (const scope of constructorNamespaces) {
       for (const [name, binding] of scope.bindings) {
         const qualified = scope.path ? `${scope.path}.${name}` : name
         if (scope.exports.has(name) && (binding !== 'namespace' || !qualifiedBindings.has(qualified))) qualifiedBindings.set(qualified, binding)
+        if (scope.exports.has(name) && scope.annotatedValues.has(name)) qualifiedAnnotatedBindings.add(qualified)
       }
     }
     const types = new Map<string, string>()
     for (const field of constructorFields) {
+      if (field.binding) {
+        let annotated = annotatedBindings.has(field.initializer)
+        for (let index = field.namespaces.length - 1; index >= 0; index--) {
+          const scope = field.namespaces[index]
+          const qualified = scope.path ? `${scope.path}.${field.initializer}` : field.initializer
+          if (scope.bindings.has(field.initializer) || qualifiedBindings.has(qualified)) {
+            annotated = scope.bindings.has(field.initializer)
+              ? scope.annotatedValues.has(field.initializer)
+              : qualifiedAnnotatedBindings.has(qualified)
+            break
+          }
+        }
+        types.set(field.marker, annotated ? `typeof ${field.initializer}` : 'unknown')
+        continue
+      }
       types.set(field.marker, inferNewExpressionType(field.initializer, (name) => {
         if (field.classes.includes(name)) return true
         for (let index = field.namespaces.length - 1; index >= 0; index--) {
@@ -4245,7 +4276,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
 
   if (retainAmbientMembers) {
     const present = new Set(declarations)
-    for (const declaration of [...nonExportedTypes.values(), ...[...nonExportedFunctionGroups.values()].flat()]) {
+    for (const declaration of [...nonExportedTypes.values(), ...[...nonExportedFunctionGroups.values()].flat(), ...[...privateTypeGroups.values()].flat()]) {
       if (!present.has(declaration)) { declarations.push(declaration); present.add(declaration) }
     }
     return declarations.sort((left, right) => (left.start ?? 0) - (right.start ?? 0))
@@ -4253,7 +4284,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
 
   // Resolve referenced non-exported types from the surviving public signatures.
   if (nonExportedTypes.size > 0) {
-    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups, externalModule)
+    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups, privateTypeGroups, externalModule)
   }
 
   return declarations
@@ -4349,7 +4380,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         const decls = extractVariable(stmtStart, 'const', isExported)
         for (let _di = 0; _di < decls.length; _di++) {
           if (isExported || !externalModule) declarations.push(decls[_di])
-          else nonExportedTypes.set(decls[_di].name, decls[_di])
+          else retainNonExportedType(decls[_di].name, decls[_di])
         }
       }
     }
@@ -4358,7 +4389,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       const decls = extractVariable(stmtStart, kind, isExported)
       for (let _di = 0; _di < decls.length; _di++) {
         if (isExported || !externalModule) declarations.push(decls[_di])
-        else nonExportedTypes.set(decls[_di].name, decls[_di])
+        else retainNonExportedType(decls[_di].name, decls[_di])
       }
     }
     else if (matchWord('module')) {
@@ -4512,7 +4543,7 @@ function addInitializerReferences(text: string, references: Set<string>): void {
 }
 
 /** Resolve non-exported types that are referenced by exported declarations */
-function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>, externalModule: boolean): void {
+function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>, privateTypeGroups: ReadonlyMap<string, readonly Declaration[]>, externalModule: boolean): void {
   // A class can merge with a separately scanned interface or namespace. Keep
   // its candidate independently of the latest declaration for that name.
   const privateClasses = new Map<string, Declaration>()
@@ -4523,6 +4554,10 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
         privateClasses.set(declaration.name, declaration)
         if (!nonExportedTypes.has(declaration.name)) nonExportedTypes.set(declaration.name, declaration)
       }
+      else if (!declaration.isExported && (declaration.kind === 'type' || declaration.kind === 'interface') && ['variable', 'function'].includes(nonExportedTypes.get(declaration.name)?.kind ?? '')) {
+        // Colliding private type bindings are closure candidates, independently
+        // of their value binding. A type root must not reserve the value name.
+      }
       else declarations[kept++] = declaration
     }
     declarations.length = kept
@@ -4531,17 +4566,28 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
   // Iteratively resolve referenced non-exported types (transitive closure)
   const resolved = new Set<string>()
   const declNames = new Set<string>()
-  for (const d of declarations) declNames.add(d.name)
+  const valueDeclNames = new Set<string>()
+  for (const d of declarations) {
+    declNames.add(d.name)
+    if (d.kind !== 'type' && d.kind !== 'interface') valueDeclNames.add(d.name)
+  }
 
   // Only non-exported names are ever looked up, so record just those words
   // instead of every identifier occurrence. Value references are queried
   // only for private functions/variables, and each collected reference is a
   // word of the declaration text, so texts naming none of them are skipped.
   const candidates = new CandidateNames(nonExportedTypes)
+  const collidingTypes = new Map<string, Declaration>()
+  for (const [name, group] of privateTypeGroups) {
+    const value = nonExportedTypes.get(name)
+    if (value?.kind === 'variable' || value?.kind === 'function') collidingTypes.set(name, group[0])
+  }
+  const typeReferences = new Set<string>()
+  const resolvedTypes = new Set<string>()
   const wordSet = new Set<string>()
   const valueReferences = new Set<string>()
   const addReferences = (declaration: Declaration): void => {
-    if (candidates.scan(declaration.text, wordSet)) collectDeclarationValueReferences(declaration, valueReferences)
+    if (candidates.scan(declaration.text, wordSet)) collectDeclarationValueReferences(declaration, valueReferences, collidingTypes.size ? { candidates: collidingTypes, references: typeReferences } : undefined)
   }
   const initializerReferences = new Set<string>()
   for (let i = 0; i < declarations.length; i++) {
@@ -4567,16 +4613,25 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
           }
           declNames.add(name)
         }
-        else if (!declNames.has(name)) {
+        else if (!(decl.kind === 'function' || decl.kind === 'variable' ? valueDeclNames : declNames).has(name)) {
           const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
           if (group) {
             for (const member of group) toInsert.push(member)
           }
           else toInsert.push(decl)
           declNames.add(name)
+          if (decl.kind === 'function' || decl.kind === 'variable') valueDeclNames.add(name)
         }
         resolved.add(name)
       }
+    }
+
+    for (const [name, group] of privateTypeGroups) {
+      if (!collidingTypes.has(name) || resolvedTypes.has(name) || !typeReferences.has(name)) continue
+      for (const declaration of group) {
+        if (!emitted.has(declaration)) { toInsert.push(declaration); emitted.add(declaration) }
+      }
+      resolvedTypes.add(name)
     }
 
     if (toInsert.length === 0)
