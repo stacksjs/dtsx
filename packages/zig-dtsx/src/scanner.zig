@@ -58,6 +58,12 @@ pub const Scanner = struct {
     binding_name_counter: usize = 0,
     inference_sources: []const module_syntax.InferenceSource = &.{},
     class_fields: ?*std.StringHashMap([]const u8) = null,
+    class_name: []const u8 = "",
+    constructor_fields: std.array_list.Managed(@import("semantic_context.zig").PendingConstructorField),
+    constructor_namespaces: std.array_list.Managed(@import("semantic_context.zig").ConstructorNamespace),
+    constructor_namespace: ?usize = null,
+    occupied_constructor_markers: std.StringHashMapUnmanaged(void) = .empty,
+    constructor_marker_names_loaded: bool = false,
     /// Comments before the class member being read, for its `@defaultValue` doc.
     member_leading_comments: ?[]const []const u8 = null,
     class_receiver_static: bool = false,
@@ -84,6 +90,8 @@ pub const Scanner = struct {
             .non_exported_types_inited = false,
             .func_body_indices_inited = false,
             .keep_comments = keep_comments,
+            .constructor_fields = std.array_list.Managed(@import("semantic_context.zig").PendingConstructorField).init(allocator),
+            .constructor_namespaces = std.array_list.Managed(@import("semantic_context.zig").ConstructorNamespace).init(allocator),
             .isolated_declarations = isolated_declarations,
         };
     }
@@ -93,6 +101,13 @@ pub const Scanner = struct {
         if (self.initializer_type_reader) |*reader| reader.deinit();
         if (self.source_tokens) |tokens| self.allocator.free(tokens);
         self.declarations.deinit();
+        self.constructor_fields.deinit();
+        for (self.constructor_namespaces.items) |*scope| {
+            scope.bindings.deinit();
+            scope.exports.deinit();
+        }
+        self.constructor_namespaces.deinit();
+        self.occupied_constructor_markers.deinit(self.allocator);
         if (self.non_exported_types_inited) self.non_exported_types.deinit();
         if (self.func_body_indices_inited) self.func_body_indices.deinit();
         var groups = self.non_exported_function_groups.valueIterator();
@@ -989,6 +1004,7 @@ pub const Scanner = struct {
         // Main scan loop — delegate to scan_loop module
         try @import("scan_loop.zig").scanMainLoop(self);
         if (self.pending_error) |err| return err;
+        try @import("semantic_context.zig").resolveConstructorFields(self);
 
         // Discard overload implementations before computing the emitted dependency graph.
         if (self.func_body_indices_inited and self.func_body_indices.count() > 0) {
@@ -1008,7 +1024,7 @@ pub const Scanner = struct {
 
         // Resolve referenced non-exported types from the surviving public signatures.
         if (self.non_exported_types_inited and self.non_exported_types.count() > 0) {
-            try resolveReferencedTypes(&self.declarations, &self.non_exported_types, &self.non_exported_function_groups);
+            try resolveReferencedTypes(&self.declarations, &self.non_exported_types, &self.non_exported_function_groups, self.external_module);
         }
 
         return .{
@@ -1042,7 +1058,27 @@ pub fn isWordInText(name: []const u8, text: []const u8) bool {
 }
 
 /// Resolve non-exported types that are referenced by exported declarations
-fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration), non_exported_function_groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration))) !void {
+fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), non_exported_types: *std.StringHashMap(Declaration), non_exported_function_groups: *const std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)), external_module: bool) !void {
+    // Preserve the class candidate when a merged interface or namespace owns
+    // the same name. Private classes participate in closure rather than roots.
+    var private_classes = std.StringHashMap(Declaration).init(declarations.allocator);
+    defer private_classes.deinit();
+    if (external_module) {
+        var kept: usize = 0;
+        for (declarations.items) |declaration| {
+            if (declaration.kind == .class_decl and !declaration.is_exported) {
+                try private_classes.put(declaration.name, declaration);
+                if (!non_exported_types.contains(declaration.name)) try non_exported_types.put(declaration.name, declaration);
+            } else {
+                declarations.items[kept] = declaration;
+                kept += 1;
+            }
+        }
+        declarations.shrinkRetainingCapacity(kept);
+    }
+    var emitted = std.AutoHashMap(usize, void).init(declarations.allocator);
+    defer emitted.deinit();
+    for (declarations.items) |declaration| try emitted.put(declaration.start, {});
     var resolved = std.StringHashMap(void).init(declarations.allocator);
     defer resolved.deinit();
     var decl_names = std.StringHashMap(void).init(declarations.allocator);
@@ -1092,7 +1128,13 @@ fn resolveReferencedTypes(declarations: *std.array_list.Managed(Declaration), no
             const value_only = entry.value_ptr.kind == .function_decl or entry.value_ptr.kind == .variable_decl;
             const referenced = if (value_only) value_references.contains(name) else word_set.contains(name);
             if (referenced or (entry.value_ptr.kind != .function_decl and initializer_references.contains(name))) {
-                if (!decl_names.contains(name)) {
+                if (private_classes.get(name)) |merged_class| {
+                    for ([_]Declaration{ merged_class, entry.value_ptr.* }) |member| {
+                        const present = try emitted.getOrPut(member.start);
+                        if (!present.found_existing) try to_insert.append(member);
+                    }
+                    try decl_names.put(name, {});
+                } else if (!decl_names.contains(name)) {
                     const group = if (entry.value_ptr.kind == .function_decl) non_exported_function_groups.get(name) else null;
                     if (group) |members| {
                         try to_insert.appendSlice(members.items);
@@ -1499,7 +1541,7 @@ fn checkPrivateValueClosureAllocations(allocator: Allocator) !void {
     for (private) |entry| try candidates.put(entry.name, entry);
     var groups: std.StringHashMapUnmanaged(std.array_list.Managed(Declaration)) = .empty;
     defer groups.deinit(owned);
-    try resolveReferencedTypes(&declarations, &candidates, &groups);
+    try resolveReferencedTypes(&declarations, &candidates, &groups, false);
     try std.testing.expectEqual(@as(usize, 7), declarations.items.len);
     for (declarations.items) |entry| {
         try std.testing.expect(!std.mem.eql(u8, entry.name, "type"));

@@ -1993,7 +1993,7 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
     }
 
     s.skipWhitespaceAndComments();
-    const class_body = buildClassBodyDts(s);
+    const class_body = buildClassBodyDts(s, name);
 
     // Build DTS text — direct alloc + memcpy.
     const export_prefix: []const u8 = if (is_default) "export default " else if (is_exported) "export " else "";
@@ -2055,7 +2055,10 @@ pub fn extractClass(s: *Scanner, decl_start: usize, is_exported: bool, is_abstra
 }
 
 /// Build class body DTS (members only, no implementations)
-fn buildClassBodyDts(s: *Scanner) []const u8 {
+fn buildClassBodyDts(s: *Scanner, name: []const u8) []const u8 {
+    const previous_name = s.class_name;
+    s.class_name = name;
+    defer s.class_name = previous_name;
     return buildClassBodyDtsChecked(s) catch |err| {
         s.pending_error = err;
         s.pos = s.len;
@@ -2564,6 +2567,9 @@ fn handleMethodOrPropertyAfterName(s: *Scanner, member_name: []const u8, mod_pre
                 const as_type = extractAssertion(init_text);
                 if (as_type) |t| {
                     prop_type = t;
+                } else if (ch.startsWith(init_text, "new ")) {
+                    // Constructed instance types do not depend on field mutability.
+                    prop_type = try @import("semantic_context.zig").deferConstructorField(s, init_text);
                 } else {
                     const has_const_assertion = ch.endsWith(init_text, " as const");
                     const inferred_value = if (has_const_assertion) std.mem.trim(u8, init_text[0 .. init_text.len - " as const".len], " \t\r\n") else init_text;
@@ -2856,7 +2862,7 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
 
     s.skipWhitespaceAndComments();
     const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE)
-        buildNamespaceBodyDts(s, "  ")
+        buildNamespaceBodyDts(s, "  ", name, @import("semantic_context.zig").namespaceHeaderIsAmbient(s, decl_start, s.pos))
     else
         "{}";
 
@@ -2901,8 +2907,15 @@ pub fn extractModule(s: *Scanner, decl_start: usize, is_exported: bool, keyword:
 }
 
 /// Build DTS text for namespace/module body by processing inner declarations
-pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
+pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8, name: []const u8, ambient: bool) []const u8 {
     if (s.pos >= s.len or s.source[s.pos] != ch.CH_LBRACE) return "{}";
+    const previous_namespace = s.constructor_namespace;
+    @import("semantic_context.zig").enterConstructorNamespace(s, name, ambient) catch |err| {
+        s.pending_error = err;
+        s.pos = s.len;
+        return "{}";
+    };
+    defer s.constructor_namespace = previous_namespace;
     s.pos += 1; // skip {
 
     var lines = std.array_list.Managed([]const u8).init(s.allocator);
@@ -2920,6 +2933,7 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             continue;
         }
 
+        const member_start = s.pos;
         // First-byte gate for "export"/"declare" — avoids running matchWord on
         // every byte that can't possibly start either keyword.
         var has_export = false;
@@ -3034,6 +3048,11 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             }
 
             const vname = s.readIdent();
+            @import("semantic_context.zig").registerNamespaceConstructorBinding(s, vname, .value, has_export) catch |err| {
+                s.pending_error = err;
+                s.pos = s.len;
+                return "{}";
+            };
             if (vname.len == 0) {
                 s.skipToStatementEndInBlock();
                 continue;
@@ -3267,9 +3286,14 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
             s.pos += ns_kw.len;
             s.skipWhitespaceAndComments();
             const ns_name = s.readIdent();
+            @import("semantic_context.zig").registerNamespaceConstructorBinding(s, ns_name, .namespace, has_export) catch |err| {
+                s.pending_error = err;
+                s.pos = s.len;
+                return "{}";
+            };
             s.skipWhitespaceAndComments();
             // Use same indent level for nested namespace body (matches TS behavior)
-            const ns_body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, indent) else "{}";
+            const ns_body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, indent, ns_name, @import("semantic_context.zig").namespaceHeaderIsAmbient(s, member_start, s.pos)) else "{}";
             // Direct alloc — fixed shape "<indent><prefix><ns_kw> <name> <body>".
             const ns_total = indent.len + prefix.len + ns_kw.len + 1 + ns_name.len + 1 + ns_body.len;
             const ns_buf = s.allocator.alloc(u8, ns_total) catch continue;
@@ -3323,7 +3347,12 @@ pub fn buildNamespaceBodyDts(s: *Scanner, indent: []const u8) []const u8 {
                     }
                 }
                 s.skipWhitespaceAndComments();
-                const cbody = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildClassBodyDts(s) else "{}";
+                @import("semantic_context.zig").registerNamespaceConstructorBinding(s, cname, .nominal_class, has_export) catch |err| {
+                    s.pending_error = err;
+                    s.pos = s.len;
+                    return "{}";
+                };
+                const cbody = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildClassBodyDts(s, cname) else "{}";
                 // Direct alloc — "<indent><prefix>[abstract ]class <name><gen> <body>".
                 const abs_kw: []const u8 = if (is_abs) "abstract " else "";
                 const cl_kw = "class ";
@@ -3702,7 +3731,7 @@ pub fn handleDeclare(s: *Scanner, stmt_start: usize, is_exported: bool) void {
     } else if (c0 == 'g' and s.matchWord("global")) {
         s.pos += 6;
         s.skipWhitespaceAndComments();
-        const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, "  ") else "{}";
+        const body = if (s.pos < s.len and s.source[s.pos] == ch.CH_LBRACE) buildNamespaceBodyDts(s, "  ", "", true) else "{}";
         // Direct alloc — fixed prefix + body slice.
         const prefix = "declare global ";
         const text_buf = blk: {

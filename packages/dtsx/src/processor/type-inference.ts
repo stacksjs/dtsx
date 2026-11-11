@@ -1368,85 +1368,53 @@ function inferTemplateLiteralType(value: string, isConst: boolean): string {
 /**
  * Infer type from new expression
  */
-function inferNewExpressionType(value: string): string {
-  // Extract class name after 'new ' — must start with uppercase A-Z
-  // Supports dotted names like Intl.NumberFormat
-  let i = 4 // skip 'new '
-  while (i < value.length && value.charCodeAt(i) <= 32) i++ // skip whitespace
-  const nameStart = i
-  const firstChar = value.charCodeAt(i)
-  if (firstChar < 65 || firstChar > 90) return 'unknown' // must start with A-Z
-  while (i < value.length && (isWordChar(value.charCodeAt(i)) || value.charCodeAt(i) === 46 /* . */)) i++
-  if (i === nameStart) return 'unknown'
-  const className = value.slice(nameStart, i)
-
-  {
-    const afterClass = value.slice(i)
-
-    // Check for generic type parameters
-    let afterGenerics = afterClass
-    if (afterClass.startsWith('<')) {
-      // Extract the generic params by finding the matching '>'
-      let depth = 0
-      let end = -1
-      for (let j = 0; j < afterClass.length; j++) {
-        if (afterClass[j] === '<') depth++
-        else if (afterClass[j] === '>') { depth--; if (depth === 0) { end = j; break } }
-      }
-      if (end !== -1) {
-        const generics = afterClass.slice(0, end + 1)
-        afterGenerics = afterClass.slice(end + 1)
-        // Check for method chain after constructor (e.g., new Foo<T>(...).method())
-        // Find closing paren of constructor, then check for '.'
-        const parenStart = afterGenerics.indexOf('(')
-        if (parenStart !== -1) {
-          let pDepth = 0
-          let pEnd = -1
-          for (let j = parenStart; j < afterGenerics.length; j++) {
-            if (afterGenerics[j] === '(') pDepth++
-            else if (afterGenerics[j] === ')') { pDepth--; if (pDepth === 0) { pEnd = j; break } }
-          }
-          if (pEnd !== -1) {
-            const rest = afterGenerics.slice(pEnd + 1).trimStart()
-            if (rest.startsWith('.')) return 'unknown' // method chain — can't infer
-          }
-        }
-        return `${className}${generics}`
-      }
-    }
-
-    // Check for method chain after constructor (e.g., new Foo(...).method())
-    const parenStart = afterGenerics.indexOf('(')
-    if (parenStart !== -1) {
-      let pDepth = 0
-      let pEnd = -1
-      for (let j = parenStart; j < afterGenerics.length; j++) {
-        if (afterGenerics[j] === '(') pDepth++
-        else if (afterGenerics[j] === ')') { pDepth--; if (pDepth === 0) { pEnd = j; break } }
-      }
-      if (pEnd !== -1) {
-        const rest = afterGenerics.slice(pEnd + 1).trimStart()
-        if (rest.startsWith('.')) return 'unknown' // method chain — can't infer
-      }
-    }
-
-    // Fallback: use default generic params for known built-in types
-    switch (className) {
-      case 'Date': return 'Date'
-      case 'Map': return 'Map<any, any>'
-      case 'Set': return 'Set<any>'
-      case 'WeakMap': return 'WeakMap<any, any>'
-      case 'WeakSet': return 'WeakSet<any>'
-      case 'RegExp': return 'RegExp'
-      case 'Error': return 'Error'
-      case 'Array': return 'any[]'
-      case 'Object': return 'object'
-      case 'Function': return 'Function'
-      case 'Promise': return 'Promise<any>'
-      default: return className
-    }
+export function inferNewExpressionType(value: string, nominal?: (name: string) => boolean): string {
+  const tokens = tokenizeDeclarationSyntax(value)
+  const text = (index: number): string => tokens[index] ? value.slice(tokens[index].start, tokens[index].end) : ''
+  if (text(0) !== 'new' || tokens[1]?.kind !== 'word' || ['class', 'function', 'new', 'super'].includes(text(1))) return 'unknown'
+  let index = 2
+  const names = [text(1)]
+  while (text(index) === '.' && tokens[index + 1]?.kind === 'word') {
+    names.push(text(index + 1))
+    index += 2
   }
-  return 'unknown'
+  const constructor = names.join('.')
+  if (!nominal && (constructor.charCodeAt(0) < 65 || constructor.charCodeAt(0) > 90)) return 'unknown'
+  let argumentsText = ''
+  if (text(index) === '<') {
+    const opening = tokens[index].start
+    const span = createInitializerTypeReader(value)(opening, 0)
+    if (!span || !span.completeOperand || span.parameters) return 'unknown'
+    argumentsText = value.slice(opening, span.end)
+    while (index < tokens.length && tokens[index].start < span.end) index++
+  }
+  if (index < tokens.length) {
+    if (text(index) !== '(') return 'unknown'
+    let depth = 0
+    let closed = false
+    for (; index < tokens.length; index++) {
+      if (text(index) === '(') depth++
+      else if (text(index) === ')' && --depth === 0) {
+        closed = index === tokens.length - 1
+        break
+      }
+    }
+    if (!closed) return 'unknown'
+  }
+  // Class bindings have an instance name, including inaccessible constructors
+  // and defaulted generics. Value-only bindings need an instance projection.
+  if (nominal) return nominal(constructor) ? constructor + argumentsText : `InstanceType<typeof ${constructor}${argumentsText}>`
+  if (argumentsText) return constructor + argumentsText
+  switch (constructor) {
+    case 'Map': return 'Map<any, any>'
+    case 'Set': return 'Set<any>'
+    case 'WeakMap': return 'WeakMap<any, any>'
+    case 'WeakSet': return 'WeakSet<any>'
+    case 'Array': return 'any[]'
+    case 'Object': return 'object'
+    case 'Promise': return 'Promise<any>'
+    default: return constructor
+  }
 }
 
 /**

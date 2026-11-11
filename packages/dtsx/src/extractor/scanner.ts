@@ -14,7 +14,7 @@ import { createInitializerTypeReader } from '../initializer-type-spans'
 import { canStartJsx, createJsxTagReader, isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, sourceSyntaxTokens, tokenizeDeclarationSyntax } from '../module-references'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
-import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
+import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, inferNewExpressionType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationValueAliases } from '../value-inference'
 
@@ -140,7 +140,21 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   let pos = 0
   let readInitializerType: ReturnType<typeof createInitializerTypeReader> | undefined
   let classHelperCounter = 0
-  const classFrames: Array<{ fields: Map<string, string>, pending: Array<() => void>, isStatic: boolean }> = []
+  const classFrames: Array<{ name: string, fields: Map<string, string>, pending: Array<() => void>, isStatic: boolean }> = []
+  type ConstructorBinding = 'class' | 'value' | 'namespace'
+  interface ConstructorNamespace { path: string, bindings: Map<string, ConstructorBinding>, exports: Set<string>, ambient: boolean }
+  const constructorNamespaces: ConstructorNamespace[] = []
+  const activeConstructorNamespaces: ConstructorNamespace[] = []
+  const constructorFields: Array<{ marker: string, initializer: string, classes: string[], namespaces: ConstructorNamespace[] }> = []
+  let occupiedConstructorMarkers: Set<string> | undefined
+
+  function deferConstructorField(initializer: string): string {
+    let marker = `__dtsx_constructor_field_${constructorFields.length}__`
+    occupiedConstructorMarkers ??= new Set(sourceSyntaxTokens(source).filter(token => token.kind === 'word').map(token => source.slice(token.start, token.end)).filter(name => name.startsWith('__dtsx_constructor_field_')))
+    while (occupiedConstructorMarkers.has(marker)) marker += '_'
+    constructorFields.push({ marker, initializer, classes: classFrames.map(frame => frame.name), namespaces: [...activeConstructorNamespaces] })
+    return marker
+  }
 
   function knownExpressionType(value: string): string | undefined {
     const field = /^this\.([\w$]+)$/.exec(value)
@@ -2589,7 +2603,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     skipWhitespaceAndComments()
 
     // Extract class body and build DTS members
-    const classBody = buildClassBodyDts()
+    const classBody = buildClassBodyDts(name)
 
     // Build DTS text. `export default class` keeps the `default`
     // qualifier and drops `declare` (the standard form for an
@@ -2620,12 +2634,12 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   /** Comments before the class member being read, for its `@defaultValue` doc. */
   let memberLeadingComments: string[] | undefined
 
-  function buildClassBodyDts(): string {
+  function buildClassBodyDts(name: string): string {
     if (pos >= len || source.charCodeAt(pos) !== CH_LBRACE)
       return '{}'
 
     pos++ // skip {
-    const frame = { fields: new Map<string, string>(), pending: [] as Array<() => void>, isStatic: false }
+    const frame = { name, fields: new Map<string, string>(), pending: [] as Array<() => void>, isStatic: false }
     classFrames.push(frame)
     const members: string[] = []
     const privateMembers = new Set<string>()
@@ -3086,6 +3100,11 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           if (asType) {
             type = asType
           }
+          else if (initText.startsWith('new ')) {
+            // Constructed instances keep their type arguments regardless of
+            // field mutability or the literal-narrowing modifiers below.
+            type = deferConstructorField(initText)
+          }
           else {
             // `as const` always narrows to the literal type (like tsc), no
             // matter the modifiers; otherwise only static-readonly
@@ -3243,10 +3262,14 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
    * Build DTS text for namespace/module body by processing inner declarations.
    * Strips function bodies, processes const types, keeps interfaces/types as-is.
    */
-  function buildNamespaceBodyDts(indent: string = '  '): string {
+  function buildNamespaceBodyDts(indent: string = '  ', name = '', ambient = false): string {
     if (pos >= len || source.charCodeAt(pos) !== CH_LBRACE)
       return '{}'
     pos++ // skip {
+    const parent = activeConstructorNamespaces.at(-1)?.path
+    const scope = { path: parent ? `${parent}.${name}` : name, bindings: new Map<string, ConstructorBinding>(), exports: new Set<string>(), ambient: ambient || activeConstructorNamespaces.at(-1)?.ambient === true }
+    constructorNamespaces.push(scope)
+    activeConstructorNamespaces.push(scope)
 
     const lines: string[] = []
 
@@ -3266,7 +3289,9 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       }
 
       // Check for declare keyword
+      let hasDeclare = false
       if (matchWord('declare')) {
+        hasDeclare = true
         pos += 7
         skipWhitespaceAndComments()
       }
@@ -3307,6 +3332,8 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         pos += kw.length
         skipWhitespaceAndComments()
         const vname = readIdent()
+        scope.bindings.set(vname, 'value')
+        if (hasExport || scope.ambient) scope.exports.add(vname)
         if (!vname) { skipToStatementEnd(true); continue }
         skipWhitespaceAndComments()
 
@@ -3475,7 +3502,9 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         }
         const heritage = sliceTrimmed(hStart, pos)
         const hText = heritage ? ` ${heritage}` : ''
-        const body = buildClassBodyDts()
+        scope.bindings.set(cname, 'class')
+        if (hasExport || scope.ambient) scope.exports.add(cname)
+        const body = buildClassBodyDts(cname)
         lines.push(`${indent}${prefix}class ${cname}${generics}${hText} ${body}`)
       }
       else if (matchWord('enum')) {
@@ -3491,8 +3520,10 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         pos += kw.length
         skipWhitespaceAndComments()
         const nname = readIdent()
+        if (!scope.bindings.has(nname)) scope.bindings.set(nname, 'namespace')
+        if (hasExport || scope.ambient) scope.exports.add(nname)
         skipWhitespaceAndComments()
-        const body = buildNamespaceBodyDts(indent)
+        const body = buildNamespaceBodyDts(indent, nname, hasDeclare)
         lines.push(`${indent}${prefix}${kw} ${nname} ${body}`)
       }
       else if (matchWord('abstract')) {
@@ -3524,7 +3555,9 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           }
           const heritage = sliceTrimmed(hStart, pos)
           const hText = heritage ? ` ${heritage}` : ''
-          const body = buildClassBodyDts()
+          scope.bindings.set(cname, 'class')
+          if (hasExport || scope.ambient) scope.exports.add(cname)
+          const body = buildClassBodyDts(cname)
           lines.push(`${indent}${prefix}abstract class ${cname}${generics}${hText} ${body}`)
         }
         else {
@@ -3553,6 +3586,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       }
     }
 
+    activeConstructorNamespaces.pop()
     if (lines.length === 0)
       return '{}'
     return `{\n${lines.join('\n')}\n}`
@@ -3597,7 +3631,10 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     skipWhitespaceAndComments()
 
     // Body - process inner declarations for DTS
-    const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
+    const header = tokenizeDeclarationSyntax(source.slice(declStart, pos))
+    const keywordIndex = header.findIndex(token => token.kind === 'word' && ['namespace', 'module'].includes(source.slice(declStart + token.start, declStart + token.end)))
+    const ambient = header.slice(0, keywordIndex).some(token => token.kind === 'word' && source.slice(declStart + token.start, declStart + token.end) === 'declare')
+    const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts('  ', name, ambient) : '{}'
 
     // Build DTS text
     const text = `${isExported ? 'export ' : ''}declare ${keyword} ${name} ${body}`
@@ -4114,6 +4151,58 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     }
   }
 
+  // Constructor bindings can follow their fields in source order. Resolve
+  // these inference slots after scanning, before aliases and private closure.
+  if (constructorFields.length) {
+    const candidates = new Set([...declarations, ...nonExportedTypes.values()])
+    const nominal = new Set([...candidates].filter(declaration => declaration.kind === 'class').map(declaration => declaration.name))
+    const qualifiedBindings = new Map<string, ConstructorBinding>()
+    for (const scope of constructorNamespaces) {
+      for (const [name, binding] of scope.bindings) {
+        const qualified = scope.path ? `${scope.path}.${name}` : name
+        if (scope.exports.has(name) && (binding !== 'namespace' || !qualifiedBindings.has(qualified))) qualifiedBindings.set(qualified, binding)
+      }
+    }
+    const types = new Map<string, string>()
+    for (const field of constructorFields) {
+      types.set(field.marker, inferNewExpressionType(field.initializer, (name) => {
+        if (field.classes.includes(name)) return true
+        for (let index = field.namespaces.length - 1; index >= 0; index--) {
+          const scope = field.namespaces[index]
+          const qualified = scope.path ? `${scope.path}.${name}` : name
+          const root = name.split('.')[0]
+          const binding = scope.bindings.get(root)
+          if (binding) {
+            if (name === root && binding !== 'namespace') return binding === 'class'
+            return qualifiedBindings.get(qualified) === 'class'
+          }
+          const qualifiedRoot = scope.path ? `${scope.path}.${root}` : root
+          if (qualifiedBindings.has(qualifiedRoot)) return qualifiedBindings.get(qualified) === 'class'
+        }
+        return qualifiedBindings.has(name) ? qualifiedBindings.get(name) === 'class' : nominal.has(name)
+      }))
+    }
+    const resolve = (text: string): string => {
+      if (!text.includes('__dtsx_constructor_field_')) return text
+      let result = ''
+      let cursor = 0
+      for (const token of tokenizeDeclarationSyntax(text)) {
+        if (token.kind !== 'word') continue
+        const type = types.get(text.slice(token.start, token.end))
+        if (!type) continue
+        result += text.slice(cursor, token.start) + type
+        cursor = token.end
+      }
+      return result + text.slice(cursor)
+    }
+    for (const declaration of candidates) {
+      declaration.text = resolve(declaration.text)
+      for (const key of ['typeAnnotation', 'inferredType', 'returnType'] as const) {
+        if (declaration[key]) declaration[key] = resolve(declaration[key]!)
+      }
+    }
+  }
+
   // Discard overload implementations before computing the emitted dependency graph.
   if (functionBodies.size > 0) {
     removeOverloadImplementations(declarations)
@@ -4135,7 +4224,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
 
   // Resolve referenced non-exported types from the surviving public signatures.
   if (nonExportedTypes.size > 0) {
-    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups)
+    resolveReferencedTypes(declarations, nonExportedTypes, nonExportedFunctionGroups, externalModule)
   }
 
   return declarations
@@ -4255,7 +4344,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       // declare global { ... }
       pos += 6
       skipWhitespaceAndComments()
-      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts() : '{}'
+      const body = pos < len && source.charCodeAt(pos) === CH_LBRACE ? buildNamespaceBodyDts('  ', '', true) : '{}'
       const text = `declare global ${body}`
       const comments = extractLeadingComments(stmtStart)
       declarations.push({
@@ -4394,7 +4483,22 @@ function addInitializerReferences(text: string, references: Set<string>): void {
 }
 
 /** Resolve non-exported types that are referenced by exported declarations */
-function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>): void {
+function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: Map<string, Declaration>, nonExportedFunctionGroups: ReadonlyMap<string, readonly Declaration[]>, externalModule: boolean): void {
+  // A class can merge with a separately scanned interface or namespace. Keep
+  // its candidate independently of the latest declaration for that name.
+  const privateClasses = new Map<string, Declaration>()
+  if (externalModule) {
+    let kept = 0
+    for (const declaration of declarations) {
+      if (declaration.kind === 'class' && !declaration.isExported) {
+        privateClasses.set(declaration.name, declaration)
+        if (!nonExportedTypes.has(declaration.name)) nonExportedTypes.set(declaration.name, declaration)
+      }
+      else declarations[kept++] = declaration
+    }
+    declarations.length = kept
+  }
+  const emitted = new Set(declarations)
   // Iteratively resolve referenced non-exported types (transitive closure)
   const resolved = new Set<string>()
   const declNames = new Set<string>()
@@ -4427,7 +4531,14 @@ function resolveReferencedTypes(declarations: Declaration[], nonExportedTypes: M
         continue
       const references = decl.kind === 'function' || decl.kind === 'variable' ? valueReferences : wordSet
       if (references.has(name) || (decl.kind !== 'function' && initializerReferences.has(name))) {
-        if (!declNames.has(name)) {
+        const mergedClass = privateClasses.get(name)
+        if (mergedClass) {
+          for (const member of [mergedClass, decl]) {
+            if (!emitted.has(member)) { toInsert.push(member); emitted.add(member) }
+          }
+          declNames.add(name)
+        }
+        else if (!declNames.has(name)) {
           const group = decl.kind === 'function' ? nonExportedFunctionGroups.get(name) : undefined
           if (group) {
             for (const member of group) toInsert.push(member)

@@ -12,6 +12,7 @@ export type DeclarationProducer = 'core' | 'bun-plugin' | 'native' | 'typescript
 
 export interface DeclarationPackageCase {
   filename?: 'index.ts' | 'index.tsx'
+  isolatedDeclarations?: boolean
   source: string
   positive: string
   negatives: Array<{ code: number, content: string }>
@@ -48,13 +49,14 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
 
     await checkConsumers(library, './src/index.js')
     if (filename.endsWith('.tsx')) await writeFile(join(library, 'tsconfig.json'), JSON.stringify({ compilerOptions: { jsx: 'react', jsxFactory: 'createElement' } }))
-    const details = { library, producer, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
-    const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src', filename)], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename] })] : [] }), details)
+    const emissionOptions = fixture.isolatedDeclarations === undefined ? {} : { isolatedDeclarations: fixture.isolatedDeclarations }
+    const details = { library, producer, ...emissionOptions, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
+    const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src', filename)], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename], ...emissionOptions })] : [] }), details)
     expect(built.success, JSON.stringify(built.logs)).toBe(true)
-    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename], ...(producer === 'typescript' ? { engine: 'typescript' as const } : {}) }), details)
+    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: [filename], ...emissionOptions, ...(producer === 'typescript' ? { engine: 'typescript' as const } : {}) }), details)
     else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), traceSync('Native declaration generation', () => fixture.filename
-      ? processSourceWithContext(fixture.source, { version: 1, moduleSpecifierMode: 'preserve', sourceFile: join(library, 'src', filename), outputFile: join(library, 'dist/index.d.ts'), sourceHash: details.sourceHash, rewrites: [] }, true)
-      : processSource(fixture.source, true), details))
+      ? processSourceWithContext(fixture.source, { version: 1, moduleSpecifierMode: 'preserve', sourceFile: join(library, 'src', filename), outputFile: join(library, 'dist/index.d.ts'), sourceHash: details.sourceHash, rewrites: [] }, true, fixture.isolatedDeclarations)
+      : processSource(fixture.source, true, fixture.isolatedDeclarations), details))
 
     const declaration = await readFile(join(library, 'dist/index.d.ts'), 'utf8')
     fixture.inspect?.(declaration)

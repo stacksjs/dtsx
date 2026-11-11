@@ -7,6 +7,116 @@ const ch = @import("char_utils.zig");
 
 pub const PendingReturn = struct { marker: []const u8, body: []const u8, parameters: []const u8, generics: []const u8, is_async: bool, is_static: bool };
 
+pub const ConstructorBinding = enum { nominal_class, value, namespace };
+pub const ConstructorNamespace = struct { parent: ?usize, path: []const u8, bindings: std.StringHashMap(ConstructorBinding), exports: std.StringHashMap(void), ambient: bool };
+pub const PendingConstructorField = struct { marker: []const u8, initializer: []const u8, class_name: []const u8, namespace: ?usize };
+
+pub fn enterConstructorNamespace(s: *Scanner, name: []const u8, ambient: bool) !void {
+    const parent = s.constructor_namespace;
+    const prefix = if (parent) |index| s.constructor_namespaces.items[index].path else "";
+    const path = if (prefix.len > 0) try std.fmt.allocPrint(s.allocator, "{s}.{s}", .{ prefix, name }) else name;
+    const index = s.constructor_namespaces.items.len;
+    try s.constructor_namespaces.append(.{ .parent = parent, .path = path, .bindings = std.StringHashMap(ConstructorBinding).init(s.allocator), .exports = std.StringHashMap(void).init(s.allocator), .ambient = ambient or (if (parent) |outer| s.constructor_namespaces.items[outer].ambient else false) });
+    s.constructor_namespace = index;
+}
+
+pub fn registerNamespaceConstructorBinding(s: *Scanner, name: []const u8, binding: ConstructorBinding, exported: bool) !void {
+    if (s.constructor_namespace) |index| {
+        const scope = &s.constructor_namespaces.items[index];
+        const merged = if (binding == .namespace) scope.bindings.get(name) orelse binding else binding;
+        try scope.bindings.put(name, merged);
+        if (exported or scope.ambient) try scope.exports.put(name, {});
+    }
+}
+
+pub fn namespaceHeaderIsAmbient(s: *Scanner, start: usize, end: usize) bool {
+    const tokens = s.sourceTokens() catch |err| {
+        s.pending_error = err;
+        return false;
+    };
+    var low: usize = 0;
+    var high = tokens.len;
+    while (low < high) {
+        const middle = (low + high) / 2;
+        if (tokens[middle].start < start) low = middle + 1 else high = middle;
+    }
+    for (tokens[low..]) |token| {
+        if (token.start >= end) break;
+        if (token.kind == .word and std.mem.eql(u8, s.source[token.start..token.end], "declare")) return true;
+        if (token.kind == .word and (std.mem.eql(u8, s.source[token.start..token.end], "namespace") or std.mem.eql(u8, s.source[token.start..token.end], "module"))) return false;
+    }
+    return false;
+}
+
+pub fn deferConstructorField(s: *Scanner, initializer: []const u8) ![]const u8 {
+    var marker = try std.fmt.allocPrint(s.allocator, "__dtsx_constructor_field_{d}__", .{s.constructor_fields.items.len});
+    if (!s.constructor_marker_names_loaded) {
+        for (try s.sourceTokens()) |token| {
+            const name = s.source[token.start..token.end];
+            if (token.kind == .word and std.mem.startsWith(u8, name, "__dtsx_constructor_field_")) try s.occupied_constructor_markers.put(s.allocator, name, {});
+        }
+        s.constructor_marker_names_loaded = true;
+    }
+    while (s.occupied_constructor_markers.contains(marker)) marker = try std.fmt.allocPrint(s.allocator, "{s}_", .{marker});
+    try s.constructor_fields.append(.{ .marker = marker, .initializer = initializer, .class_name = s.class_name, .namespace = s.constructor_namespace });
+    return marker;
+}
+
+/// Resolve source-order-independent constructor inference before private closure.
+pub fn resolveConstructorFields(s: *Scanner) !void {
+    if (s.constructor_fields.items.len == 0) return;
+    var names = std.StringHashMap(void).init(s.allocator);
+    defer names.deinit();
+    for (s.declarations.items) |declaration| {
+        if (declaration.kind == .class_decl) try names.put(declaration.name, {});
+    }
+    var candidates = s.non_exported_types.valueIterator();
+    while (candidates.next()) |declaration| {
+        if (declaration.kind == .class_decl) try names.put(declaration.name, {});
+    }
+    var qualified_bindings = std.StringHashMap(ConstructorBinding).init(s.allocator);
+    defer qualified_bindings.deinit();
+    for (s.constructor_namespaces.items) |scope| {
+        var bindings = scope.bindings.iterator();
+        while (bindings.next()) |binding| {
+            if (scope.exports.contains(binding.key_ptr.*)) {
+                const qualified = if (scope.path.len > 0) try std.fmt.allocPrint(s.allocator, "{s}.{s}", .{ scope.path, binding.key_ptr.* }) else binding.key_ptr.*;
+                if (binding.value_ptr.* != .namespace or !qualified_bindings.contains(qualified)) try qualified_bindings.put(qualified, binding.value_ptr.*);
+            }
+        }
+    }
+    var types = std.StringHashMap([]const u8).init(s.allocator);
+    defer types.deinit();
+    for (s.constructor_fields.items) |field| {
+        try types.put(field.marker, try inference.inferNewExpressionType(s.allocator, field.initializer, .{ .names = &names, .class_name = field.class_name, .namespaces = s.constructor_namespaces.items, .namespace = field.namespace, .qualified_bindings = &qualified_bindings }));
+    }
+    for (s.declarations.items) |*declaration| try resolveConstructorField(s, declaration, &types);
+    candidates = s.non_exported_types.valueIterator();
+    while (candidates.next()) |declaration| try resolveConstructorField(s, declaration, &types);
+}
+
+fn resolveConstructorField(s: *Scanner, declaration: *@import("types.zig").Declaration, types: *const std.StringHashMap([]const u8)) !void {
+    inline for (.{ "text", "type_annotation", "inferred_type" }) |key| {
+        const value = @field(declaration, key);
+        if (std.mem.indexOf(u8, value, "__dtsx_constructor_field_") != null) {
+            const tokens = try syntax.tokenizeDeclarationSyntax(s.allocator, value);
+            defer s.allocator.free(tokens);
+            var result = std.array_list.Managed(u8).init(s.allocator);
+            defer result.deinit();
+            var cursor: usize = 0;
+            for (tokens) |token| {
+                if (token.kind != .word) continue;
+                const type_text = types.get(value[token.start..token.end]) orelse continue;
+                try result.appendSlice(value[cursor..token.start]);
+                try result.appendSlice(type_text);
+                cursor = token.end;
+            }
+            try result.appendSlice(value[cursor..]);
+            @field(declaration, key) = try result.toOwnedSlice();
+        }
+    }
+}
+
 pub fn directCall(alloc: std.mem.Allocator, value: []const u8) !?[]const u8 {
     const tokens = try syntax.tokenizeDeclarationSyntax(alloc, value);
     if (tokens.len < 3 or tokens[0].kind != .word or !std.mem.eql(u8, value[tokens[1].start..tokens[1].end], "(")) return null;

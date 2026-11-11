@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate declarations produced before structural initializer type spans.
+// Invalidate declarations produced before constructor inference for class fields.
 // Cached declarations must also satisfy the current source-selection policy.
-const CACHE_VERSION = 25
+const CACHE_VERSION = 26
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

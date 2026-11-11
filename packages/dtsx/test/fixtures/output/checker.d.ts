@@ -1,4 +1,4 @@
-import { __String, and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, ModuleSpecifierResolutionHost, Node, NodeBuilderFlags, not, or, PropertyAssignment, ReverseMappedSymbol, Signature, some, SourceFile, Symbol, SymbolFlags, SymbolId, SymbolTracker, TrackedSymbol, Type, TypeChecker, TypeCheckerHost, TypeId, TypeMapper, TypeParameter } from './_namespaces/ts.js';
+import { __String, and, Decorator, DiagnosticWithLocation, ExportAssignment, ExportSpecifier, Identifier, ModuleDeclaration, Node, not, or, PropertyAssignment, Signature, some, Symbol, SymbolId, Type, TypeChecker, TypeCheckerHost } from './_namespaces/ts.js';
 /** @internal */
 export declare function getNodeId(node: Node): number;
 /** @internal */
@@ -11,55 +11,9 @@ export declare function createTypeChecker(host: TypeCheckerHost): TypeChecker;
 export declare function signatureHasRestParameter(s: Signature): boolean;
 /** @internal */
 export declare function signatureHasLiteralTypes(s: Signature): boolean;
-declare interface NodeBuilderContext {
-  enclosingDeclaration: Node | undefined
-  enclosingFile: SourceFile | undefined
-  flags: NodeBuilderFlags
-  tracker: SymbolTrackerImpl
-  encounteredError: boolean
-  reportedDiagnostic: boolean
-  trackedSymbols: TrackedSymbol[] | undefined
-  visitedTypes: Set<number> | undefined
-  symbolDepth: Map<string, number> | undefined
-  inferTypeParameters: TypeParameter[] | undefined
-  approximateLength: number
-  truncating: boolean
-  mustCreateTypeParameterSymbolList: boolean
-  typeParameterSymbolList: Set<number> | undefined
-  mustCreateTypeParametersNamesLookups: boolean
-  typeParameterNames: Map<TypeId, Identifier> | undefined
-  typeParameterNamesByText: Set<string> | undefined
-  typeParameterNamesByTextNextNameCount: Map<string, number> | undefined
-  usedSymbolNames: Set<string> | undefined
-  remappedSymbolNames: Map<SymbolId, string> | undefined
-  remappedSymbolReferences: Map<SymbolId, Symbol> | undefined
-  reverseMappedStack: ReverseMappedSymbol[] | undefined
-  bundled: boolean
-  mapper: TypeMapper | undefined
-}
 declare type TypeSystemEntity = Node | Symbol | Type | Signature;
 /** @param containingNode Node to check for parse error */
 declare type AddUnusedDiagnostic = (containingNode: Node, type: UnusedKind, diagnostic: DiagnosticWithLocation) => void;
-declare class SymbolTrackerImpl implements SymbolTracker {
-  moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined;
-  context: NodeBuilderContext;
-  readonly inner: SymbolTracker | undefined;
-  readonly canTrackSymbol: boolean;
-  /** @defaultValue false */
-  disableTrackSymbol: boolean;
-  constructor(context: NodeBuilderContext, tracker: SymbolTracker | undefined, moduleResolverHost: ModuleSpecifierResolutionHost & { getCommonSourceDirectory(): string; } | undefined);
-  trackSymbol(symbol: Symbol, enclosingDeclaration: Node | undefined, meaning: SymbolFlags): boolean;
-  reportInaccessibleThisError(): void;
-  reportPrivateInBaseOfClassExpression(propertyName: string): void;
-  reportInaccessibleUniqueSymbolError(): void;
-  reportCyclicStructureError(): void;
-  reportLikelyUnsafeImportRequiredError(specifier: string): void;
-  reportTruncationError(): void;
-  reportNonlocalAugmentation(containingFile: SourceFile, parentSymbol: Symbol, augmentingSymbol: Symbol): void;
-  reportNonSerializableProperty(propertyName: string): void;
-  private onDiagnosticReported;
-  reportInferenceFallback(node: Node): void;
-}
 declare const enum ReferenceHint {
     Unspecified = 0,
     Identifier = 1,

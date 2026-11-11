@@ -2525,7 +2525,7 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
 
     // New expressions
     if (ch.startsWith(trimmed, "new ")) {
-        return inferNewExpressionType(alloc, trimmed);
+        return inferNewExpressionType(alloc, trimmed, null);
     }
 
     // Template literal
@@ -3368,63 +3368,88 @@ fn inferBodySpreadType(alloc: std.mem.Allocator, expression: []const u8, paramet
 }
 
 /// Infer type from new expression
-fn inferNewExpressionType(alloc: std.mem.Allocator, value: []const u8) InferError![]const u8 {
-    // Extract class name after "new "
-    var i: usize = 4; // skip "new "
-    while (i < value.len and ch.isWhitespace(value[i])) i += 1;
-    const name_start = i;
+pub const ConstructorScope = struct { names: *const std.StringHashMap(void), class_name: []const u8, namespaces: []const @import("semantic_context.zig").ConstructorNamespace, namespace: ?usize, qualified_bindings: *const std.StringHashMap(@import("semantic_context.zig").ConstructorBinding) };
 
-    // Constructors may be namespace-qualified or held in lower-case values.
-    if (i >= value.len or !ch.isIdentStart(value[i])) return "unknown";
-    while (i < value.len and (ch.isIdentChar(value[i]) or value[i] == '.')) i += 1;
-    const class_name = value[name_start..i];
+fn nominalConstructor(alloc: std.mem.Allocator, scope: ConstructorScope, name: []const u8) InferError!bool {
+    if (std.mem.eql(u8, scope.class_name, name)) return true;
+    var current = scope.namespace;
+    while (current) |index| {
+        const namespace = scope.namespaces[index];
+        const qualified = if (namespace.path.len > 0) try std.fmt.allocPrint(alloc, "{s}.{s}", .{ namespace.path, name }) else name;
+        const root_end = std.mem.indexOfScalar(u8, name, '.') orelse name.len;
+        if (namespace.bindings.get(name[0..root_end])) |binding| {
+            if (root_end == name.len and binding != .namespace) return binding == .nominal_class;
+            return (scope.qualified_bindings.get(qualified) orelse .value) == .nominal_class;
+        }
+        const qualified_root = if (namespace.path.len > 0) try std.fmt.allocPrint(alloc, "{s}.{s}", .{ namespace.path, name[0..root_end] }) else name[0..root_end];
+        if (scope.qualified_bindings.contains(qualified_root)) return (scope.qualified_bindings.get(qualified) orelse .value) == .nominal_class;
+        current = namespace.parent;
+    }
+    if (scope.qualified_bindings.get(name)) |binding| return binding == .nominal_class;
+    return scope.names.contains(name);
+}
 
-    // Check for explicit generic type parameters
-    if (i < value.len and value[i] == '<') {
-        if (findMatchingBracket(value, i, '<', '>')) |end| {
-            const after_generics = trim(value[end + 1 ..]);
-            if (after_generics.len > 0 and after_generics[0] == '(') {
-                if (findMatchingBracket(after_generics, 0, '(', ')')) |constructor_end| {
-                    if (trim(after_generics[constructor_end + 1 ..]).len > 0) return "unknown";
+pub fn inferNewExpressionType(alloc: std.mem.Allocator, value: []const u8, scope: ?ConstructorScope) InferError![]const u8 {
+    const syntax = @import("module_specifiers.zig");
+    const tokens = try syntax.tokenizeDeclarationSyntax(alloc, value);
+    defer alloc.free(tokens);
+    if (tokens.len < 2 or !std.mem.eql(u8, value[tokens[0].start..tokens[0].end], "new") or tokens[1].kind != .word) return "unknown";
+    const first = value[tokens[1].start..tokens[1].end];
+    for ([_][]const u8{ "class", "function", "new", "super" }) |keyword| {
+        if (std.mem.eql(u8, first, keyword)) return "unknown";
+    }
+    var name = std.array_list.Managed(u8).init(alloc);
+    defer name.deinit();
+    try name.appendSlice(first);
+    var index: usize = 2;
+    while (index + 1 < tokens.len and std.mem.eql(u8, value[tokens[index].start..tokens[index].end], ".") and tokens[index + 1].kind == .word) {
+        try name.append('.');
+        try name.appendSlice(value[tokens[index + 1].start..tokens[index + 1].end]);
+        index += 2;
+    }
+    const constructor = name.items;
+    var arguments: []const u8 = "";
+    if (index < tokens.len and std.mem.eql(u8, value[tokens[index].start..tokens[index].end], "<")) {
+        const opening = tokens[index].start;
+        var reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, value);
+        defer reader.deinit();
+        const span = (try reader.read(opening, 0, null)) orelse return "unknown";
+        if (!span.complete_operand or span.parameters) return "unknown";
+        arguments = value[opening..span.end];
+        while (index < tokens.len and tokens[index].start < span.end) index += 1;
+    }
+    if (index < tokens.len) {
+        if (!std.mem.eql(u8, value[tokens[index].start..tokens[index].end], "(")) return "unknown";
+        var depth: isize = 0;
+        var closed = false;
+        while (index < tokens.len) : (index += 1) {
+            const text = value[tokens[index].start..tokens[index].end];
+            if (std.mem.eql(u8, text, "(")) depth += 1 else if (std.mem.eql(u8, text, ")")) {
+                depth -= 1;
+                if (depth == 0) {
+                    closed = index == tokens.len - 1;
+                    break;
                 }
             }
-            var result = std.array_list.Managed(u8).init(alloc);
-            try result.appendSlice(class_name);
-            try result.appendSlice(value[i .. end + 1]);
-            return result.toOwnedSlice();
         }
+        if (!closed) return "unknown";
     }
-
-    const after_class = trim(value[i..]);
-    if (after_class.len > 0 and after_class[0] == '(') {
-        if (findMatchingBracket(after_class, 0, '(', ')')) |constructor_end| {
-            if (trim(after_class[constructor_end + 1 ..]).len > 0) return "unknown";
-        }
+    // Class bindings preserve private constructors and generic defaults;
+    // value-only bindings require a projection from the constructor value.
+    if (scope) |context| {
+        const nominal = try nominalConstructor(alloc, context, constructor);
+        return if (nominal) std.fmt.allocPrint(alloc, "{s}{s}", .{ constructor, arguments }) else std.fmt.allocPrint(alloc, "InstanceType<typeof {s}{s}>", .{ constructor, arguments });
     }
-
-    // Fallback for known built-in types — first-byte dispatch avoids 11 sequential
-    // std.mem.eql calls. For unknown class names we fall through to returning
-    // the original identifier directly.
-    if (class_name.len == 0) return class_name;
-    if (std.mem.indexOfScalar(u8, class_name, '.') != null) return class_name;
-    if (class_name[0] >= 'a' and class_name[0] <= 'z') return std.fmt.allocPrint(alloc, "InstanceType<typeof {s}>", .{class_name});
-    return switch (class_name[0]) {
-        'A' => if (std.mem.eql(u8, class_name, "Array")) "any[]" else class_name,
-        'D' => if (std.mem.eql(u8, class_name, "Date")) "Date" else class_name,
-        'E' => if (std.mem.eql(u8, class_name, "Error")) "Error" else class_name,
-        'F' => if (std.mem.eql(u8, class_name, "Function")) "Function" else class_name,
-        'M' => if (std.mem.eql(u8, class_name, "Map")) "Map<any, any>" else class_name,
-        'O' => if (std.mem.eql(u8, class_name, "Object")) "object" else class_name,
-        'P' => if (std.mem.eql(u8, class_name, "Promise")) "Promise<any>" else class_name,
-        'R' => if (std.mem.eql(u8, class_name, "RegExp")) "RegExp" else class_name,
-        'S' => if (std.mem.eql(u8, class_name, "Set")) "Set<any>" else class_name,
-        'W' => blk: {
-            if (std.mem.eql(u8, class_name, "WeakMap")) break :blk "WeakMap<any, any>";
-            if (std.mem.eql(u8, class_name, "WeakSet")) break :blk "WeakSet<any>";
-            break :blk class_name;
-        },
-        else => class_name,
-    };
+    if (arguments.len > 0) return std.fmt.allocPrint(alloc, "{s}{s}", .{ constructor, arguments });
+    if (std.mem.eql(u8, constructor, "Map")) return "Map<any, any>";
+    if (std.mem.eql(u8, constructor, "Set")) return "Set<any>";
+    if (std.mem.eql(u8, constructor, "WeakMap")) return "WeakMap<any, any>";
+    if (std.mem.eql(u8, constructor, "WeakSet")) return "WeakSet<any>";
+    if (std.mem.eql(u8, constructor, "Array")) return "any[]";
+    if (std.mem.eql(u8, constructor, "Object")) return "object";
+    if (std.mem.eql(u8, constructor, "Promise")) return "Promise<any>";
+    if (constructor[0] >= 'a' and constructor[0] <= 'z' and std.mem.indexOfScalar(u8, constructor, '.') == null) return std.fmt.allocPrint(alloc, "InstanceType<typeof {s}>", .{constructor});
+    return alloc.dupe(u8, constructor);
 }
 
 fn inferPromiseRaceType(alloc: std.mem.Allocator, value: []const u8, depth: usize, key_constants: ?*const KeyConstants) InferError![]const u8 {
