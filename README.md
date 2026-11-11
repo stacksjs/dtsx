@@ -591,6 +591,19 @@ The SDK gate checks advertised exports, runtime dependency edges, normal/frozen 
 
 Set `DTSX_SDK_PACKAGES_ROOT` to qualify extracted published payloads with the same matrix. That directory must contain `dtsx`, `bun-plugin`, `vite-plugin`, `esbuild-plugin`, `webpack-plugin`, `tsup-plugin` and `tsdown-plugin` package directories. The gate packs those payloads without building them; authored controls and tool versions still come from this checkout. The receipt records the selected package root. Verify registry integrity and native artifacts separately.
 
+The strict declaration-package fixtures also accept published producers. Set `DTSX_DECLARATION_PRODUCERS` to a JSON file naming the same exact version and the actual package directories:
+
+```json
+{
+  "version": "0.11.46",
+  "core": "/tmp/dtsx-host/node_modules/@dtsx/dtsx",
+  "bunPlugin": "/tmp/dtsx-host/node_modules/@dtsx/bun",
+  "native": "/tmp/verified-zig-dtsx/package"
+}
+```
+
+Install the core and plugin normally, including a frozen installation, and verify the native package's registry integrity first. The native directory must contain its released prebuilt library and no local `zig-out` build. Run `bun test --tsconfig-override /tmp/dtsx-host/tsconfig.json ./packages/dtsx/test/class-field-constructor-package.test.ts` with an alias-free host config (`paths: {}`). The helper checks every version and the plugin's actual core-module resolutions before loading the public import targets. Published mode rejects `DTSX_NATIVE_LIBRARY`. It uses the same authored controls, emission modes, archive/install steps and precise consumer diagnostics, and never falls back to source when published inputs fail. `DTSX_DECLARATION_PRODUCER_RECEIPT` records loaded entries, resolved producer imports and hashes; `DTSX_TEST_TRACE` records their use in each phase. Source producers remain the default when no configuration is supplied.
+
 ## Changelog
 
 Please see our [releases](https://github.com/stacksjs/dtsx/releases) page for more information on what has changed recently.
