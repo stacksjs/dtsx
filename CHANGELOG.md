@@ -1,5 +1,20 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.42...v0.11.43)
+
+## 🐛 Bug Fixes
+
+- retain scoped value references in factory return declarations ([1f1a178](https://github.com/stacksjs/dtsx/commit/1f1a178)) _(by Chris Breuer <chris@stacksjs.com>)_ ([#3175](https://github.com/stacksjs/dtsx/issues/3175))
+- print decided types for logical operators on plain primitives ([7178d3f](https://github.com/stacksjs/dtsx/commit/7178d3f)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.43 ([121c6f9](https://github.com/stacksjs/dtsx/commit/121c6f9)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.41...v0.11.42)
 
 ## 🐛 Bug Fixes
