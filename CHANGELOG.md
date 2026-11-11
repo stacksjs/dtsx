@@ -1,5 +1,20 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.46...v0.11.47)
+
+## ✅ Tests
+
+- verify declaration contracts with published producers ([974e04e](https://github.com/stacksjs/dtsx/commit/974e04e)) _(by Chris <chris@stacksjs.com>)_
+- batch strict augmentation controls by fixture phase ([5e0c105](https://github.com/stacksjs/dtsx/commit/5e0c105)) _(by Chris <chris@stacksjs.com>)_ ([#3182](https://github.com/stacksjs/dtsx/issues/3182), [#3181](https://github.com/stacksjs/dtsx/issues/3181))
+
+## 🔧 Chores
+
+- release v0.11.47 ([a4ab888](https://github.com/stacksjs/dtsx/commit/a4ab888)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.45...v0.11.46)
 
 ## 🐛 Bug Fixes
