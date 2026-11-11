@@ -58,6 +58,9 @@ interface CandidateRegistry {
 // Deliberately separate from bun test discovery. Build the actual packages
 // explicitly before this command; the gate never invokes a build or emitter.
 const root = resolve(import.meta.dir, '..')
+// Published package payloads can be qualified with the same consumer matrix.
+// The authored controls and toolchain still come from this source checkout.
+const packagesRoot = resolve(process.env.DTSX_SDK_PACKAGES_ROOT ?? join(root, 'packages'))
 const fixtures = join(import.meta.dir, 'fixtures/public-sdk')
 const evidenceBase = process.env.DTSX_SDK_EVIDENCE ?? tmpdir()
 await mkdir(evidenceBase, { recursive: true })
@@ -562,7 +565,7 @@ try {
   for (const directory of ['dtsx', 'bun-plugin', 'vite-plugin', 'esbuild-plugin', 'webpack-plugin', 'tsup-plugin', 'tsdown-plugin']) {
     await check(`normal pack ${directory}`, async () => {
       const archive = join(evidence, `${directory}.tgz`)
-      const output = await run(`pack-${directory}`, [process.execPath, 'pm', 'pack', '--filename', archive], join(root, 'packages', directory), 60000)
+      const output = await run(`pack-${directory}`, [process.execPath, 'pm', 'pack', '--filename', archive], join(packagesRoot, directory), 60000)
       assert(output.code === 0, output.output)
       const files = await new Bun.Archive(await readFile(archive)).files()
       const manifestFile = files.get('package/package.json')
@@ -611,6 +614,7 @@ finally {
   const failed = results.filter(result => !result.ok)
   await writeFile(join(evidence, 'receipt.json'), JSON.stringify({
     kind: 'prepublication strict installed candidate SDK gate', status: failed.length ? 'FAIL' : 'PASS',
+    packageInput: { root: packagesRoot, kind: packagesRoot === join(root, 'packages') ? 'workspace build' : 'external package payloads' },
     evidence, runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     maintainedCompilerBaseline: '7.0.2', ownerToolVersions, archives, results, commands, graphs, payloads, resolutions, authoredPrivateProofs, installations,
     candidateRegistry: { url: registry?.url, started: Boolean(registry), requests: registryRequests, stopped: registryStopped,
