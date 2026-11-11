@@ -890,8 +890,8 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
     const root = tokens[index + 1]
     if (!root || root.kind !== 'word') continue
     let type = parameterTypes.get(inferred.slice(root.start, root.end))
-    const rootType = type
-    const unresolved = !type
+    let rootType = type
+    let unresolved = !type
     let start = token.start
     let end = root.end
     const queryIndex = index
@@ -903,6 +903,21 @@ function inferBodyExpressionType(expression: string, parameterTypes: ReadonlyMap
       if (!unresolved) type = `(${type})["${inferred.slice(property.start, property.end)}"]`
       end = property.end
       index += 2
+    }
+    // Type arguments belong to the query: `typeof make<T>` is one
+    // instantiation. Replacing only `typeof make` would leave `<T>` behind as
+    // `unknown<T>`, which does not parse. A parameter's type cannot be
+    // instantiated in type position either, so the query is unresolved.
+    const argumentsStart = tokens[index + 1]
+    if (argumentsStart && inferred.slice(argumentsStart.start, argumentsStart.end) === '<') {
+      const argumentsEnd = findMatchingBracket(inferred, argumentsStart.start, '<', '>')
+      if (argumentsEnd !== -1) {
+        end = argumentsEnd + 1
+        while (tokens[index + 1] && tokens[index + 1].start <= argumentsEnd) index++
+        type = undefined
+        rootType = undefined
+        unresolved = true
+      }
     }
     const wrappedInReturnType = queryIndex >= 2
       && inferred.slice(tokens[queryIndex - 2].start, tokens[queryIndex - 2].end) === 'ReturnType'

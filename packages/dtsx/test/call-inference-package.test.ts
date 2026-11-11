@@ -35,6 +35,15 @@ const fixtures: Record<string, Fixture> = {
     positive: 'const a: string = api.value; const b: string = api.default; const c: string = api.read("again"); const model = new api.Counter("ready"); model.value = "again"; const n: string = model.amount + api.Counter.fixed; void [a,b,c,n];',
     negatives: [{ text: 'const bad: number = api.value; void bad;', code: 'TS2322' }, { text: 'api.read(7);', code: 'TS2345' }, { text: 'new api.Counter().value = 7;', code: 'TS2322' }, { text: 'new api.Counter(7);', code: 'TS2345' }],
   },
+
+  // `typeof make<T>` is one query. Replacing only `typeof make` left the type
+  // arguments behind as `ReturnType<unknown<T>>`, which does not parse, and a
+  // declaration that does not parse takes every type in the package with it.
+  'a call with type arguments inside a body collapses with its type arguments': {
+    files: { 'index.ts': 'import { load } from "./load.js"; function make<T>(value: T): { value: T } { return { value } } const api = { get<T>(value: T): T { return value } }; export function direct<T>(value: T) { return make<T>(value) } export function imported<T>(url: string) { return load<T>(url) } export function member<T>(value: T) { return api.get<T>(value) } export function create(base = "") { return function <T = unknown>(url: string) { return load<T>(base + url) } } export function run<T>(fn: <U>(value: U) => U, value: T) { return fn<T>(value) } export function nested<T>(value: T) { return make<Map<string, (input: T) => T[]>>(new Map()) }', 'load.ts': 'export function load<T>(url: string): { url: string, data: T | null } { return { url, data: null } }' },
+    positive: 'const a: unknown = api.direct(1); const b: unknown = api.imported<string>("/a"); const c: unknown = api.member(1); const d: unknown = api.create("/api")<number>("/b"); const e: unknown = api.run(value => value, 1); const f: unknown = api.nested(1); void [a,b,c,d,e,f];',
+    negatives: [{ text: 'const bad: number = api.direct("text"); void bad;', code: 'TS2322' }, { text: 'api.create(7);', code: 'TS2345' }, { text: 'api.imported<string>(7);', code: 'TS2345' }],
+  },
 }
 const compilerOptions = { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, paths: {}, types: [], noEmit: true }
 const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../../zig-dtsx/zig-out/bin/zig-dtsx${process.platform === 'win32' ? '.exe' : ''}`)

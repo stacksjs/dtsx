@@ -2007,8 +2007,8 @@ fn substituteBodyQueries(alloc: std.mem.Allocator, inferred: []const u8, paramet
         if (token.kind != .word or !std.mem.eql(u8, text(inferred, tokens, index), "typeof")) continue;
         if (index + 1 >= tokens.len or tokens[index + 1].kind != .word) continue;
         var query_type: ?[]const u8 = findParameterType(parameters, text(inferred, tokens, index + 1));
-        const root_type = query_type;
-        const unresolved = query_type == null;
+        var root_type = query_type;
+        var unresolved = query_type == null;
         var start: usize = token.start;
         var end: usize = tokens[index + 1].end;
         const query_index = index;
@@ -2021,6 +2021,19 @@ fn substituteBodyQueries(alloc: std.mem.Allocator, inferred: []const u8, paramet
             if (!unresolved) query_type = try std.fmt.allocPrint(alloc, "({s})[\"{s}\"]", .{ query_type.?, text(inferred, tokens, index + 2) });
             end = tokens[index + 2].end;
             index += 2;
+        }
+        // Type arguments belong to the query: `typeof make<T>` is one
+        // instantiation. Replacing only `typeof make` would leave `<T>` behind
+        // as `unknown<T>`, which does not parse. A parameter's type cannot be
+        // instantiated in type position either, so the query is unresolved.
+        if (index + 1 < tokens.len and std.mem.eql(u8, text(inferred, tokens, index + 1), "<")) {
+            if (findMatchingBracket(inferred, tokens[index + 1].start, '<', '>')) |arguments_end| {
+                end = arguments_end + 1;
+                while (index + 1 < tokens.len and tokens[index + 1].start <= arguments_end) index += 1;
+                query_type = null;
+                root_type = null;
+                unresolved = true;
+            }
         }
         const wrapped_in_return_type = query_index >= 2 and
             std.mem.eql(u8, text(inferred, tokens, query_index - 2), "ReturnType") and
