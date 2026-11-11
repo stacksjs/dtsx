@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.49...v0.11.50)
+
+## 🐛 Bug Fixes
+
+- collapse a body call's type arguments with its query ([a0e5403](https://github.com/stacksjs/dtsx/commit/a0e5403)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.50 ([8e42699](https://github.com/stacksjs/dtsx/commit/8e42699)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.48...v0.11.49)
 
 ## 🐛 Bug Fixes
