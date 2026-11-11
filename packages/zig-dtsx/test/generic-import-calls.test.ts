@@ -87,5 +87,6 @@ for (const mode of ['native', 'sdk', 'core'] as const) {
     finally {
       await rm(directory, { recursive: true, force: true })
     }
-  })
+    // Fourteen tsc runs: about 5 s on a CI runner, which is the default limit.
+  }, 60_000)
 }
