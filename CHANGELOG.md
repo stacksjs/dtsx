@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.48...v0.11.49)
+
+## 🐛 Bug Fixes
+
+- preserve typed class constants and private binding spaces ([b7de74a](https://github.com/stacksjs/dtsx/commit/b7de74a)) _(by Chris <chris@stacksjs.com>)_ ([#3184](https://github.com/stacksjs/dtsx/issues/3184), [#3185](https://github.com/stacksjs/dtsx/issues/3185))
+
+## 🔧 Chores
+
+- release v0.11.49 ([803d768](https://github.com/stacksjs/dtsx/commit/803d768)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.47...v0.11.48)
 
 ## 🐛 Bug Fixes
