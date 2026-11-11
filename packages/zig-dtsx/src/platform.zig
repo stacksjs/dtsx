@@ -13,6 +13,63 @@ const c = std.c;
 /// Whether this target talks to libc directly instead of through `std.Io`.
 pub const direct_libc = builtin.os.tag.isDarwin();
 
+/// Zig still installs its normal fault handlers and alternate signal stack.
+/// Only their reporting uses this platform's direct libc path. The default
+/// reporter reaches the whole std.Io vtable even in an otherwise I/O-free CLI.
+pub const Debug = if (direct_libc) CrashReporter else struct {};
+
+pub const CrashReporter = struct {
+    var reporting = std.atomic.Value(bool).init(false);
+
+    pub fn handleSegfault(address: ?usize, name: []const u8, context: ?std.debug.CpuContextPtr) noreturn {
+        if (!reporting.swap(true, .monotonic)) {
+            writeCrash(name);
+            if (address) |value| {
+                writeCrash(" at address ");
+                writeCrashAddress(value);
+            } else writeCrash(" (no address available)");
+            if (context) |registers| {
+                // Preserve the original fault location rather than unwinding
+                // through possibly corrupted memory from a signal handler.
+                writeCrash("\ninstruction=");
+                writeCrashAddress(registers.getPc());
+                writeCrash(" frame=");
+                writeCrashAddress(registers.getFp());
+            }
+            writeCrash("\n");
+        }
+        c.abort();
+    }
+
+    fn writeCrash(data: []const u8) void {
+        var offset: usize = 0;
+        while (offset < data.len) {
+            const written = c.write(2, data[offset..].ptr, data.len - offset);
+            if (written < 0) {
+                if (c.errno(written) == .INTR) continue;
+                return;
+            }
+            if (written == 0) return;
+            offset += @intCast(written);
+        }
+    }
+
+    fn writeCrashAddress(value: usize) void {
+        var buffer: [2 + 2 * @sizeOf(usize)]u8 = undefined;
+        var cursor: usize = buffer.len;
+        var remaining = value;
+        while (true) {
+            cursor -= 1;
+            buffer[cursor] = "0123456789abcdef"[remaining & 15];
+            remaining >>= 4;
+            if (remaining == 0) break;
+        }
+        cursor -= 2;
+        buffer[cursor..][0..2].* = "0x".*;
+        writeCrash(buffer[cursor..]);
+    }
+};
+
 extern "c" fn sysconf(name: c_int) c_long;
 extern "c" fn realpath(noalias path: [*:0]const u8, noalias resolved: ?[*]u8) ?[*:0]u8;
 

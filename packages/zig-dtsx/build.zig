@@ -91,6 +91,21 @@ pub fn build(b: *std.Build) void {
     };
 
     const test_step = b.step("test", "Run unit tests");
+    if (target.result.os.tag.isDarwin()) {
+        const crash_test = b.addExecutable(.{
+            .name = "zig-dtsx-crash-test",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/crash_handler_test.zig"),
+                .target = target,
+                // Exercise the real handler installed by Safe startup even
+                // when the surrounding parser tests use Fast optimization.
+                .optimize = .safe,
+                .link_libc = true,
+            }),
+        });
+        const run_crash_test = b.addRunArtifact(crash_test);
+        test_step.dependOn(&run_crash_test.step);
+    }
     for (test_targets) |test_file| {
         const unit_test = b.addTest(.{
             .root_module = b.createModule(.{

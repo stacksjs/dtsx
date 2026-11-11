@@ -706,6 +706,9 @@ pub const main = if (has_process_init) (if (platform.direct_libc) mainDirect els
 /// and aborts.
 pub const panic = if (platform.direct_libc) std.debug.FullPanic(reportPanic) else std.debug.FullPanic(std.debug.defaultPanic);
 
+/// The documented std.debug hook changes reporting, not fault-handler setup.
+pub const debug = platform.Debug;
+
 extern "c" fn exit(status: c_int) noreturn;
 extern "c" fn abort() noreturn;
 
