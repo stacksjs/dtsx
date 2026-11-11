@@ -101,3 +101,41 @@ describeIf('initializer probes', () => {
     expect(processSource(source, true).trim()).toBe(processWithTypeScript(source, 'value.ts').trim())
   })
 })
+
+// An initializer that is one bracketed literal is an object or an array,
+// decided before any operator probe looks inside it.
+describeIf('bracketed literals', () => {
+  test.each([
+    ['an object holding a tagged template', '{ path: String.raw`C:\\dir`, retries: 1 }'],
+    ['an array holding a tagged template', '[String.raw`x`, 2]'],
+    ['an object holding arrows and commas', '{ parse: (text: string): number => Number(text), pair: [1, 2], both: (a: number, b: number): number => a + b }'],
+    ['an object holding a conditional', `{ mode: process.env.CI ? 'ci' : 'local', level: 1 }`],
+    ['an array of objects', '[{ id: 1, tags: [\'a\'] }, { id: 2, tags: [] }]'],
+    ['an empty object and array', '{ empty: {}, none: [] }'],
+    ['a const assertion on a literal', `{ mode: 'strict', levels: ['a', 'b'] } as const`],
+    ['a spread of another literal', '{ ...{ a: 1 }, b: [...[1, 2], 3] }'],
+  ])('%s', (_name, initializer) => {
+    const source = `export const value = ${initializer}\nexport let mutable = ${initializer}\n`
+    const native = processSource(source, true).trim()
+    expect(native).toBe(processWithTypeScript(source, 'value.ts').trim())
+    expect(native).not.toContain('value: string;')
+  })
+
+  test('a tagged template inside a literal is a string member, not the whole type', () => {
+    const output = processSource('export const paths = { root: String.raw`C:\\dir`, depth: 2 }', true)
+    expect(output).toContain('root: string;')
+    expect(output).toContain('depth: number')
+    expect(processSource('export const raw = String.raw`C:\\dir`', true)).toContain('raw: string;')
+  })
+
+  test('every level of a nested literal is indented once', () => {
+    const nest = (depth: number): string => depth === 0 ? '{ leaf: 1 }' : `{ level${depth}: ${nest(depth - 1)}, list${depth}: [${nest(0)}] }`
+    for (const depth of [1, 3, 6]) {
+      const source = `export const tree = ${nest(depth)}\n`
+      const native = processSource(source, true).trim()
+      expect(native).toBe(processWithTypeScript(source, 'tree.ts').trim())
+      // The innermost property sits one indent deeper per level.
+      expect(native).toContain(`\n${'  '.repeat(depth + 1)}leaf: number`)
+    }
+  })
+})

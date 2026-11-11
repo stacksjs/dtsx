@@ -290,8 +290,10 @@ export function inferNarrowType(value: unknown, isConst: boolean = false, inUnio
     return 'symbol'
   }
 
-  // Tagged template literals (check early)
-  if (trimmed.includes('.raw`') || trimmed.includes('String.raw`')) {
+  // Tagged template literals (check early). A template inside an array or
+  // object literal is one of its members, not the kind of the whole value.
+  const isBracketedLiteral = (trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))
+  if (!isBracketedLiteral && (trimmed.includes('.raw`') || trimmed.includes('String.raw`'))) {
     return 'string'
   }
 

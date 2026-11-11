@@ -2247,7 +2247,22 @@ fn oneOfSyntax(value: []const u8, choices: []const []const u8) bool {
 /// nested literals indent by level. Mirrors the TypeScript emitter's `indentNestedType`.
 pub fn indentNestedType(alloc: std.mem.Allocator, type_text: []const u8) InferError![]const u8 {
     if (std.mem.indexOfScalar(u8, type_text, '\n') == null) return type_text;
-    return std.mem.replaceOwned(u8, alloc, type_text, "\n", "\n  ");
+    var indented = std.array_list.Managed(u8).init(alloc);
+    try indented.ensureTotalCapacity(type_text.len + 2 * std.mem.count(u8, type_text, "\n"));
+    try appendIndentedType(&indented, type_text);
+    return indented.toOwnedSlice();
+}
+
+/// Append `type_text` with every line after the first indented one more
+/// level: what `indentNestedType` returns, written straight into `out`.
+fn appendIndentedType(out: *std.array_list.Managed(u8), type_text: []const u8) InferError!void {
+    var start: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, type_text, start, '\n')) |newline| {
+        try out.appendSlice(type_text[start .. newline + 1]);
+        try out.appendSlice("  ");
+        start = newline + 1;
+    }
+    try out.appendSlice(type_text[start..]);
 }
 
 fn objectMemberType(alloc: std.mem.Allocator, raw_type: []const u8, name: []const u8) InferError!?[]const u8 {
@@ -2344,6 +2359,19 @@ pub fn inferNarrowTypeWithKeyConstants(alloc: std.mem.Allocator, value: []const 
 
     const trimmed = trim(value);
     if (trimmed.len == 0) return "unknown";
+
+    // A value that is one bracketed literal from its first byte to its last
+    // is an object or an array, whatever it contains. Deciding that here keeps
+    // the operator probes below from walking a nested literal once per level
+    // of nesting, and keeps text inside it (a `String.raw` template, an arrow)
+    // from being read as the kind of the whole value.
+    if (trimmed.len >= 2) {
+        const last = trimmed.len - 1;
+        if (trimmed[0] == '{' and trimmed[last] == '}' and findMatchingBracket(trimmed, 0, '{', '}') == last)
+            return inferObjectTypeWithKeyConstants(alloc, trimmed, is_const, depth + 1, key_constants);
+        if (trimmed[0] == '[' and trimmed[last] == ']' and findMatchingBracket(trimmed, 0, '[', ']') == last)
+            return inferArrayTypeWithKeyConstants(alloc, trimmed, is_const, depth + 1, key_constants);
+    }
 
     while (trimmed.len >= 2 and trimmed[0] == '(' and trimmed[trimmed.len - 1] == ')' and findMatchingBracket(trimmed, 0, '(', ')') == trimmed.len - 1) {
         return inferNarrowTypeWithKeyConstants(alloc, trim(trimmed[1 .. trimmed.len - 1]), is_const, in_union, depth + 1, key_constants);
@@ -3179,18 +3207,18 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
                 try parts.appendSlice("get ");
                 try parts.appendSlice(trim(prop.key[4..]));
                 try parts.appendSlice("(): ");
-                try parts.appendSlice(try indentNestedType(alloc, getter_type));
+                try appendIndentedType(&parts, getter_type);
             } else if (ch.startsWith(prop.key, "set ")) {
                 const end = if (ch.startsWith(val_type, "(")) findMatchingBracket(val_type, 0, '(', ')') else null;
                 const setter_params = if (end) |index| val_type[0 .. index + 1] else "(value: unknown)";
                 try parts.appendSlice("set ");
                 try parts.appendSlice(trim(prop.key[4..]));
-                try parts.appendSlice(try indentNestedType(alloc, setter_params));
+                try appendIndentedType(&parts, setter_params);
             } else {
                 if (is_const) try parts.appendSlice("readonly ");
                 try parts.appendSlice(emit_key);
                 try parts.appendSlice(": ");
-                try parts.appendSlice(try indentNestedType(alloc, val_type));
+                try appendIndentedType(&parts, val_type);
             }
         }
 
@@ -3243,7 +3271,7 @@ fn inferObjectTypeContextual(alloc: std.mem.Allocator, value: []const u8, is_con
             if (emitted_types.items.len > 0) try parts.appendSlice(" | ");
             const grouped = ch.contains(property_type, "=>") or ch.contains(property_type, " & ");
             if (grouped) try parts.append('(');
-            try parts.appendSlice(try indentNestedType(alloc, property_type));
+            try appendIndentedType(&parts, property_type);
             if (grouped) try parts.append(')');
             try emitted_types.append(property_type);
         }
