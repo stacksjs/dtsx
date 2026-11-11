@@ -265,6 +265,11 @@ fn writeFile(alloc: std.mem.Allocator, path: []const u8, data: []const u8) !void
         with_newline[data.len] = '\n';
         return replaceFileContents(null, path_z.ptr, with_newline);
     }
+    // As on POSIX, a file that already holds this declaration is left alone.
+    if (readFile(alloc, path)) |existing| {
+        defer alloc.free(existing);
+        if (existing.len == data.len + 1 and existing[data.len] == '\n' and std.mem.eql(u8, existing[0..data.len], data)) return;
+    } else |_| {}
     const fp = (try openFilePath(alloc, path, "wb")) orelse return error.OutputWriteFailure;
     var closed = false;
     defer if (!closed) {

@@ -66,20 +66,24 @@ test.skipIf(!posix)('an output path through a file is reported, not written arou
   await writeFile(join(root, 'blocker'), 'a file, not a directory')
   const result = invoke(['--project', 'src', '--outdir', 'blocker/types'], root)
   expect(result.exitCode).toBe(1)
-  expect(result.stderr).toMatch(/^error: \w+\n$/)
+  // A debug build follows the error line with a trace.
+  expect(result.stderr).toMatch(/^error: \w+\n/)
   expect(await readFile(join(root, 'blocker'), 'utf8')).toBe('a file, not a directory')
 }))
 
-test('failures print one error line and exit with status 1', () => directory(async (root) => {
+test('failures start with one error line and exit with status 1', () => directory(async (root) => {
+  // A debug build follows the error line with a trace; a release build on
+  // Darwin prints the line alone.
+  const firstLine = (text: string): string => text.split('\n')[0]
   const missingProject = invoke(['--project', 'nowhere', '--outdir', 'out'], root)
   expect(missingProject.exitCode).toBe(1)
-  expect(missingProject.stderr).toBe('error: DirNotFound\n')
+  expect(firstLine(missingProject.stderr)).toBe('error: DirNotFound')
   const unknownFlag = invoke(['--no-such-flag'], root)
   expect(unknownFlag.exitCode).toBe(1)
-  expect(unknownFlag.stderr).toBe('error: InvalidArguments\n')
+  expect(firstLine(unknownFlag.stderr)).toBe('error: InvalidArguments')
   const missingFile = invoke(['nowhere.ts'], root)
   expect(missingFile.exitCode).toBe(1)
-  expect(missingFile.stderr).toBe('error: InputReadFailure\n')
+  expect(firstLine(missingFile.stderr)).toBe('error: InputReadFailure')
 }))
 
 test.skipIf(!posix)('discovery follows no directory link and skips dependency and cache folders', () => directory(async (root) => {
@@ -111,13 +115,16 @@ test.skipIf(!posix)('discovery follows no directory link and skips dependency an
 // Every imported function is bound by dyld at launch, called or not, and the
 // standard I/O layer alone imports about a hundred.
 test.skipIf(process.platform !== 'darwin' || !existsSync('/usr/bin/nm'))('the Darwin binaries import only the libc functions they use', () => {
-  const imports = (file: string): string[] => Bun.spawnSync(['/usr/bin/nm', '-u', file]).stdout.toString().split('\n').map(line => line.trim()).filter(Boolean)
-  const cliImports = imports(cli)
-  const libraryImports = imports(library)
-  for (const networking of ['_socket', '_getaddrinfo', '_posix_spawn', '_connect']) {
-    expect(cliImports).not.toContain(networking)
-    expect(libraryImports).not.toContain(networking)
-  }
-  expect(cliImports.length).toBeLessThan(64)
+  const symbols = (flag: string, file: string): string[] => Bun.spawnSync(['/usr/bin/nm', flag, file]).stdout.toString().split('\n').map(line => line.trim()).filter(Boolean)
+  const unrelated = ['_socket', '_getaddrinfo', '_posix_spawn', '_connect']
+  const libraryImports = symbols('-u', library)
+  for (const name of unrelated) expect(libraryImports).not.toContain(name)
   expect(libraryImports.length).toBeLessThan(32)
+
+  // A debug CLI keeps its symbols and the standard library's tracing, which
+  // goes through the I/O layer; only the stripped release build is shipped.
+  if (symbols('-U', cli).length > 1000) return
+  const cliImports = symbols('-u', cli)
+  for (const name of unrelated) expect(cliImports).not.toContain(name)
+  expect(cliImports.length).toBeLessThan(64)
 })
