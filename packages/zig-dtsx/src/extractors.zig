@@ -757,6 +757,13 @@ fn stripParamComments(s: *Scanner, text: []const u8) []const u8 {
                 while (i + 1 < text.len and text[i + 1] != '\n') i += 1;
                 continue;
             }
+            if (lexical.isRegexStart(text, i)) {
+                const end = lexical.skipRegex(text, i);
+                @memcpy(out[n..][0 .. end - i], text[i..end]);
+                n += end - i;
+                i = end - 1;
+                continue;
+            }
         }
         out[n] = c;
         n += 1;
@@ -864,7 +871,9 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
 
     var in_block_comment = false;
     var skip_to_eol = false;
+    var skip_until: usize = 0;
     for (inner, 0..) |c, i| {
+        if (i < skip_until) continue;
         if (skip_next) {
             skip_next = false;
             continue;
@@ -896,6 +905,10 @@ pub fn buildDtsParams(s: *Scanner, raw_params: []const u8) []const u8 {
             }
             if (nc == '/') {
                 skip_to_eol = true;
+                continue;
+            }
+            if (lexical.isRegexStart(inner, i)) {
+                skip_until = lexical.skipRegex(inner, i);
                 continue;
             }
         }
@@ -1034,7 +1047,9 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
 
     var in_block_comment2 = false;
     var skip_to_eol2 = false;
+    var skip_until: usize = 0;
     for (p, 0..) |c, i| {
+        if (i < skip_until) continue;
         if (skip_next2) {
             skip_next2 = false;
             continue;
@@ -1065,6 +1080,10 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
             }
             if (nc == '/') {
                 skip_to_eol2 = true;
+                continue;
+            }
+            if (lexical.isRegexStart(p, i)) {
+                skip_until = lexical.skipRegex(p, i);
                 continue;
             }
         }
@@ -1121,7 +1140,7 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
         if (defaultedBindingParam(s, name, p[equal_idx.? + 1 ..])) |declared| return declared;
     }
 
-    // Clean destructured patterns: strip defaults and rest operators
+    // Clean destructured patterns: strip defaults and preserve rest bindings
     if (name.len > 0 and (name[0] == '{' or name[0] == '[')) {
         name = cleanDestructuredPattern(s.allocator, name);
     }
@@ -1156,18 +1175,17 @@ pub fn buildSingleDtsParam(s: *Scanner, raw: []const u8) []const u8 {
     return result_buf[0..rp];
 }
 
-/// Clean a destructured pattern by stripping default values and rest operators.
-/// E.g., "{ name, age = 0, ...props }" → "{ name, age, props }"
+/// Clean a destructured pattern by stripping default values while preserving rest bindings.
+/// E.g., "{ name, age = 0, ...props }" becomes "{ name, age, ...props }"
 /// Also handles multiline patterns like:
 /// "{\n  name,\n  headers = { ... },\n}" → "{\n  name,\n  headers,\n}"
 fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []const u8 {
-    // Fast path: if there's nothing to clean (no defaults, no rest operators,
-    // no newlines), the pattern is already in DTS-friendly form. The previous
+    // Fast path: without defaults or newlines the binding needs no changes.
+    // Rest bindings are part of the declaration grammar. The previous
     // code always allocated and walked the entire pattern.
     const has_eq = ch.indexOfChar(pattern, '=', 0) != null;
-    const has_dots = ch.indexOf(pattern, "...", 0) != null;
     const has_nl = ch.indexOfChar(pattern, '\n', 0) != null;
-    if (!has_eq and !has_dots and !has_nl) return pattern;
+    if (!has_eq and !has_nl) return pattern;
 
     var result = std.array_list.Managed(u8).init(alloc);
     result.ensureTotalCapacity(pattern.len) catch {};
@@ -1212,9 +1230,12 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
         }
         if (in_str) {
             result.append(c) catch {};
-            if (c == str_c and (i == 0 or pattern[i - 1] != '\\')) {
-                in_str = false;
+            if (c == '\\' and i + 1 < pattern.len) {
+                i += 1;
+                result.append(pattern[i]) catch {};
+                continue;
             }
+            if (c == str_c) in_str = false;
             continue;
         }
 
@@ -1222,14 +1243,8 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
         if (c == '{' or c == '[' or c == '(') depth += 1;
         if (c == '}' or c == ']' or c == ')') depth -= 1;
 
-        // At depth 1 (inside the outermost braces), handle defaults and rest
-        if (depth == 1) {
-            // Skip "..." rest operator before identifiers
-            if (c == '.' and i + 2 < pattern.len and pattern[i + 1] == '.' and pattern[i + 2] == '.') {
-                i += 2; // skip 2 more dots (loop will advance 1 more)
-                continue;
-            }
-
+        // Strip defaults in each nested binding while retaining rest elements.
+        if (depth >= 1) {
             // Skip "= value" default values
             if (c == '=' and i + 1 < pattern.len and pattern[i + 1] != '>' and (i == 0 or pattern[i - 1] != '!')) {
                 // Skip whitespace before '='
@@ -1241,6 +1256,23 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
                 var inner_depth: isize = 0;
                 while (i < pattern.len) {
                     const dc = pattern[i];
+                    // Comments and regexes use the same lexical boundaries as
+                    // the scanner, so their punctuation cannot end a default.
+                    if (!in_str and dc == '/' and i + 1 < pattern.len) {
+                        if (pattern[i + 1] == '/') {
+                            while (i < pattern.len and pattern[i] != '\n') : (i += 1) {}
+                            continue;
+                        }
+                        if (pattern[i + 1] == '*') {
+                            const end = ch.indexOf(pattern, "*/", i + 2);
+                            i = if (end) |offset| offset + 2 else pattern.len;
+                            continue;
+                        }
+                        if (lexical.isRegexStart(pattern, i)) {
+                            i = lexical.skipRegex(pattern, i);
+                            continue;
+                        }
+                    }
                     if (!in_str and (dc == '\'' or dc == '"' or dc == '`')) {
                         in_str = true;
                         str_c = dc;
@@ -1248,9 +1280,11 @@ fn cleanDestructuredPattern(alloc: std.mem.Allocator, pattern: []const u8) []con
                         continue;
                     }
                     if (in_str) {
-                        if (dc == str_c and (i == 0 or pattern[i - 1] != '\\')) {
-                            in_str = false;
+                        if (dc == '\\' and i + 1 < pattern.len) {
+                            i += 2;
+                            continue;
                         }
+                        if (dc == str_c) in_str = false;
                         i += 1;
                         continue;
                     }

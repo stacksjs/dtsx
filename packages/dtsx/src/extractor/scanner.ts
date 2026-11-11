@@ -1462,6 +1462,12 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           i = end === -1 ? text.length : end - 1
           continue
         }
+        if (isRegexStartAt(text, i)) {
+          const end = skipRegexLiteral(text, i)
+          out += text.slice(i, end)
+          i = end - 1
+          continue
+        }
       }
       out += text[i]
     }
@@ -1545,6 +1551,10 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           while (i < inner.length && inner.charCodeAt(i) !== 10 /* \n */) i++
           continue
         }
+        if (isRegexStartAt(inner, i)) {
+          i = skipRegexLiteral(inner, i) - 1
+          continue
+        }
       }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
         inStr = true
@@ -1602,6 +1612,10 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
             if (cdepth > 0) cdepth--
             continue
           }
+          if (cc === CH_SLASH && isRegexStartAt(cleanedParam, ci)) {
+            ci = skipRegexLiteral(cleanedParam, ci) - 1
+            continue
+          }
           if (cc === CH_SLASH && cleanedParam.charCodeAt(ci + 1) === CH_SLASH) {
             if (cdepth === 0) {
               // Trailing comment on the param itself — strip it and stop.
@@ -1629,7 +1643,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     return normalizeDefaultParameterOrder(`(${dtsParams.join(', ')})`)
   }
 
-  /** Clean a destructured parameter name: strip defaults and rest operators */
+  /** Clean a destructured parameter name: strip defaults and preserve rest bindings */
   function cleanDestructuredName(name: string): string {
     if (!name.startsWith('{') && !name.startsWith('['))
       return name
@@ -1690,6 +1704,24 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
         let skipDepth = 0
         while (i < name.length) {
           const sc = name.charCodeAt(i)
+          // Reuse lexical boundaries so punctuation inside comments and regexes
+          // cannot terminate a default or alter its delimiter depth.
+          if (sc === CH_SLASH) {
+            if (name.charCodeAt(i + 1) === CH_SLASH) {
+              const end = name.indexOf('\n', i + 2)
+              i = end === -1 ? name.length : end + 1
+              continue
+            }
+            if (name.charCodeAt(i + 1) === CH_STAR) {
+              const end = name.indexOf('*/', i + 2)
+              i = end === -1 ? name.length : end + 2
+              continue
+            }
+            if (isRegexStartAt(name, i)) {
+              i = skipRegexLiteral(name, i)
+              continue
+            }
+          }
           if (sc === CH_SQUOTE || sc === CH_DQUOTE || sc === CH_BACKTICK) {
             const q = sc; i++
             while (i < name.length) {
@@ -1712,13 +1744,6 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           }
           i++
         }
-        continue
-      }
-
-      // At depth 1, strip `...` rest operator
-      if (depth === 1 && ch === CH_DOT && i + 2 < name.length
-        && name.charCodeAt(i + 1) === CH_DOT && name.charCodeAt(i + 2) === CH_DOT) {
-        i += 3
         continue
       }
 
@@ -1805,6 +1830,10 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           while (i < p.length && p.charCodeAt(i) !== 10) i++
           continue
         }
+        if (isRegexStartAt(p, i)) {
+          i = skipRegexLiteral(p, i) - 1
+          continue
+        }
       }
       if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
         inStr2 = true
@@ -1852,7 +1881,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
       type = 'unknown'
     }
 
-    // Clean destructured parameter names (strip defaults, rest operators)
+    // Clean destructured parameter names (strip defaults, preserve rest bindings)
     name = cleanDestructuredName(name)
     if ((name.startsWith('{') || name.startsWith('[')) && name.includes('\n')) {
       // Collapse to single line only if short enough, otherwise normalize indent

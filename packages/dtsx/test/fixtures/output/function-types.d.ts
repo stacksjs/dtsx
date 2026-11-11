@@ -3,7 +3,7 @@ export declare function withOptionalParams(required: string, optional?: number, 
 // Function with rest parameters
 export declare function withRestParams(first: string, ...rest: number[]): number;
 // Function with destructured parameters
-export declare function withDestructuredParams({ name, age, props }: {
+export declare function withDestructuredParams({ name, age, ...props }: {
   name: string
   age?: number
   [key: string]: any
