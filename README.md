@@ -591,6 +591,8 @@ The SDK gate checks advertised exports, runtime dependency edges, normal/frozen 
 
 Set `DTSX_SDK_PACKAGES_ROOT` to qualify extracted published payloads with the same matrix. That directory must contain `dtsx`, `bun-plugin`, `vite-plugin`, `esbuild-plugin`, `webpack-plugin`, `tsup-plugin` and `tsdown-plugin` package directories. The gate packs those payloads without building them; authored controls and tool versions still come from this checkout. The receipt records the selected package root. Verify registry integrity and native artifacts separately.
 
+Also set `DTSX_SDK_REGISTRY_MODE=public` to install the exact released SDK versions, hosts and transitive dependencies from public npm. This mode requires explicit package payload inputs, rejects registry override environment variables, starts no candidate registry, and compares the normally installed SDK files against those inputs. Install commands pin the registry, and the gate validates each locked provider before recording the public graph. It runs the same consumer controls and frozen-lock checks. The receipt distinguishes this public registry proof from the default prepublication provider checks.
+
 The strict declaration-package fixtures also accept published producers. Set `DTSX_DECLARATION_PRODUCERS` to a JSON file naming the same exact version and the actual package directories:
 
 ```json

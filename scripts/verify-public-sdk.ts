@@ -50,10 +50,8 @@ interface Command {
   stderr: string
 }
 
-interface CandidateRegistry {
-  url: string
-  stop: () => Promise<void>
-}
+type RegistryProvider = { kind: 'public', url: string }
+  | { kind: 'candidate', url: string, stop: () => Promise<void> }
 
 // Deliberately separate from bun test discovery. Build the actual packages
 // explicitly before this command; the gate never invokes a build or emitter.
@@ -61,6 +59,7 @@ const root = resolve(import.meta.dir, '..')
 // Published package payloads can be qualified with the same consumer matrix.
 // The authored controls and toolchain still come from this source checkout.
 const packagesRoot = resolve(process.env.DTSX_SDK_PACKAGES_ROOT ?? join(root, 'packages'))
+const registryMode = process.env.DTSX_SDK_REGISTRY_MODE ?? 'candidate'
 const fixtures = join(import.meta.dir, 'fixtures/public-sdk')
 const evidenceBase = process.env.DTSX_SDK_EVIDENCE ?? tmpdir()
 await mkdir(evidenceBase, { recursive: true })
@@ -75,7 +74,7 @@ const registryRequests: Array<Record<string, unknown>> = []
 const resolutions: Array<Record<string, unknown>> = []
 const authoredPrivateProofs: Array<Record<string, unknown>> = []
 const installations: Array<{ consumer: string, retention: string }> = []
-let registry: CandidateRegistry | undefined
+let registry: RegistryProvider | undefined
 let registryStopped = false
 let sequence = 0
 
@@ -87,8 +86,22 @@ function hash(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+function publicRegistryResolutions(lock: Buffer): Array<{ name: string, locator: string, registry: string }> {
+  const parsed = Bun.JSONC.parse(lock.toString()) as { packages?: Record<string, unknown> }
+  assert(parsed.packages && typeof parsed.packages === 'object', 'The public consumer lock must record its package resolutions')
+  return Object.entries(parsed.packages).map(([name, record]) => {
+    assert(Array.isArray(record) && typeof record[0] === 'string' && typeof record[1] === 'string', `Invalid lock resolution for ${name}`)
+    const locator = record[0]
+    assert(!locator.includes(':') && /^(?:@[^/]+\/)?[^@/]+@\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/.test(locator), `Public registry mode rejects a non-registry locator for ${name}`)
+    const registry = record[1] || 'https://registry.npmjs.org/'
+    const url = new URL(registry)
+    assert(url.origin === 'https://registry.npmjs.org' && !url.username && !url.password, `Public registry mode rejects a non-npm provider for ${name}`)
+    return { name, locator, registry }
+  })
+}
+
 /** Private test provider only. Packed manifests and public metadata stay intact. */
-async function startRegistry(packages: Packed[]): Promise<CandidateRegistry> {
+async function startRegistry(packages: Packed[]): Promise<RegistryProvider> {
   const candidates = await Promise.all(packages.map(async (packed, index) => {
     const bytes = new Uint8Array(await Bun.file(packed.archive).arrayBuffer())
     return { packed, bytes, path: `/-/sdk-candidate/${index}.tgz`,
@@ -173,7 +186,7 @@ if (server.port === undefined) {
   throw new Error('The owned candidate registry must have an ephemeral TCP port')
 }
 origin = `http://127.0.0.1:${server.port}`
-return { url: `${origin}/`, async stop() {
+return { kind: 'candidate', url: `${origin}/`, async stop() {
   for (const controller of aborters) controller.abort()
   await server.stop(true)
 } }
@@ -434,7 +447,7 @@ async function verifyAuthoredPrivateContract(consumer: string, name: string, cor
   qualification: 'Authored no-emit reference only; no source snapshot is installed or imported by SDK probes.' })
 }
 
-async function verifyConsumer(name: string, packages: Packed[], primary: Packed, core: Packed, tools: Record<string, string>, provider: CandidateRegistry, candidates: Packed[]): Promise<void> {
+async function verifyConsumer(name: string, packages: Packed[], primary: Packed, core: Packed, tools: Record<string, string>, provider: RegistryProvider, candidates: Packed[]): Promise<void> {
   const consumer = join(evidence, name)
   await mkdir(consumer)
   const dependencies: Record<string, string> = Object.fromEntries(packages.map(item => [item.manifest.name, item.manifest.version]))
@@ -459,11 +472,13 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
     module: 'NodeNext', moduleResolution: 'NodeNext', target: 'ESNext', strict: true,
     skipLibCheck: false, skipDefaultLibCheck: false, types: ['bun'], paths: {}, noEmit: true,
   }, files: ['probe.ts'] }, null, 2))
-  const installed = await run(`${name}-install`, [process.execPath, 'install'], consumer)
+  const install = [process.execPath, 'install', '--no-env-file', `--registry=${provider.url}`]
+  const installed = await run(`${name}-install`, install, consumer)
   assert(installed.code === 0, installed.output)
   await verifyInstalledCandidates(consumer, packages, candidates, core, `${name}:normal`)
   const lock = await readFile(join(consumer, 'bun.lock'))
-  const frozen = await run(`${name}-frozen`, [process.execPath, 'install', '--frozen-lockfile'], consumer)
+  const publicResolutions = provider.kind === 'public' ? publicRegistryResolutions(lock) : undefined
+  const frozen = await run(`${name}-frozen`, [...install, '--frozen-lockfile'], consumer)
   assert(frozen.code === 0, frozen.output)
   assert(hash(await readFile(join(consumer, 'bun.lock'))) === hash(lock), 'Frozen install changed the consumer lock')
   await verifyInstalledCandidates(consumer, packages, candidates, core, `${name}:frozen`)
@@ -472,10 +487,12 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
     const manifest: Manifest = await Bun.file(join(consumer, 'node_modules', tool, 'package.json')).json()
     resolvedTools[tool] = manifest.version
   }
-  graphs.push({ name, kind: 'prepublication-owned-candidate-registry', registry: provider.url,
+  graphs.push({ name, kind: provider.kind === 'public' ? 'public-released-registry' : 'prepublication-owned-candidate-registry', registry: provider.url,
   directTargets: packages.map(item => ({ name: item.manifest.name, version: item.manifest.version, private: item.manifest.private ?? false })),
-  dependencies, authoredTools: tools, resolvedTools, lockSHA256: hash(lock),
-  qualification: 'Private candidate-provider checks do not qualify the actual public released registry graph.' })
+  dependencies, authoredTools: tools, resolvedTools, lockSHA256: hash(lock), publicResolutions,
+  qualification: provider.kind === 'public'
+    ? 'Exact released versions and their dependencies are installed from public npm; installed SDK payloads must match the supplied archives.'
+    : 'Private candidate-provider checks do not qualify the actual public released registry graph.' })
 
   const baseline = await compile(consumer, "export const baseline: string = 'strict Bun environment'\n", `${name}-baseline`)
   results.push({ name: `${name}: same-environment baseline`, ok: baseline.code === 0, detail: baseline.code === 0 ? undefined : baseline.output })
@@ -552,6 +569,13 @@ assert.equal(new Calculate().value(), 2)
 }
 
 try {
+  assert(registryMode === 'candidate' || registryMode === 'public', 'DTSX_SDK_REGISTRY_MODE must be candidate or public')
+  if (registryMode === 'public') {
+    assert(Boolean(process.env.DTSX_SDK_PACKAGES_ROOT), 'Public registry checks require explicit released package payloads')
+    for (const key of Object.keys(process.env)) {
+      if (/^(bun_config_registry|npm_config_registry)$/i.test(key) && process.env[key]) throw new Error(`Public registry mode rejects registry override ${key}`)
+    }
+  }
   const owner: Manifest = await Bun.file(join(root, 'package.json')).json()
   const tools = { typescript: owner.devDependencies?.typescript, '@types/bun': owner.devDependencies?.['@types/bun'] }
   assert(tools.typescript && tools['@types/bun'], 'Authored TypeScript and Bun type ranges are required')
@@ -590,7 +614,10 @@ try {
     await audit(item)
   })
   assert(packed.length === 7, 'All seven normal candidate archives are required before registry installation')
-  registry = await startRegistry(packed)
+  if (registryMode === 'public') {
+    registry = { kind: 'public', url: 'https://registry.npmjs.org/' }
+  }
+  else registry = await startRegistry(packed)
   for (const item of packed) {
     const passed = await check(`installed SDK ${item.directory}`, () => verifyConsumer(item.directory, [item], item, core, authoredTools, registry!, packed))
     await releasePassedInstallation(item.directory, passed)
@@ -610,18 +637,24 @@ catch (error) {
   results.push({ name: 'gate setup', ok: false, detail: error instanceof Error ? error.stack : String(error) })
 }
 finally {
-  registryStopped = registry ? await check('owned candidate registry disposal', () => registry!.stop()) : true
+  const candidateRegistry = registry?.kind === 'candidate' ? registry : undefined
+  registryStopped = candidateRegistry ? await check('owned candidate registry disposal', () => candidateRegistry.stop()) : true
   const failed = results.filter(result => !result.ok)
   await writeFile(join(evidence, 'receipt.json'), JSON.stringify({
-    kind: 'prepublication strict installed candidate SDK gate', status: failed.length ? 'FAIL' : 'PASS',
+    kind: registryMode === 'public' ? 'strict installed public registry SDK gate' : 'prepublication strict installed candidate SDK gate', status: failed.length ? 'FAIL' : 'PASS',
     packageInput: { root: packagesRoot, kind: packagesRoot === join(root, 'packages') ? 'workspace build' : 'external package payloads' },
     evidence, runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     maintainedCompilerBaseline: '7.0.2', ownerToolVersions, archives, results, commands, graphs, payloads, resolutions, authoredPrivateProofs, installations,
-    candidateRegistry: { url: registry?.url, started: Boolean(registry), requests: registryRequests, stopped: registryStopped,
-    qualification: 'Owned loopback test provider; no actual public registry publication or admission is claimed.' },
-    limits: ['No build or declaration generation was invoked by this gate.',
-    'The loopback candidate registry serves exact normal archives without rewriting their manifests.',
-    'Normal isolated released package/peer graphs and actual native availability require their separate qualification.'],
+    registryProvider: { kind: registry?.kind, url: registry?.url },
+    candidateRegistry: { url: registry?.kind === 'candidate' ? registry.url : undefined, started: registry?.kind === 'candidate', requests: registryRequests, stopped: registryStopped,
+    qualification: registry?.kind === 'candidate'
+      ? 'Owned loopback test provider; no actual public registry publication or admission is claimed.'
+      : 'No owned candidate provider was started.' },
+    limits: ['The gate never rebuilds its input SDKs; runtime consumers may build authored fixture projects.',
+    registryMode === 'public'
+      ? 'Public npm supplies every SDK and transitive package; no candidate registry is started and no SDK archive is installed as a file dependency.'
+      : 'The loopback candidate registry serves exact normal archives without rewriting their manifests.',
+    'Input registry archive integrity and actual native availability require separate qualification.'],
   }, null, 2))
   console.info(`Public SDK gate ${failed.length ? 'FAIL' : 'PASS'}: ${join(evidence, 'receipt.json')}`)
   process.exitCode = failed.length ? 1 : 0
