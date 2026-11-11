@@ -48,7 +48,7 @@ export async function checkDeclarationPackage(producer: DeclarationProducer, fix
     const details = { library, producer, sourceHash: new Bun.CryptoHasher('sha256').update(fixture.source).digest('hex') }
     const built = await traceAsync('Bun runtime build', () => Bun.build({ entrypoints: [join(library, 'src/index.ts')], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'] })] : [] }), details)
     expect(built.success, JSON.stringify(built.logs)).toBe(true)
-    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'], ...(producer === 'typescript' ? { plugins: [{ name: 'identity-declaration-hook', onDeclarations: context => context.declarations }] } : {}) }), details)
+    if (producer === 'core' || producer === 'typescript') await traceAsync('Core declaration generation', () => generate({ cwd: library, root: './src', outdir: './dist', entrypoints: ['index.ts'], ...(producer === 'typescript' ? { engine: 'typescript' as const } : {}) }), details)
     else if (producer === 'native') await writeFile(join(library, 'dist/index.d.ts'), traceSync('Native declaration generation', () => processSource(fixture.source, true), details))
 
     const declaration = await readFile(join(library, 'dist/index.d.ts'), 'utf8')
