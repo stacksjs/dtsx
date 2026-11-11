@@ -1,5 +1,33 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.43...v0.11.44)
+
+## ✨ Features
+
+- choose the declaration engine with an engine option ([792ecc6](https://github.com/stacksjs/dtsx/commit/792ecc6)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🐛 Bug Fixes
+
+- leave unchanged declarations untouched on Windows too ([9e15fbe](https://github.com/stacksjs/dtsx/commit/9e15fbe)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ⚡ Performance Improvements
+
+- decide a bracketed literal once instead of probing it at every level ([7ec0dcf](https://github.com/stacksjs/dtsx/commit/7ec0dcf)) _(by Chris Breuer <chris@stacksjs.com>)_
+- start the native CLI without the standard I/O layer on macOS ([ede58dc](https://github.com/stacksjs/dtsx/commit/ede58dc)) _(by Chris Breuer <chris@stacksjs.com>)_
+- leave declarations that did not change untouched ([267a6b2](https://github.com/stacksjs/dtsx/commit/267a6b2)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## ✅ Tests
+
+- give the generic call contract test room for its tsc runs ([178a87a](https://github.com/stacksjs/dtsx/commit/178a87a)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## 🔧 Chores
+
+- release v0.11.44 ([8fcaa1e](https://github.com/stacksjs/dtsx/commit/8fcaa1e)) _(by Chris Breuer <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris Breuer <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.42...v0.11.43)
 
 ## 🐛 Bug Fixes

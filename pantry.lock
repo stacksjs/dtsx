@@ -28,14 +28,14 @@
     },
     "packages/bun-plugin": {
       "name": "@dtsx/bun",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/dtsx": {
       "name": "@dtsx/dtsx",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "devDependencies": {
         "@stacksjs/clapp": "^0.2.16",
         "bunfig": "^0.15.21",
@@ -44,28 +44,28 @@
     },
     "packages/esbuild-plugin": {
       "name": "@dtsx/esbuild",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/tsdown-plugin": {
       "name": "@dtsx/tsdown",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/tsup-plugin": {
       "name": "@dtsx/tsup",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/vite-plugin": {
       "name": "@dtsx/vite",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       },
@@ -75,14 +75,14 @@
     },
     "packages/webpack-plugin": {
       "name": "@dtsx/webpack",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
       }
     },
     "packages/zig-dtsx": {
       "name": "zig-dtsx",
-      "version": "0.11.43",
+      "version": "0.11.44",
       "devDependencies": {
         "@dtsx/dtsx": "workspace:*"
       }

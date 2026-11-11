@@ -1,7 +1,7 @@
 {
   "name": "@dtsx/esbuild",
   "type": "module",
-  "version": "0.11.43",
+  "version": "0.11.44",
   "description": "An esbuild plugin that auto generates your DTS types extremely fast.",
   "author": "Chris Breuer <chris@ow3.org>",
   "license": "MIT",
