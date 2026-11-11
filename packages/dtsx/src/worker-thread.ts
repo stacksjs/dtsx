@@ -25,6 +25,7 @@ async function processTask(task) {
     const keepComments = task.config?.keepComments;
     const isolatedDeclarations = task.config?.isolatedDeclarations;
     const importOrder = task.config?.importOrder;
+    const engine = task.config?.engine;
 
     if (task.type === 'process-batch') {
       const filePaths = task.filePaths;
@@ -66,7 +67,7 @@ else {
         try {
           const sourceCode = sources ? sources[i] : (file?.sourceCode || '');
           let declarations = null;
-          let content = emitNatively(sourceCode, filePath, keepComments ?? true, importOrder ?? ['bun'], isolatedDeclarations ?? false);
+          let content = emitNatively(sourceCode, filePath, keepComments ?? true, importOrder ?? ['bun'], isolatedDeclarations ?? false, engine);
           if (content === null) {
             declarations = extractDeclarations(sourceCode, filePath, keepComments, isolatedDeclarations);
             ctx.filePath = filePath;

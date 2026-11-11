@@ -3,6 +3,28 @@ import type { LogLevel } from '../src/logger'
 import type { DtsGenerationConfig, DtsGenerationOption } from '../src/types'
 import process from 'node:process'
 
+// `--engine native|typescript` applies to every command, fast paths included,
+// so it is read and removed before anything looks at the arguments.
+let cliEngine: 'native' | 'typescript' | undefined
+for (let index = 2; index < process.argv.length; index++) {
+  const argument = process.argv[index]
+  if (argument !== '--engine' && !argument.startsWith('--engine=')) continue
+  const inline = argument.startsWith('--engine=')
+  const value = inline ? argument.slice('--engine='.length) : process.argv[index + 1]
+  const { parseDeclarationEngine, setDeclarationEngine } = await import('../src/native-engine')
+  try {
+    cliEngine = parseDeclarationEngine(value ?? null, '--engine')
+    if (!cliEngine) throw new Error('--engine needs a value: native or typescript')
+    setDeclarationEngine(cliEngine)
+  }
+  catch (error) {
+    console.error(`Error: ${(error as Error).message}`)
+    process.exit(1)
+  }
+  process.argv.splice(index, inline ? 1 : 2)
+  index--
+}
+
 const _cmd = process.argv[2]
 if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
   if (_cmd === 'stdin') {
@@ -148,6 +170,7 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
                   keepComments: true,
                   importOrder,
                   isolatedDeclarations: isoDecl,
+                  engine: cliEngine,
                 },
               })
             }
@@ -182,6 +205,7 @@ if (_cmd === 'stdin' || _cmd === 'emit' || _cmd === '--project') {
                   keepComments: true,
                   importOrder,
                   isolatedDeclarations: isoDecl,
+                  engine: cliEngine,
                 },
               })
             }
@@ -406,6 +430,7 @@ cli
   .option('--indent-style <style>', 'Indentation style: spaces or tabs', { default: 'spaces' })
   .option('--indent-size <size>', 'Number of spaces for indentation', { default: 2 })
   .option('--prettier', 'Use Prettier for output formatting if available', { default: false })
+  .option('--engine <engine>', 'Declaration engine: native (default) or typescript, the reference implementation')
   .example('dtsx generate')
   .example('dtsx generate --entrypoints src/index.ts,src/utils.ts --outdir dist/types')
   .example('dtsx generate --entrypoints index.ts --entrypoints mime/index.ts --root src')
@@ -452,6 +477,7 @@ cli
         indentStyle: (options.indentStyle as 'spaces' | 'tabs') ?? fileConfig.indentStyle ?? 'spaces',
         indentSize: Number(options.indentSize) || fileConfig.indentSize || 2,
         prettier: options.prettier ?? fileConfig.prettier ?? false,
+        engine: cliEngine ?? fileConfig.engine,
         plugins: fileConfig.plugins, // Plugins only from config file
       }
 
@@ -493,6 +519,7 @@ cli
     type: [String],
   })
   .option('--log-level <level>', 'Log level (debug, info, warn, error, silent)', { default: defaultOptions.logLevel })
+  .option('--engine <engine>', 'Declaration engine: native (default) or typescript, the reference implementation')
   .example('dtsx watch')
   .example('dtsx watch --root src --outdir dist/types')
   .action(async (options: DtsGenerationOption) => {
@@ -505,6 +532,7 @@ cli
         keepComments: options.keepComments ?? defaultOptions.keepComments,
         exclude: options.exclude ? options.exclude.flatMap((p: string) => p.split(',').map(s => s.trim()).filter(Boolean)) : defaultOptions.exclude,
         logLevel: (options.logLevel as LogLevel) ?? defaultOptions.logLevel,
+        engine: cliEngine,
       }
 
       await watch(config)
@@ -522,6 +550,7 @@ cli
     default: 'bun',
     type: [String],
   })
+  .option('--engine <engine>', 'Declaration engine: native (default) or typescript, the reference implementation')
   .example('echo "export const foo: string = \'bar\'" | dtsx stdin')
   .example('cat src/index.ts | dtsx stdin')
   .action(async (options: { keepComments?: boolean, importOrder?: string[] }) => {

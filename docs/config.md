@@ -180,6 +180,7 @@ dtsx generate --module-specifier-mode node
 | `clean` | `boolean` | `true` | Remove stale managed declarations while preserving runtime files |
 | `outputStructure` | `'mirror' \| 'flat'` | `'mirror'` | Output directory structure |
 | `moduleSpecifierMode` | `'preserve' \| 'node'` | `'preserve'` | Keep existing spelling or use explicit runtime extensions from resolved targets |
+| `engine` | `'native' \| 'typescript'` | `'native'` | Engine that emits the declarations (see [Engines](#engines)) |
 
 With `moduleSpecifierMode: 'node'`, `processFile()` maps local authored `.d.ts`,
 `.d.mts` and `.d.cts` targets to `.js`, `.mjs` and `.cjs` specifiers using the
@@ -319,6 +320,44 @@ When `keepComments` is enabled, the following comment types are preserved:
 * Single-line comments (`//`)
 * Documentation tags (`@param`, `@returns`, `@example`, etc.)
 
+## Engines
+
+dtsx has two declaration engines.
+
+* **`native`** (default): the Zig engine. `@dtsx/dtsx` ships its library for
+  macOS, Linux, Windows and FreeBSD and loads it in-process under Bun. Where it
+  cannot load (another platform, or a runtime other than Bun), dtsx uses the
+  TypeScript engine instead, with no configuration needed.
+* **`typescript`**: the original engine, written in TypeScript. It is no longer
+  where new work lands, but it stays in the package as the reference
+  implementation, so the two can be compared on the same source. It is several
+  times slower.
+
+Choose one explicitly in any of these ways; the first that is set wins:
+
+```ts
+// 1. An option, in dtsx.config.ts, generate(), or any bundler plugin
+export default { engine: 'typescript' }
+```
+
+```bash
+# 2. A CLI flag, accepted by every command
+dtsx generate --engine typescript
+dtsx emit src/index.ts --engine typescript
+
+# 3. An environment variable
+DTSX_ENGINE=typescript dtsx generate
+```
+
+`processSource()` and `processSourceDirect()` take the engine as their last
+argument, and `processSourceWithTypeScriptEngine()` always runs the TypeScript
+engine. An unknown engine name is an error.
+
+A few requests always run on the TypeScript engine, whichever is selected: an
+`importOrder` other than the default, and plugins with an `onDeclarations`
+hook, which need the extracted declaration objects. `nativeEngineAvailable()`
+reports whether the native engine will be used.
+
 ## Environment Variables
 
 Some options can be controlled via environment variables:
@@ -332,6 +371,9 @@ DTSX*OUTDIR=./types
 
 # Set root directory
 DTSX_ROOT=./lib
+
+# Choose the declaration engine: native (default) or typescript
+DTSX_ENGINE=typescript
 ```
 
 ## TypeScript Configuration

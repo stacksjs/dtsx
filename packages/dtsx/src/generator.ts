@@ -18,7 +18,7 @@ import { formatDts } from './formatter'
 import { monomorphicExportedFunctions, monomorphicImportFunctions } from './inferred-imports'
 import { logger, setLogLevel } from './logger'
 import { collectReachableViaReExports, createModuleResolver, rewriteModuleSpecifiers, scanReExportSpecifiers } from './module-graph'
-import { emitWithNativeEngine } from './native-engine'
+import { emitWithNativeEngine, parseDeclarationEngine } from './native-engine'
 import { normalizeOutput as normalizeDtsOutput } from './output-normalizer'
 import { PluginManager } from './plugins'
 import { processDeclarations } from './processor'
@@ -90,6 +90,8 @@ export async function generate(options?: Partial<DtsGenerationConfig>): Promise<
   if (config.moduleSpecifierMode !== undefined && config.moduleSpecifierMode !== 'preserve' && config.moduleSpecifierMode !== 'node') {
     throw new Error('moduleSpecifierMode must be preserve or node')
   }
+
+  parseDeclarationEngine(config.engine, 'engine')
 
   await assertSafeOutputConfiguration(config)
 
@@ -744,6 +746,7 @@ function emitNativelyWithContext(source: string, filePath: string, config: DtsGe
   return emitWithNativeEngine(input, {
     keepComments: config.keepComments ?? true,
     isolatedDeclarations: config.isolatedDeclarations ?? false,
+    engine: config.engine,
     sourceFile: filePath,
     inferenceSources,
     augmentationImports,

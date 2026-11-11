@@ -176,6 +176,20 @@ export interface DtsGenerationConfig {
    */
   isolatedDeclarations?: boolean
   /**
+   * Engine that emits the declarations.
+   *
+   * - `'native'`: the Zig engine, loaded in-process. It falls back to the
+   *   TypeScript engine where its library cannot load (an unsupported
+   *   platform, or a runtime other than Bun).
+   * - `'typescript'`: the original pure-TypeScript engine. It is kept as the
+   *   reference implementation for research and comparison, and is several
+   *   times slower.
+   *
+   * The `DTSX_ENGINE` environment variable sets it when this is left out.
+   * @default 'native'
+   */
+  engine?: 'native' | 'typescript'
+  /**
    * Custom type mappings for type transformations
    * Allows replacing types during generation
    */

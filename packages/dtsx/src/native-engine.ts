@@ -3,12 +3,17 @@
  *
  * `@dtsx/dtsx` ships the native library for each platform under
  * `native/<platform>/`. When it loads, declaration emission runs natively;
- * otherwise (unsupported platform, non-Bun runtime, `DTSX_ENGINE=typescript`)
- * callers use the TypeScript engine. Any native failure also returns `null`,
- * so the TypeScript engine decides how unusual input is reported.
+ * otherwise (unsupported platform, non-Bun runtime) callers use the
+ * TypeScript engine. Any native failure also returns `null`, so the
+ * TypeScript engine decides how unusual input is reported.
+ *
+ * The TypeScript engine stays selectable on purpose, as the reference the
+ * native engine is compared with: the `engine` option, the CLI's `--engine`
+ * flag, or `DTSX_ENGINE=typescript`.
  */
 import { existsSync } from 'node:fs'
 import { arch, platform } from 'node:os'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 interface NativeLibrary {
@@ -27,6 +32,42 @@ export interface NativeEmitOptions {
   inferenceSources?: ReadonlyMap<string, string>
   /** Original imports the project's augmentation graph requires. */
   augmentationImports?: ReadonlySet<string>
+  /** Engine requested for this emission; `typescript` makes it return `null`. */
+  engine?: DeclarationEngine
+}
+
+/**
+ * The engine that emits declarations. `native` is the default and falls back
+ * to the TypeScript engine when the native library cannot load; `typescript`
+ * always runs the original pure-TypeScript engine.
+ */
+export type DeclarationEngine = 'native' | 'typescript'
+
+const engines: readonly DeclarationEngine[] = ['native', 'typescript']
+
+/** Read an engine name from a flag, config value or environment variable. */
+export function parseDeclarationEngine(value: unknown, source: string = 'engine'): DeclarationEngine | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value === 'string' && (engines as readonly string[]).includes(value)) return value as DeclarationEngine
+  throw new Error(`Invalid ${source} ${JSON.stringify(value)}: expected "native" or "typescript"`)
+}
+
+let processEngine: DeclarationEngine | undefined
+
+/**
+ * Set the engine for every later emission in this process that does not name
+ * one itself (the CLI's `--engine` flag). `undefined` restores the default.
+ */
+export function setDeclarationEngine(engine: DeclarationEngine | undefined): void {
+  processEngine = parseDeclarationEngine(engine)
+}
+
+/**
+ * The engine an emission will ask for: the one requested for that call, else
+ * the process-wide one, else `DTSX_ENGINE`, else `native`.
+ */
+export function resolveDeclarationEngine(requested?: DeclarationEngine): DeclarationEngine {
+  return parseDeclarationEngine(requested) ?? processEngine ?? parseDeclarationEngine(process.env.DTSX_ENGINE, 'DTSX_ENGINE') ?? 'native'
 }
 
 let loaded: NativeLibrary | null | undefined
@@ -58,7 +99,7 @@ function candidatePaths(fileName: string): string[] {
 }
 
 function load(): NativeLibrary | null {
-  if (process.env.DTSX_ENGINE === 'typescript' || typeof globalThis.Bun === 'undefined') return null
+  if (typeof globalThis.Bun === 'undefined') return null
   let ffi: typeof import('bun:ffi')
   try {
     ffi = import.meta.require('bun:ffi')
@@ -103,9 +144,12 @@ function library(): NativeLibrary | null {
   return loaded
 }
 
-/** Whether declaration emission can run on the native engine in this process. */
-export function nativeEngineAvailable(): boolean {
-  return library() !== null
+/**
+ * Whether an emission asking for `engine` (default: the resolved engine) runs
+ * natively: the native engine is selected and its library loads here.
+ */
+export function nativeEngineAvailable(engine?: DeclarationEngine): boolean {
+  return resolveDeclarationEngine(engine) === 'native' && library() !== null
 }
 
 const encoder = new TextEncoder()
@@ -119,6 +163,7 @@ const outStatus = new Uint32Array(1)
  * engine instead.
  */
 export function emitWithNativeEngine(source: string, options: NativeEmitOptions): string | null {
+  if (resolveDeclarationEngine(options.engine) === 'typescript') return null
   const native = library()
   if (!native) return null
   if (source.length * 3 > input.length) input = new Uint8Array(source.length * 3)

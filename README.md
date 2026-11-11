@@ -145,6 +145,8 @@ export default {
 }
 ```
 
+dtsx emits through its native Zig engine by default and falls back to its TypeScript engine where the native library cannot load. The TypeScript engine is kept as the reference implementation: select it with `engine: 'typescript'`, `--engine typescript` or `DTSX_ENGINE=typescript` to compare the two on the same source. See [Engines](docs/config.md#engines).
+
 _You may also run:_
 
 ```bash
@@ -242,6 +244,7 @@ cat src/utils.ts | dtsx stdin > dist/utils.d.ts
 - `--log-level <level>`: Log level: debug, info, warn, error, silent _(default: 'info')_
 - `--stats`: Show statistics after generation _(default: false)_
 - `--output-format <format>`: Output format: text or json _(default: 'text')_
+- `--engine <engine>`: Declaration engine, `native` or `typescript` _(default: 'native'; accepted by every command)_
 - `--progress`: Show progress during generation _(default: false)_
 - `--diff`: Show diff of changes compared to existing files _(default: false)_
 

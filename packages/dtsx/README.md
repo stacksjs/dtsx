@@ -118,10 +118,15 @@ export default defineConfig({
   indentStyle: 'spaces', // 'spaces' or 'tabs'
   indentSize: 2, // Number of spaces
 
+  // Engine: 'native' (default) or 'typescript', the reference implementation
+  engine: 'native',
+
   // Plugins
   plugins: [],
 })
 ```
+
+dtsx emits through its native Zig engine by default and falls back to its TypeScript engine where the native library cannot load. The TypeScript engine is kept as the reference implementation: select it with `engine: 'typescript'`, `--engine typescript` or `DTSX_ENGINE=typescript` to compare the two on the same source.
 
 _You may also run:_
 
@@ -295,6 +300,7 @@ echo "export function foo(): string { return 'bar' }" | dtsx stdin
 - `--stats`: Show generation statistics
 - `--progress`: Show progress during generation
 - `--output-format <format>`: Output format: 'text' or 'json' _(default: 'text')_
+- `--engine <engine>`: Declaration engine, `native` or `typescript` _(default: 'native'; accepted by every command)_
 
 #### Watch Options
 
