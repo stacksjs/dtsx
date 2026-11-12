@@ -1,5 +1,40 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.52...v0.11.53)
+
+## 🐛 Bug Fixes
+
+- stage the Windows FFI SDK under its canonical platform name ([8438e33](https://github.com/stacksjs/dtsx/commit/8438e33)) _(by Chris Breuer)_
+- **native**: release scratch arenas when batch workers finish ([52a1e9b](https://github.com/stacksjs/dtsx/commit/52a1e9b)) _(by Chris Breuer)_
+- **benchmarks**: report the measured native build compiler ([ba9df16](https://github.com/stacksjs/dtsx/commit/ba9df16)) _(by Chris Breuer)_ ([#3188](https://github.com/stacksjs/dtsx/issues/3188))
+
+## 📝 Documentation
+
+- document the qualified native Pantry installation ([c1d0e99](https://github.com/stacksjs/dtsx/commit/c1d0e99)) _(by Chris Breuer)_
+- document the qualified Homebrew native CLI ([e6cd056](https://github.com/stacksjs/dtsx/commit/e6cd056)) _(by Chris Breuer)_
+- **benchmarks**: distinguish full-run and bundled sample aggregation ([5ac4a84](https://github.com/stacksjs/dtsx/commit/5ac4a84)) _(by Chris Breuer)_ ([#3188](https://github.com/stacksjs/dtsx/issues/3188), [#3171](https://github.com/stacksjs/dtsx/issues/3171))
+- **benchmarks**: refresh qualified native and tsdown comparisons ([23d74f3](https://github.com/stacksjs/dtsx/commit/23d74f3)) _(by Chris Breuer)_ ([#58](https://github.com/stacksjs/dtsx/issues/58), [#3171](https://github.com/stacksjs/dtsx/issues/3171), [#3188](https://github.com/stacksjs/dtsx/issues/3188))
+
+## ✅ Tests
+
+- qualify and retain the normally packed native FFI SDK ([12ab88e](https://github.com/stacksjs/dtsx/commit/12ab88e)) _(by Chris Breuer)_
+- pin release qualification to the verified Pantry publisher ([8391766](https://github.com/stacksjs/dtsx/commit/8391766)) _(by Chris Breuer)_
+- retain process resource counters at diagnostic boundaries ([4c05ba4](https://github.com/stacksjs/dtsx/commit/4c05ba4)) _(by Chris Breuer)_
+- retain Windows diagnostic consumer operation phases ([18a0eab](https://github.com/stacksjs/dtsx/commit/18a0eab)) _(by Chris Breuer)_
+
+## 💚 Continuous Integration
+
+- adopt qualified Pantry 0.11.198 publisher ([b43fdb9](https://github.com/stacksjs/dtsx/commit/b43fdb9)) _(by Chris Breuer)_ ([pantry-pm/pantry#320](https://github.com/pantry-pm/pantry/issues/320), [#3187](https://github.com/stacksjs/dtsx/issues/3187))
+
+## 🔧 Chores
+
+- **deps**: adopt qualified Pickier and Pantry source fixes ([93d4682](https://github.com/stacksjs/dtsx/commit/93d4682)) _(by Chris Breuer)_
+- **deps**: refresh declaration tooling and workspace providers ([e780473](https://github.com/stacksjs/dtsx/commit/e780473)) _(by Chris Breuer)_ ([#58](https://github.com/stacksjs/dtsx/issues/58))
+
+## Contributors
+
+- _Chris Breuer_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.51...v0.11.52)
 
 ## 🐛 Bug Fixes
