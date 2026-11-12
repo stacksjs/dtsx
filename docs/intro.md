@@ -12,30 +12,30 @@
 
 ## Benchmarks
 
-Measured on Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64) (2026-11-09, Bun 1.4.4). See [Benchmarks](/benchmarks) for methodology and the JavaScript SDK comparison, including bundled builds and watch mode.
+Measured on Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64) (2026-11-12, Bun 1.4.4). See [Benchmarks](/benchmarks) for methodology and the JavaScript SDK comparison, including bundled builds and watch mode.
 
 ### In-process API (no cache)
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx** | **6.74 µs** | **13.96 µs** | **58.13 µs** | **325.92 µs** |
-| oxc-transform | 8.20 µs _(1.22x)_ | 26.75 µs _(1.92x)_ | 71.10 µs _(1.22x)_ | 327.74 µs _(1.01x)_ |
+| dtsx | **6.22 µs** | **13.58 µs** | 47.00 µs _(1.10x)_ | **189.18 µs** |
+| oxc-transform | 6.24 µs _(1.00x)_ | 18.55 µs _(1.37x)_ | **42.81 µs** | 213.06 µs _(1.13x)_ |
 
 ### CLI: single file
 
 | Tool | Small (~50 lines) | Medium (~100 lines) | Large (~330 lines) | XLarge (~1050 lines) |
 |------|------|------|------|------|
-| **dtsx** | **3.10 ms** | **2.54 ms** | **2.74 ms** | **4.03 ms** |
-| oxc | 10.04 ms _(3.2x)_ | 9.51 ms _(3.7x)_ | 11.32 ms _(4.1x)_ | 12.56 ms _(3.1x)_ |
-| tsc 7 | 32.17 ms _(10x)_ | 31.22 ms _(12x)_ | 45.81 ms _(17x)_ | 42.16 ms _(10x)_ |
+| **dtsx** | **1.65 ms** | **1.78 ms** | **2.00 ms** | **2.21 ms** |
+| oxc | 9.13 ms _(5.5x)_ | 8.82 ms _(5.0x)_ | 9.33 ms _(4.7x)_ | 9.02 ms _(4.1x)_ |
+| tsc 7 | 29.25 ms _(18x)_ | 28.00 ms _(16x)_ | 29.41 ms _(15x)_ | 31.03 ms _(14x)_ |
 
 ### CLI: multi-file project
 
 | Tool | 50 files | 100 files | 500 files |
 |------|------|------|------|
-| **dtsx** | **13.57 ms** | **17.76 ms** | **87.46 ms** |
-| oxc | 25.50 ms _(1.88x)_ | 38.65 ms _(2.2x)_ | 203.60 ms _(2.3x)_ |
-| tsc 7 | 65.67 ms _(4.8x)_ | 101.32 ms _(5.7x)_ | 449.79 ms _(5.1x)_ |
+| **dtsx** | **8.94 ms** | **17.76 ms** | **64.10 ms** |
+| oxc | 23.89 ms _(2.7x)_ | 35.76 ms _(2.0x)_ | 132.45 ms _(2.1x)_ |
+| tsc 7 | 56.57 ms _(6.3x)_ | 86.49 ms _(4.9x)_ | 299.49 ms _(4.7x)_ |
 
 <!-- benchmarks:end -->
 
