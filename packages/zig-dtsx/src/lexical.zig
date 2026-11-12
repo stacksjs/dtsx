@@ -51,6 +51,7 @@ fn isRegexPrefixByte(c: u8) bool {
 /// TypeScript emitter does.
 // Keep ordinary nesting on the stack and grow only for deeper authored input.
 // Exhaustion must fail explicitly instead of silently losing later comments.
+// Use the native C heap: page-allocator diagnostics retain std.Io in Debug dylibs.
 fn ContextStack(comptime T: type, comptime capacity: usize) type {
     return struct {
         inline_items: [capacity]T = undefined,
@@ -58,14 +59,14 @@ fn ContextStack(comptime T: type, comptime capacity: usize) type {
         overflow: std.ArrayList(T) = .empty,
 
         fn deinit(self: *@This()) void {
-            self.overflow.deinit(std.heap.page_allocator);
+            self.overflow.deinit(std.heap.c_allocator);
         }
 
         fn push(self: *@This(), value: T) void {
             if (self.count < capacity) {
                 self.inline_items[self.count] = value;
             } else {
-                self.overflow.append(std.heap.page_allocator, value) catch @panic("Out of memory scanning declaration context");
+                self.overflow.append(std.heap.c_allocator, value) catch @panic("Out of memory scanning declaration context");
             }
             self.count += 1;
         }

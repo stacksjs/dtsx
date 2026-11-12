@@ -80,6 +80,11 @@ jobs:
             await mkdir(destination, { recursive: true });
             await copyFile(join("zig-out", process.platform === "win32" ? "bin" : "lib", name), join(destination, name));
           '
+      # Linux's full suite cannot inspect the actual Darwin library imports.
+      - name: Verify Darwin Debug library imports
+        if: runner.os == 'macOS'
+        run: bun test packages/zig-dtsx/test/platform.test.ts --test-name-pattern 'the Darwin binaries import only the libc functions they use'
+
       - name: Verify normally packed native FFI SDK consumers
         id: ffi-sdk
         run: bun run test:ffi-sdk
