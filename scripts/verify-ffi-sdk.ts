@@ -14,7 +14,7 @@ await mkdir(evidenceRoot, { recursive: true })
 const evidence = await mkdtemp(join(evidenceRoot, 'dtsx-ffi-sdk-'))
 const consumer = join(evidence, 'consumer')
 const archive = join(evidence, 'zig-dtsx.tgz')
-const slug = `${process.platform}-${process.arch}`
+const slug = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`
 const libraryName = process.platform === 'win32' ? 'zig-dtsx.dll' : `libzig-dtsx.${process.platform === 'darwin' ? 'dylib' : 'so'}`
 const commands: Array<Record<string, unknown>> = []
 const inventory: Array<{ path: string, sha256: string, size: number }> = []
