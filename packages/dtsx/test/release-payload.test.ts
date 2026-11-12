@@ -30,8 +30,10 @@ test('both registries upload qualified payloads without lifecycle rebuilds', () 
 test('release publication uses the verified immutable Pantry lifecycle implementation', () => {
   const pantry = steps.filter(step => step.uses?.startsWith('pantry-pm/pantry/packages/action@'))
   expect(pantry.length).toBeGreaterThan(0)
+  // Qualified canonical 0.11.199: Pantry CI 43205922545, native SDK
+  // 43205922163 and release 43205922760, including original ZIP modes.
   for (const step of pantry) {
-    expect(step.uses).toBe('pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba')
-    expect(String(step.with?.version)).toBe('0.11.197')
+    expect(step.uses).toBe('pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd')
+    expect(String(step.with?.version)).toBe('0.11.199')
   }
 })
