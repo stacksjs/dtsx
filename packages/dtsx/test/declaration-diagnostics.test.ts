@@ -9,6 +9,7 @@ import { generate } from '../src/generator'
 import { generateNativeDeclarationProject } from '../src/native-generation'
 import { planNativeDeclarationProject } from '../src/native-project'
 import fixtures from './fixtures/declaration-diagnostics.json'
+import { traceAsync, traceSync } from './helpers/phase-trace'
 import { runTsc } from './helpers/tsc'
 
 // TypeScript 7.0.2, published gitHead in microsoft/typescript-go:
@@ -42,7 +43,7 @@ async function controls(root: string, specifier: (code: string) => string): Prom
     }
   }
   await writeFile(join(root, 'tsconfig.controls.json'), JSON.stringify({ compilerOptions, files }))
-  const result = runTsc(root, ['--project', 'tsconfig.controls.json'])
+  const result = traceSync('Diagnostic positive and exact-negative compiler controls', () => runTsc(root, ['--project', 'tsconfig.controls.json']), { root })
   expect(result.ok, result.output).toBe(false)
   expect(result.output.match(/error TS\d+/g) ?? [], result.output).toEqual(Object.values(fixtures).map(fixture => `error TS${fixture.negativeCode}`))
   expect([...result.output.matchAll(/negative-(\d+)\.ts\(\d+,\d+\): error TS\d+/g)].map(match => match[1]), result.output).toEqual(active)
@@ -50,7 +51,7 @@ async function controls(root: string, specifier: (code: string) => string): Prom
 
 async function emitReference(root: string, isolated: boolean): Promise<string> {
   await writeFile(join(root, 'tsconfig.emit.json'), JSON.stringify({ compilerOptions: { ...compilerOptions, noEmit: false, declaration: true, emitDeclarationOnly: true, noEmitOnError: true, isolatedDeclarations: isolated, rootDir: './src', outDir: isolated ? './isolated' : './reference' }, include: ['src/**/*.ts'] }))
-  const result = Bun.spawnSync([process.execPath, compiler, '--project', 'tsconfig.emit.json'], { cwd: root, timeout: 4000 })
+  const result = traceSync('Diagnostic reference declaration compiler', () => Bun.spawnSync([process.execPath, compiler, '--project', 'tsconfig.emit.json'], { cwd: root, timeout: 4000 }), { root, isolated })
   const output = result.stdout.toString() + result.stderr.toString()
   if (isolated) expect(result.exitCode, output).not.toBe(0)
   else expect(result.exitCode, output).toBe(0)
@@ -97,39 +98,40 @@ for (const producer of ['core', 'bun-plugin', 'native', 'native-project'] as con
     const consumer = join(root, 'consumer')
     try {
       await mkdir(library)
-      await sources(library)
+      const details = { producer, library, consumer }
+      await traceAsync('Diagnostic fixture preparation', () => sources(library), details)
       await controls(library, code => `./src/${code}/index.js`)
       await emitReference(library, false)
       await controls(library, code => `./reference/${code}/index.js`)
       const entrypoints = active.map(code => `${code}/index.ts`)
       const options = { cwd: library, root: './src', outdir: './dist', entrypoints, moduleSpecifierMode: 'node' as const }
-      const built = await Bun.build({ entrypoints: entrypoints.map(file => join(library, 'src', file)), root: join(library, 'src'), outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts(options)] : [] })
+      const built = await traceAsync('Diagnostic runtime and plugin build', () => Bun.build({ entrypoints: entrypoints.map(file => join(library, 'src', file)), root: join(library, 'src'), outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts(options)] : [] }), details)
       expect(built.success, JSON.stringify(built.logs)).toBe(true)
       if (producer === 'core') {
-        const result = await generate(options)
+        const result = await traceAsync('Diagnostic core generation', () => generate(options), details)
         expect(result.filesFailed, JSON.stringify(result.errors)).toBe(0)
       }
       else if (producer === 'native') {
         expect(ZIG_CONTEXT_AVAILABLE).toBe(true)
-        const plan = await planNativeDeclarationProject(options)
+        const plan = await traceAsync('Diagnostic native project planning', () => planNativeDeclarationProject(options), details)
         expect(plan.files.length).toBe(22)
         for (const file of plan.files) {
           await mkdir(join(file.outputFile, '..'), { recursive: true })
-          await writeFile(file.outputFile, processSourceWithContext(file.source, file.context, true))
+          await traceAsync('Diagnostic native file emission', () => writeFile(file.outputFile, processSourceWithContext(file.source, file.context, true)), { ...details, sourceFile: file.sourceFile })
         }
       }
       else if (producer === 'native-project') {
         expect(existsSync(cli), cli).toBe(true)
-        const result = await generateNativeDeclarationProject(cli, options, { timeoutMs: 4000 })
+        const result = await traceAsync('Diagnostic native CLI generation', () => generateNativeDeclarationProject(cli, options, { timeoutMs: 4000 }), details)
         expect(result.filesGenerated).toBe(22)
       }
       const archive = join(root, 'library.tgz')
-      const packed = Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library, timeout: 4000 })
+      const packed = traceSync('Diagnostic normal package archive', () => Bun.spawnSync([process.execPath, 'pm', 'pack', '--filename', archive], { cwd: library, timeout: 4000 }), details)
       expect(packed.exitCode, packed.stderr.toString()).toBe(0)
       await mkdir(consumer)
       await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies: { 'diagnostic-contract': `file:${archive}` } }))
       for (const flags of [[], ['--frozen-lockfile']]) {
-        const installed = Bun.spawnSync([process.execPath, 'install', ...flags], { cwd: consumer, timeout: 4000 })
+        const installed = traceSync('Diagnostic normal or frozen consumer installation', () => Bun.spawnSync([process.execPath, 'install', ...flags], { cwd: consumer, timeout: 4000 }), { ...details, frozen: flags.length > 0 })
         expect(installed.exitCode, installed.stderr.toString()).toBe(0)
         for (const [code, fixture] of Object.entries(fixtures)) {
           for (const name of Object.keys(fixture.files)) {
