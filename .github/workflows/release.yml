@@ -96,6 +96,20 @@ jobs:
           bun run build
           bun --filter './packages/*-plugin' build
 
+      - name: Verify the normally packed native FFI SDK
+        id: ffi-sdk
+        run: bun run test:ffi-sdk --all-platforms
+        env:
+          DTSX_FFI_EVIDENCE: ${{ runner.temp }}/ffi-sdk
+      - name: Retain native FFI SDK archive and consumer evidence
+        id: ffi-sdk-evidence
+        if: always() && steps.ffi-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ffi-sdk-release
+          path: ${{ runner.temp }}/ffi-sdk
+          if-no-files-found: error
+
       - name: Verify normally packed public SDK consumers
         id: public-sdk
         run: bun run test:public-sdk

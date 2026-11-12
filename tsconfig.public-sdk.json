@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["bun"] },
-  "include": ["scripts/verify-public-sdk.ts"],
+  "include": ["scripts/verify-public-sdk.ts", "scripts/verify-ffi-sdk.ts"],
   "exclude": ["node_modules", "scripts/fixtures"]
 }

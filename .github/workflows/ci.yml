@@ -68,6 +68,31 @@ jobs:
       - name: Build the native CLI and FFI library for this platform
         working-directory: packages/zig-dtsx
         run: zig build -j2
+      - name: Stage the assembled host library in its SDK
+        working-directory: packages/zig-dtsx
+        run: |
+          bun -e '
+            const { copyFile, mkdir } = await import("node:fs/promises");
+            const { join } = await import("node:path");
+            const platform = `${process.platform}-${process.arch}`;
+            const name = process.platform === "win32" ? "zig-dtsx.dll" : `libzig-dtsx.${process.platform === "darwin" ? "dylib" : "so"}`;
+            const destination = join("prebuilt", platform);
+            await mkdir(destination, { recursive: true });
+            await copyFile(join("zig-out", process.platform === "win32" ? "bin" : "lib", name), join(destination, name));
+          '
+      - name: Verify normally packed native FFI SDK consumers
+        id: ffi-sdk
+        run: bun run test:ffi-sdk
+        env:
+          DTSX_FFI_EVIDENCE: ${{ runner.temp }}/ffi-sdk
+      - name: Retain native FFI SDK archive and consumer evidence
+        if: always() && steps.ffi-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ffi-sdk-${{ matrix.os }}
+          path: ${{ runner.temp }}/ffi-sdk
+          if-no-files-found: error
+
       - name: Verify actual native project traversal and installed delivery
         id: native-delivery
         env:
@@ -227,6 +252,19 @@ jobs:
         with:
           name: public-sdk-commit
           path: ${{ runner.temp }}/public-sdk
+          if-no-files-found: error
+
+      - name: Verify normally packed native FFI SDK consumers
+        id: ffi-sdk
+        run: bun run test:ffi-sdk
+        env:
+          DTSX_FFI_EVIDENCE: ${{ runner.temp }}/ffi-sdk
+      - name: Retain native FFI SDK archive and consumer evidence
+        if: always() && steps.ffi-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ffi-sdk-commit
+          path: ${{ runner.temp }}/ffi-sdk
           if-no-files-found: error
 
       - name: Publish Commit
