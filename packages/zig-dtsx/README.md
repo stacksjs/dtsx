@@ -23,6 +23,13 @@ brew install stacksjs/tap/dtsx
 zig-dtsx --project src --outdir dist
 ```
 
+Pantry also provides the standalone CLI for macOS arm64 and Linux x64/arm64:
+
+```bash
+pantry install zig-dtsx.stacksjs.org@0.11.52
+./pantry/.bin/zig-dtsx --project src --outdir dist
+```
+
 This `zig-dtsx` command does not require Bun or npm packages.
 
 Linux FFI shared libraries target GNU libc 2.17 explicitly, because they are
