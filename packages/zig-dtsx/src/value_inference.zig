@@ -552,9 +552,29 @@ pub fn inferDeclarationValueAliases(allocator: std.mem.Allocator, source: []cons
     return inferDeclarationValueAliasesWithImports(allocator, source, null, declarations, candidates, null);
 }
 
+/// Prepare emitted call queries before private closure without semantic flow analysis.
+pub fn inferDeclarationCallTypes(allocator: std.mem.Allocator, declarations: []Declaration, candidates: *std.StringHashMap(Declaration)) !void {
+    for (declarations) |*entry| try inferDeclarationCallType(allocator, entry);
+    var values = candidates.valueIterator();
+    while (values.next()) |entry| try inferDeclarationCallType(allocator, entry);
+}
+
+fn inferDeclarationCallType(allocator: std.mem.Allocator, entry: *Declaration) !void {
+    if (entry.kind != .variable_decl or entry.type_annotation.len > 0) return;
+    if (try type_inf.inferCallType(allocator, entry.value)) |call| {
+        const inferred = try type_inf.inferNarrowType(allocator, entry.value, false, false, 0);
+        if (std.mem.eql(u8, call, inferred)) {
+            entry.inferred_type = call;
+            const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
+            entry.text = try std.fmt.allocPrint(allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, call });
+        }
+    }
+}
+
 /// `source_tokens`, when supplied, must be the declaration-syntax tokens of
 /// `source`; they are borrowed and never freed here.
 pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, source: []const u8, source_tokens: ?[]const syntax.SyntaxToken, declarations: []Declaration, candidates: *std.StringHashMap(Declaration), imports: ?*const std.StringHashMap(void)) !void {
+    try inferDeclarationCallTypes(allocator, declarations, candidates);
     var context = Context{
         .allocator = allocator,
         .source = source,
@@ -646,16 +666,6 @@ pub fn inferDeclarationValueAliasesWithImports(allocator: std.mem.Allocator, sou
     var has_alias = false;
     for (ordered.items) |entry| {
         if (entry.kind != .variable_decl or entry.type_annotation.len > 0) continue;
-        // The private graph must see exactly the call query the emitter will use,
-        // even when there are no aliases that require source-position flow analysis.
-        if (try type_inf.inferCallType(allocator, entry.value)) |call| {
-            const inferred = try type_inf.inferNarrowType(allocator, entry.value, false, false, 0);
-            if (std.mem.eql(u8, call, inferred)) {
-                entry.inferred_type = call;
-                const kind: []const u8 = if (entry.modifiers) |mods| if (mods.len > 0) mods[0] else "const" else "const";
-                entry.text = try std.fmt.allocPrint(allocator, "{s}declare {s} {s}: {s};", .{ if (entry.is_exported) "export " else "", kind, entry.name, call });
-            }
-        }
         if (try directCall(allocator, entry.value, &context.functions)) |name| {
             if (context.local_calls.get(name)) |call| {
                 try context.inferred_calls.put(entry, call.type);

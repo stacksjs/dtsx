@@ -1038,7 +1038,9 @@ pub const Scanner = struct {
         try @import("function_properties.zig").attach(self.allocator, self.source, try self.sourceTokens(), self.declarations.items, &self.non_exported_types, &self.non_exported_function_groups);
         try @import("enum_declarations.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
         try @import("computed_keys.zig").attach(self.allocator, self.declarations.items, &self.non_exported_types);
-        if (!self.isolated_declarations) {
+        if (self.isolated_declarations) {
+            try value_inference.inferDeclarationCallTypes(self.allocator, self.declarations.items, &self.non_exported_types);
+        } else {
             var imports = try @import("semantic_context.zig").importedFunctions(self);
             defer imports.deinit();
             try value_inference.inferDeclarationValueAliasesWithImports(self.allocator, self.source, try self.sourceTokens(), self.declarations.items, &self.non_exported_types, &imports);

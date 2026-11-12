@@ -16,7 +16,7 @@ import { decodeStringLiteral, parseImportEquals, scanModuleReferences, sourceSyn
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, inferNewExpressionType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
-import { inferDeclarationValueAliases } from '../value-inference'
+import { inferDeclarationCallTypes, inferDeclarationValueAliases } from '../value-inference'
 
 // Character codes for fast comparison
 const CH_SPACE = 32
@@ -4272,7 +4272,8 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
   attachFunctionProperties(source, declarations, nonExportedTypes, nonExportedFunctionGroups)
   attachEnumBodies(declarations, nonExportedTypes)
   attachComputedKeyConstants(declarations, nonExportedTypes)
-  if (!isolatedDeclarations) inferDeclarationValueAliases(source, declarations, nonExportedTypes, importedFunctions)
+  if (isolatedDeclarations) inferDeclarationCallTypes([...declarations, ...nonExportedTypes.values()])
+  else inferDeclarationValueAliases(source, declarations, nonExportedTypes, importedFunctions)
 
   if (retainAmbientMembers) {
     const present = new Set(declarations)

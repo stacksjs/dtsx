@@ -45,11 +45,24 @@ function assignedType(declared: string, value: string): string | undefined {
   return undefined
 }
 
+/** Prepare emitted call queries before private closure, including in isolated mode. */
+export function inferDeclarationCallTypes(declarations: Iterable<Declaration>): void {
+  for (const declaration of declarations) {
+    if (declaration.kind !== 'variable' || declaration.typeAnnotation || typeof declaration.value !== 'string') continue
+    const emittedCall = inferCallType(declaration.value)
+    if (emittedCall && inferNarrowType(declaration.value, false) === emittedCall) {
+      declaration.inferredType = emittedCall
+      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${emittedCall};`
+    }
+  }
+}
+
 /**
  * Infer identifier aliases and monomorphic local calls before private closure.
  * This models straight-line assignments, not TypeScript's complete control-flow graph.
  */
 export function inferDeclarationValueAliases(source: string, declarations: Declaration[], candidates: ReadonlyMap<string, Declaration>, importedFunctions: ReadonlySet<string> = new Set()): void {
+  inferDeclarationCallTypes([...declarations, ...candidates.values()])
   const bindings = new Map<string, Binding>()
   const ordered: Declaration[] = []
   const seen = new Set<Declaration>()
@@ -124,13 +137,6 @@ export function inferDeclarationValueAliases(source: string, declarations: Decla
   let hasAlias = false
   for (const declaration of ordered) {
     if (declaration.kind !== 'variable' || declaration.typeAnnotation || typeof declaration.value !== 'string') continue
-    // The private graph must see exactly the call query the emitter will use,
-    // even when there are no aliases that require source-position flow analysis.
-    const emittedCall = inferCallType(declaration.value)
-    if (emittedCall && inferNarrowType(declaration.value, false) === emittedCall) {
-      declaration.inferredType = emittedCall
-      declaration.text = `${declaration.isExported ? 'export ' : ''}declare ${declaration.modifiers?.[0] ?? 'const'} ${declaration.name}: ${emittedCall};`
-    }
     const call = directCall(declaration.value)
     if (call && localCalls.has(call)) {
       inferredCalls.set(declaration, callType(call))
