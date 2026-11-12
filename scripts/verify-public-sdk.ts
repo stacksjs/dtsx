@@ -51,7 +51,7 @@ interface Command {
 }
 
 type RegistryProvider = { kind: 'public', url: string }
-  | { kind: 'candidate', url: string, stop: () => Promise<void> }
+| { kind: 'candidate', url: string, stop: () => Promise<void> }
 
 // Deliberately separate from bun test discovery. Build the actual packages
 // explicitly before this command; the gate never invokes a build or emitter.

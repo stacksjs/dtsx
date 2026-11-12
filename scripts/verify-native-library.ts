@@ -55,29 +55,29 @@ const result: string = new Store<string>('ok').get();
 const patch: Patch = { value: 1 };
 const status: Status = Status.Ready;
 `)
-  assert.equal(positive.code, 0, positive.diagnostics)
-  const negative = await checkConsumer(`import { create, Store } from './api.js';
+    assert.equal(positive.code, 0, positive.diagnostics)
+    const negative = await checkConsumer(`import { create, Store } from './api.js';
 const wrong: string = create('ok', 1).value;
 const bad: number = new Store<string>('ok').get();
 `)
-  const errors = [...negative.diagnostics.matchAll(/error TS(\d+):/g)].map(match => match[1])
-  assert.notEqual(negative.code, 0, 'Invalid assignments must be rejected')
-  assert.deepEqual(errors, ['2322', '2322'], negative.diagnostics)
-  if (process.argv.includes('--inference')) {
-    const inferredSource = `export function create(key = 'entry', amount = 3) { return { key, amount, labels: ['new'] } }
+      const errors = [...negative.diagnostics.matchAll(/error TS(\d+):/g)].map(match => match[1])
+      assert.notEqual(negative.code, 0, 'Invalid assignments must be rejected')
+      assert.deepEqual(errors, ['2322', '2322'], negative.diagnostics)
+      if (process.argv.includes('--inference')) {
+        const inferredSource = `export function create(key = 'entry', amount = 3) { return { key, amount, labels: ['new'] } }
 export function summarize(item = create()) { return { key: item.key, next: item.amount + 1 } }
 export class Store { read() { return this.item } private item = create(); }
 export function optional(value?: string) { return value }
 `
-    await writeFile(join(directory, 'inferred.d.ts'), binding.processSource(inferredSource, true, false))
-    const importedSource = "import { create as make } from './inferred.js'; export const linked = make('linked', 2);"
-    const importedDeclarations = binding.processSourceWithContext(importedSource, {
-      version: 1, moduleSpecifierMode: 'preserve', sourceFile: join(directory, 'linked.ts'), outputFile: join(directory, 'linked.d.ts'),
-      sourceHash: createHash('sha256').update(importedSource).digest('hex'), rewrites: [],
-      inferenceSources: [{ specifier: './inferred.js', source: inferredSource }],
-    }, true, false)
-    await writeFile(join(directory, 'linked.d.ts'), importedDeclarations)
-    const inferredPositive = await checkConsumer(`import { create, summarize, Store, optional } from './inferred.js';
+        await writeFile(join(directory, 'inferred.d.ts'), binding.processSource(inferredSource, true, false))
+        const importedSource = "import { create as make } from './inferred.js'; export const linked = make('linked', 2);"
+        const importedDeclarations = binding.processSourceWithContext(importedSource, {
+          version: 1, moduleSpecifierMode: 'preserve', sourceFile: join(directory, 'linked.ts'), outputFile: join(directory, 'linked.d.ts'),
+          sourceHash: createHash('sha256').update(importedSource).digest('hex'), rewrites: [],
+          inferenceSources: [{ specifier: './inferred.js', source: inferredSource }],
+        }, true, false)
+        await writeFile(join(directory, 'linked.d.ts'), importedDeclarations)
+        const inferredPositive = await checkConsumer(`import { create, summarize, Store, optional } from './inferred.js';
 import { linked } from './linked.js';
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 type NoAny<T extends false> = T;
@@ -90,16 +90,16 @@ const widened: typeof stored = { key: 'different', amount: 17, labels: ['changed
 type Check1 = NoAny<IsAny<typeof stored.key>>;
 type Check2 = NoAny<IsAny<typeof imported.amount>>;
 `)
-    assert.equal(inferredPositive.code, 0, inferredPositive.diagnostics)
-    const inferredNegative = await checkConsumer(`import { Store, optional } from './inferred.js';
+          assert.equal(inferredPositive.code, 0, inferredPositive.diagnostics)
+          const inferredNegative = await checkConsumer(`import { Store, optional } from './inferred.js';
 const wrong: number = new Store().read().key;
 const unsafe: string = optional();
 `)
-    assert.notEqual(inferredNegative.code, 0)
-    assert.deepEqual([...inferredNegative.diagnostics.matchAll(/error TS(\d+):/g)].map(match => match[1]), ['2322', '2322'], inferredNegative.diagnostics)
-  }
-  console.log(`Qualified packaged ${slug} library: native FFI, strict consumer, two TS2322 controls`)
-}
-finally {
-  await rm(directory, { recursive: true, force: true })
-}
+            assert.notEqual(inferredNegative.code, 0)
+            assert.deepEqual([...inferredNegative.diagnostics.matchAll(/error TS(\d+):/g)].map(match => match[1]), ['2322', '2322'], inferredNegative.diagnostics)
+          }
+          console.log(`Qualified packaged ${slug} library: native FFI, strict consumer, two TS2322 controls`)
+        }
+        finally {
+          await rm(directory, { recursive: true, force: true })
+        }

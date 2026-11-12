@@ -100,12 +100,12 @@
     "zip:darwin-arm64": "zip -j bin/dtsx-darwin-arm64.zip bin/dtsx-darwin-arm64"
   },
   "devDependencies": {
-    "@stacksjs/clapp": "^0.2.16",
+    "@stacksjs/clapp": "^0.2.17",
     "bunfig": "^0.15.21",
-    "prettier": "^3.9.10"
+    "prettier": "^3.10.1"
   },
   "peerDependencies": {
-    "prettier": "^3.9.10"
+    "prettier": "^3.10.1"
   },
   "peerDependenciesMeta": {
     "prettier": {

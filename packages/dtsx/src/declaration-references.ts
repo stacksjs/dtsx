@@ -1,6 +1,6 @@
+import type { SyntaxToken } from './module-references'
 import type { Declaration } from './types'
 import { bindingPatternNames } from './binding-patterns'
-import type { SyntaxToken } from './module-references'
 import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from './module-references'
 
 /** A direct const alias preserves the referenced value's type identity. */

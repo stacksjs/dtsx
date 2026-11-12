@@ -1,5 +1,5 @@
-import { scanIsolatedDeclarations } from './extractor/scanner'
 import { functionCount } from './call-signatures'
+import { scanIsolatedDeclarations } from './extractor/scanner'
 import { parseImportDetailed } from './processor/imports'
 
 /** Verify callable identities from resolved authored sources, never from names alone. */

@@ -4,8 +4,8 @@
  * Used by process-source.ts and the CLI fast path.
  */
 import type { Declaration } from '../types'
-import { isStxFile, transformStxToTs } from '../stx'
 import { clearSourceSyntaxTokens } from '../module-references'
+import { isStxFile, transformStxToTs } from '../stx'
 import { isVueFile, transformVueSfcToTs } from '../vue'
 import { hashContent } from './hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './scanner'

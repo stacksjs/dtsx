@@ -5,8 +5,8 @@
  *
  * Run: bun benchmark/render.ts [results.json]
  */
-import type { BundledComparison } from './tsdown'
 import type { MachineInfo } from './tools'
+import type { BundledComparison } from './tsdown'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -103,14 +103,14 @@ const cached = `| | ${inputColumns.map(c => c.label).join(' | ')} |\n|---|${inpu
 
 const bundled = results.tsdown
   ? `| Tool | ${[...new Set(results.tsdown.results.map(r => r.files))].map(n => `${n} source files`).join(' | ')} |\n|------|${[...new Set(results.tsdown.results.map(r => r.files))].map(() => '------').join('|')}|\n${['dtsx', 'tsdown'].map((tool) => {
-    const cells = [...new Set(results.tsdown!.results.map(r => r.files))].map((files) => {
-      const row = results.tsdown!.results.find(r => r.tool === tool && r.files === files)!
-      const best = Math.min(...results.tsdown!.results.filter(r => r.files === files).map(r => r.avgMs))
-      return row.avgMs === best ? `**${row.avgMs.toFixed(2)} ms**` : `${row.avgMs.toFixed(2)} ms _(${(row.avgMs / best).toFixed(1)}x)_`
-    })
-    const name = tool === 'dtsx' ? 'dtsx JS SDK' : 'tsdown JS SDK'
-    return `| ${cells.every(cell => cell.startsWith('**')) ? `**${name}**` : name} | ${cells.join(' | ')} |`
-  }).join('\n')}`
+  const cells = [...new Set(results.tsdown!.results.map(r => r.files))].map((files) => {
+    const row = results.tsdown!.results.find(r => r.tool === tool && r.files === files)!
+    const best = Math.min(...results.tsdown!.results.filter(r => r.files === files).map(r => r.avgMs))
+    return row.avgMs === best ? `**${row.avgMs.toFixed(2)} ms**` : `${row.avgMs.toFixed(2)} ms _(${(row.avgMs / best).toFixed(1)}x)_`
+  })
+  const name = tool === 'dtsx' ? 'dtsx JS SDK' : 'tsdown JS SDK'
+  return `| ${cells.every(cell => cell.startsWith('**')) ? `**${name}**` : name} | ${cells.join(' | ')} |`
+}).join('\n')}`
   : '_Not measured in this run._'
 
 function body(level: '##' | '#'): string {

@@ -6,18 +6,18 @@
       "name": "@dtsx/dtsx",
       "devDependencies": {
         "@dtsx/bun": "workspace:*",
-        "@stacksjs/bumpx": "^0.2.32",
+        "@stacksjs/bumpx": "^0.2.35",
         "@stacksjs/bunpress": "^0.2.31",
-        "@stacksjs/clapp": "^0.2.16",
+        "@stacksjs/clapp": "^0.2.17",
         "@stacksjs/gitlint": "^0.1.8",
-        "@stacksjs/logsmith": "^0.2.14",
+        "@stacksjs/logsmith": "^0.2.16",
         "@types/bun": "^1.4.4",
         "buddy-bot": "^0.10.5",
         "bun-git-hooks": "^0.3.3",
         "mitata": "^1.0.34",
-        "oxc-parser": "^0.157.0",
-        "oxc-transform": "^0.157.0",
-        "pickier": "^0.1.88",
+        "oxc-parser": "^0.158.0",
+        "oxc-transform": "^0.158.0",
+        "pickier": "^0.1.92",
         "tsdown": "^0.23.7",
         "typescript": "^7.0.2"
       },
@@ -37,16 +37,23 @@
       "name": "@dtsx/dtsx",
       "version": "0.11.52",
       "devDependencies": {
-        "@stacksjs/clapp": "^0.2.16",
+        "@stacksjs/clapp": "^0.2.17",
         "bunfig": "^0.15.21",
-        "prettier": "^3.9.10"
-      }
+        "prettier": "^3.10.1"
+      },
+      "peerDependencies": {
+        "prettier": "^3.10.1"
+      },
+      "optionalPeers": ["prettier"]
     },
     "packages/esbuild-plugin": {
       "name": "@dtsx/esbuild",
       "version": "0.11.52",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
+      },
+      "peerDependencies": {
+        "esbuild": ">=0.28.2"
       }
     },
     "packages/tsdown-plugin": {
@@ -54,6 +61,9 @@
       "version": "0.11.52",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
+      },
+      "peerDependencies": {
+        "tsdown": ">=0.23.0"
       }
     },
     "packages/tsup-plugin": {
@@ -61,6 +71,10 @@
       "version": "0.11.52",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
+      },
+      "peerDependencies": {
+        "@swc/core": "^1.16.22",
+        "tsup": ">=8.3.6 <8.5.1"
       }
     },
     "packages/vite-plugin": {
@@ -70,7 +84,10 @@
         "@dtsx/dtsx": "workspace:*"
       },
       "devDependencies": {
-        "vite": "^8.3.6"
+        "vite": "^8.3.8"
+      },
+      "peerDependencies": {
+        "vite": "^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
       }
     },
     "packages/webpack-plugin": {
@@ -78,6 +95,9 @@
       "version": "0.11.52",
       "dependencies": {
         "@dtsx/dtsx": "workspace:*"
+      },
+      "peerDependencies": {
+        "webpack": "^5.112.2"
       }
     },
     "packages/zig-dtsx": {

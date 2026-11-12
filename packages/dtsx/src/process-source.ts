@@ -1,10 +1,10 @@
+import type { DeclarationEngine } from './native-engine'
 import type { ProcessingContext } from './types'
 import { extractDeclarations } from './extractor/extract'
 import { hashContent } from './extractor/hash'
 import { scanIsolatedDeclarations, scanSemanticDeclarations } from './extractor/scanner'
-import { processDeclarations } from './processor'
-import type { DeclarationEngine } from './native-engine'
 import { emitWithNativeEngine, resolveDeclarationEngine } from './native-engine'
+import { processDeclarations } from './processor'
 import { isStxFile, transformStxToTs } from './stx'
 import { isVueFile, transformVueSfcToTs } from './vue'
 
@@ -53,7 +53,7 @@ export function processSource(
   }
 
   const result = emitNatively(sourceCode, filename, keepComments, importOrder, isolatedDeclarations, engine)
-    ?? emitWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
+  ?? emitWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
 
   // Store in result cache
   resultCache.set(cacheKey, { result, contentHash, lastAccess: ++_resultAccessCounter })
@@ -122,7 +122,7 @@ export function processSourceDirect(
   engine?: DeclarationEngine,
 ): string {
   return emitNatively(sourceCode, filename, keepComments, importOrder, isolatedDeclarations, engine)
-    ?? processSourceWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
+  ?? processSourceWithTypeScriptEngine(sourceCode, filename, keepComments, importOrder, isolatedDeclarations)
 }
 
 /**
