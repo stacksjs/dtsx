@@ -8,7 +8,7 @@ import { isAvailable, runTsc } from '../../dtsx/test/helpers/tsc'
 // Regression: https://github.com/stacksjs/dtsx/issues/3149
 // Root builds the real binary before running this suite. No build or library
 // binding runs here, and an absent selected binary is a failure.
-const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, '../zig-out/bin/zig-dtsx')
+const cli = process.env.DTSX_NATIVE_CLI ?? resolve(import.meta.dir, `../zig-out/bin/zig-dtsx${process.platform === 'win32' ? '.exe' : ''}`)
 const unsupported = 'let privateValue: number | undefined = 7; if (Math.random() > 0.5) { privateValue = undefined; } export const value = privateValue;'
 
 async function invoke(args: string[], source = ''): Promise<{ code: number, stdout: string, stderr: string }> {
@@ -25,6 +25,19 @@ async function withDirectory(check: (directory: string) => Promise<void>): Promi
   try { await check(directory) }
   finally { await rm(directory, { recursive: true, force: true }) }
 }
+
+test('standalone CLI reports its own compiler, target and optimization without input', async () => {
+  const result = await invoke(['--build-info'])
+  expect(result.code, result.stderr).toBe(0)
+  expect(result.stderr).toBe('')
+  const info = JSON.parse(result.stdout)
+  expect(info.tool).toBe('dtsx')
+  expect(info.zig).toMatch(/^\d+\.\d+\.\d+/)
+  expect(info.arch).toBe(process.arch === 'arm64' ? 'aarch64' : 'x86_64')
+  expect(info.os).toBe(process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform)
+  expect(typeof info.optimization).toBe('string')
+  expect(info.optimization.length).toBeGreaterThan(0)
+})
 
 test('standalone CLI flow input has valid authored strict typing and an effective negative', () => withDirectory(async (directory) => {
   expect(isAvailable).toBe(true)

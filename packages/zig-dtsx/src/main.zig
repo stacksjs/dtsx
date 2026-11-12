@@ -873,6 +873,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
     var keep_comments: bool = true;
     var isolated_declarations: bool = false;
     var show_help: bool = false;
+    var show_build_info: bool = false;
     var positional_only = false;
 
     var i: usize = 1;
@@ -885,6 +886,8 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
             positional_only = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             show_help = true;
+        } else if (std.mem.eql(u8, arg, "--build-info")) {
+            show_build_info = true;
         } else if (std.mem.eql(u8, arg, "--no-comments")) {
             keep_comments = false;
         } else if (std.mem.eql(u8, arg, "--isolated-declarations")) {
@@ -910,6 +913,21 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
         } else return error.InvalidArguments;
     }
 
+    if (show_build_info) {
+        if (args.len != 2) return error.InvalidArguments;
+        const info = try std.json.Stringify.valueAlloc(alloc, .{
+            .tool = "dtsx",
+            .zig = builtin.zig_version_string,
+            .arch = @tagName(builtin.cpu.arch),
+            .os = @tagName(builtin.os.tag),
+            .optimization = @tagName(builtin.mode),
+        }, .{});
+        defer alloc.free(info);
+        try writeAll(info);
+        try writeAll("\n");
+        return;
+    }
+
     if (show_help) {
         try writeAll(
             \\zig-dtsx - Generate TypeScript declaration files
@@ -919,6 +937,7 @@ fn run(alloc: std.mem.Allocator, args: []const []const u8) !void {
             \\
             \\Options:
             \\  -h, --help        Show this help message
+            \\  --build-info      Print compiler and target metadata as JSON
             \\  -o, --output FILE Write output to FILE instead of stdout
             \\  --project DIR     Process .ts sources recursively (batch mode)
             \\  --outdir DIR      Output directory for --project mode

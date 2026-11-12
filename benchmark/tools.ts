@@ -6,14 +6,16 @@
  * shim on a machine without Node).
  */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { arch, cpus, platform, release, totalmem } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const root = join(import.meta.dir, '..')
 
-export const zigDtsxExe: string = join(root, 'packages', 'zig-dtsx', 'zig-out', 'bin', 'zig-dtsx')
-export const oxcExe: string = join(import.meta.dir, 'oxc-emit')
+const executableSuffix = platform() === 'win32' ? '.exe' : ''
+export const zigDtsxExe: string = join(root, 'packages', 'zig-dtsx', 'zig-out', 'bin', `zig-dtsx${executableSuffix}`)
+export const oxcExe: string = join(import.meta.dir, `oxc-emit${executableSuffix}`)
 
 /**
  * TypeScript 7 ships `tsc` as a native Go executable behind a Node shim.
@@ -72,6 +74,29 @@ export interface MachineInfo {
   versions: Record<string, string>
   /** Measured source revision (short SHA, `-dirty` when the tree had changes). */
   commit: string
+  nativeBuild?: NativeBuildInfo
+}
+
+export interface NativeBuildInfo {
+  tool: 'dtsx'
+  zig: string
+  arch: string
+  os: string
+  optimization: string
+  executableSha256: string
+}
+
+export function nativeBuildInfo(): NativeBuildInfo {
+  try {
+    const info = JSON.parse(sh(zigDtsxExe, ['--build-info']))
+    if (info.tool !== 'dtsx' || !/^\d+\.\d+\.\d+/.test(info.zig)
+      || ['zig', 'arch', 'os', 'optimization'].some(key => typeof info[key] !== 'string' || !info[key]))
+    throw new Error('Invalid native build information')
+    return { ...info, executableSha256: createHash('sha256').update(readFileSync(zigDtsxExe)).digest('hex') }
+  }
+  catch {
+    throw new Error(`Native build metadata unavailable at ${zigDtsxExe}; rebuild the native CLI before benchmarking`)
+  }
 }
 
 export function machineInfo(): MachineInfo {
@@ -81,17 +106,7 @@ export function machineInfo(): MachineInfo {
   const perf = isMac ? Number(sh('sysctl', ['-n', 'hw.perflevel0.physicalcpu'])) || undefined : undefined
   const eff = isMac ? Number(sh('sysctl', ['-n', 'hw.perflevel1.physicalcpu'])) || undefined : undefined
   const os = isMac ? `macOS ${sh('sw_vers', ['-productVersion'])}` : `${platform()} ${release()}`
-  const pantryZig = (() => {
-    try {
-      const dir = join(root, 'pantry', 'ziglang.org')
-      const latest = readdirSync(dir).filter(v => v.startsWith('v')).sort().pop()
-      return latest ? join(dir, latest, 'zig') : ''
-    }
-    catch {
-      return ''
-    }
-  })()
-  const zig = sh('zig', ['version']) || (pantryZig ? sh(pantryZig, ['version']) : '')
+  const nativeBuild = nativeBuildInfo()
   const sha = sh('git', ['-C', root, 'rev-parse', '--short', 'HEAD'])
   const dirty = sh('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no', '--', 'packages', 'benchmark']) !== ''
   return {
@@ -105,9 +120,10 @@ export function machineInfo(): MachineInfo {
     os,
     arch: arch(),
     bun: Bun.version,
+    nativeBuild,
     versions: {
       'dtsx': pkgVersion('@dtsx/dtsx'),
-      'zig': zig || 'unknown',
+      'zig': nativeBuild.zig,
       'oxc-transform': pkgVersion('oxc-transform'),
       'typescript': pkgVersion('typescript'),
       'tsdown': pkgVersion('tsdown'),
