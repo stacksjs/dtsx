@@ -589,12 +589,16 @@ try {
     ownerToolVersions[tool] = manifest.version
   }
   const packed: Packed[] = []
+  const licenseSHA256 = hash(await readFile(join(root, 'LICENSE.md')))
   for (const directory of ['dtsx', 'bun-plugin', 'vite-plugin', 'esbuild-plugin', 'webpack-plugin', 'tsup-plugin', 'tsdown-plugin']) {
     await check(`normal pack ${directory}`, async () => {
       const archive = join(evidence, `${directory}.tgz`)
       const output = await run(`pack-${directory}`, [process.execPath, 'pm', 'pack', '--filename', archive], join(packagesRoot, directory), 60000)
       assert(output.code === 0, output.output)
       const files = await new Bun.Archive(await readFile(archive)).files()
+      const license = files.get('package/LICENSE.md')
+      assert(license && hash(new Uint8Array(await license.arrayBuffer())) === licenseSHA256,
+      `Missing or different canonical license in ${directory} archive`)
       const manifestFile = files.get('package/package.json')
       assert(manifestFile, `Missing manifest in ${directory} archive`)
       const manifest: Manifest = JSON.parse(await manifestFile.text())
@@ -602,7 +606,7 @@ try {
       const artifact = { directory, archive, manifest, files }
       const entries = publicEntries(artifact)
       archives.push({ package: manifest.name, version: manifest.version, private: manifest.private ?? false,
-      archive, sha256: hash(await readFile(archive)), manifest, publicSubpaths: entries.map(entry => entry.subpath),
+      archive, sha256: hash(await readFile(archive)), licenseSHA256, manifest, publicSubpaths: entries.map(entry => entry.subpath),
       publicEntries: entries, runtimeEntries: entries.filter(entry => !entry.typeOnly).map(entry => entry.subpath),
       typeOnlyEntries: entries.filter(entry => entry.typeOnly).map(entry => entry.subpath) })
       packed.push(artifact)
