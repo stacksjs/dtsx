@@ -1,5 +1,16 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.53...v0.11.54)
+
+## 🐛 Bug Fixes
+
+- **native**: keep lexical overflow on the native C heap ([8c07de1](https://github.com/stacksjs/dtsx/commit/8c07de1)) _(by Chris Breuer)_ ([#3192](https://github.com/stacksjs/dtsx/issues/3192))
+- retain isolated call dependencies before private pruning ([99336b9](https://github.com/stacksjs/dtsx/commit/99336b9)) _(by Chris Breuer)_ ([#3191](https://github.com/stacksjs/dtsx/issues/3191), [#3174](https://github.com/stacksjs/dtsx/issues/3174))
+
+## Contributors
+
+- _Chris Breuer_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.52...v0.11.53)
 
 ## 🐛 Bug Fixes
