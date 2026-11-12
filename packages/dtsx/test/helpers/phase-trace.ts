@@ -1,17 +1,45 @@
 import { appendFileSync } from 'node:fs'
+import { freemem } from 'node:os'
 
 const destination = process.env.DTSX_TEST_TRACE
 let sequence = 0
 
+function resources(): Record<string, unknown> {
+  try {
+    return { selfCpuMicros: process.cpuUsage(), selfRSSBytes: process.memoryUsage.rss(), systemFreeMemoryBytes: freemem() }
+  }
+  catch (error) {
+    return { resourceObservationError: String(error) }
+  }
+}
+
 function record(event: string, id: number, phase: string, details: Record<string, unknown>): void {
-  appendFileSync(destination!, `${JSON.stringify({ event, id, phase, pid: process.pid, bun: Bun.version, executable: process.execPath, monotonicMs: performance.now(), at: new Date().toISOString(), ...details })}\n`, { mode: 0o600 })
+  appendFileSync(destination!, `${JSON.stringify({ event, id, phase, pid: process.pid, bun: Bun.version, executable: process.execPath, monotonicMs: performance.now(), at: new Date().toISOString(), ...resources(), ...details })}\n`, { mode: 0o600 })
 }
 
 function status(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object') return {}
   const result: Record<string, unknown> = {}
-  for (const field of ['exitCode', 'signalCode', 'success'] as const) {
+  for (const field of ['exitCode', 'signalCode', 'success', 'exitedDueToTimeout', 'exitedDueToMaxBuffer'] as const) {
     if (field in value) result[field] = Reflect.get(value, field)
+  }
+  if ('pid' in value) result.childPid = value.pid
+  // Bun's synchronous subprocess resource fields are non-enumerable getters.
+  // Copy the documented counters explicitly, without changing the operation.
+  if ('resourceUsage' in value) {
+    try {
+      const usage = value.resourceUsage as Bun.ResourceUsage
+      if (usage && typeof usage === 'object') {
+        result.childResources = {
+          cpuMicros: { user: Number(usage.cpuTime.user), system: Number(usage.cpuTime.system) },
+          maxRSSBytes: usage.maxRSS,
+          contextSwitches: { voluntary: usage.contextSwitches.voluntary, involuntary: usage.contextSwitches.involuntary },
+        }
+      }
+    }
+    catch (error) {
+      result.childResourceObservationError = String(error)
+    }
   }
   return result
 }
