@@ -1,5 +1,20 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.50...v0.11.51)
+
+## 🐛 Bug Fixes
+
+- qualify assembled release payloads before immutable publication ([0e4dbf9](https://github.com/stacksjs/dtsx/commit/0e4dbf9)) _(by Chris <chris@stacksjs.com>)_ ([#3187](https://github.com/stacksjs/dtsx/issues/3187))
+- preserve exports across regex and division trivia ([0f8b153](https://github.com/stacksjs/dtsx/commit/0f8b153)) _(by Chris <chris@stacksjs.com>)_ ([#3186](https://github.com/stacksjs/dtsx/issues/3186))
+
+## 🔧 Chores
+
+- release v0.11.51 ([6e62afa](https://github.com/stacksjs/dtsx/commit/6e62afa)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.49...v0.11.50)
 
 ## 🐛 Bug Fixes
