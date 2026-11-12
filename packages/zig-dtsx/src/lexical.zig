@@ -28,23 +28,8 @@ fn previousCodeIndex(source: []const u8, from: isize) isize {
 }
 
 fn lineCommentStart(source: []const u8, line_start: usize, up_to: usize) ?usize {
-    var quote: u8 = 0;
-    var i = line_start;
-    while (i <= up_to) : (i += 1) {
-        const c = source[i];
-        if (quote != 0) {
-            if (c == '\\') {
-                i += 1;
-            } else if (c == quote) quote = 0;
-            continue;
-        }
-        if (c == '\'' or c == '"' or c == '`') {
-            quote = c;
-            continue;
-        }
-        if (c == '/' and i + 1 <= up_to and source[i + 1] == '/') return i;
-    }
-    return null;
+    if (std.mem.indexOf(u8, source[line_start .. up_to + 1], "//") == null) return null;
+    return scanRegexContext(source, up_to).line_comment_start;
 }
 
 fn isRegexPrefixWord(word: []const u8) bool {
@@ -64,11 +49,51 @@ fn isRegexPrefixByte(c: u8) bool {
 /// `for`, `with`, `switch`, `catch`), after which `/` starts a regex; a call's
 /// `)` ends an expression instead. Lexes from the start of `source`, as the
 /// TypeScript emitter does.
-fn closesControlHeader(source: []const u8, end: usize) bool {
-    var parentheses: [256]bool = undefined;
-    var paren_count: usize = 0;
-    var template_expressions: [64]i64 = undefined;
-    var template_count: usize = 0;
+// Keep ordinary nesting on the stack and grow only for deeper authored input.
+// Exhaustion must fail explicitly instead of silently losing later comments.
+fn ContextStack(comptime T: type, comptime capacity: usize) type {
+    return struct {
+        inline_items: [capacity]T = undefined,
+        count: usize = 0,
+        overflow: std.ArrayList(T) = .empty,
+
+        fn deinit(self: *@This()) void {
+            self.overflow.deinit(std.heap.page_allocator);
+        }
+
+        fn push(self: *@This(), value: T) void {
+            if (self.count < capacity) {
+                self.inline_items[self.count] = value;
+            } else {
+                self.overflow.append(std.heap.page_allocator, value) catch @panic("Out of memory scanning declaration context");
+            }
+            self.count += 1;
+        }
+
+        fn pop(self: *@This()) ?T {
+            if (self.count == 0) return null;
+            self.count -= 1;
+            return if (self.count >= capacity) self.overflow.pop() else self.inline_items[self.count];
+        }
+
+        fn last(self: *const @This()) ?T {
+            if (self.count == 0) return null;
+            return if (self.count > capacity) self.overflow.items[self.overflow.items.len - 1] else self.inline_items[self.count - 1];
+        }
+    };
+}
+
+const RegexContext = struct {
+    regex_allowed: bool = false,
+    closes_control_header: bool = false,
+    line_comment_start: ?usize = null,
+};
+
+fn scanRegexContext(source: []const u8, end: usize) RegexContext {
+    var parentheses: ContextStack(bool, 256) = .{};
+    defer parentheses.deinit();
+    var template_expressions: ContextStack(i64, 64) = .{};
+    defer template_expressions.deinit();
     var brace_depth: i64 = 0;
     var in_template = false;
     var previous: []const u8 = "";
@@ -88,9 +113,7 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
                 previous = "literal";
                 regex_allowed = false;
             } else if (c == '$' and pos + 1 < source.len and source[pos + 1] == '{') {
-                if (template_count == template_expressions.len) return false;
-                template_expressions[template_count] = brace_depth;
-                template_count += 1;
+                template_expressions.push(brace_depth);
                 brace_depth += 1;
                 in_template = false;
                 before_previous = previous;
@@ -106,7 +129,9 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
             continue;
         }
         if (c == '/' and pos + 1 < source.len and source[pos + 1] == '/') {
-            pos = @min(ch.lineCommentEnd(source, pos + 2) + 1, source.len);
+            const newline = ch.lineCommentEnd(source, pos + 2);
+            if (newline > end) return .{ .regex_allowed = regex_allowed, .line_comment_start = pos };
+            pos = @min(newline + 1, source.len);
             continue;
         }
         if (c == '/' and pos + 1 < source.len and source[pos + 1] == '*') {
@@ -144,25 +169,31 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
             regex_allowed = allows;
             continue;
         }
+        if ((c == '+' or c == '-') and pos + 1 < source.len and source[pos + 1] == c) {
+            before_previous = previous;
+            previous = source[pos .. pos + 2];
+            pos += 2;
+            continue;
+        }
+        if (c == '!' and (pos + 1 == source.len or source[pos + 1] != '=')) {
+            before_previous = previous;
+            previous = "!";
+            pos += 1;
+            continue;
+        }
         if (c == '(') {
             const control = !std.mem.eql(u8, before_previous, ".") and (std.mem.eql(u8, previous, "if") or
                 std.mem.eql(u8, previous, "while") or std.mem.eql(u8, previous, "for") or
                 std.mem.eql(u8, previous, "with") or std.mem.eql(u8, previous, "switch") or
                 std.mem.eql(u8, previous, "catch") or
                 (std.mem.eql(u8, previous, "await") and std.mem.eql(u8, before_previous, "for")));
-            if (paren_count == parentheses.len) return false;
-            parentheses[paren_count] = control;
-            paren_count += 1;
+            parentheses.push(control);
             before_previous = previous;
             previous = "(";
             regex_allowed = true;
         } else if (c == ')') {
-            var control = false;
-            if (paren_count > 0) {
-                paren_count -= 1;
-                control = parentheses[paren_count];
-            }
-            if (pos == end) return control;
+            const control = parentheses.pop() orelse false;
+            if (pos == end) return .{ .regex_allowed = control, .closes_control_header = control };
             before_previous = previous;
             previous = ")";
             regex_allowed = control;
@@ -177,9 +208,11 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
                 brace_depth += 1;
             } else if (c == '}') {
                 brace_depth -= 1;
-                if (template_count > 0 and template_expressions[template_count - 1] == brace_depth) {
-                    template_count -= 1;
-                    in_template = true;
+                if (template_expressions.last()) |template_depth| {
+                    if (template_depth == brace_depth) {
+                        _ = template_expressions.pop();
+                        in_template = true;
+                    }
                 }
             }
             before_previous = previous;
@@ -188,7 +221,7 @@ fn closesControlHeader(source: []const u8, end: usize) bool {
         }
         pos += 1;
     }
-    return false;
+    return .{ .regex_allowed = regex_allowed };
 }
 
 pub fn isRegexStart(source: []const u8, position: usize) bool {
@@ -202,7 +235,10 @@ pub fn isRegexStartAfterToken(source: []const u8, token_end: usize) bool {
 fn isRegexAfter(source: []const u8, p: isize) bool {
     if (p < 0) return true; // start of file
     const prev = source[@intCast(p)];
-    if (prev == ')') return closesControlHeader(source, @intCast(p));
+    const at: usize = @intCast(p);
+    if (prev == '!' or ((prev == '+' or prev == '-') and at > 0 and source[at - 1] == prev))
+        return scanRegexContext(source, at).regex_allowed;
+    if (prev == ')') return scanRegexContext(source, at).closes_control_header;
     // After these chars, `/` starts a regex
     if (prev == ch.CH_EQUAL or prev == ch.CH_LPAREN or prev == ch.CH_LBRACKET or
         prev == ch.CH_EXCL or prev == ch.CH_AMP or prev == ch.CH_PIPE or
@@ -471,4 +507,34 @@ test "nested JSX headers are memoized at every opening" {
     try std.testing.expect((try reader.read(1)) == null);
     try std.testing.expect((try reader.read(1)) == null);
     try std.testing.expectEqual(depth + 2, reader.headers.count());
+}
+
+test "division and postfix operand context preserve real comments" {
+    const cases = [_][]const u8{
+        "function ratio(total: number, divisor: number, object: { return: number }): number {\n return total\n / 2 // return\n / divisor }\nexport const after = 1",
+        "function ratio(total: number, divisor: number, object: { return: number }): number {\n return total++\n / 2 // return\n / divisor }\nexport const after = 1",
+        "function ratio(total: number, divisor: number, object: { return: number }): number {\n return total--\n / 2 // return\n / divisor }\nexport const after = 1",
+        "function ratio(total: number, divisor: number, object: { return: number }): number {\n return total!\n / 2 // return\n / divisor }\nexport const after = 1",
+        "function ratio(total: number, divisor: number, object: { return: number }): number {\n return object.\n return\n / 2 // return\n / divisor }\nexport const after = 1",
+        "function ratio(total: number, divisor: number): number {\n return total++ / divisor // actual comment {\n / 2\n}\nexport const after = 1",
+    };
+    for (cases) |source| {
+        const position = std.mem.lastIndexOf(u8, source, "/ divisor").?;
+        try std.testing.expect(!isRegexStart(source, position));
+    }
+}
+
+test "completed deep nesting does not hide later line comments" {
+    for ([_]bool{ false, true }) |templates| {
+        var source: std.ArrayList(u8) = .empty;
+        defer source.deinit(std.testing.allocator);
+        try source.appendSlice(std.testing.allocator, "const deep = ");
+        const depth: usize = if (templates) 65 else 257;
+        for (0..depth) |_| try source.appendSlice(std.testing.allocator, if (templates) "`${" else "(");
+        try source.appendSlice(std.testing.allocator, "total");
+        for (0..depth) |_| try source.appendSlice(std.testing.allocator, if (templates) "}`" else ")");
+        try source.appendSlice(std.testing.allocator, "; return total / 2 // return\n / divisor }");
+        const position = std.mem.lastIndexOf(u8, source.items, "/ divisor").?;
+        try std.testing.expect(!isRegexStart(source.items, position));
+    }
 }

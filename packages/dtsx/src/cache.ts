@@ -38,9 +38,9 @@ export interface CacheManifest {
   updatedAt: number
 }
 
-// Invalidate declarations produced before constructor inference for class fields.
+// Invalidate declarations that could lose exports after regex comment text.
 // Cached declarations must also satisfy the current source-selection policy.
-const CACHE_VERSION = 28
+const CACHE_VERSION = 29
 const CACHE_DIR = '.dtsx-cache'
 const CACHE_FILE = 'manifest.json'
 

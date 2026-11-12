@@ -85,22 +85,10 @@ function previousCodeIndex(source: string, from: number): number {
 
 /** Index of the `//` that comments out `upTo` on this line, or -1. */
 function lineCommentStart(source: string, lineStart: number, upTo: number): number {
-  let quote = 0
-  for (let i = lineStart; i <= upTo; i++) {
-    const ch = source.charCodeAt(i)
-    if (quote) {
-      if (ch === CH_BACKSLASH) { i++; continue }
-      if (ch === quote) quote = 0
-      continue
-    }
-    if (ch === CH_SQUOTE || ch === CH_DQUOTE || ch === CH_BACKTICK) {
-      quote = ch
-      continue
-    }
-    if (ch === CH_SLASH && i + 1 <= upTo && source.charCodeAt(i + 1) === CH_SLASH)
-      return i
-  }
-  return -1
+  if (!source.slice(lineStart, upTo + 1).includes('//')) return -1
+  // Comments and regex literals need the same expression context across lines.
+  // Reuse the iterative contextual scanner rather than restarting at this line.
+  return scanRegexContext(source, upTo).lineCommentStart ?? -1
 }
 
 /** Punctuation after which an expression, including a regex, may start. */
@@ -126,9 +114,9 @@ function isRegexPrefixWord(word: string): boolean {
  * A control header's closing parenthesis starts a statement, whereas a call's
  * closing parenthesis ends an expression. Balance lexical tokens to distinguish
  * them, ignoring delimiters inside comments, strings, templates and regexes.
- * Only the ambiguous closing-parenthesis case needs this contextual pass.
+ * Closing parentheses and line-leading slashes need this contextual pass.
  */
-function closesControlHeader(source: string, end: number): boolean {
+function scanRegexContext(source: string, end: number): { regexAllowed: boolean, closesControlHeader: boolean, lineCommentStart?: number } {
   const parentheses: boolean[] = []
   const templateExpressions: number[] = []
   let braceDepth = 0
@@ -162,6 +150,7 @@ function closesControlHeader(source: string, end: number): boolean {
     if (ch === CH_SPACE || ch === CH_TAB || ch === CH_LF || ch === CH_CR) { pos++; continue }
     if (ch === CH_SLASH && source.charCodeAt(pos + 1) === CH_SLASH) {
       const newline = source.indexOf('\n', pos + 2)
+      if (newline === -1 || newline > end) return { regexAllowed, closesControlHeader: false, lineCommentStart: pos }
       pos = newline === -1 ? source.length : newline + 1
       continue
     }
@@ -190,6 +179,18 @@ function closesControlHeader(source: string, end: number): boolean {
       token(word, previous !== '.' && isRegexPrefixWord(word))
       continue
     }
+    if ((ch === 43 /* + */ || ch === 45 /* - */) && source.charCodeAt(pos + 1) === ch) {
+      // Prefix operators still require a value; postfix operators finish one.
+      token(source.slice(pos, pos + 2), regexAllowed)
+      pos += 2
+      continue
+    }
+    if (ch === 33 /* ! */ && source.charCodeAt(pos + 1) !== 61 /* = */) {
+      // Unary negation needs an operand; a TS non-null assertion follows one.
+      token('!', regexAllowed)
+      pos++
+      continue
+    }
     if (ch === CH_LPAREN) {
       const control = beforePrevious !== '.' && (previous === 'if' || previous === 'while'
         || previous === 'for' || previous === 'with' || previous === 'switch'
@@ -199,7 +200,7 @@ function closesControlHeader(source: string, end: number): boolean {
     }
     else if (ch === 41 /* ) */) {
       const control = parentheses.pop() ?? false
-      if (pos === end) return control
+      if (pos === end) return { regexAllowed: control, closesControlHeader: control }
       token(')', control)
     }
     else if (ch === CH_SLASH && regexAllowed) {
@@ -220,7 +221,7 @@ function closesControlHeader(source: string, end: number): boolean {
     }
     pos++
   }
-  return false
+  return { regexAllowed, closesControlHeader: false }
 }
 
 /** Check if `/` at current pos is the start of a regex literal (not division). */
@@ -228,7 +229,9 @@ export function isRegexStart(source: string, pos: number, previousTokenEnd?: num
   const p = previousTokenEnd === undefined ? previousCodeIndex(source, pos - 1) : previousTokenEnd - 1
   if (p < 0) return true
   const prev = source.charCodeAt(p)
-  if (prev === 41 /* ) */) return closesControlHeader(source, p)
+  if (prev === 33 /* ! */ || (prev === 43 /* + */ || prev === 45 /* - */) && source.charCodeAt(p - 1) === prev)
+    return scanRegexContext(source, p).regexAllowed
+  if (prev === 41 /* ) */) return scanRegexContext(source, p).closesControlHeader
   if (isRegexPrefixCharacter(prev)) return true
   if (isIdentChar(prev)) {
     let start = p

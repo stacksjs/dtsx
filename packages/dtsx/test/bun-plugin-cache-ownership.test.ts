@@ -36,7 +36,7 @@ async function build() {
 }
 await build()
 const first = JSON.parse(await readFile(join(cacheDir, 'manifest.json'), 'utf8'))
-assert.equal(first.version, 28)
+assert.equal(first.version, 29)
 assert.equal(Object.keys(first.entries).length, 2)
 assert.match(first.entries['src/index.ts'].dtsContent, /options\\.js/)
 await build()

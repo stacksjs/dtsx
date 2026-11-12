@@ -74,6 +74,7 @@ pub fn build(b: *std.Build) void {
     // Unit tests
     const test_targets = [_][]const u8{
         "src/char_utils.zig",
+        "src/lexical.zig",
         "src/types.zig",
         "src/scanner.zig",
         "src/extractors.zig",
