@@ -1,5 +1,19 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.51...v0.11.52)
+
+## 🐛 Bug Fixes
+
+- **packages**: include the canonical Vite plugin license ([3bbbac7](https://github.com/stacksjs/dtsx/commit/3bbbac7)) _(by Chris <chris@stacksjs.com>)_ ([#3187](https://github.com/stacksjs/dtsx/issues/3187))
+
+## 🔧 Chores
+
+- release v0.11.52 ([6576828](https://github.com/stacksjs/dtsx/commit/6576828)) _(by Chris <chris@stacksjs.com>)_
+
+## Contributors
+
+- _Chris <chris@stacksjs.com>_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.50...v0.11.51)
 
 ## 🐛 Bug Fixes
