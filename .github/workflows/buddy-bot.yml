@@ -158,9 +158,9 @@ jobs:
           persist-credentials: true
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
@@ -198,9 +198,9 @@ jobs:
           persist-credentials: true
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -282,9 +282,9 @@ jobs:
           persist-credentials: true
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Setup PHP and Composer (if needed)
         if: ${{ hashFiles('composer.json') != '' }}
@@ -392,9 +392,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

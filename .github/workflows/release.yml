@@ -34,9 +34,9 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
@@ -46,24 +46,6 @@ jobs:
           git rev-parse --verify "refs/tags/${RELEASE_TAG}"
           package_version="$(bun -e "console.log((await Bun.file('package.json').json()).version)")"
           test "v${package_version}" = "${RELEASE_TAG}"
-
-      - name: Build JavaScript library and plugins
-        run: |
-          bun run build
-          bun --filter './packages/*-plugin' build
-
-      - name: Verify normally packed public SDK consumers
-        id: public-sdk
-        run: bun run test:public-sdk
-        env:
-          DTSX_SDK_EVIDENCE: ${{ runner.temp }}/public-sdk
-      - name: Retain public SDK evidence
-        if: always() && steps.public-sdk.outcome != 'skipped'
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: public-sdk-release
-          path: ${{ runner.temp }}/public-sdk
-          if-no-files-found: error
 
       - name: Build Zig CLI + Library Binaries
         working-directory: packages/zig-dtsx
@@ -109,6 +91,24 @@ jobs:
       - name: Qualify packaged Linux FFI library before publication
         run: bun scripts/verify-native-library.ts --inference
 
+      - name: Build JavaScript library and plugins
+        run: |
+          bun run build
+          bun --filter './packages/*-plugin' build
+
+      - name: Verify normally packed public SDK consumers
+        id: public-sdk
+        run: bun run test:public-sdk
+        env:
+          DTSX_SDK_EVIDENCE: ${{ runner.temp }}/public-sdk
+      - name: Retain public SDK evidence
+        if: always() && steps.public-sdk.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: public-sdk-release
+          path: ${{ runner.temp }}/public-sdk
+          if-no-files-found: error
+
       - name: Retain qualified native release artifacts
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -120,9 +120,9 @@ jobs:
 
       - name: Create GitHub Release with Pantry
         id: pantry-release
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
           install: false
           release: true
           release-tag: ${{ env.RELEASE_TAG }}
@@ -174,7 +174,7 @@ jobs:
       - name: Publish to Pantry registry
         # Registry versions are immutable. A retry must verify the full existing
         # payload rather than overwrite it or fail on an already-published version.
-        run: pantry publish --verify-existing
+        run: pantry publish --verify-existing --ignore-scripts
         env:
           # Token path (HTTP upload) is preferred; AWS creds enable the S3 fallback.
           PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
@@ -189,7 +189,7 @@ jobs:
       # with the existing npm secret available for packages without that trust.
       # A partial release must still fail the job.
       - name: Publish to npm
-        run: pantry publish --npm --skip zig-dtsx --access public
+        run: pantry publish --npm --skip zig-dtsx --access public --ignore-scripts
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 

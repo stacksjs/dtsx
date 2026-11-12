@@ -1,0 +1,4 @@
+import { typeCheck } from '@dtsx/dtsx/checker'
+declare const checked: Awaited<ReturnType<typeof typeCheck>>
+const wrong: string = checked.errorCount
+void wrong

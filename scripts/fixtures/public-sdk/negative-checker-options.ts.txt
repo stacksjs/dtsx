@@ -1,0 +1,2 @@
+import { typeCheck } from '@dtsx/dtsx/checker'
+typeCheck(42)

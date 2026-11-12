@@ -20,9 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Build core library and CLI
@@ -56,9 +56,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
       - name: Install committed dependencies
         run: bun install --frozen-lockfile
       - name: Verify tsdown ESM, CJS and installed declaration contracts
@@ -80,9 +80,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -105,9 +105,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -130,9 +130,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0
@@ -186,9 +186,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ff293ff5231b67057f09d586e592f650568ad42e
+        uses: pantry-pm/pantry/packages/action@362da3ef0602f51232ab9431da8d05c84c5f49ba
         with:
-          version: 0.11.180
+          version: 0.11.197
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile

@@ -478,6 +478,9 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   await verifyInstalledCandidates(consumer, packages, candidates, core, `${name}:normal`)
   const lock = await readFile(join(consumer, 'bun.lock'))
   const publicResolutions = provider.kind === 'public' ? publicRegistryResolutions(lock) : undefined
+  await rm(join(consumer, 'node_modules'), { recursive: true, force: true })
+  const frozenWasFresh = !(await Bun.file(join(consumer, 'node_modules', core.manifest.name, 'package.json')).exists())
+  assert(frozenWasFresh, 'Frozen qualification requires an empty installation tree')
   const frozen = await run(`${name}-frozen`, [...install, '--frozen-lockfile'], consumer)
   assert(frozen.code === 0, frozen.output)
   assert(hash(await readFile(join(consumer, 'bun.lock'))) === hash(lock), 'Frozen install changed the consumer lock')
@@ -489,7 +492,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   }
   graphs.push({ name, kind: provider.kind === 'public' ? 'public-released-registry' : 'prepublication-owned-candidate-registry', registry: provider.url,
   directTargets: packages.map(item => ({ name: item.manifest.name, version: item.manifest.version, private: item.manifest.private ?? false })),
-  dependencies, authoredTools: tools, resolvedTools, lockSHA256: hash(lock), publicResolutions,
+  dependencies, authoredTools: tools, resolvedTools, lockSHA256: hash(lock), publicResolutions, frozenWasFresh,
   qualification: provider.kind === 'public'
     ? 'Exact released versions and their dependencies are installed from public npm; installed SDK payloads must match the supplied archives.'
     : 'Private candidate-provider checks do not qualify the actual public released registry graph.' })
@@ -518,7 +521,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   // A dependency error must not be misreported as the expected negative error.
   if (positive.code === 0) {
     const negatives = primary.directory === 'dtsx'
-      ? [{ file: 'negative-brand.ts', code: 'TS2322' }, { file: 'negative-private.ts', code: 'TS2724' }, { file: 'negative-native-options.ts', code: 'TS2322' }, { file: 'negative-native-result.ts', code: 'TS2322' }]
+      ? [{ file: 'negative-brand.ts', code: 'TS2322' }, { file: 'negative-private.ts', code: 'TS2724' }, { file: 'negative-native-options.ts', code: 'TS2322' }, { file: 'negative-native-result.ts', code: 'TS2322' }, { file: 'negative-checker-options.ts', code: 'TS2345' }, { file: 'negative-checker-result.ts', code: 'TS2322' }]
       : [{ file: 'negative-mode.ts', code: 'TS2322' }]
     for (const negative of negatives) {
       if (negative.file === 'negative-private.ts') await verifyAuthoredPrivateContract(consumer, name, core)
@@ -536,7 +539,7 @@ async function verifyConsumer(name: string, packages: Packed[], primary: Packed,
   else results.push({ name: `${name}: negatives blocked by failed positive`, ok: false })
 
   const runtimeEntries = entries.filter(entry => !entry.typeOnly).map(entry => entry.specifier)
-  let runtime = `import assert from 'node:assert/strict'\nfor (const entry of ${JSON.stringify(runtimeEntries)}) { await import(entry) }\n${primary.directory === 'dtsx' ? "const { processSource } = await import('@dtsx/dtsx'); assert.equal(typeof processSource('export const marker: number = 1', 'sdk.ts'), 'string')\n" : ''}`
+  let runtime = `import assert from 'node:assert/strict'\nfor (const entry of ${JSON.stringify(runtimeEntries)}) { await import(entry) }\n${primary.directory === 'dtsx' ? "const { processSource } = await import('@dtsx/dtsx'); assert.equal(typeof processSource('export const marker: number = 1', 'sdk.ts'), 'string')\nconst checker = await import('@dtsx/dtsx/checker'); const checked = await checker.typeCheck([]); assert.equal(checked.success, true); assert.deepEqual(checked.diagnostics, []); assert.equal(checked.errorCount, 0)\n" : ''}`
   if (name === 'dtsx') runtime += `
 const { formatDts } = await import('@dtsx/dtsx/formatter')
 const formatted = await formatDts('export interface Example{value:string}', { usePrettier: true })

@@ -1,5 +1,5 @@
 import * as sdk from '@dtsx/dtsx'
-import { asDirectoryPath, asFilePath, BrandedPath, generate, processSource, sortImports, type DirectoryPath, type FilePath, type GenerationStats } from '@dtsx/dtsx'
+import { asDirectoryPath, asFilePath, BrandedPath, generate, processSource, sortImports, type DirectoryPath, type DtsGenerationConfig, type FilePath, type GenerationStats } from '@dtsx/dtsx'
 import * as generator from '@dtsx/dtsx/generator'
 import { generateNativeDeclarationProject, type NativeGenerationResult } from '@dtsx/dtsx/native-generation'
 import * as cache from '@dtsx/dtsx/cache'
@@ -29,5 +29,22 @@ const generated: Promise<GenerationStats> = generate({ moduleSpecifierMode: 'nod
 const nativeGenerated: Promise<NativeGenerationResult> = generateNativeDeclarationProject('zig-dtsx', { moduleSpecifierMode: 'node', entrypoints: ['index.ts'] }, { timeoutMs: 4000 })
 const nativeShape: Promise<{ readonly filesGenerated: number, readonly outputFiles: readonly string[] }> = nativeGenerated
 const bunPlugin = nestedBun.dts({ moduleSpecifierMode: 'node' })
+const checkerOptions: checker.CompilerOptions = checker.loadCompilerOptions('tsconfig.json', { strict: true })
+const checked: Promise<checker.TypeCheckResult> = checker.typeCheck([])
+const validatedDeclarations: Promise<checker.TypeCheckResult> = checker.validateDeclarations([])
+const isolated: Promise<Map<string, checker.IsolatedDeclarationsResult>> = checker.checkIsolatedDeclarations([])
+const inferredType: string | null = checker.getTypeAtPosition('input.ts', 1, 1)
+const quickInfo: { type: string, documentation?: string } | null = checker.getQuickInfo('input.ts', 1, 1)
+declare const checkerResult: Awaited<ReturnType<typeof checker.typeCheck>>
+const checkerErrors: number = checkerResult.errorCount
+const formattedDiagnostics: string = checker.formatTypeCheckResults(checkerResult)
+declare const generationConfig: DtsGenerationConfig
+const checkedConfig: Promise<checker.TypeCheckResult> = checker.typeCheckWithConfig(generationConfig)
+const validatedGeneration: Promise<{ valid: boolean, mismatches: Array<{ sourceName: string, sourceType: string, dtsType: string }> }> = checker.validateGeneratedDeclarations([], [])
+type CheckerIsAny<T> = 0 extends (1 & T) ? true : false
+const safeCheckerResult: false = null as unknown as CheckerIsAny<typeof checkerResult>
+const safeCheckerDiagnostic: false = null as unknown as CheckerIsAny<typeof checkerResult.diagnostics[number]>
 void [sdk, generator, cache, brands, optimizer, sorter, checker, plugins, vite, esbuild, tsup, tsdown, webpack,
-  nestedBun, nestedVite, nestedEsbuild, nestedTsup, nestedTsdown, nestedWebpack, directory, validated, declaration, ordered, generated, nativeShape, bunPlugin]
+  nestedBun, nestedVite, nestedEsbuild, nestedTsup, nestedTsdown, nestedWebpack, directory, validated, declaration, ordered, generated, nativeShape, bunPlugin,
+  checkerOptions, checked, validatedDeclarations, isolated, inferredType, quickInfo, checkerErrors, formattedDiagnostics, checkedConfig, validatedGeneration,
+  safeCheckerResult, safeCheckerDiagnostic]
