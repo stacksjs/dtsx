@@ -36,12 +36,14 @@ bun add -d @dtsx/dtsx
 
 > _@npmjs.com, please allow us to use the `dtsx` package name 🙏_
 
-<!-- _Alternatively, you can install:_
+For the standalone native CLI on macOS or Linux:
 
 ```bash
-brew install dtsx # wip
-pkgx install dtsx # wip
-``` -->
+brew install stacksjs/tap/dtsx
+zig-dtsx --project src --outdir dist
+```
+
+The native `zig-dtsx` command does not require Bun or npm packages.
 
 > [!NOTE]
 > dtsx was published as `@stacksjs/dtsx` up to v0.11.36. Install `@dtsx/dtsx` instead and change imports from `@stacksjs/dtsx` to `@dtsx/dtsx`; the API, CLI and config are unchanged. See [Migrating from @stacksjs/dtsx](https://github.com/stacksjs/dtsx/blob/main/docs/MIGRATION.md#from-stacksjsdtsx).

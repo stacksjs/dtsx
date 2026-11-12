@@ -16,6 +16,15 @@ the matching shared library from the package's `prebuilt` directory.
 The standalone CLI archives on [GitHub Releases](https://github.com/stacksjs/dtsx/releases)
 are a separate delivery surface and do not require importing the Bun FFI binding.
 
+Install the standalone native CLI on macOS or Linux through Homebrew:
+
+```bash
+brew install stacksjs/tap/dtsx
+zig-dtsx --project src --outdir dist
+```
+
+This `zig-dtsx` command does not require Bun or npm packages.
+
 Linux FFI shared libraries target GNU libc 2.17 explicitly, because they are
 loaded into Bun's glibc process. The standalone Linux CLI uses musl. Using the
 default Linux target for both can produce a shared library that requests

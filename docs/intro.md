@@ -1,5 +1,18 @@
 <p align="center"><img src="https://github.com/stacksjs/dtsx/blob/main/.github/art/cover.jpg?raw=true" alt="Social Card of this repo"></p>
 
+## Install
+
+Install the JavaScript library and CLI with `bun add -d @dtsx/dtsx`.
+
+For the standalone native CLI on macOS or Linux:
+
+```bash
+brew install stacksjs/tap/dtsx
+zig-dtsx --project src --outdir dist
+```
+
+The native `zig-dtsx` command does not require Bun or npm packages.
+
 ## Features
 
 - Sound type inference with `@defaultValue` preservation — no `isolatedDeclarations` needed
