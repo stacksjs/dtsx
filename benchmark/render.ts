@@ -66,7 +66,7 @@ const cores = m.performanceCores && m.efficiencyCores
 const machineLine = `${m.cpu}${m.model ? ` (\`${m.model}\`)` : ''}, ${cores}, ${m.memoryGB} GB RAM, ${m.os} (${m.arch})`
 const loads = (results.loadAverage ?? []).flatMap(l => [l.start, l.end])
 const runLine = results.runs && results.runs > 1
-  ? `Each time is the median of ${results.runs} full runs${loads.length ? `; the 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement` : ''}.`
+  ? `API and CLI values are the median of ${results.runs} full runs${loads.length ? `; the 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement` : ''}.`
   : loads.length ? `The 1-minute load average ranged ${Math.min(...loads).toFixed(1)}–${Math.max(...loads).toFixed(1)} during measurement.` : ''
 const sourceLine = m.commit ? `dtsx ${m.versions.dtsx} at [\`${m.commit}\`](https://github.com/stacksjs/dtsx/commit/${m.commit.replace(/-dirty$/, '')})` : `dtsx ${m.versions.dtsx}`
 const versionLine = `${sourceLine} · Bun ${m.bun} · Zig ${m.versions.zig} · oxc-transform ${m.versions['oxc-transform']} · TypeScript ${m.versions.typescript} (native \`tsc\`) · tsdown ${m.versions.tsdown}`
@@ -128,7 +128,7 @@ ${h2} How the comparison is kept fair
 - \`tsc\` is TypeScript 7's native Go compiler, run directly (no Node launcher) with \`--noCheck\`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
 - oxc has no declaration CLI, so its CLI rows run a minimal Bun-compiled wrapper around \`oxc-transform\` (\`bun build --compile --splitting --bytecode\`).
 - "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
-- Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
+- API and CLI per-run means come from [mitata](https://github.com/evanwashere/mitata), aggregated as described above. Bundled builds use the sample means described below. Lower is better; **bold** marks the fastest tool per column.
 
 ${h2} In-process API (no cache)
 
@@ -158,7 +158,7 @@ ${sdkInProcess}
 
 ${h3} JS SDK: bundled declarations vs tsdown
 
-_Fresh builds of the same project, checked by strict positive and negative consumer type-checks outside timing._
+_Fresh builds of the same project. Each value is the mean of ${results.tsdown ? [...new Set(results.tsdown.results.map(row => row.iterations))].join('/') : 'the recorded'} measured samples per tool/project. Strict positive and negative consumer type-checks run outside timing._
 
 ${bundled}
 

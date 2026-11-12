@@ -9,7 +9,7 @@ description: Measured dtsx performance against oxc, tsc 7 and tsdown.
 
 Measured on **Apple M3 Pro (`Mac15,6`), 11-core CPU (5 performance + 6 efficiency), 18 GB RAM, macOS 27.0.1 (arm64)** — 2026-11-12.
 dtsx 0.11.52 at [`ba9df16`](https://github.com/stacksjs/dtsx/commit/ba9df16) · Bun 1.4.4 · Zig 0.17.1 · oxc-transform 0.158.0 · TypeScript 7.0.2 (native `tsc`) · tsdown 0.23.7.
-Each time is the median of 3 full runs; the 1-minute load average ranged 4.5–8.2 during measurement.
+API and CLI values are the median of 3 full runs; the 1-minute load average ranged 4.5–8.2 during measurement.
 
 Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw numbers live in [`benchmark/results.json`](https://github.com/stacksjs/dtsx/blob/main/benchmark/results.json).
 
@@ -20,7 +20,7 @@ Reproduce with `bun run benchmark:prepare && bun run benchmark:publish`. Raw num
 - `tsc` is TypeScript 7's native Go compiler, run directly (no Node launcher) with `--noCheck`, its fastest declaration path. It has no in-process API, so it only appears in the CLI tables.
 - oxc has no declaration CLI, so its CLI rows run a minimal Bun-compiled wrapper around `oxc-transform` (`bun build --compile --splitting --bytecode`).
 - "No cache" means every dtsx cache is cleared on every iteration. The warm-cache table is reported separately and never used for comparisons.
-- Times are means from [mitata](https://github.com/evanwashere/mitata); lower is better. **Bold** marks the fastest tool per column.
+- API and CLI per-run means come from [mitata](https://github.com/evanwashere/mitata), aggregated as described above. Bundled builds use the sample means described below. Lower is better; **bold** marks the fastest tool per column.
 
 ## In-process API (no cache)
 
@@ -64,7 +64,7 @@ _The `@dtsx/dtsx` SDK, which powers the bundler and build-tool plugins, called i
 
 ### JS SDK: bundled declarations vs tsdown
 
-_Fresh builds of the same project, checked by strict positive and negative consumer type-checks outside timing._
+_Fresh builds of the same project. Each value is the mean of 5 measured samples per tool/project. Strict positive and negative consumer type-checks run outside timing._
 
 | Tool | 2 source files | 11 source files | 101 source files |
 |------|------|------|------|
