@@ -121,10 +121,22 @@ fn processSourceInternalWithContext(
     context_json: ?[]const u8,
 ) !ProcessResult {
     if (len == 0 and context_json == null) return emptyResult();
+    return processSourceUsingArena(getOrInitArena(), input, len, keep_comments, isolated_declarations, context_json);
+}
+
+fn processSourceUsingArena(
+    arena: *std.heap.ArenaAllocator,
+    input: [*]const u8,
+    len: usize,
+    keep_comments: bool,
+    isolated_declarations: bool,
+    context_json: ?[]const u8,
+) !ProcessResult {
+    if (len == 0 and context_json == null) return emptyResult();
     const source = input[0..len];
 
-    // Reuse thread-local arena — reset frees all allocations but keeps backing pages
-    const arena = getOrInitArena();
+    // Reuse this caller's scratch pages between files. The caller owns the
+    // arena lifetime; result allocations remain independent of these pages.
     _ = arena.reset(.retain_capacity);
     const arena_alloc = arena.allocator();
     var context: ?module_specifiers.Context = if (context_json) |json|
@@ -245,9 +257,22 @@ const BatchTask = struct {
 };
 
 fn batchWorker(tasks: []const BatchTask) void {
+    batchWorkerWithBacking(tasks, std.heap.c_allocator);
+}
+
+fn batchWorkerWithBacking(tasks: []const BatchTask, backing: std.mem.Allocator) void {
+    // These callbacks usually run on short-lived native threads. A TLS arena
+    // would lose its malloc-backed pages when the thread exits. Keep scratch
+    // local to the worker while returned results retain their C ABI ownership.
+    var arena = std.heap.ArenaAllocator.init(backing);
+    defer arena.deinit();
+    batchWorkerUsingArena(tasks, &arena);
+}
+
+fn batchWorkerUsingArena(tasks: []const BatchTask, arena: *std.heap.ArenaAllocator) void {
     for (tasks) |task| {
         if (task.out_status) |status| status.* = 0;
-        const result = processSourceInternal(task.input, task.input_len, task.keep_comments, false) catch |err| {
+        const result = processSourceUsingArena(arena, task.input, task.input_len, task.keep_comments, false, null) catch |err| {
             if (task.out_status) |status| status.* = emissionStatus(err);
             const empty = emptyResult();
             task.out_ptr.* = @intFromPtr(empty.ptr);
@@ -257,6 +282,44 @@ fn batchWorker(tasks: []const BatchTask) void {
         task.out_ptr.* = @intFromPtr(result.ptr);
         task.out_len.* = @intCast(result.len);
     }
+}
+
+test "a completed native batch worker releases scratch allocations while its results survive" {
+    const sources = [_][]const u8{
+        "export class Calculate { #hidden = () => ({ value: 2 }); value(): number { return this.#hidden().value } }",
+        "let value: number | undefined = 7; if (Math.random() > 0.5) { value = undefined; } export const alias = value;",
+        "",
+        "export const healthy: number = 1;",
+    };
+    var pointers: [sources.len]usize = @splat(0);
+    var lengths: [sources.len]u64 = @splat(0);
+    var statuses: [sources.len]u32 = @splat(999);
+    var tasks: [sources.len]BatchTask = undefined;
+    for (sources, 0..) |source, index| tasks[index] = .{ .input = source.ptr, .input_len = source.len, .keep_comments = true, .out_ptr = &pointers[index], .out_len = &lengths[index], .out_status = &statuses[index] };
+    const Probe = struct {
+        tasks: []const BatchTask,
+        live_bytes: usize = 0,
+        clean: bool = false,
+
+        fn run(self: *@This()) void {
+            var allocator = std.heap.DebugAllocator(.{ .enable_memory_limit = true }){};
+            batchWorkerWithBacking(self.tasks, allocator.allocator());
+            self.live_bytes = allocator.total_requested_bytes;
+            self.clean = allocator.deinit() == .ok;
+        }
+    };
+    var probe = Probe{ .tasks = &tasks };
+    const thread = try std.Thread.spawn(.{}, Probe.run, .{&probe});
+    thread.join();
+    defer free_batch_results(&pointers, &lengths, sources.len);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 5, 0, 0 }, &statuses);
+    const private: [*]const u8 = @ptrFromInt(pointers[0]);
+    try std.testing.expect(std.mem.indexOf(u8, private[0..@intCast(lengths[0])], "value(): number") != null);
+    try std.testing.expect(std.mem.indexOf(u8, private[0..@intCast(lengths[0])], "#private") != null);
+    const healthy: [*]const u8 = @ptrFromInt(pointers[3]);
+    try std.testing.expectEqualStrings("export declare const healthy: number;", healthy[0..@intCast(lengths[3])]);
+    try std.testing.expectEqual(@as(usize, 0), probe.live_bytes);
+    try std.testing.expect(probe.clean);
 }
 
 /// Process multiple files in parallel.
@@ -341,14 +404,14 @@ fn processBatchInternal(
 
     if (num_threads <= 1) {
         // Single-threaded: process all sequentially
-        batchWorker(tasks);
+        batchWorkerUsingArena(tasks, getOrInitArena());
         return;
     }
 
     // Distribute tasks across threads
     const chunks = std.heap.c_allocator.alloc([]const BatchTask, num_threads) catch {
         // Fallback to single-threaded
-        batchWorker(tasks);
+        batchWorkerUsingArena(tasks, getOrInitArena());
         return;
     };
     defer std.heap.c_allocator.free(chunks);
@@ -361,7 +424,7 @@ fn processBatchInternal(
         used += 1;
     }
     // A thread that cannot start runs its chunk on this one.
-    platform.runOnThreads([]const BatchTask, batchWorker, std.heap.c_allocator, chunks[0..used]) catch batchWorker(tasks);
+    platform.runOnThreads([]const BatchTask, batchWorker, std.heap.c_allocator, chunks[0..used]) catch batchWorkerUsingArena(tasks, getOrInitArena());
 }
 
 /// Free multiple results from a batch call.
@@ -412,24 +475,37 @@ test "checked source ABI distinguishes unsupported flow from valid empty output"
 }
 
 test "checked parallel batch ABI initializes every status and retains successful siblings" {
-    const sources = [_][]const u8{
+    const cases = [_][]const u8{
         "export const healthy: number = 1;",
         "let value: number | undefined = 7; if (Math.random() > 0.5) { value = undefined; } export const alias = value;",
         "",
     };
-    const inputs = [_][*]const u8{ sources[0].ptr, sources[1].ptr, sources[2].ptr };
-    const lengths = [_]u64{ sources[0].len, sources[1].len, sources[2].len };
+    // At least four inputs per requested thread are needed to reach the
+    // native parallel branch. Three inputs exercised only the caller path.
+    const count = 16;
+    var inputs: [count][*]const u8 = undefined;
+    var lengths: [count]u64 = undefined;
+    for (0..count) |index| {
+        const source = cases[index % cases.len];
+        inputs[index] = source.ptr;
+        lengths[index] = source.len;
+    }
     for ([_]u32{ 1, 2, 4 }) |threads| {
-        var pointers: [3]usize = undefined;
-        var output_lengths: [3]u64 = undefined;
-        var statuses: [3]u32 = undefined;
-        process_batch_checked_v1(&inputs, &lengths, 3, true, &pointers, &output_lengths, threads, &statuses);
-        defer free_batch_results(&pointers, &output_lengths, 3);
-        try std.testing.expectEqualSlices(u32, &.{ 0, 5, 0 }, &statuses);
-        const healthy: [*]const u8 = @ptrFromInt(pointers[0]);
-        try std.testing.expectEqualStrings("export declare const healthy: number;", healthy[0..@intCast(output_lengths[0])]);
-        try std.testing.expectEqualSlices(u64, &.{ 0, 0 }, output_lengths[1..]);
-        try std.testing.expect(pointers[1] != 0 and pointers[2] != 0);
+        var pointers: [count]usize = undefined;
+        var output_lengths: [count]u64 = undefined;
+        var statuses: [count]u32 = undefined;
+        process_batch_checked_v1(&inputs, &lengths, count, true, &pointers, &output_lengths, threads, &statuses);
+        defer free_batch_results(&pointers, &output_lengths, count);
+        for (0..count) |index| {
+            try std.testing.expectEqual(@as(u32, if (index % cases.len == 1) 5 else 0), statuses[index]);
+            try std.testing.expect(pointers[index] != 0);
+            if (index % cases.len == 0) {
+                const healthy: [*]const u8 = @ptrFromInt(pointers[index]);
+                try std.testing.expectEqualStrings("export declare const healthy: number;", healthy[0..@intCast(output_lengths[index])]);
+            } else {
+                try std.testing.expectEqual(@as(u64, 0), output_lengths[index]);
+            }
+        }
     }
 }
 
