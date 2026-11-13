@@ -17,8 +17,8 @@ export function returnTypeExpectsObject(prefix: string): boolean {
   if (tokens.length === 0) return true
   const last = tokens[tokens.length - 1]
   const text = prefix.slice(last.start, last.end)
-  if (last.kind === 'word' && (text === 'is' || text === 'extends')) return true
-  if (text === '|' || text === '&') return true
+  if (last.kind === 'word' && ['is', 'extends', 'keyof', 'readonly'].includes(text)) return true
+  if (text === '|' || text === '&' || text === '?' || text === ':') return true
   const previous = tokens[tokens.length - 2]
   return text === '>' && previous !== undefined && prefix.slice(previous.start, previous.end) === '='
 }

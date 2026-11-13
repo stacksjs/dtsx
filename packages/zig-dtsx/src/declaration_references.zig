@@ -26,8 +26,8 @@ pub fn returnTypeExpectsObject(allocator: std.mem.Allocator, prefix: []const u8)
     defer allocator.free(items);
     if (items.len == 0) return true;
     const last = text(prefix, items, items.len - 1);
-    if (items[items.len - 1].kind == .word and oneOf(last, &.{ "is", "extends" })) return true;
-    return oneOf(last, &.{ "|", "&" }) or (std.mem.eql(u8, last, ">") and items.len >= 2 and eq(prefix, items, items.len - 2, "="));
+    if (items[items.len - 1].kind == .word and oneOf(last, &.{ "is", "extends", "keyof", "readonly" })) return true;
+    return oneOf(last, &.{ "|", "&", "?", ":" }) or (std.mem.eql(u8, last, ">") and items.len >= 2 and eq(prefix, items, items.len - 2, "="));
 }
 
 fn text(source: []const u8, items: []const Token, index: usize) []const u8 {

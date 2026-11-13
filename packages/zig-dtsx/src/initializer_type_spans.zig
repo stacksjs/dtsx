@@ -416,7 +416,7 @@ pub const Reader = struct {
             const middle = (low + high) / 2;
             if (self.tokens[middle].start < opening) low = middle + 1 else high = middle;
         }
-        if (low >= self.tokens.len or self.tokens[low].start != opening or !std.mem.eql(u8, self.at(low), "<")) return null;
+        if (low >= self.tokens.len or self.tokens[low].start != opening) return null;
         if (self.signature_start != initializer_start) {
             self.signature_start = initializer_start;
             self.signature_end = null;
@@ -427,11 +427,12 @@ pub const Reader = struct {
                 if (self.tokens[middle].start < initializer_start) start = middle + 1 else end = middle;
             }
             self.index = start;
-            if (try self.runtimeSignature()) self.signature_end = self.tokens[self.index - 1].end;
+            if (try self.runtimeSignature()) self.signature_end = if (self.is("{")) self.tokens[self.index].start else self.tokens[self.index - 1].end;
         }
         if (self.signature_end) |end| {
             if (opening < end) return .{ .end = end, .complete_operand = false, .parameters = true };
         }
+        if (!std.mem.eql(u8, self.at(low), "<")) return null;
         self.index = low;
         const previous = if (low > 0) self.at(low - 1) else "";
         const prefix = opening == initializer_start or contains(&.{ "=", "+", "-", "*", "/", "%", "&", "|", "^", "!", "~", "?", ":", "<", ">", "void", "typeof", "await", "yield", "delete" }, previous);

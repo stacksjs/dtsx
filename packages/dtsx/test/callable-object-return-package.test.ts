@@ -2,7 +2,15 @@ import { expect, test } from 'bun:test'
 import { checkDeclarationPackage } from './helpers/declaration-package'
 
 // #3146: an arrow result's object brace must not become the implementation brace.
-const cases = [
+interface CallableCase {
+  name: string
+  source: string
+  positive: string
+  negative: string
+  negativeCode?: 2322 | 4104
+}
+
+const cases: CallableCase[] = [
   {
     name: 'generic constructor factory',
     source: 'function Factory<T>(): new () => { value: T } { return class { value!: T } }\nexport class Derived extends Factory<number>() {}',
@@ -33,7 +41,26 @@ const cases = [
     positive: 'const text: string = api.factory<string>()().value; const numeric: number = api.factory<number>()().other',
     negative: 'const value: string = api.factory<number>()().other',
   },
-] as const
+  {
+    name: 'keyof callback object operand after comment trivia',
+    source: 'function implementationOnly(): number { return 1 }\nexport function factory(): () => keyof /* object keys */ { value: number } { implementationOnly(); return () => "value" }',
+    positive: 'const value: "value" = api.factory()()',
+    negative: 'const value: "other" = api.factory()()',
+  },
+  {
+    name: 'readonly callback object-array operand after line-comment trivia',
+    source: 'export function factory(): () => readonly // array elements\n { value: number }[] { return () => [] }',
+    positive: 'const values: readonly { value: number }[] = api.factory()(); const value: number | undefined = values[0]?.value',
+    negative: 'const values: { value: number }[] = api.factory()()',
+    negativeCode: 4104,
+  },
+  {
+    name: 'a contextual readonly value name and its following export',
+    source: 'const readonly = 7; export const value = readonly\nexport const other = 3',
+    positive: 'const value: 7 = api.value; const other: 3 = api.other',
+    negative: 'const value: string = api.value',
+  },
+]
 
 for (const fixture of cases) {
   for (const producer of ['core', 'bun-plugin', 'native', 'typescript'] as const) {
@@ -41,7 +68,7 @@ for (const fixture of cases) {
       await checkDeclarationPackage(producer, {
         source: fixture.source,
         positive: fixture.positive,
-        negatives: [{ code: 2322, content: fixture.negative }],
+        negatives: [{ code: fixture.negativeCode ?? 2322, content: fixture.negative }],
         inspect(declaration) {
           expect(declaration).not.toContain('implementationOnly')
           expect(declaration).not.toContain('return class')

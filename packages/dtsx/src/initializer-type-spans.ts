@@ -372,7 +372,7 @@ export function createInitializerTypeReader(source: string): (opening: number, i
       if (tokens[middle].start < opening) low = middle + 1
       else high = middle
     }
-    if (tokens[low]?.start !== opening || text(low) !== '<') return undefined
+    if (tokens[low]?.start !== opening) return undefined
     if (signatureStart !== initializerStart) {
       signatureStart = initializerStart
       signatureEnd = undefined
@@ -384,10 +384,11 @@ export function createInitializerTypeReader(source: string): (opening: number, i
         else end = middle
       }
       index = start
-      if (runtimeSignature()) signatureEnd = tokens[index - 1].end
+      if (runtimeSignature()) signatureEnd = text() === '{' ? tokens[index].start : tokens[index - 1].end
     }
     if (signatureEnd !== undefined && opening < signatureEnd)
       return { end: signatureEnd, completeOperand: false, parameters: true }
+    if (text(low) !== '<') return undefined
     index = low
     const previous = text(low - 1)
     const prefix = opening === initializerStart || ['=', '+', '-', '*', '/', '%', '&', '|', '^', '!', '~', '?', ':', '<', '>', 'void', 'typeof', 'await', 'yield', 'delete'].includes(previous)

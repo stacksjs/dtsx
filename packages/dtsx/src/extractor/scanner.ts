@@ -2112,7 +2112,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           const index = prefix.length - word.length
           return index >= 0 && prefix.endsWith(word) && (index === 0 || !isIdentChar(prefix.charCodeAt(index - 1)))
         }
-        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || prefix.endsWith('?') || prefix.endsWith(':') || endsWithWord('is') || endsWithWord('extends')
+        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || prefix.endsWith('?') || prefix.endsWith(':') || endsWithWord('is') || endsWithWord('extends') || endsWithWord('keyof') || endsWithWord('readonly')
       }
       while (pos < len) {
         const tokenStart = pos
@@ -2350,6 +2350,14 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           let depth = 0
           let jsxDepth = 0
           let completeOperandEnd: number | undefined
+          // Parse a runtime signature as a unit so return-type newlines cannot
+          // end its initializer. Contextual type words remain ordinary values
+          // outside a syntactically verified function/arrow signature.
+          if (source.charCodeAt(pos) === CH_LPAREN || source.charCodeAt(pos) === CH_LANGLE || matchWord('function') || matchWord('async')) {
+            readInitializerType ??= createInitializerTypeReader(source)
+            const signature = readInitializerType(pos, initStart)
+            if (signature?.parameters) pos = signature.end
+          }
           while (pos < len) {
             if (depth === 0 && jsxDepth === 0 && checkASIAfterInitializer(initStart, completeOperandEnd)) break
             if (skipNonCode()) continue

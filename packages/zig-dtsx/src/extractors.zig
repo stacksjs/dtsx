@@ -460,7 +460,8 @@ pub fn extractReturnType(s: *Scanner) []const u8 {
 fn expectsReturnTypeOperand(prefix: []const u8) bool {
     return prefix.len == 0 or ch.endsWith(prefix, "=>") or ch.endsWith(prefix, "|") or
         ch.endsWith(prefix, "&") or ch.endsWith(prefix, "?") or ch.endsWith(prefix, ":") or
-        endsWithWord(prefix, "is") or endsWithWord(prefix, "extends");
+        endsWithWord(prefix, "is") or endsWithWord(prefix, "extends") or
+        endsWithWord(prefix, "keyof") or endsWithWord(prefix, "readonly");
 }
 
 fn endsWithWord(text: []const u8, word: []const u8) bool {
@@ -1561,6 +1562,13 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                     var depth: isize = 0;
                     var jsx_depth: isize = 0;
                     var completed_operand_end: ?usize = null;
+                    // Only a parsed runtime signature can hide its type's line
+                    // breaks; contextual type words may also be value names.
+                    if (s.pos < s.len and (s.source[s.pos] == ch.CH_LPAREN or s.source[s.pos] == ch.CH_LANGLE or s.matchWord("function") or s.matchWord("async"))) {
+                        if (try s.readInitializerType(s.pos, init_start, null)) |signature| {
+                            if (signature.parameters) s.pos = signature.end;
+                        }
+                    }
                     while (s.pos < s.len) {
                         // SIMD fast-skip: bulk-skip bytes that can't be structural
                         if (depth > 0) {
