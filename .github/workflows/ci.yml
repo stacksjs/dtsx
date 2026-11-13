@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  observer-fidelity:
+    name: Diagnostic observer fidelity (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        with:
+          version: 0.11.199
+      - name: Install committed dependencies
+        run: bun install --frozen-lockfile
+      - name: Check the independent observer types
+        run: bun x tsc --project tsconfig.contract-diagnostics.json --pretty false
+      - name: Verify actual Node probes and command failure fidelity
+        run: bun test ./scripts/observe-contract-tests.test.ts ./scripts/capture-process-probe.test.ts
+        env:
+          DTSX_OBSERVER_TEST_EVIDENCE: ${{ runner.temp }}/observer-fidelity
+      - name: Retain diagnostic fidelity evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: observer-fidelity-${{ matrix.os }}
+          path: ${{ runner.temp }}/observer-fidelity
+          if-no-files-found: error
+
   package-builds:
     name: Build workspace libraries
     runs-on: ubuntu-latest

@@ -14,7 +14,7 @@ import { parseArgs } from 'node:util'
 import { captureProcessProbe as capture } from './capture-process-probe'
 
 interface TraceEvent {
-  event: 'start' | 'end'
+  event: 'start' | 'end' | 'error'
   id: number
   pid: number
   phase: string
@@ -26,7 +26,7 @@ interface OwnedProcess { pid: number, parent: number, executable: string }
 function traceEvent(value: unknown): value is TraceEvent {
   if (!value || typeof value !== 'object') return false
   const entry = value as Record<string, unknown>
-  return (entry.event === 'start' || entry.event === 'end')
+  return (entry.event === 'start' || entry.event === 'end' || entry.event === 'error')
     && Number.isSafeInteger(entry.id) && Number.isSafeInteger(entry.pid)
     && Number(entry.pid) > 1 && typeof entry.phase === 'string'
     && (entry.executable === undefined || typeof entry.executable === 'string')

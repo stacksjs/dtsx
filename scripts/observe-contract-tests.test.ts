@@ -24,11 +24,11 @@ beforeAll(async () => {
   await writeFile(observer, new Uint8Array(await built.outputs[0]!.arrayBuffer()))
 })
 afterAll(async () => {
-  if (root && completedCases === 4 && !process.env.DTSX_OBSERVER_TEST_EVIDENCE) await rm(root, { recursive: true, force: true })
+  if (root && completedCases === 5 && !process.env.DTSX_OBSERVER_TEST_EVIDENCE) await rm(root, { recursive: true, force: true })
   else if (root) process.stderr.write(`Observer fidelity evidence: ${root}\n`)
 })
 
-async function observe(label: string, exitCode: number, brokenStorage = false, traceOperation = false) {
+async function observe(label: string, exitCode: number, brokenStorage = false, traceOperation = false, traceFailure = false) {
   const directory = join(root, label)
   await mkdir(directory)
   const marker = join(directory, 'real operation marker')
@@ -36,7 +36,9 @@ async function observe(label: string, exitCode: number, brokenStorage = false, t
   const evidence = join(directory, 'evidence')
   if (brokenStorage) await writeFile(evidence, 'owned regular file, not a directory')
   const operation = `await Bun.write(${JSON.stringify(marker)}, 'real operation ran'); console.log('original output');`
-  const script = traceOperation
+  const script = traceFailure
+    ? `import { traceAsync } from ${JSON.stringify(traceHelper)}; try { await traceAsync('observer failure', async () => { ${operation} throw new Error('original operation failure') }); } catch { process.exitCode = ${exitCode}; }`
+    : traceOperation
     ? `import { traceAsync } from ${JSON.stringify(traceHelper)}; await traceAsync('observer smoke', async () => { ${operation} await Bun.sleep(2200) });`
     : `${operation} process.exit(${exitCode});`
   const command = `${process.platform === 'win32' ? '& ' : ''}${[process.execPath, '-e', script].map(quote).join(' ')}`
@@ -82,6 +84,17 @@ test('the observer preserves the actual command failure', async () => {
   const result = await observe('failure', 17)
   expect(result.code).toBe(17)
   expect(result.summary.commandExitCode).toBe(17)
+  completedCases++
+})
+
+test('a valid traced operation failure retains its phase and the actual command exit', async () => {
+  const result = await observe('traced-failure', 17, false, false, true)
+  expect(result.code).toBe(17)
+  expect(result.summary.commandExitCode).toBe(17)
+  expect(result.summary.phaseEvents).toBe(2)
+  expect(result.summary.errors).toEqual([])
+  const events = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, phaseEvent?: string, phase?: string })
+  expect(events.some(event => event.event === 'trace-read' && event.phaseEvent === 'error' && event.phase === 'observer failure')).toBe(true)
   completedCases++
 })
 
