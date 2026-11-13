@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "bun"
+    ],
+    "skipDefaultLibCheck": false,
+    "skipLibCheck": false
+  },
+  "include": [
+    "scripts/observe-macos-tests.ts",
+    "scripts/observe-macos-tests.test.ts"
+  ]
+}

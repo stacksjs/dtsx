@@ -1,0 +1,100 @@
+name: macOS contract diagnostics
+"on":
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: "macos-contract-diagnostics-${{ github.run_id }}"
+  cancel-in-progress: false
+jobs:
+  macos-contracts:
+    name: Observed macOS contract execution
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        with:
+          version: 0.11.199
+      - name: Install committed dependencies
+        run: bun install --frozen-lockfile
+      - name: "Verify tsdown ESM, CJS and installed declaration contracts"
+        run: bun test packages/dtsx/test/tsdown-package.test.ts
+      - name: "Verify source identity, output collisions and transactional publication"
+        run: bun test packages/dtsx/test/source-path-identity.test.ts packages/dtsx/test/module-graph.test.ts packages/dtsx/test/generation-publication.test.ts packages/dtsx/test/bundle-augmentation-package.test.ts
+      - name: Build the native CLI and FFI library for this platform
+        working-directory: packages/zig-dtsx
+        run: zig build -j2
+      - name: Stage the assembled host library in its SDK
+        working-directory: packages/zig-dtsx
+        run: |
+          bun -e '
+            const { copyFile, mkdir } = await import("node:fs/promises");
+            const { join } = await import("node:path");
+            const platform = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+            const name = process.platform === "win32" ? "zig-dtsx.dll" : `libzig-dtsx.${process.platform === "darwin" ? "dylib" : "so"}`;
+            const destination = join("prebuilt", platform);
+            await mkdir(destination, { recursive: true });
+            await copyFile(join("zig-out", process.platform === "win32" ? "bin" : "lib", name), join(destination, name));
+          '
+      - name: Verify Darwin Debug library imports
+        if: "runner.os == 'macOS'"
+        run: "bun test packages/zig-dtsx/test/platform.test.ts --test-name-pattern 'the Darwin binaries import only the libc functions they use'"
+      - name: Verify normally packed native FFI SDK consumers
+        id: ffi-sdk
+        run: bun run test:ffi-sdk
+        env:
+          DTSX_FFI_EVIDENCE: "${{ runner.temp }}/ffi-sdk"
+      - name: Retain native FFI SDK archive and consumer evidence
+        if: "always() && steps.ffi-sdk.outcome != 'skipped'"
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: "ffi-sdk-${{ matrix.os }}"
+          path: "${{ runner.temp }}/ffi-sdk"
+          if-no-files-found: error
+      - name: Build the independent Node observer
+        id: observer-build
+        run: |-
+          bun x tsc --project tsconfig.macos-diagnostics.json --pretty false
+          bun build scripts/observe-macos-tests.ts --target=node --format=esm --outfile "$RUNNER_TEMP/observe-macos-tests.mjs"
+          node --version
+          bun -e '
+            const workflow = Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text());
+            const step = workflow.jobs["source-paths"].steps.find(step => step.id === "native-delivery");
+            if (typeof step?.run !== "string") throw new Error("Missing canonical native delivery command");
+            await Bun.write(process.env.RUNNER_TEMP + "/native-delivery-command.json", JSON.stringify(step.run));
+          '
+      - name: Observe the unmodified native delivery command
+        id: native-delivery
+        env:
+          DTSX_NATIVE_CLI: "${{ github.workspace }}/packages/zig-dtsx/zig-out/bin/zig-dtsx${{ runner.os == 'Windows' && '.exe' || '' }}"
+          DTSX_TEST_TRACE: "${{ runner.temp }}/dtsx-source-path-phases.jsonl"
+        run: "node \"$RUNNER_TEMP/observe-macos-tests.mjs\" --command-file \"$RUNNER_TEMP/native-delivery-command.json\" --trace \"$DTSX_TEST_TRACE\" --evidence \"$RUNNER_TEMP/native-process-observations\""
+      - name: Retain native delivery operation phases
+        if: "always() && steps.native-delivery.outcome != 'skipped'"
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: "source-path-operation-phases-${{ matrix.os }}"
+          path: "${{ runner.temp }}/dtsx-source-path-phases.jsonl"
+          if-no-files-found: error
+      - name: Verify observer output and failure fidelity
+        if: "always() && steps.observer-build.outcome == 'success'"
+        env:
+          DTSX_OBSERVER_TEST_EVIDENCE: "${{ runner.temp }}/observer-fidelity"
+        run: bun test ./scripts/observe-macos-tests.test.ts
+      - name: Retain independent process observations
+        if: "always() && steps.native-delivery.outcome != 'skipped'"
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: macos-process-observations
+          path: |-
+            ${{ runner.temp }}/native-process-observations
+            ${{ runner.temp }}/observer-fidelity
+            ${{ runner.temp }}/native-delivery-command.json
+          if-no-files-found: error
+    timeout-minutes: 40
