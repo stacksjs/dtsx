@@ -58,9 +58,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        uses: pantry-pm/pantry/packages/action@fe21b9517e2da3f63c53069845f0b31965bc92d8
         with:
-          version: 0.11.199
+          version: 0.11.204
 
       - name: Use cached node_modules
         uses: actions/cache@v6.1.0

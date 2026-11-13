@@ -34,9 +34,9 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Pantry
-        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        uses: pantry-pm/pantry/packages/action@fe21b9517e2da3f63c53069845f0b31965bc92d8
         with:
-          version: 0.11.199
+          version: 0.11.204
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
@@ -134,9 +134,9 @@ jobs:
 
       - name: Create GitHub Release with Pantry
         id: pantry-release
-        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        uses: pantry-pm/pantry/packages/action@fe21b9517e2da3f63c53069845f0b31965bc92d8
         with:
-          version: 0.11.199
+          version: 0.11.204
           install: false
           release: true
           release-tag: ${{ env.RELEASE_TAG }}
