@@ -43,10 +43,10 @@ test('the separately published FFI SDK is qualified and retained before registry
 test('release publication uses the verified immutable Pantry lifecycle implementation', () => {
   const pantry = steps.filter(step => step.uses?.startsWith('pantry-pm/pantry/packages/action@'))
   expect(pantry.length).toBeGreaterThan(0)
-  // Qualified canonical 0.11.199: Pantry CI 43205922545, native SDK
-  // 43205922163 and release 43205922760, including original ZIP modes.
+  // Qualified canonical 0.11.204: public archive identity, original ZIP modes
+  // and strict normally installed SDK consumers were verified before adoption.
   for (const step of pantry) {
-    expect(step.uses).toBe('pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd')
-    expect(String(step.with?.version)).toBe('0.11.199')
+    expect(step.uses).toBe('pantry-pm/pantry/packages/action@fe21b9517e2da3f63c53069845f0b31965bc92d8')
+    expect(String(step.with?.version)).toBe('0.11.204')
   }
 })
