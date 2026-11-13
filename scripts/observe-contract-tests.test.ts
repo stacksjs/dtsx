@@ -10,16 +10,16 @@ let completedCases = 0
 const node = Bun.which('node')
 const traceHelper = pathToFileURL(resolve(import.meta.dir, '../packages/dtsx/test/helpers/phase-trace.ts')).href
 
-function quote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'` }
+function quote(value: string): string { return process.platform === 'win32' ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'` }
 
 beforeAll(async () => {
-  expect(process.platform).toBe('darwin')
+  expect(['darwin', 'win32']).toContain(process.platform)
   expect(node).not.toBeNull()
   const base = resolve(process.env.DTSX_OBSERVER_TEST_EVIDENCE ?? tmpdir())
   await mkdir(base, { recursive: true })
   root = await mkdtemp(join(base, 'dtsx external observer '))
   observer = join(root, 'observer.mjs')
-  const built = await Bun.build({ entrypoints: [resolve(import.meta.dir, 'observe-macos-tests.ts')], target: 'node', format: 'esm' })
+  const built = await Bun.build({ entrypoints: [resolve(import.meta.dir, 'observe-contract-tests.ts')], target: 'node', format: 'esm' })
   expect(built.success).toBe(true)
   await writeFile(observer, new Uint8Array(await built.outputs[0]!.arrayBuffer()))
 })
@@ -39,7 +39,7 @@ async function observe(label: string, exitCode: number, brokenStorage = false, t
   const script = traceOperation
     ? `import { traceAsync } from ${JSON.stringify(traceHelper)}; await traceAsync('observer smoke', async () => { ${operation} await Bun.sleep(2200) });`
     : `${operation} process.exit(${exitCode});`
-  const command = [process.execPath, '-e', script].map(quote).join(' ')
+  const command = `${process.platform === 'win32' ? '& ' : ''}${[process.execPath, '-e', script].map(quote).join(' ')}`
   const commandFile = join(directory, 'command.json')
   await writeFile(commandFile, JSON.stringify(command))
   const child = Bun.spawn([node!, observer, '--command-file', commandFile, '--trace', trace, '--evidence', evidence], {
@@ -59,9 +59,15 @@ test('the independent observer preserves a successful real Bun operation and its
   expect(result.summary.phaseEvents).toBe(2)
   expect(result.summary.errors).toEqual([])
   const events = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, code?: number, file?: string })
-  const sample = events.find(event => event.event === 'sample' && event.code === 0)
-  expect(sample).toBeDefined()
-  expect((await readFile(sample!.file!, 'utf8')).length).toBeGreaterThan(0)
+  if (process.platform === 'darwin') {
+    const sample = events.find(event => event.event === 'sample' && event.code === 0)
+    expect(sample).toBeDefined()
+    expect((await readFile(sample!.file!, 'utf8')).length).toBeGreaterThan(0)
+  }
+  else {
+    const snapshots = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, resources?: Array<{ handles?: number }> })
+    expect(snapshots.some(event => event.event === 'windows-process-snapshot' && event.resources?.some(resource => Number(resource.handles) > 0))).toBe(true)
+  }
   completedCases++
 })
 

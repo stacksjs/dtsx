@@ -8,7 +8,7 @@
     "skipLibCheck": false
   },
   "include": [
-    "scripts/observe-macos-tests.ts",
-    "scripts/observe-macos-tests.test.ts"
+    "scripts/observe-contract-tests.ts",
+    "scripts/observe-contract-tests.test.ts"
   ]
 }

@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
-import { loadavg } from 'node:os'
+import { cpus, freemem, loadavg, release, totalmem } from 'node:os'
 import { join, resolve } from 'node:path'
 import { finished } from 'node:stream/promises'
 import { StringDecoder } from 'node:string_decoder'
@@ -63,7 +63,7 @@ async function main(): Promise<number> {
   let traceReader: FileHandle | undefined
   let latest: TraceEvent | undefined
   let traceOffset = 0, partial = '', phaseEvents = 0, samples = 0
-  let lastTraceAt = performance.now(), lastSampleAt = -Infinity
+  let lastTraceAt = performance.now(), lastSampleAt = -Infinity, lastResourcesAt = performance.now()
   let closed = false
   let commandElapsedMs: number | undefined
   const decoder = new StringDecoder('utf8')
@@ -72,7 +72,12 @@ async function main(): Promise<number> {
   const started = performance.now()
 
   // Start the real operation even if observation storage cannot be created.
-  const child = spawn('/bin/bash', ['--noprofile', '--norc', '-e', '-c', command], { stdio: 'inherit' })
+  // Match the runner's PowerShell failure/exit handling on Windows.
+  const shell = process.platform === 'win32' ? 'pwsh' : '/bin/bash'
+  const shellArgs = process.platform === 'win32'
+    ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'stop'\n${command}\nif ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }`]
+    : ['--noprofile', '--norc', '-e', '-c', command]
+  const child = spawn(shell, shellArgs, { stdio: 'inherit' })
   const exit = new Promise<{ code: number | null, signal: NodeJS.Signals | null }>((fulfill) => {
     child.once('error', error => { errors.push(`command startup: ${error.message}`); closed = true; commandElapsedMs = performance.now() - started; fulfill({ code: 127, signal: null }) })
     child.once('close', (code, signal) => { closed = true; commandElapsedMs = performance.now() - started; fulfill({ code, signal }) })
@@ -91,7 +96,7 @@ async function main(): Promise<number> {
   let previousHeartbeat = performance.now()
   const heartbeat = setInterval(() => {
     const now = performance.now()
-    record({ event: 'heartbeat', intervalMs: now - previousHeartbeat, observerCpuMicros: process.cpuUsage(), loadAverage: loadavg() })
+    record({ event: 'heartbeat', intervalMs: now - previousHeartbeat, observerCpuMicros: process.cpuUsage(), loadAverage: loadavg(), systemFreeMemoryBytes: freemem() })
     previousHeartbeat = now
   }, 250)
 
@@ -122,7 +127,59 @@ async function main(): Promise<number> {
   }
 
   async function snapshot(withStacks = true): Promise<void> {
-    if (!child.pid || closed || process.platform !== 'darwin') return
+    if (!child.pid || closed) return
+    const phaseAtRequest = latest
+    const probeStartedAt = new Date().toISOString()
+    if (process.platform === 'win32') {
+      const script = `
+$ErrorActionPreference = 'Stop'
+$rows = @(Get-CimInstance Win32_Process)
+$owned = [System.Collections.Generic.HashSet[int]]::new()
+[void]$owned.Add(${child.pid})
+do {
+  $added = $false
+  foreach ($row in $rows) {
+    if ($owned.Contains([int]$row.ParentProcessId) -and $owned.Add([int]$row.ProcessId)) { $added = $true }
+  }
+} while ($added)
+$actual = @($rows | Where-Object { $owned.Contains([int]$_.ProcessId) })
+$parents = @{}
+foreach ($row in $actual) { $parents[[int]$row.ParentProcessId] = $true }
+$leaf = $actual | Where-Object { -not $parents.ContainsKey([int]$_.ProcessId) } | Select-Object -Last 1
+$root = ${phaseAtRequest?.pid ?? child.pid}
+if (-not $owned.Contains($root)) { $root = ${child.pid} }
+$targets = @($root; if ($leaf) { [int]$leaf.ProcessId }) | Select-Object -Unique
+$resources = @(foreach ($target in $targets) {
+  try {
+    $process = Get-Process -Id $target -ErrorAction Stop
+    $threads = @(foreach ($thread in $process.Threads) {
+      try {
+        $state = [string]$thread.ThreadState
+        $wait = if ($state -eq 'Wait') { [string]$thread.WaitReason } else { $null }
+        @{ id = $thread.Id; state = $state; waitReason = $wait }
+      } catch { @{ id = $thread.Id; probeError = $_.Exception.Message } }
+    })
+    @{ pid = $target; sampledAt = [DateTimeOffset]::UtcNow.ToString('o'); cpuMilliseconds = $process.TotalProcessorTime.TotalMilliseconds; handles = $process.HandleCount; workingSetBytes = $process.WorkingSet64; threadCount = $process.Threads.Count; threads = $threads }
+  } catch { @{ pid = $target; probeError = $_.Exception.Message; targetExited = ([string]$_.CategoryInfo.Category -eq 'ObjectNotFound') } }
+})
+@{ rootPid = $root; processes = @($actual | ForEach-Object { @{ pid = [int]$_.ProcessId; parent = [int]$_.ParentProcessId; executable = if ($_.ExecutablePath) { $_.ExecutablePath } else { $_.Name } } }); resources = $resources } | ConvertTo-Json -Depth 8 -Compress
+`
+      const begin = performance.now()
+      const result = await capture('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], 4000)
+      if (result.code !== 0) {
+        if (!closed) throw new Error(`Windows process observation: ${result.stderr}`)
+        record({ event: 'late-snapshot-error', phaseAtRequest, probeStartedAt, ...result })
+        return
+      }
+      const probe = JSON.parse(result.stdout) as { rootPid: number, processes: OwnedProcess[], resources: Array<{ pid: number, probeError?: string, targetExited?: boolean, threads?: Array<{ probeError?: string }> }> }
+      if (!Number.isSafeInteger(probe.rootPid) || !Array.isArray(probe.processes) || !Array.isArray(probe.resources)) throw new Error('Invalid Windows observation output')
+      record({ event: 'windows-process-snapshot', trigger: withStacks ? 'trace-gap' : 'resources', phaseAtRequest, phaseAtResponse: latest, probeStartedAt, probeElapsedMs: performance.now() - begin, ...probe, stackSampling: 'Thread wait-state metadata only; no Windows stack trace is collected.' })
+      const rootResource = probe.resources.find(resource => resource.pid === probe.rootPid)
+      if (rootResource?.probeError && !rootResource.targetExited && !closed) errors.push(`Windows root observation: ${rootResource.probeError}`)
+      if (rootResource?.threads?.length && rootResource.threads.every(thread => thread.probeError) && !closed) errors.push('No Windows root thread states were readable')
+      return
+    }
+    if (process.platform !== 'darwin') return
     const table = await capture('/bin/ps', ['-axo', 'pid=,ppid=,comm='])
     if (table.code !== 0) throw new Error(`process inventory: ${table.stderr}`)
     const processes: OwnedProcess[] = table.stdout.split('\n').flatMap((line) => {
@@ -161,8 +218,11 @@ async function main(): Promise<number> {
     }
   }
 
-  const inheritedLimit = await capture('/bin/bash', ['--noprofile', '--norc', '-c', 'ulimit -n'])
-  record({ event: 'inherited-file-limit', ...inheritedLimit })
+  record({ event: 'host-runtime', platform: process.platform, release: release(), cpus: cpus().length, totalMemoryBytes: totalmem() })
+  if (process.platform !== 'win32') {
+    const inheritedLimit = await capture('/bin/bash', ['--noprofile', '--norc', '-c', 'ulimit -n'])
+    record({ event: 'inherited-file-limit', ...inheritedLimit })
+  }
   if (process.platform === 'darwin') record({ event: 'host', ...await capture('/usr/sbin/sysctl', ['hw.model', 'hw.ncpu', 'hw.memsize', 'kern.maxfilesperproc']) })
   pending.push(snapshot(false).catch(error => { errors.push(`initial process snapshot: ${String(error)}`) }))
 
@@ -174,7 +234,12 @@ async function main(): Promise<number> {
     if (now - lastTraceAt > 750 && now - lastSampleAt > 10_000 && samples < 256) {
       lastSampleAt = now
       samples++
+      lastResourcesAt = now
       pending.push(snapshot().catch(error => { errors.push(`process snapshot: ${String(error)}`) }))
+    }
+    else if (now - lastResourcesAt > 30_000) {
+      lastResourcesAt = now
+      pending.push(snapshot(false).catch(error => { errors.push(`periodic resources: ${String(error)}`) }))
     }
     await delay(250)
   }

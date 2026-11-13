@@ -1,20 +1,25 @@
-name: macOS contract diagnostics
+name: Contract process diagnostics
 "on":
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to observe
+        type: choice
+        default: windows-latest
+        options: [windows-latest, macos-latest, all]
 permissions:
   contents: read
 concurrency:
-  group: "macos-contract-diagnostics-${{ github.run_id }}"
+  group: "contract-diagnostics-${{ github.run_id }}"
   cancel-in-progress: false
 jobs:
-  macos-contracts:
-    name: Observed macOS contract execution
+  platform-contracts:
+    name: Observed contract execution
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
+        os: ${{ inputs.platform == 'all' && fromJSON('["macos-latest","windows-latest"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Setup Pantry
@@ -59,9 +64,10 @@ jobs:
           if-no-files-found: error
       - name: Build the independent Node observer
         id: observer-build
+        shell: bash
         run: |-
-          bun x tsc --project tsconfig.macos-diagnostics.json --pretty false
-          bun build scripts/observe-macos-tests.ts --target=node --format=esm --outfile "$RUNNER_TEMP/observe-macos-tests.mjs"
+          bun x tsc --project tsconfig.contract-diagnostics.json --pretty false
+          bun build scripts/observe-contract-tests.ts --target=node --format=esm --outfile "$RUNNER_TEMP/observe-contract-tests.mjs"
           node --version
           bun -e '
             const workflow = Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text());
@@ -71,10 +77,11 @@ jobs:
           '
       - name: Observe the unmodified native delivery command
         id: native-delivery
+        shell: bash
         env:
           DTSX_NATIVE_CLI: "${{ github.workspace }}/packages/zig-dtsx/zig-out/bin/zig-dtsx${{ runner.os == 'Windows' && '.exe' || '' }}"
           DTSX_TEST_TRACE: "${{ runner.temp }}/dtsx-source-path-phases.jsonl"
-        run: "node \"$RUNNER_TEMP/observe-macos-tests.mjs\" --command-file \"$RUNNER_TEMP/native-delivery-command.json\" --trace \"$DTSX_TEST_TRACE\" --evidence \"$RUNNER_TEMP/native-process-observations\""
+        run: "node \"$RUNNER_TEMP/observe-contract-tests.mjs\" --command-file \"$RUNNER_TEMP/native-delivery-command.json\" --trace \"$DTSX_TEST_TRACE\" --evidence \"$RUNNER_TEMP/native-process-observations\""
       - name: Retain native delivery operation phases
         if: "always() && steps.native-delivery.outcome != 'skipped'"
         uses: actions/upload-artifact@v7.0.2
@@ -86,12 +93,12 @@ jobs:
         if: "always() && steps.observer-build.outcome == 'success'"
         env:
           DTSX_OBSERVER_TEST_EVIDENCE: "${{ runner.temp }}/observer-fidelity"
-        run: bun test ./scripts/observe-macos-tests.test.ts
+        run: bun test ./scripts/observe-contract-tests.test.ts
       - name: Retain independent process observations
         if: "always() && steps.native-delivery.outcome != 'skipped'"
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: macos-process-observations
+          name: process-observations-${{ matrix.os }}
           path: |-
             ${{ runner.temp }}/native-process-observations
             ${{ runner.temp }}/observer-fidelity
