@@ -27,10 +27,16 @@ const cases = [
     positive: 'const value: number = api.factory()()().value',
     negative: 'const value: string = api.factory()()().value',
   },
+  {
+    name: 'conditional callback object branches after comment trivia',
+    source: 'export function factory<T>(): () => T extends string ? /* true branch */ { value: T } : // false branch\n { other: T } { throw new Error() }',
+    positive: 'const text: string = api.factory<string>()().value; const numeric: number = api.factory<number>()().other',
+    negative: 'const value: string = api.factory<number>()().other',
+  },
 ] as const
 
 for (const fixture of cases) {
-  for (const producer of ['core', 'bun-plugin', 'native'] as const) {
+  for (const producer of ['core', 'bun-plugin', 'native', 'typescript'] as const) {
     test(`${producer} preserves ${fixture.name} in a strict installed package`, async () => {
       await checkDeclarationPackage(producer, {
         source: fixture.source,

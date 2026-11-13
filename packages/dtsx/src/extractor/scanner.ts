@@ -2112,7 +2112,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           const index = prefix.length - word.length
           return index >= 0 && prefix.endsWith(word) && (index === 0 || !isIdentChar(prefix.charCodeAt(index - 1)))
         }
-        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || endsWithWord('is') || endsWithWord('extends')
+        return prefix.length === 0 || prefix.endsWith('=>') || prefix.endsWith('|') || prefix.endsWith('&') || prefix.endsWith('?') || prefix.endsWith(':') || endsWithWord('is') || endsWithWord('extends')
       }
       while (pos < len) {
         const tokenStart = pos

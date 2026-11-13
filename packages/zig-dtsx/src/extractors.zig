@@ -459,7 +459,8 @@ pub fn extractReturnType(s: *Scanner) []const u8 {
 /// A brace or newline after these tokens still belongs to the return type.
 fn expectsReturnTypeOperand(prefix: []const u8) bool {
     return prefix.len == 0 or ch.endsWith(prefix, "=>") or ch.endsWith(prefix, "|") or
-        ch.endsWith(prefix, "&") or endsWithWord(prefix, "is") or endsWithWord(prefix, "extends");
+        ch.endsWith(prefix, "&") or ch.endsWith(prefix, "?") or ch.endsWith(prefix, ":") or
+        endsWithWord(prefix, "is") or endsWithWord(prefix, "extends");
 }
 
 fn endsWithWord(text: []const u8, word: []const u8) bool {
