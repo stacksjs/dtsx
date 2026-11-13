@@ -55,7 +55,7 @@ jobs:
         if: always() && steps.observer-build.outcome == 'success'
         env:
           DTSX_OBSERVER_TEST_EVIDENCE: ${{ runner.temp }}/observer-fidelity
-        run: bun test ./scripts/observe-contract-tests.test.ts
+        run: bun test ./scripts/observe-contract-tests.test.ts ./scripts/capture-process-probe.test.ts
       - name: Retain independent process observations
         if: always() && steps.unit-tests.outcome != 'skipped'
         uses: actions/upload-artifact@v7.0.2

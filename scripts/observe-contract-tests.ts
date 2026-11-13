@@ -11,6 +11,7 @@ import { finished } from 'node:stream/promises'
 import { StringDecoder } from 'node:string_decoder'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
+import { captureProcessProbe as capture } from './capture-process-probe'
 
 interface TraceEvent {
   event: 'start' | 'end'
@@ -30,17 +31,6 @@ function traceEvent(value: unknown): value is TraceEvent {
     && Number(entry.pid) > 1 && typeof entry.phase === 'string'
     && (entry.executable === undefined || typeof entry.executable === 'string')
     && (entry.bun === undefined || typeof entry.bun === 'string')
-}
-
-async function capture(executable: string, args: string[], timeout = 2000) {
-  return new Promise<{ code: number | null, stdout: string, stderr: string }>((fulfill) => {
-    const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout })
-    let stdout = '', stderr = ''
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk })
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
-    child.once('error', error => fulfill({ code: null, stdout, stderr: `${stderr}\n${error.message}` }))
-    child.once('close', code => fulfill({ code, stdout, stderr }))
-  })
 }
 
 async function hashFile(path: string): Promise<string> {
@@ -167,13 +157,15 @@ $resources = @(foreach ($target in $targets) {
       const begin = performance.now()
       const result = await capture('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], 4000)
       if (result.code !== 0) {
+        record({ event: 'windows-process-probe-failure', phaseAtRequest, phaseAtResponse: latest, probeStartedAt, ...result })
         if (!closed) throw new Error(`Windows process observation: ${result.stderr}`)
         record({ event: 'late-snapshot-error', phaseAtRequest, probeStartedAt, ...result })
         return
       }
       const probe = JSON.parse(result.stdout) as { rootPid: number, processes: OwnedProcess[], resources: Array<{ pid: number, probeError?: string, targetExited?: boolean, threads?: Array<{ probeError?: string }> }> }
       if (!Number.isSafeInteger(probe.rootPid) || !Array.isArray(probe.processes) || !Array.isArray(probe.resources)) throw new Error('Invalid Windows observation output')
-      record({ event: 'windows-process-snapshot', trigger: withStacks ? 'trace-gap' : 'resources', phaseAtRequest, phaseAtResponse: latest, probeStartedAt, probeElapsedMs: performance.now() - begin, ...probe, stackSampling: 'Thread wait-state metadata only; no Windows stack trace is collected.' })
+      const { stdout: _stdout, stderr: _stderr, ...probeOutcome } = result
+      record({ event: 'windows-process-snapshot', trigger: withStacks ? 'trace-gap' : 'resources', phaseAtRequest, phaseAtResponse: latest, probeStartedAt, probeElapsedMs: performance.now() - begin, probeOutcome, ...probe, stackSampling: 'Thread wait-state metadata only; no Windows stack trace is collected.' })
       const rootResource = probe.resources.find(resource => resource.pid === probe.rootPid)
       if (rootResource?.probeError && !rootResource.targetExited && !closed) errors.push(`Windows root observation: ${rootResource.probeError}`)
       if (rootResource?.threads?.length && rootResource.threads.every(thread => thread.probeError) && !closed) errors.push('No Windows root thread states were readable')
@@ -201,7 +193,7 @@ $resources = @(foreach ($target in $targets) {
         capture('/bin/ps', ['-p', String(pid), '-o', 'pid=,ppid=,stat=,time=,rss=,vsz=']),
         capture('/usr/sbin/lsof', ['-b', '-nP', '-p', String(pid), '-Ff']),
       ])
-      record({ event: 'resources', pid, phaseId: latest?.id, status: status.stdout, openDescriptors: descriptors.code === 0 ? descriptors.stdout.split('\n').filter(line => /^f\d+$/.test(line)).length : null, descriptorStatus: descriptors.code })
+      record({ event: 'resources', pid, phaseId: latest?.id, status: status.stdout, statusOutcome: status, descriptorOutcome: descriptors, openDescriptors: descriptors.code === 0 ? descriptors.stdout.split('\n').filter(line => /^f\d+$/.test(line)).length : null, descriptorStatus: descriptors.code })
       if (status.code !== 0) { record({ event: 'target-exited-before-sample', pid }); continue }
       if (descriptors.code !== 0) {
         const alive = await capture('/bin/ps', ['-p', String(pid), '-o', 'pid='])
@@ -209,11 +201,13 @@ $resources = @(foreach ($target in $targets) {
       }
       if (!withStacks) continue
       const file = join(evidence, `sample-${samples}-${pid}.txt`)
+      const phaseAtProbeStart = latest
+      const sampleStartedAt = new Date().toISOString()
       const sampled = await capture('/usr/bin/sample', [String(pid), '1', '20', '-mayDie', '-file', file], 4000)
-      record({ event: 'sample', pid, phaseId: latest?.id, file, ...sampled })
+      record({ event: 'sample', pid, phaseId: latest?.id, phaseAtProbeStart, phaseAtProbeEnd: latest, probeStartedAt: sampleStartedAt, file, ...sampled })
       if (sampled.code !== 0 && !closed) {
         const alive = await capture('/bin/ps', ['-p', String(pid), '-o', 'pid='])
-        if (alive.code === 0) errors.push(`sample ${pid}: ${sampled.stderr}`)
+        if (alive.code === 0) errors.push(`sample ${pid}: code=${sampled.code}, signal=${sampled.signal}, elapsedMs=${sampled.elapsedMs}, nodeSentKill=${sampled.nodeSentKill}, timeoutBudgetMs=${sampled.timeoutBudgetMs}: ${sampled.stderr}`)
       }
     }
   }

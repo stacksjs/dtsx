@@ -8,6 +8,8 @@
     "skipLibCheck": false
   },
   "include": [
+    "scripts/capture-process-probe.ts",
+    "scripts/capture-process-probe.test.ts",
     "scripts/observe-contract-tests.ts",
     "scripts/observe-contract-tests.test.ts"
   ]

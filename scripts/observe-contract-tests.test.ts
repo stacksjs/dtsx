@@ -58,15 +58,22 @@ test('the independent observer preserves a successful real Bun operation and its
   expect(result.summary.commandExitCode).toBe(0)
   expect(result.summary.phaseEvents).toBe(2)
   expect(result.summary.errors).toEqual([])
-  const events = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, code?: number, file?: string })
+  const events = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, code?: number, file?: string, signal?: string | null, nodeSentKill?: boolean, timeoutBudgetMs?: number, elapsedMs?: number, probeStartedAt?: string, phaseAtProbeStart?: { id: number }, phaseAtProbeEnd?: { id: number } })
   if (process.platform === 'darwin') {
     const sample = events.find(event => event.event === 'sample' && event.code === 0)
     expect(sample).toBeDefined()
+    expect(sample).toMatchObject({ signal: null, nodeSentKill: false, timeoutBudgetMs: 4000 })
+    expect(sample!.elapsedMs).toBeGreaterThan(1000)
+    expect(Number.isNaN(Date.parse(sample!.probeStartedAt!))).toBe(false)
+    expect(sample!.phaseAtProbeStart?.id).toBe(1)
+    expect(sample!.phaseAtProbeEnd?.id).toBe(1)
     expect((await readFile(sample!.file!, 'utf8')).length).toBeGreaterThan(0)
   }
   else {
-    const snapshots = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, resources?: Array<{ handles?: number }> })
-    expect(snapshots.some(event => event.event === 'windows-process-snapshot' && event.resources?.some(resource => Number(resource.handles) > 0))).toBe(true)
+    const snapshots = (await readFile(join(result.evidence, 'observations.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { event: string, probeOutcome?: { signal: string | null, nodeSentKill: boolean, timeoutBudgetMs: number }, resources?: Array<{ handles?: number }> })
+    const snapshot = snapshots.find(event => event.event === 'windows-process-snapshot' && event.resources?.some(resource => Number(resource.handles) > 0))
+    expect(snapshot).toBeDefined()
+    expect(snapshot!.probeOutcome).toMatchObject({ signal: null, nodeSentKill: false, timeoutBudgetMs: 4000 })
   }
   completedCases++
 })
