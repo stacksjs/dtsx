@@ -1,5 +1,31 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.54...HEAD)
+
+Version 0.11.55 preserves conditional, `keyof`, and `readonly` object operands in return types and improves process diagnostics. The original stall in [#3139](https://github.com/stacksjs/dtsx/issues/3139) and the waits tracked in #3189/#3195 remain under investigation; this release does not establish their causes.
+
+## 🐛 Bug Fixes
+
+- **diagnostics**: retain failed phase records in observer (#3197) ([3bb7e8f](https://github.com/stacksjs/dtsx/commit/3bb7e8f)) _(by Chris Breuer)_ ([#3197](https://github.com/stacksjs/dtsx/issues/3197))
+- **diagnostics**: retain probe termination and phase intervals (#3197) ([66592d2](https://github.com/stacksjs/dtsx/commit/66592d2)) _(by Chris Breuer)_ ([#3197](https://github.com/stacksjs/dtsx/issues/3197))
+- retain unary object operands across return boundaries ([efa4964](https://github.com/stacksjs/dtsx/commit/efa4964)) _(by Chris Breuer)_ ([#3196](https://github.com/stacksjs/dtsx/issues/3196), [#3146](https://github.com/stacksjs/dtsx/issues/3146), [#3147](https://github.com/stacksjs/dtsx/issues/3147), [#3194](https://github.com/stacksjs/dtsx/issues/3194))
+- preserve conditional object branches in callable return types ([f4affea](https://github.com/stacksjs/dtsx/commit/f4affea)) _(by Chris Breuer)_ ([#3194](https://github.com/stacksjs/dtsx/issues/3194), [#3146](https://github.com/stacksjs/dtsx/issues/3146), [#3139](https://github.com/stacksjs/dtsx/issues/3139))
+
+## ✅ Tests
+
+- observe macOS contract waits independently ([37ddd12](https://github.com/stacksjs/dtsx/commit/37ddd12)) _(by Chris Breuer)_ ([#3195](https://github.com/stacksjs/dtsx/issues/3195), [#3139](https://github.com/stacksjs/dtsx/issues/3139), [#3189](https://github.com/stacksjs/dtsx/issues/3189), [#3194](https://github.com/stacksjs/dtsx/issues/3194))
+- preserve operation outcomes when phase observation fails ([fb094da](https://github.com/stacksjs/dtsx/commit/fb094da)) _(by Chris Breuer)_
+
+## 🔧 Chores
+
+- **ci**: use qualified Pantry 0.11.204 ([b2b8b13](https://github.com/stacksjs/dtsx/commit/b2b8b13)) _(by Chris Breuer)_
+- observe the full unit command on macOS ([4fdaf3f](https://github.com/stacksjs/dtsx/commit/4fdaf3f)) _(by Chris Breuer)_
+- observe Windows contract process waits independently ([a732986](https://github.com/stacksjs/dtsx/commit/a732986)) _(by Chris Breuer)_
+
+## Contributors
+
+- _Chris Breuer_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.53...v0.11.54)
 
 ## 🐛 Bug Fixes
