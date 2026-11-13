@@ -1,0 +1,68 @@
+name: Full unit process diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-process-diagnostics-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  observed-unit-tests:
+    runs-on: macos-latest
+    # Inherit the normal CI unit job's budget; original test guards are unchanged.
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Setup Pantry
+        uses: pantry-pm/pantry/packages/action@ada000b82afec8e198f915bb2aafa6791fa01abd
+        with:
+          version: 0.11.199
+      - name: Install committed dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Zig
+        working-directory: packages/zig-dtsx
+        run: zig build
+      - name: Build core library and CLI
+        run: bun run build
+      - name: Build the independent Node observer
+        id: observer-build
+        run: |
+          bun x tsc --project tsconfig.contract-diagnostics.json --pretty false
+          bun build scripts/observe-contract-tests.ts --target=node --format=esm --outfile "$RUNNER_TEMP/observe-contract-tests.mjs"
+          node --version
+          bun -e '
+            const workflow = Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text());
+            const step = workflow.jobs.test.steps.find(step => step.id === "unit-tests");
+            if (typeof step?.run !== "string") throw new Error("Missing canonical unit test command");
+            await Bun.write(process.env.RUNNER_TEMP + "/unit-test-command.json", JSON.stringify(step.run));
+          '
+      - name: Observe the unmodified full unit command
+        id: unit-tests
+        env:
+          DTSX_TEST_TRACE: ${{ runner.temp }}/dtsx-unit-test-phases.jsonl
+        run: node "$RUNNER_TEMP/observe-contract-tests.mjs" --command-file "$RUNNER_TEMP/unit-test-command.json" --trace "$DTSX_TEST_TRACE" --evidence "$RUNNER_TEMP/unit-process-observations"
+      - name: Retain unit test operation phases
+        if: always() && steps.unit-tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: full-unit-operation-phases-macos
+          path: ${{ runner.temp }}/dtsx-unit-test-phases.jsonl
+          if-no-files-found: error
+      - name: Verify observer output and failure fidelity
+        if: always() && steps.observer-build.outcome == 'success'
+        env:
+          DTSX_OBSERVER_TEST_EVIDENCE: ${{ runner.temp }}/observer-fidelity
+        run: bun test ./scripts/observe-contract-tests.test.ts
+      - name: Retain independent process observations
+        if: always() && steps.unit-tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: full-unit-process-observations-macos
+          path: |
+            ${{ runner.temp }}/unit-process-observations
+            ${{ runner.temp }}/observer-fidelity
+            ${{ runner.temp }}/unit-test-command.json
+          if-no-files-found: error
