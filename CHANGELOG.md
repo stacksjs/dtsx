@@ -1,5 +1,15 @@
 # Changelog
 
+[Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.55...v0.11.56)
+
+## 🐛 Bug Fixes
+
+- **zig-dtsx**: keep a shorthand property written under a comment ([99503fd](https://github.com/stacksjs/dtsx/commit/99503fd)) _(by Chris Breuer)_
+
+## Contributors
+
+- _Chris Breuer_
+
 [Compare changes](https://github.com/stacksjs/dtsx/compare/v0.11.54...HEAD)
 
 Version 0.11.55 preserves conditional, `keyof`, and `readonly` object operands in return types and improves process diagnostics. The original stall in [#3139](https://github.com/stacksjs/dtsx/issues/3139) and the waits tracked in #3189/#3195 remain under investigation; this release does not establish their causes.
