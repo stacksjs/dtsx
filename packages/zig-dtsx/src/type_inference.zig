@@ -936,6 +936,23 @@ fn objectProperty(alloc: std.mem.Allocator, raw_key: []const u8, raw_value: []co
     return .{ .key = key, .value = value, .is_method = is_method, .comments = split.comments };
 }
 
+/// Record a shorthand property (`charge`) or a spread (`...base`).
+///
+/// The text runs from the previous comma, so it carries any comment written
+/// above the property. Tested as an identifier with the comment still on it,
+/// a commented shorthand was dropped without a word: `Payment` in
+/// `@stacksjs/payments` lost every member that opened a commented group.
+/// Comments are split off the way a keyed property's are.
+fn appendShorthand(alloc: std.mem.Allocator, properties: *std.array_list.Managed(ObjectProperty), text: []const u8) InferError!void {
+    const split = try splitPropertyComments(alloc, text);
+    const shorthand = split.key;
+    if (isIdentifierName(shorthand)) {
+        try properties.append(.{ .key = shorthand, .value = shorthand, .is_method = false, .comments = split.comments });
+    } else if (ch.startsWith(shorthand, "...") and shorthand.len > 3) {
+        try properties.append(.{ .key = "...", .value = trim(shorthand[3..]), .is_method = false });
+    }
+}
+
 fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferError![]ObjectProperty {
     var properties = std.array_list.Managed(ObjectProperty).init(alloc);
     // Pre-size: estimate property count from top-level commas
@@ -1040,12 +1057,7 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
                         try properties.append(try objectProperty(alloc, key, val, is_method));
                     }
                 } else {
-                    const shorthand = trim(content[current_start..i]);
-                    if (isIdentifierName(shorthand)) {
-                        try properties.append(.{ .key = shorthand, .value = shorthand, .is_method = false });
-                    } else if (ch.startsWith(shorthand, "...") and shorthand.len > 3) {
-                        try properties.append(.{ .key = "...", .value = trim(shorthand[3..]), .is_method = false });
-                    }
+                    try appendShorthand(alloc, &properties, content[current_start..i]);
                 }
                 current_start = i + 1;
                 in_key = true;
@@ -1066,12 +1078,7 @@ fn parseObjectProperties(alloc: std.mem.Allocator, content: []const u8) InferErr
             try properties.append(try objectProperty(alloc, key, val, is_method));
         }
     } else {
-        const shorthand = trim(content[current_start..content.len]);
-        if (isIdentifierName(shorthand)) {
-            try properties.append(.{ .key = shorthand, .value = shorthand, .is_method = false });
-        } else if (ch.startsWith(shorthand, "...") and shorthand.len > 3) {
-            try properties.append(.{ .key = "...", .value = trim(shorthand[3..]), .is_method = false });
-        }
+        try appendShorthand(alloc, &properties, content[current_start..content.len]);
     }
 
     // toOwnedSlice() trims unused capacity — important for non-arena callers.
@@ -3997,6 +4004,20 @@ test "inferFunctionType infers block returns and unions" {
 
     const union_result = try inferFunctionType(alloc, "() => { if (flag) return 1; return 'none' }", false, 0, true);
     try std.testing.expectEqualStrings("() => number | string", union_result);
+}
+
+test "inferObjectType keeps a shorthand property written under a comment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const lined = try inferObjectType(alloc, "{\n  a,\n\n  // Group two\n  b,\n  c,\n}", false, 0);
+    try std.testing.expect(std.mem.indexOf(u8, lined, "b: typeof b") != null);
+    try std.testing.expect(std.mem.indexOf(u8, lined, "Group two") == null);
+    const documented = try inferObjectType(alloc, "{\n  /** The first. */\n  a,\n  b,\n}", false, 0);
+    try std.testing.expect(std.mem.indexOf(u8, documented, "a: typeof a") != null);
+    try std.testing.expect(std.mem.indexOf(u8, documented, "/** The first. */") != null);
+    const last = try inferObjectType(alloc, "{ a, /* last */ b }", false, 0);
+    try std.testing.expect(std.mem.indexOf(u8, last, "b: typeof b") != null);
 }
 
 test "inferObjectType retains shorthand and spread types" {
