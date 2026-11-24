@@ -191,7 +191,6 @@ jobs:
         run: pantry publish --verify-existing --ignore-scripts
         env:
           # Token path (HTTP upload) is preferred; AWS creds enable the S3 fallback.
-          PANTRY_REGISTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
           PANTRY_TOKEN: ${{ secrets.PANTRY_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
