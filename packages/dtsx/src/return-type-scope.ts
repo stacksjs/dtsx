@@ -56,6 +56,9 @@ export function createReturnTypeScope(body: string, filename: string, freshName:
     }
     source += `${body.slice(cursor, block.end)}\n;\n${exports.map(result => `export type ${result.name} = ${result.type};`).join('\n')}`
     const declarations = scanSemanticDeclarations(source, filename, false)
+    const bindings = new Map(declarations.map(declaration => [declaration.name, declaration]))
+    for (const declaration of declarations)
+      inferIndexedLocal(declaration, bindings)
     for (const result of exports) localNames.add(result.name)
     const captured = generics ? genericNames(generics).map((name, index) => [name, `${helper}_capture_${index}`] as const) : []
     const text = declarations.map(declaration => generics && ['type', 'interface'].includes(declaration.kind) ? liftCapturedDeclaration(declaration, generics, captured, localNames) : (declaration.kind === 'variable' ? processVariableDeclaration(declaration, false) : declaration.text).replace(/^export\s+/, '').replace(/^declare\s+/, '')).join('\n')
@@ -113,6 +116,23 @@ export function createReturnTypeScope(body: string, filename: string, freshName:
       return signature
     },
   }
+}
+
+/** Retain an indexed type when a preceding local is explicitly tied to the same key space. */
+function inferIndexedLocal(declaration: Declaration, bindings: ReadonlyMap<string, Declaration>): void {
+  if (declaration.kind !== 'variable' || declaration.typeAnnotation || typeof declaration.value !== 'string') return
+  const value = declaration.value
+  if (!value.includes('[')) return
+  const tokens = tokenizeDeclarationSyntax(value)
+  if (tokens.length !== 4 || tokens[0].kind !== 'word' || tokens[2].kind !== 'word' || value[tokens[1].start] !== '[' || value[tokens[3].start] !== ']') return
+  const object = value.slice(tokens[0].start, tokens[0].end)
+  const index = value.slice(tokens[2].start, tokens[2].end)
+  const binding = bindings.get(index)
+  if (binding?.kind !== 'variable' || !binding.typeAnnotation || binding.modifiers?.[0] !== 'const' || (binding.start ?? 0) >= (declaration.start ?? 0)) return
+  const key = `keyof typeof ${object}`
+  const choices = binding.typeAnnotation.split('|').map(choice => choice.trim())
+  if (!choices.includes(key) || choices.some(choice => choice !== key && choice !== 'undefined' && choice !== 'null')) return
+  declaration.typeAnnotation = `(typeof ${object})[(typeof ${index}) & ${key}]`
 }
 
 function genericNames(generics: string): string[] {

@@ -14,7 +14,7 @@ import { createInitializerTypeReader } from '../initializer-type-spans'
 import { canStartJsx, createJsxTagReader, isIdentChar, isIdentStart, isRegexStart as isRegexStartAt, skipRegexLiteral } from '../lexical'
 import { decodeStringLiteral, parseImportEquals, scanModuleReferences, sourceSyntaxTokens, tokenizeDeclarationSyntax } from '../module-references'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
-import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferFunctionBodyReturnType, inferNarrowType, inferNewExpressionType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
+import { classFieldDefaultDoc, extractSatisfiesType, indentNestedType, inferCallType, inferConditionalAssertion, inferFunctionBodyReturnType, inferNarrowType, inferNewExpressionType, isNumericLiteral, leadingSourceComments, numericLiteralType } from '../processor/type-inference'
 import { createReturnTypeScope } from '../return-type-scope'
 import { inferDeclarationCallTypes, inferDeclarationValueAliases } from '../value-inference'
 
@@ -2359,7 +2359,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           // outside a syntactically verified function/arrow signature.
           if (source.charCodeAt(pos) === CH_LPAREN || source.charCodeAt(pos) === CH_LANGLE || matchWord('function') || matchWord('async')) {
             readInitializerType ??= createInitializerTypeReader(source)
-            const signature = readInitializerType(pos, initStart)
+            const signature = readInitializerType.read(pos, initStart)
             if (signature?.parameters) pos = signature.end
           }
           while (pos < len) {
@@ -2372,7 +2372,7 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
               depth--
             else if (ic === CH_LANGLE) {
               readInitializerType ??= createInitializerTypeReader(source)
-              const span = depth === 0 && jsxDepth === 0 ? readInitializerType(pos, initStart, completeOperandEnd) : undefined
+              const span = depth === 0 && jsxDepth === 0 ? readInitializerType.read(pos, initStart, completeOperandEnd) : undefined
               if (span?.parameters || span?.completeOperand || (span && _filename !== undefined && !/\.[jt]sx$/.test(_filename))) {
                 pos = span.end
                 completeOperandEnd = span.completeOperand ? span.end : undefined
@@ -2398,7 +2398,11 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
           }
           // A comment after the value (`= 1 // note`) is not part of it.
           initializerText = withoutTrailingComments(sliceTrimmed(initStart, pos))
-          if (initializerText.endsWith(' as const') || initializerText === 'const') {
+          const conditional = !typeAnnotation && initializerText.includes(' as ') ? inferConditionalAssertion(initializerText, kind === 'const') : undefined
+          if (conditional !== undefined) {
+            typeAnnotation = conditional
+          }
+          else if (initializerText.endsWith(' as const') || initializerText === 'const') {
             isAsConst = true
             if (!typeAnnotation) {
               const val = initializerText.endsWith(' as const') ? initializerText.slice(0, -' as const'.length).trim() : initializerText

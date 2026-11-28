@@ -155,7 +155,14 @@ pub const Scope = struct {
         const parsed = nested.scan() catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidContext;
         var output = std.array_list.Managed(u8).init(alloc);
         for (exports.items) |result| try local_names.append(result.name);
-        for (parsed.declarations.items) |declaration| {
+        for (parsed.declarations.items) |source_declaration| {
+            var declaration = source_declaration;
+            if (try inferIndexedLocal(alloc, declaration, parsed.declarations.items)) |inferred| {
+                const modifiers = declaration.modifiers orelse &.{};
+                const kind = if (modifiers.len > 0) modifiers[0] else "const";
+                declaration.inferred_type = inferred;
+                declaration.text = try std.fmt.allocPrint(alloc, "declare {s} {s}: {s};", .{ kind, declaration.name, inferred });
+            }
             if (self.generics.len > 0 and (declaration.kind == .type_decl or declaration.kind == .interface_decl)) {
                 try output.appendSlice(try liftCapturedDeclaration(alloc, declaration, self.generics, self.helper.?, local_names.items));
                 try output.append('\n');
@@ -225,6 +232,38 @@ pub const Scope = struct {
         return try output.toOwnedSlice();
     }
 };
+
+/// Retain an indexed type when a preceding local is explicitly tied to the same key space.
+fn inferIndexedLocal(alloc: std.mem.Allocator, declaration: Declaration, bindings: []const Declaration) Error!?[]const u8 {
+    if (declaration.kind != .variable_decl or declaration.type_annotation.len > 0) return null;
+    const value = declaration.value;
+    if (std.mem.indexOfScalar(u8, value, '[') == null) return null;
+    const tokens = try syntax.tokenizeDeclarationSyntax(alloc, value);
+    defer alloc.free(tokens);
+    if (tokens.len != 4 or tokens[0].kind != .word or tokens[2].kind != .word or value[tokens[1].start] != '[' or value[tokens[3].start] != ']') return null;
+    const object = value[tokens[0].start..tokens[0].end];
+    const index = value[tokens[2].start..tokens[2].end];
+    const trim_chars = " \t\r\n";
+    for (bindings) |binding| {
+        if (binding.kind != .variable_decl or binding.start >= declaration.start or !std.mem.eql(u8, binding.name, index) or binding.type_annotation.len == 0)
+            continue;
+        const modifiers = binding.modifiers orelse return null;
+        if (modifiers.len == 0 or !std.mem.eql(u8, modifiers[0], "const")) return null;
+        const prefix = "keyof typeof ";
+        var choices = std.mem.splitScalar(u8, binding.type_annotation, '|');
+        var has_key = false;
+        while (choices.next()) |raw| {
+            const choice = std.mem.trim(u8, raw, trim_chars);
+            if (std.mem.startsWith(u8, choice, prefix) and std.mem.eql(u8, choice[prefix.len..], object)) {
+                has_key = true;
+            } else if (!std.mem.eql(u8, choice, "undefined") and !std.mem.eql(u8, choice, "null")) {
+                return null;
+            }
+        }
+        if (has_key) return try std.fmt.allocPrint(alloc, "(typeof {s})[(typeof {s}) & keyof typeof {s}]", .{ object, index, object });
+    }
+    return null;
+}
 
 const Capture = struct { original: []const u8, renamed: []const u8 };
 fn hasName(names: []const []const u8, word: []const u8) bool {

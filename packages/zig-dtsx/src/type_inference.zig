@@ -1797,7 +1797,7 @@ fn inferBodyExpressionTypeScoped(alloc: std.mem.Allocator, expression: []const u
     // enclosing expression's comparison/conditional operators.
     if (isFunctionExpression(value)) return inferNarrowType(alloc, value, false, false, depth + 1);
 
-    if (splitTopLevelConditional(value)) |conditional| {
+    if (try splitTopLevelConditional(alloc, value)) |conditional| {
         const when_true = try inferBodyExpressionTypeScoped(alloc, conditional.when_true, parameters, depth + 1, class_scope, return_scope);
         const when_false = try inferBodyExpressionTypeScoped(alloc, conditional.when_false, parameters, depth + 1, class_scope, return_scope);
         if (std.mem.eql(u8, when_true, when_false)) return when_true;
@@ -2132,32 +2132,82 @@ fn hasTopLevelComparison(alloc: std.mem.Allocator, value: []const u8) InferError
     return false;
 }
 
-fn splitTopLevelConditional(value: []const u8) ?struct { when_true: []const u8, when_false: []const u8 } {
+fn splitTopLevelConditional(alloc: std.mem.Allocator, value: []const u8) InferError!?struct { when_true: []const u8, when_false: []const u8 } {
+    if (std.mem.indexOfScalar(u8, value, '?') == null) return null;
+    var reader = try @import("initializer_type_spans.zig").Reader.initOwned(alloc, value);
+    defer reader.deinit();
+    const tokens = reader.tokens;
     var depth: i32 = 0;
-    var question: ?usize = null;
-    var i: usize = 0;
-    while (i < value.len) : (i += 1) {
-        const c = value[i];
-        // Literal text and comments cannot hold the operator.
-        if (c == '"' or c == '\'' or c == '`') {
-            i = skipQuotedValue(value, i, c) - 1;
-            continue;
+    var question: usize = 0;
+    var pending: usize = 0;
+    var index: usize = 0;
+    while (index < tokens.len) : (index += 1) {
+        const token = tokens[index];
+        const word = value[token.start..token.end];
+        if (token.kind == .word and depth == 0 and index > 0 and value[tokens[index - 1].start] != '.' and
+            (std.mem.eql(u8, word, "as") or std.mem.eql(u8, word, "satisfies")))
+        {
+            if (try reader.afterType(index + 1)) |end| index = end - 1;
         }
-        if (c == '/' and i + 1 < value.len and (value[i + 1] == '/' or value[i + 1] == '*')) {
-            i = if (value[i + 1] == '/') ch.lineCommentEnd(value, i + 2) - 1 else (if (std.mem.indexOfPos(u8, value, i + 2, "*/")) |close| close + 1 else value.len - 1);
-            continue;
-        }
+        if (token.kind != .punctuation or word.len != 1) continue;
+        const c = word[0];
         if (c == '(' or c == '[' or c == '{') {
             depth += 1;
         } else if (c == ')' or c == ']' or c == '}') {
             depth -= 1;
-        } else if (c == '?' and depth == 0 and !(i + 1 < value.len and value[i + 1] == '?')) {
-            question = i;
-        } else if (c == ':' and depth == 0) {
-            if (question) |q| return .{ .when_true = withoutEdgeComments(value[q + 1 .. i]), .when_false = withoutEdgeComments(value[i + 1 ..]) };
+        } else if (depth == 0 and c == '<') {
+            if (try reader.read(token.start, 0, null)) |span| {
+                while (index + 1 < tokens.len and tokens[index + 1].start < span.end) index += 1;
+            }
+        } else if (depth == 0 and c == '?' and (token.start == 0 or value[token.start - 1] != '?') and
+            (token.end == value.len or (value[token.end] != '?' and value[token.end] != '.')))
+        {
+            if (pending == 0) question = token.end;
+            pending += 1;
+        } else if (depth == 0 and c == ':' and pending > 0) {
+            pending -= 1;
+            if (pending == 0) return .{
+                .when_true = withoutEdgeComments(value[question..token.start]),
+                .when_false = withoutEdgeComments(value[token.end..]),
+            };
         }
     }
     return null;
+}
+
+/// Keep assertions local to the runtime branches that contain them.
+pub fn inferConditionalAssertion(alloc: std.mem.Allocator, expression: []const u8, is_const: bool, depth: usize) InferError!?[]const u8 {
+    if (std.mem.indexOfScalar(u8, expression, '?') == null or isFunctionExpression(expression)) return null;
+    if (depth >= MAX_INFERENCE_DEPTH) return "unknown";
+    var value = expression;
+    while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
+        value = withoutEdgeComments(value[1 .. value.len - 1]);
+    }
+    const conditional = (try splitTopLevelConditional(alloc, value)) orelse return null;
+    const when_true = try inferConditionalBranch(alloc, conditional.when_true, is_const, depth + 1);
+    const when_false = try inferConditionalBranch(alloc, conditional.when_false, is_const, depth + 1);
+    if (std.mem.eql(u8, when_true, when_false)) return when_true;
+    if (std.mem.eql(u8, when_true, "unknown") or std.mem.eql(u8, when_false, "unknown")) return "unknown";
+    const left = try conditionalUnionMember(alloc, when_true);
+    const right = try conditionalUnionMember(alloc, when_false);
+    return try std.fmt.allocPrint(alloc, "{s} | {s}", .{ left, right });
+}
+
+fn conditionalUnionMember(alloc: std.mem.Allocator, member: []const u8) InferError![]const u8 {
+    if (findMainArrowIndex(member) != null or (ch.contains(member, " extends ") and std.mem.indexOfScalar(u8, member, '?') != null))
+        return std.fmt.allocPrint(alloc, "({s})", .{member});
+    return member;
+}
+
+fn inferConditionalBranch(alloc: std.mem.Allocator, expression: []const u8, is_const: bool, depth: usize) InferError![]const u8 {
+    var value = expression;
+    while (value.len >= 2 and value[0] == '(' and value[value.len - 1] == ')' and findMatchingBracket(value, 0, '(', ')') == value.len - 1) {
+        value = withoutEdgeComments(value[1 .. value.len - 1]);
+    }
+    if (isFunctionExpression(value)) return inferNarrowType(alloc, value, is_const, false, depth);
+    return (try inferConditionalAssertion(alloc, value, is_const, depth)) orelse
+        (try return_scopes.assertion(alloc, value)) orelse
+        try inferNarrowType(alloc, value, is_const, false, depth);
 }
 
 /// An expression without the comments before its first token and after its last.
@@ -3380,7 +3430,7 @@ fn inferBodySpreadType(alloc: std.mem.Allocator, expression: []const u8, paramet
         if (std.mem.eql(u8, trim(value[index + 2 ..]), "{}"))
             return nullableSpreadType(alloc, try inferBodyExpressionTypeScoped(alloc, value[0..index], parameters, depth + 1, class_scope, return_scope));
     }
-    if (splitTopLevelConditional(value)) |conditional| {
+    if (try splitTopLevelConditional(alloc, value)) |conditional| {
         const nonempty = if (std.mem.eql(u8, trim(conditional.when_false), "{}")) conditional.when_true else if (std.mem.eql(u8, trim(conditional.when_true), "{}")) conditional.when_false else null;
         if (nonempty) |branch| return std.fmt.allocPrint(alloc, "Partial<{s}>", .{try inferBodyExpressionTypeScoped(alloc, branch, parameters, depth + 1, class_scope, return_scope)});
     }
@@ -4311,10 +4361,10 @@ test "string concatenations and unary operators" {
 }
 
 test "conditional splitting ignores operators inside literals and comments" {
-    const split = splitTopLevelConditional("ok ? 'a:b' /* x ? y : z */ : 'c?d'").?;
+    const split = (try splitTopLevelConditional(std.testing.allocator, "ok ? 'a:b' /* x ? y : z */ : 'c?d'")).?;
     try std.testing.expectEqualStrings("'a:b'", split.when_true);
     try std.testing.expectEqualStrings("'c?d'", split.when_false);
-    const commented = splitTopLevelConditional("ok ? /* yes */ 1 : // no\n 2").?;
+    const commented = (try splitTopLevelConditional(std.testing.allocator, "ok ? /* yes */ 1 : // no\n 2")).?;
     try std.testing.expectEqualStrings("1", commented.when_true);
     try std.testing.expectEqualStrings("2", commented.when_false);
 }

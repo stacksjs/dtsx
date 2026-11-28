@@ -7,7 +7,7 @@ import { bindingPatternNames } from '../binding-patterns'
 import { hasTemplateSubstitution, isSymbolKey, resolveTemplateKey } from '../computed-keys'
 import { createInitializerTypeReader } from '../initializer-type-spans'
 import { isRegexStart, skipRegexLiteral } from '../lexical'
-import { tokenizeDeclarationSyntax } from '../module-references'
+import { sourceSyntaxTokens, tokenizeDeclarationSyntax } from '../module-references'
 import { isBigIntLiteral, isNumericLiteral, numericLiteralType } from '../numeric-literals'
 import { defaultedObjectBinding, defaultedObjectBindingParameter, normalizeDefaultParameterOrder } from '../parameters'
 import { escapeJsdocContent } from './comments'
@@ -498,7 +498,7 @@ function hasTopLevelComparison(value: string): boolean {
     if (depth !== 0) continue
     if (char === 60) {
       readType ??= createInitializerTypeReader(value)
-      const span = readType(index, 0)
+      const span = readType.read(index, 0)
       if (span) { index = span.end - 1; continue }
     }
     if (value.startsWith('===', index) || value.startsWith('!==', index)
@@ -1145,7 +1145,7 @@ function withoutEdgeComments(value: string): string {
 /** Whether a unary operator's operand is the whole remaining expression. */
 function inferPrefixAssertion(value: string): string | undefined {
   if (!value.startsWith('<')) return undefined
-  const span = createInitializerTypeReader(value)(0, 0)
+  const span = createInitializerTypeReader(value).read(0, 0)
   if (!span || span.parameters || span.completeOperand || !value.slice(span.end).trim() || !isUnaryOperand(value.slice(span.end).trim())) return undefined
   return value.slice(1, span.end - 1).trim()
 }
@@ -1172,7 +1172,7 @@ function isUnaryOperand(value: string): boolean {
     }
     if (char === '<' && depth === 0) {
       readType ??= createInitializerTypeReader(value)
-      const span = readType(i, 0)
+      const span = readType.read(i, 0)
       if (span) { i = span.end - 1; continue }
     }
     if (char === '(' || char === '[' || char === '{') depth++
@@ -1225,33 +1225,54 @@ function hasBalancedOuterParentheses(value: string): boolean {
 }
 
 function splitTopLevelConditional(value: string): { whenTrue: string, whenFalse: string } | null {
+  if (!value.includes('?')) return null
+  const tokens = sourceSyntaxTokens(value)
+  const reader = createInitializerTypeReader(value)
+  const text = (index: number) => tokens[index] ? value.slice(tokens[index].start, tokens[index].end) : ''
   let depth = 0
   let question = -1
-  for (let i = 0; i < value.length; i++) {
-    const char = value.charCodeAt(i)
-    // Literal text and comments cannot hold the operator: `ok ? 'a:b' : 'c'`.
-    if (char === 34 || char === 39 || char === 96) {
-      i = skipQuotedValue(value, i, char) - 1
-      continue
+  let pending = 0
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]
+    const word = text(index)
+    if (token.kind === 'word' && depth === 0 && index > 0 && text(index - 1) !== '.' && (word === 'as' || word === 'satisfies')) {
+      const end = reader.afterType(index + 1)
+      if (end !== undefined) index = end - 1
     }
-    if (char === 47 && (value.charCodeAt(i + 1) === 47 || value.charCodeAt(i + 1) === 42)) {
-      if (value.charCodeAt(i + 1) === 47) {
-        while (i + 1 < value.length && value.charCodeAt(i + 1) !== 10 && value.charCodeAt(i + 1) !== 13) i++
-      }
-      else {
-        const close = value.indexOf('*/', i + 2)
-        i = close === -1 ? value.length : close + 1
-      }
-      continue
+    if (token.kind !== 'punctuation') continue
+    if (word === '(' || word === '[' || word === '{') depth++
+    else if (word === ')' || word === ']' || word === '}') depth--
+    else if (depth === 0 && word === '<') {
+      const span = reader.read(token.start, 0)
+      if (span) while (tokens[index + 1] && tokens[index + 1].start < span.end) index++
     }
-    if (char === 40 || char === 91 || char === 123) depth++
-    else if (char === 41 || char === 93 || char === 125) depth--
-    else if (char === 63 && depth === 0 && value.charCodeAt(i + 1) !== 63) question = i
-    else if (char === 58 && depth === 0 && question !== -1) {
-      return { whenTrue: withoutEdgeComments(value.slice(question + 1, i)), whenFalse: withoutEdgeComments(value.slice(i + 1)) }
+    else if (depth === 0 && word === '?' && value[token.start - 1] !== '?' && !['?', '.'].includes(value[token.end])) {
+      if (pending++ === 0) question = token.end
+    }
+    else if (depth === 0 && word === ':' && pending > 0 && --pending === 0) {
+      return { whenTrue: withoutEdgeComments(value.slice(question, token.start)), whenFalse: withoutEdgeComments(value.slice(token.end)) }
     }
   }
   return null
+}
+
+/** Keep assertions local to the runtime branches that contain them. */
+export function inferConditionalAssertion(value: string, isConst: boolean, depth = 0): string | undefined {
+  if (!value.includes('?') || isFunctionExpression(value)) return undefined
+  if (depth >= MAX_INFERENCE_DEPTH) return 'unknown'
+  while (hasBalancedOuterParentheses(value)) value = withoutEdgeComments(value.slice(1, -1))
+  const conditional = splitTopLevelConditional(value)
+  if (!conditional) return undefined
+  const branchType = (branch: string): string => {
+    while (hasBalancedOuterParentheses(branch)) branch = withoutEdgeComments(branch.slice(1, -1))
+    if (isFunctionExpression(branch)) return inferNarrowType(branch, isConst)
+    return inferConditionalAssertion(branch, isConst, depth + 1) ?? wholeReturnAssertion(branch) ?? inferNarrowType(branch, isConst)
+  }
+  const whenTrue = branchType(conditional.whenTrue)
+  const whenFalse = branchType(conditional.whenFalse)
+  if (whenTrue === whenFalse) return whenTrue
+  if (whenTrue === 'unknown' || whenFalse === 'unknown') return 'unknown'
+  return joinReturnTypes([whenTrue, whenFalse].map(type => type.includes(' extends ') && type.includes('?') ? `(${type})` : type))
 }
 
 function isWordBoundary(value: string, start: number, length: number): boolean {
@@ -1398,7 +1419,7 @@ export function inferNewExpressionType(value: string, nominal?: (name: string) =
   let argumentsText = ''
   if (text(index) === '<') {
     const opening = tokens[index].start
-    const span = createInitializerTypeReader(value)(opening, 0)
+    const span = createInitializerTypeReader(value).read(opening, 0)
     if (!span || !span.completeOperand || span.parameters) return 'unknown'
     argumentsText = value.slice(opening, span.end)
     while (index < tokens.length && tokens[index].start < span.end) index++

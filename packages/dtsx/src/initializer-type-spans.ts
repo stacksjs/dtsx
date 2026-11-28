@@ -8,7 +8,10 @@ export interface InitializerTypeSpan {
 }
 
 /** Recognize type syntax without assigning angle depth to relational operators. */
-export function createInitializerTypeReader(source: string): (opening: number, initializerStart: number, previousOperandEnd?: number) => InitializerTypeSpan | undefined {
+export function createInitializerTypeReader(source: string): {
+  read: (opening: number, initializerStart: number, previousOperandEnd?: number) => InitializerTypeSpan | undefined
+  afterType: (firstToken: number) => number | undefined
+} {
   const tokens = sourceSyntaxTokens(source)
   let index = 0
   let groupEnds: Map<number, number> | undefined
@@ -364,7 +367,7 @@ export function createInitializerTypeReader(source: string): (opening: number, i
       && !['{', '[', '~', '#', '@'].includes(value) && !/^[0-9]$/.test(value)
   }
 
-  return (opening, initializerStart, previousOperandEnd) => {
+  function read(opening: number, initializerStart: number, previousOperandEnd?: number): InitializerTypeSpan | undefined {
     let low = 0
     let high = tokens.length
     while (low < high) {
@@ -407,5 +410,13 @@ export function createInitializerTypeReader(source: string): (opening: number, i
     // A prefix assertion still expects its value after the type span.
     if (prefix && eat('<') && type() && eat('>')) return { end: tokens[index - 1].end, completeOperand: false }
     return undefined
+  }
+
+  return {
+    read,
+    afterType(firstToken: number): number | undefined {
+      index = firstToken
+      return type() ? index : undefined
+    },
   }
 }

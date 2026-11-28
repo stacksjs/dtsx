@@ -1663,7 +1663,13 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                 }
                 // A comment after the value (`= 1 // note`) is not part of it.
                 initializer_text = if (skip_isolated_initializer) "" else withoutTrailingComments(s.sliceTrimmed(init_start, s.pos));
-                if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
+                const conditional = if (type_annotation.len == 0 and ch.contains(initializer_text, " as "))
+                    try type_inf.inferConditionalAssertion(s.allocator, initializer_text, std.mem.eql(u8, kind, "const"), 0)
+                else
+                    null;
+                if (conditional) |inferred| {
+                    type_annotation = inferred;
+                } else if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
                     is_as_const = true;
                     if (type_annotation.len == 0) {
                         const val = if (ch.endsWith(initializer_text, " as const"))
