@@ -631,7 +631,11 @@ function scanDeclarationsInternal(_source: string, _filename: string | undefined
     if (i < 0)
       return true
     const ch = source[i]
-    if ('+-*/%=<>&|^!~?:,.([{'.includes(ch))
+    // At type depth zero, a closing generic bracket completes the operand.
+    // The arrow of a function type still needs its result.
+    if (ch === '>')
+      return source[i - 1] === '='
+    if ('+-*/%=<&|^!~?:,.([{'.includes(ch))
       return true
     // Inside an unclosed JSX opening tag, where the next line holds attributes:
     //     export const C = () => <List
