@@ -409,6 +409,11 @@ pub const Reader = struct {
             !contains(&.{ "{", "[", "~", "#", "@" }, value) and !(value.len == 1 and std.ascii.isDigit(value[0]));
     }
 
+    pub fn afterType(self: *Reader, first_token: usize) Error!?usize {
+        self.index = first_token;
+        return if (try self.type_(true)) self.index else null;
+    }
+
     pub fn read(self: *Reader, opening: usize, initializer_start: usize, previous_operand_end: ?usize) Error!?Span {
         var low: usize = 0;
         var high = self.tokens.len;

@@ -1529,9 +1529,17 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
             s.skipWhitespaceAndComments();
             const type_start = s.pos;
             var depth: isize = 0;
+            var last_code_end = type_start;
             while (s.pos < s.len) {
-                if (s.skipNonCode()) continue;
+                const before = s.pos;
+                if (s.skipNonCode()) {
+                    if (s.source[before] == '\'' or s.source[before] == '"' or s.source[before] == '`') {
+                        last_code_end = s.pos;
+                    } else if (depth == 0 and (std.mem.indexOfScalar(u8, s.source[before..s.pos], '\n') != null or std.mem.indexOfScalar(u8, s.source[before..s.pos], '\r') != null) and typeLineBoundary(s, last_code_end, true)) break;
+                    continue;
+                }
                 const tc = s.source[s.pos];
+                if (depth == 0 and tc == ch.CH_RBRACE) break;
                 if (tc == ch.CH_LPAREN or tc == ch.CH_LBRACE or tc == ch.CH_LBRACKET or tc == ch.CH_LANGLE) {
                     depth += 1;
                 } else if (tc == ch.CH_RPAREN or tc == ch.CH_RBRACE or tc == ch.CH_RBRACKET or (tc == ch.CH_RANGLE and !s.isArrowGT())) {
@@ -1543,7 +1551,8 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                     // the initializer. isArrowGT above handles its other half.
                     break;
                 }
-                if (depth == 0 and s.checkASITopLevel()) break;
+                if (depth == 0 and (tc == '\n' or tc == '\r') and typeLineBoundary(s, last_code_end, true)) break;
+                if (!ch.isWhitespace(tc)) last_code_end = s.pos + 1;
                 s.pos += 1;
             }
             type_annotation = s.sliceTrimmed(type_start, s.pos);
@@ -1654,7 +1663,13 @@ fn extractVariableChecked(s: *Scanner, decl_start: usize, kind: []const u8, is_e
                 }
                 // A comment after the value (`= 1 // note`) is not part of it.
                 initializer_text = if (skip_isolated_initializer) "" else withoutTrailingComments(s.sliceTrimmed(init_start, s.pos));
-                if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
+                const conditional = if (type_annotation.len == 0 and ch.contains(initializer_text, " as "))
+                    try type_inf.inferConditionalAssertion(s.allocator, initializer_text, std.mem.eql(u8, kind, "const"), 0)
+                else
+                    null;
+                if (conditional) |inferred| {
+                    type_annotation = inferred;
+                } else if (ch.endsWith(initializer_text, " as const") or std.mem.eql(u8, initializer_text, "const")) {
                     is_as_const = true;
                     if (type_annotation.len == 0) {
                         const val = if (ch.endsWith(initializer_text, " as const"))
@@ -1859,7 +1874,7 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
             // significant token when deciding whether a newline ends a type.
             if (s.source[before] == '\'' or s.source[before] == '"' or s.source[before] == '`') {
                 last_code_end = s.pos;
-            } else if (depth == 0 and (std.mem.indexOfScalar(u8, s.source[before..s.pos], '\n') != null or std.mem.indexOfScalar(u8, s.source[before..s.pos], '\r') != null) and typeAliasLineBoundary(s, last_code_end)) break;
+            } else if (depth == 0 and (std.mem.indexOfScalar(u8, s.source[before..s.pos], '\n') != null or std.mem.indexOfScalar(u8, s.source[before..s.pos], '\r') != null) and typeLineBoundary(s, last_code_end, false)) break;
             continue;
         }
         const c = s.source[s.pos];
@@ -1871,7 +1886,7 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
         } else if (depth == 0 and c == ch.CH_SEMI) {
             break;
         }
-        if (depth == 0 and (c == '\n' or c == '\r') and typeAliasLineBoundary(s, last_code_end)) break;
+        if (depth == 0 and (c == '\n' or c == '\r') and typeLineBoundary(s, last_code_end, false)) break;
         if (!ch.isWhitespace(c)) last_code_end = s.pos + 1;
         s.pos += 1;
     }
@@ -1916,9 +1931,9 @@ pub fn extractTypeAlias(s: *Scanner, decl_start: usize, is_exported: bool) Decla
 }
 
 /// Function-local types can precede runtime statements as well as declarations.
-/// Respect ASI without absorbing a following return into the published alias,
+/// Respect ASI without absorbing a following statement into the published type,
 /// while keeping multiline unions, queries and conditional types together.
-fn typeAliasLineBoundary(s: *Scanner, last_code_end: usize) bool {
+fn typeLineBoundary(s: *Scanner, last_code_end: usize, allow_initializer: bool) bool {
     if (last_code_end == 0) return false;
     const last = s.source[last_code_end - 1];
     if (std.mem.indexOfScalar(u8, ".|&<,=?:([", last) != null) return false;
@@ -1935,6 +1950,7 @@ fn typeAliasLineBoundary(s: *Scanner, last_code_end: usize) bool {
     next.skipWhitespaceAndComments();
     if (next.pos >= next.len) return true;
     if (std.mem.indexOfScalar(u8, "|&[.<?:", next.source[next.pos]) != null) return false;
+    if (allow_initializer and std.mem.indexOfScalar(u8, "=,", next.source[next.pos]) != null) return false;
     if (next.matchWord("extends") or next.matchWord("is") or std.mem.startsWith(u8, next.source[next.pos..], "=>")) return false;
     return true;
 }
@@ -3888,5 +3904,25 @@ test "type alias ASI preserves multiline operands and stops before runtime state
         try std.testing.expectEqualStrings(expected, declaration.text);
         state.skipWhitespaceAndComments();
         try std.testing.expect(state.matchWord("return"));
+    }
+}
+
+test "variable type ASI stops before runtime statements and retains continuations" {
+    const annotations = [_][]const u8{
+        "Map<string, Set<number>>",
+        "() =>\n Map<string, Set<number>>",
+        "Map<string, Set<number>>\n | undefined",
+    };
+    for (annotations) |annotation| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const source = try std.fmt.allocPrint(arena.allocator(), "let record: {s}\nif (true) record = new Map()", .{annotation});
+        var state = Scanner.init(arena.allocator(), source, false, false);
+        defer state.deinit();
+        const declarations = extractVariable(&state, 0, "let", true);
+        try std.testing.expectEqual(@as(usize, 1), declarations.len);
+        try std.testing.expectEqualStrings(annotation, declarations[0].type_annotation);
+        state.skipWhitespaceAndComments();
+        try std.testing.expect(state.matchWord("if"));
     }
 }

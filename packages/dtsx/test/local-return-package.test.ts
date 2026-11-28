@@ -13,6 +13,57 @@ import { assertIsolatedDeclarationDiagnostic } from './helpers/isolated-oracle'
 
 interface Fixture { referenceDiagnostic?: string, files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }> }
 const fixtures: Record<string, Fixture> = {
+  'a guarded conditional key preserves narrow indexed return values': {
+    files: {
+      'index.ts': `const types = { A: 'a', TXT: 'txt' } as const
+
+export function makeRecord(input: unknown, value: string) {
+  const type = typeof input === 'string' && Object.hasOwn(types, input) ? input as keyof typeof types : undefined
+  if (!type)
+    throw new Error('Unknown record type')
+  const key = types[type]
+  let record: Record<string, string>
+  if (type === 'A')
+    record = { address: value }
+  else
+    record = { content: value }
+  return { key, record }
+}`,
+    },
+    positive: 'const result = api.makeRecord("TXT", "ready"); const key: "a" | "txt" = result.key; const value: string = result.record.content; void [key, value];',
+    negatives: [
+      { text: 'const bad: "mx" = api.makeRecord("TXT", "ready").key; void bad;', code: 'TS2322' },
+      { text: 'const bad: number = api.makeRecord("TXT", "ready").record.content; void bad;', code: 'TS2322' },
+    ],
+  },
+  'nested runtime branches preserve assertions without treating type conditionals as value branches': {
+    files: {
+      'index.ts': `export function choose(input: unknown, state: { enabled?: boolean } | undefined, nested: boolean) {
+  const choice = state?.enabled ?? true ? nested ? input as 'tag' extends string ? 'left' : never : input as 'middle' : 'right' as const
+  const optional = nested ? input as 'tag' extends string ? number : never : undefined
+  return { choice, optional }
+}`,
+    },
+    positive: 'const value = api.choose(null, undefined, true); const label: "left" | "middle" | "right" = value.choice; const optional: number | undefined = value.optional; void [label, optional];',
+    negatives: [
+      { text: 'const bad: "outside" = api.choose(null, undefined, true).choice; void bad;', code: 'TS2322' },
+      { text: 'const bad: number = api.choose(null, undefined, true).optional; void bad;', code: 'TS2322' },
+    ],
+  },
+  'semicolonless typed locals retain their public types after branch assignments': {
+    files: {
+      'index.ts': `export function read(address: boolean, value: string) {
+  let record: Record<string, string>
+  if (address)
+    record = { address: value }
+  else
+    record = { content: value }
+  return { record }
+}`,
+    },
+    positive: 'const value: string = api.read(true, "ready").record.address; void value;',
+    negatives: [{ text: 'const bad: number = api.read(true, "ready").record.address; void bad;', code: 'TS2322' }],
+  },
   'captured defaults precede required local type parameters safely': {
     files: { 'index.ts': 'export function read<T = string>(value: T) { type Box<U> = { value: T; extra: U }; return { value, extra: 7 } as Box<number>; }' },
     positive: 'const n: number = api.read(7).value + api.read("ready").extra; void n;',
@@ -164,7 +215,7 @@ for (const producer of ['core', 'bun-plugin', 'native', 'native-project'] as con
         const built = await Bun.build({ entrypoints: [join(library, 'src/index.ts')], outdir: join(library, 'dist'), target: 'bun', plugins: producer === 'bun-plugin' ? [dts(options)] : [] })
         expect(built.success, JSON.stringify(built.logs)).toBe(true)
         if (producer === 'core') {
-          const result = await generate(options)
+          const result = await generate({ ...options, engine: 'typescript' })
           expect(result.filesFailed, JSON.stringify(result.errors)).toBe(0)
         }
         else if (producer === 'native') {
