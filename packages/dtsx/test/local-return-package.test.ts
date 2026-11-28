@@ -13,6 +13,20 @@ import { assertIsolatedDeclarationDiagnostic } from './helpers/isolated-oracle'
 
 interface Fixture { referenceDiagnostic?: string, files: Record<string, string>, positive: string, negatives: Array<{ text: string, code: string }> }
 const fixtures: Record<string, Fixture> = {
+  'semicolonless typed locals retain their public types after branch assignments': {
+    files: {
+      'index.ts': `export function read(address: boolean, value: string) {
+  let record: Record<string, string>
+  if (address)
+    record = { address: value }
+  else
+    record = { content: value }
+  return { record }
+}`,
+    },
+    positive: 'const value: string = api.read(true, "ready").record.address; void value;',
+    negatives: [{ text: 'const bad: number = api.read(true, "ready").record.address; void bad;', code: 'TS2322' }],
+  },
   'captured defaults precede required local type parameters safely': {
     files: { 'index.ts': 'export function read<T = string>(value: T) { type Box<U> = { value: T; extra: U }; return { value, extra: 7 } as Box<number>; }' },
     positive: 'const n: number = api.read(7).value + api.read("ready").extra; void n;',

@@ -22,6 +22,16 @@ import { describe, expect, it } from 'bun:test'
 import { processCode } from './test-utils'
 
 describe('type annotation ASI', () => {
+  it('stops before a runtime statement after a generic variable type', () => {
+    const dts = processCode(`
+export let record: Map<string, Set<number>>
+if (true)
+  record = new Map()
+`)
+    expect(dts).toContain('let record: Map<string, Set<number>>;')
+    expect(dts).not.toContain('if (true)')
+  })
+
   it('does not swallow the statement after an unterminated type', () => {
     const dts = processCode(`
 export let format: (s: string) => string
@@ -43,6 +53,7 @@ export default function setup(opts: { a: number }): void {
     ['intersection', 'export let i: { a: number }\n  & { b: string }\n', '& { b: string }'],
     ['conditional', 'export let c: string extends string\n  ? number\n  : boolean\n', ': boolean'],
     ['generic across lines', 'export let g: Array<\n  { deep: true }\n>\n', '{ deep: true }'],
+    ['arrow result on the next line', 'export let f: () =>\n  Map<string, number>\n', 'Map<string, number>'],
     ['qualified name', 'export let q: Foo\n  .Bar\n', '.Bar'],
   ])('keeps a multi-line type: %s', (_label, code, expected) => {
     expect(processCode(code)).toContain(expected)
